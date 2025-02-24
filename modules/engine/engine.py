@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-from typing import Generic, TypeVar, Optional, Any, Dict
+from typing import Generic, TypeVar, Optional, Any, Dict, Tuple
 from concurrent.futures import ThreadPoolExecutor, Future
 import numpy as np
 from numpy.typing import NDArray
@@ -8,50 +8,19 @@ import os
 import gc
 import time
 import threading
-from dataclasses import dataclass
+
 from enum import Enum
-import warnings
 from contextlib import contextmanager
 
 # Import optimized components
-from .batch_processor import BatchProcessor, BatchProcessorConfig, BatchProcessingStrategy
+# Assuming these are in the same package or available in the PYTHONPATH
+from .batch_processor import BatchProcessor, BatchProcessorConfig
 from .preprocessor import DataPreprocessor, PreprocessorConfig, NormalizationType
 from .quantizer import Quantizer, QuantizationConfig
-from modules.configs import ModelConfig, OptimizationLevel
+from modules.configs import ModelConfig
 
 EstimatorType = TypeVar('EstimatorType')
 logger = logging.getLogger(__name__)
-'''
-
-class OptimizationLevel(Enum):
-    NONE = "none"
-    BASIC = "basic"
-    ADVANCED = "advanced"
-    MAXIMUM = "maximum"
-
-@dataclass
-class ModelConfig:
-    """Enhanced configuration for CPU-accelerated model."""
-    # Processing configuration
-    num_threads: int = os.cpu_count() or 4
-    optimization_level: OptimizationLevel = OptimizationLevel.ADVANCED
-    
-    # Batch processing settings
-    enable_batching: bool = True
-    initial_batch_size: int = 64
-    max_batch_size: int = 512
-    batch_timeout: float = 0.1
-    
-    # Memory and performance optimizations
-    enable_memory_optimization: bool = True
-    enable_intel_optimization: bool = True
-    enable_quantization: bool = False
-    
-    # Monitoring and debugging
-    enable_monitoring: bool = True
-    debug_mode: bool = False
-    monitoring_window: int = 100
-'''
 
 class CPUAcceleratedModel(Generic[EstimatorType]):
     """
@@ -79,6 +48,9 @@ class CPUAcceleratedModel(Generic[EstimatorType]):
         
         # Performance monitoring
         self._init_monitoring()
+
+        # Request Deduplication
+        self._init_request_deduplication()
         
         # Configure system environment
         self._configure_environment()
@@ -88,37 +60,50 @@ class CPUAcceleratedModel(Generic[EstimatorType]):
         Configure logging level and format based on debug_mode.
         """
         logging_level = logging.DEBUG if self.config.debug_mode else logging.INFO
-        # Optionally adjust logging format here if desired
         logging.basicConfig(
             level=logging_level,
             format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
         )
         logger.setLevel(logging_level)
+        logger.debug("Debug mode is enabled.")
 
     def _configure_environment(self) -> None:
         """
         Configure the system environment for optimal performance.
         This may include setting environment variables or other configurations.
         """
-        # Example: Set the number of threads for OpenMP if applicable.
         os.environ.setdefault("OMP_NUM_THREADS", str(self.config.num_threads))
+        os.environ.setdefault("TF_NUM_INTEROP_THREADS", str(self.config.num_threads))
+        os.environ.setdefault("TF_NUM_INTRAOP_THREADS", str(self.config.num_threads))
 
-        logger.info(f"Environment configured: OMP_NUM_THREADS set to {os.environ['OMP_NUM_THREADS']}")
+        # Memory Limit (Example)
+        if self.config.memory_limit_gb:
+            try:
+                import psutil
+                process = psutil.Process(os.getpid())
+                available_memory_gb = psutil.virtual_memory().available / (1024 ** 3)
+                limit_gb = min(self.config.memory_limit_gb, available_memory_gb * 0.9) # Reserve 10%
+                # Not directly setting hard limits to avoid potential issues, but logging
+                logger.info(f"Attempting to limit memory usage to {limit_gb:.2f} GB.")
+            except ImportError:
+                logger.warning("psutil not installed.  Memory limit cannot be enforced.")
+            except Exception as e:
+                logger.error(f"Error while setting memory limits: {e}")
+
+        logger.info(f"Environment configured: OMP_NUM_THREADS set to {os.environ.get('OMP_NUM_THREADS')}, TF_NUM_INTEROP_THREADS={os.environ.get('TF_NUM_INTEROP_THREADS')}, TF_NUM_INTRAOP_THREADS={os.environ.get('TF_NUM_INTRAOP_THREADS')}")
 
     def _init_components(self) -> None:
         """Initialize optimized components with appropriate configurations."""
-        # Initialize BatchProcessor
         batch_config = BatchProcessorConfig(
             initial_batch_size=self.config.initial_batch_size,
             max_batch_size=self.config.max_batch_size,
             batch_timeout=self.config.batch_timeout,
-            processing_strategy=BatchProcessingStrategy.ADAPTIVE,
+            processing_strategy=self.config.batch_processing_strategy,
             enable_monitoring=self.config.enable_monitoring,
             monitoring_window=self.config.monitoring_window
         )
         self.batch_processor = BatchProcessor(batch_config)
 
-        # Initialize DataPreprocessor
         preprocess_config = PreprocessorConfig(
             normalization=NormalizationType.STANDARD,
             handle_inf=True,
@@ -127,13 +112,15 @@ class CPUAcceleratedModel(Generic[EstimatorType]):
         )
         self.preprocessor = DataPreprocessor(preprocess_config)
 
-        # Initialize Quantizer
         if self.config.enable_quantization:
             quant_config = QuantizationConfig(
                 dynamic_range=True,
-                cache_size=128
+                cache_size=128,
+                dtype=self.config.quantization_dtype
             )
             self.quantizer = Quantizer(quant_config)
+        else:
+            self.quantizer = None
 
     def _init_thread_management(self) -> None:
         """Initialize thread management components."""
@@ -152,9 +139,40 @@ class CPUAcceleratedModel(Generic[EstimatorType]):
             'error_count': 0,
             'batch_sizes': [],
             'latencies': [],
-            'memory_usage': []
+            'memory_usage': [],
+            'cpu_usage': []
         }
         self._metrics_lock = threading.Lock()
+
+        if self.config.enable_monitoring:
+            self._monitoring_thread = threading.Thread(target=self._monitoring_loop, daemon=True)
+            self._monitoring_thread.start()
+
+    def _init_request_deduplication(self) -> None:
+        """Initialize request deduplication."""
+        self._request_deduplication_cache: Dict[Tuple, Future] = {}
+        self._request_deduplication_lock = threading.Lock()
+
+    def _monitoring_loop(self) -> None:
+        """Background thread for periodic monitoring."""
+        import psutil  # Import inside the function to avoid hard dependency
+
+        while not self._shutdown_event.is_set():
+            try:
+                with self._metrics_lock:
+                    process = psutil.Process(os.getpid())
+                    self.metrics['memory_usage'].append(process.memory_info().rss / (1024 ** 2))  # in MB
+                    self.metrics['cpu_usage'].append(psutil.cpu_percent())
+
+                    if len(self.metrics['memory_usage']) > self.config.monitoring_window:
+                        self.metrics['memory_usage'].pop(0)
+                    if len(self.metrics['cpu_usage']) > self.config.monitoring_window:
+                        self.metrics['cpu_usage'].pop(0)
+
+                time.sleep(self.config.monitoring_interval)
+            except Exception as e:
+                logger.error(f"Monitoring loop error: {e}")
+                time.sleep(self.config.monitoring_interval * 2) # Backoff
 
     @contextmanager
     def _performance_context(self, operation: str):
@@ -229,26 +247,19 @@ class CPUAcceleratedModel(Generic[EstimatorType]):
             X = self._validate_input(X)
             
             try:
-                # Preprocess input
-                X_processed = self.preprocessor.transform(X)
-                
-                # Apply quantization if enabled
-                if self.config.enable_quantization:
-                    X_processed = self.quantizer.quantize(X_processed)
-                    X_processed = self.quantizer.dequantize(X_processed)
-
-                # Make prediction
-                if self.config.enable_batching:
-                    predictions = self._batch_predict(X_processed)
+                # Request Deduplication
+                if self.config.enable_request_deduplication:
+                    X_tuple = tuple(X.flatten().tolist()) # Convert numpy array to tuple
+                    with self._request_deduplication_lock:
+                        if X_tuple in self._request_deduplication_cache:
+                            future = self._request_deduplication_cache[X_tuple]
+                            return future.result()
+                        else:
+                            future = self.executor.submit(self._predict_internal, X)
+                            self._request_deduplication_cache[X_tuple] = future
+                            return future.result()
                 else:
-                    with self.predict_lock:
-                        predictions = self.estimator.predict(X_processed)
-
-                # Update metrics
-                with self._metrics_lock:
-                    self.metrics['prediction_count'] += X.shape[0]
-
-                return predictions
+                    return self._predict_internal(X)
 
             except Exception as e:
                 with self._metrics_lock:
@@ -256,10 +267,56 @@ class CPUAcceleratedModel(Generic[EstimatorType]):
                 logger.error(f"Prediction error: {e}")
                 raise
 
+    def _predict_internal(self, X: NDArray[np.float32]) -> NDArray[Any]:
+        """Internal prediction logic."""
+        # Preprocess input
+        X_processed = self.preprocessor.transform(X)
+
+        # Apply quantization if enabled
+        if self.config.enable_quantization:
+            X_processed = self.quantizer.quantize(X_processed)
+            X_processed = self.quantizer.dequantize(X_processed)
+
+        # Make prediction
+        if self.config.enable_batching:
+            predictions = self._batch_predict(X_processed)
+        else:
+            with self.predict_lock:
+                predictions = self.estimator.predict(X_processed)
+
+        # Update metrics
+        with self._metrics_lock:
+            self.metrics['prediction_count'] += X.shape[0]
+
+        return predictions
+
     def predict_async(self, X: NDArray[np.float32]) -> Future:
-        """Enhanced asynchronous prediction with improved error handling."""
+        """Enhanced asynchronous prediction with improved error handling and request deduplication."""
         try:
             X = self._validate_input(X)
+
+            # Request Deduplication
+            if self.config.enable_request_deduplication:
+                X_tuple = tuple(X.flatten().tolist()) # Convert numpy array to tuple
+                with self._request_deduplication_lock:
+                    if X_tuple in self._request_deduplication_cache:
+                        logger.debug("Using deduplicated request.")
+                        return self._request_deduplication_cache[X_tuple]
+                    else:
+                        future = self.executor.submit(self._predict_async_internal, X)
+                        self._request_deduplication_cache[X_tuple] = future
+                        return future
+            else:
+                return self._predict_async_internal(X)
+
+        except Exception as e:
+            future = Future()
+            future.set_exception(e)
+            return future
+
+    def _predict_async_internal(self, X: NDArray[np.float32]) -> Future:
+        """Internal logic for asynchronous prediction."""
+        try:
             X_processed = self.preprocessor.transform(X)
             
             if self.config.enable_quantization:
@@ -309,6 +366,9 @@ class CPUAcceleratedModel(Generic[EstimatorType]):
             metrics = self.metrics.copy()
             if self.batch_processor.stats:
                 metrics.update(self.batch_processor.get_stats())
+            
+            # Add model version to metrics
+            metrics['model_version'] = self.config.model_version
             return metrics
 
     def cleanup(self) -> None:
@@ -318,6 +378,10 @@ class CPUAcceleratedModel(Generic[EstimatorType]):
         
         self.batch_processor.stop()
         self.executor.shutdown(wait=True)
+        
+        # Clear Request Deduplication Cache
+        with self._request_deduplication_lock:
+            self._request_deduplication_cache.clear()
         
         if self.config.enable_memory_optimization:
             gc.collect()

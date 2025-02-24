@@ -5,7 +5,7 @@ import numpy as np
 from numpy.typing import NDArray
 import time
 import logging
-from concurrent.futures import Future
+from concurrent.futures import Future, ThreadPoolExecutor
 import weakref
 from collections import deque
 import statistics
@@ -15,26 +15,6 @@ from modules.configs import BatchProcessorConfig, BatchProcessingStrategy
 # Type variables for generic typing
 T = TypeVar('T')
 U = TypeVar('U')
-'''
-class BatchProcessingStrategy(Enum):
-    ADAPTIVE = "adaptive"  # Dynamically adjusts batch size
-    FIXED = "fixed"       # Uses fixed batch size
-    TIMEOUT = "timeout"   # Primarily driven by timeout
-
-@dataclass
-class BatchProcessorConfig:
-    """Configuration for batch processing."""
-    max_queue_size: int = 1000
-    initial_batch_size: int = 64
-    min_batch_size: int = 8
-    max_batch_size: int = 512
-    batch_timeout: float = 0.1
-    processing_strategy: BatchProcessingStrategy = BatchProcessingStrategy.ADAPTIVE
-    max_retries: int = 3
-    retry_delay: float = 0.1
-    enable_monitoring: bool = True
-    monitoring_window: int = 100  # Number of batches to keep statistics for
-'''
 
 class BatchStats:
     """Tracks batch processing statistics."""
@@ -78,11 +58,15 @@ class BatchProcessor(Generic[T, U]):
         self.queue: Queue[Tuple[T, Optional[Future[U]], int]] = Queue(maxsize=config.max_queue_size)
         self.stop_event = Event()
         self.paused_event = Event()
-        
+        self.shutdown_event = Event() # New event for cleaner shutdown
+
         # Thread management
         self.worker_thread: Optional[Thread] = None
         self.worker_lock = Lock()
-        
+
+        # Use a thread pool for processing batches in parallel
+        self.executor = ThreadPoolExecutor(max_workers=config.max_workers)  # Configurable number of workers
+
         # Batch size management
         self._current_batch_size = config.initial_batch_size
         self._batch_size_lock = Lock()
@@ -104,6 +88,7 @@ class BatchProcessor(Generic[T, U]):
 
             self.stop_event.clear()
             self.paused_event.clear()
+            self.shutdown_event.clear()
             self.worker_thread = Thread(
                 target=self._wrapped_worker_loop,
                 args=(process_func,),
@@ -115,10 +100,14 @@ class BatchProcessor(Generic[T, U]):
     def stop(self, timeout: Optional[float] = None) -> None:
         """Stop the batch processor with graceful shutdown."""
         self.stop_event.set()
-        
+        self.shutdown_event.set() # Signal shutdown
+
         # Process remaining items
         self._process_remaining_items()
-        
+
+        # Shutdown the executor
+        self.executor.shutdown(wait=True)  # Wait for all tasks to complete
+
         if self.worker_thread:
             self.worker_thread.join(timeout=timeout)
             if self.worker_thread.is_alive():
@@ -163,7 +152,7 @@ class BatchProcessor(Generic[T, U]):
 
     def _worker_loop(self, process_func: Callable[[NDArray[T]], NDArray[U]]) -> None:
         """Enhanced worker loop with adaptive batching and monitoring."""
-        while not self.stop_event.is_set():
+        while not self.shutdown_event.is_set(): # Use shutdown_event
             if self.paused_event.is_set():
                 time.sleep(0.1)
                 continue
@@ -175,7 +164,8 @@ class BatchProcessor(Generic[T, U]):
             # Collect batch items
             while (
                 len(batch_requests) < self._current_batch_size and
-                (time.monotonic() - start_time) < self.config.batch_timeout
+                (time.monotonic() - start_time) < self.config.batch_timeout and
+                not self.shutdown_event.is_set() # Check shutdown here too
             ):
                 try:
                     remaining_time = max(
@@ -199,15 +189,21 @@ class BatchProcessor(Generic[T, U]):
         start_time: float
     ) -> None:
         """Process a batch of requests with retries and error handling."""
+
+        # Combine batch items outside the retry loop
+        try:
+            combined = np.vstack([req[0] for req in batch_requests])
+        except Exception as e:
+            self._handle_batch_error(e, batch_requests)
+            return
+
         retries = 0
         while retries < self.config.max_retries:
             try:
-                # Combine batch items
-                combined = np.vstack([req[0] for req in batch_requests])
-                
-                # Process batch
-                predictions = process_func(combined)
-                
+                # Process batch using the thread pool
+                future = self.executor.submit(process_func, combined)
+                predictions = future.result()  # Wait for the result
+
                 # Distribute results
                 start_idx = 0
                 for data, future, n_samples in batch_requests:
