@@ -9,27 +9,28 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import List, Dict, Any, Optional, Tuple
 import json
-import os  # For creating the result directory if needed
+import os
 
-# NEW: Additional imports for model comparison
+# Sklearn imports for demonstration
 from sklearn.base import clone
-from sklearn.model_selection import cross_val_score
-from sklearn.linear_model import LinearRegression, Ridge, Lasso
-from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
-from sklearn.svm import SVC, SVR
-from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.metrics import (
     accuracy_score, f1_score, precision_score, recall_score, roc_auc_score,
-    r2_score, mean_squared_error, mean_absolute_error
+    r2_score, mean_squared_error, mean_absolute_error,
+    silhouette_score
 )
-import numpy as np
-# ------------------------------------------------------------------------------
+from sklearn.linear_model import (
+    LinearRegression, Ridge, Lasso, LogisticRegression
+)
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+from sklearn.cluster import KMeans, DBSCAN
+
+# ------------------------------------------------------------------------
 # Logging configuration
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ------------------------------------------------------------------------------
+# ------------------------------------------------------------------------
 # Enums and Dataclasses for configuration
 
 class TaskType(Enum):
@@ -70,8 +71,8 @@ class TargetMetrics:
     achieved_value: float
     is_achieved: bool
 
-# ------------------------------------------------------------------------------
-# Default hyperparameters for various models (for clustering only)
+# ------------------------------------------------------------------------
+# Default hyperparameters (example for clustering)
 DEFAULT_HYPERPARAMETERS: Dict[str, List[HyperParameterConfig]] = {
     "kmeans": [
         HyperParameterConfig("n_clusters", 2, 10, 1, 3),
@@ -93,22 +94,24 @@ DEFAULT_HYPERPARAMETERS: Dict[str, List[HyperParameterConfig]] = {
     ]
 }
 
-# ------------------------------------------------------------------------------
+# ------------------------------------------------------------------------
 def get_tune_domain(hp_config: HyperParameterConfig) -> Dict[str, Any]:
-    logger.debug(f"Creating hyperparameter domain for {hp_config.name}")
-    domain_array = np.arange(hp_config.min_val, hp_config.max_val + hp_config.step, hp_config.step)
-    logger.debug(f"Domain array: {domain_array}")
+    """Utility to convert a HyperParameterConfig into a dictionary domain."""
+    domain_array = np.arange(
+        hp_config.min_val,
+        hp_config.max_val + hp_config.step,
+        hp_config.step
+    )
     return {
         "domain": domain_array.tolist(),
         "init_value": hp_config.default,
         "low_cost_init_value": hp_config.default
     }
 
-# ------------------------------------------------------------------------------
-# Streamlit AutoML App Class
+# ------------------------------------------------------------------------
 class GentaAutoMLApp:
     def __init__(self) -> None:
-        logger.debug("Initializing GentaAutoMLApp...")
+        # Streamlit page config and title
         st.set_page_config(page_title="Genta AutoML", layout="wide")
         st.title("Genta AutoML: Automated Machine Learning Platform")
         self._initialize_session_state()
@@ -119,8 +122,8 @@ class GentaAutoMLApp:
             'data',
             'model',
             'X_pd',
-            'target_metrics',
             'y_pd',
+            'target_metrics',
             'X_selected',
             'trained_model',
             'evaluation_report',
@@ -130,101 +133,88 @@ class GentaAutoMLApp:
         ]
         for key in keys:
             if key not in st.session_state:
-                logger.debug(f"Initializing session_state['{key}'] to None")
                 st.session_state[key] = None
 
+    # --------------------------------------------------------------------
+    # 1) Load Data
+    # --------------------------------------------------------------------
     def load_data(self) -> Optional[pl.DataFrame]:
-        logger.debug("Entering load_data function...")
         st.header("Upload Your Dataset")
         uploaded_file = st.file_uploader(
             "Upload CSV, Parquet, or Excel file",
             type=['csv', 'parquet', 'xlsx', 'xls'],
             help="Supported file formats: CSV, Parquet, Excel"
         )
-
-        if uploaded_file is not None:
-            logger.debug(f"File uploaded: {uploaded_file.name}")
+        if uploaded_file:
             try:
                 file_extension = uploaded_file.name.split('.')[-1].lower()
-                logger.debug(f"File extension: {file_extension}")
-
                 if file_extension == 'csv':
                     df = pl.read_csv(uploaded_file)
                 elif file_extension == 'parquet':
                     df = pl.read_parquet(uploaded_file)
                 elif file_extension in ['xlsx', 'xls']:
-                    try:
-                        df = pl.from_pandas(pd.read_excel(uploaded_file))
-                    except Exception as e:
-                        st.error(f"Error reading Excel file: {e}")
-                        logger.error(f"Error reading Excel file: {e}")
-                        return None
+                    df = pl.from_pandas(pd.read_excel(uploaded_file))
                 else:
-                    st.error("Unsupported file format. Please upload a CSV, Parquet, or Excel file.")
-                    logger.debug("Unsupported file format encountered.")
+                    st.error("Unsupported file format.")
                     return None
 
                 st.session_state['data'] = df
                 st.success("Data loaded successfully!")
                 self._display_data_preview(df)
                 return df
-
-            except pl.exceptions.ComputeError as e:
-                st.error(f"Data type error: {e}. Ensure correct data formatting.")
-                logger.error(f"Polars ComputeError: {e}")
-                return None
             except Exception as e:
-                st.error(f"Error loading data: {str(e)}")
-                logger.error(f"Error loading data: {str(e)}")
+                st.error(f"Error loading data: {e}")
+                logger.error(f"Error loading data: {e}")
                 return None
         else:
-            logger.debug("No file uploaded yet.")
             st.info("Please upload a dataset to begin.")
             return None
 
     def _display_data_preview(self, df: pl.DataFrame):
-        """Displays a preview of the data and statistics."""
         st.subheader("Data Preview")
         try:
             st.dataframe(df.head(10).to_pandas())
         except Exception as e:
             st.error(f"Error displaying dataframe: {e}")
-            logger.error(f"Error displaying dataframe: {e}")
 
         st.subheader("Data Statistics")
         try:
             st.write(df.describe().to_pandas())
         except Exception as e:
             st.error(f"Error generating data statistics: {e}")
-            logger.error(f"Error generating data statistics: {e}")
 
+    # --------------------------------------------------------------------
+    # 2) Model Configuration
+    # --------------------------------------------------------------------
     def get_available_models(self, task_type: TaskType) -> Tuple[List[str], List[str]]:
-        logger.debug(f"Getting available models for task type: {task_type}")
+        """
+        Return a tuple (available_models, default_models) based on the task type.
+        """
         model_options = {
-            TaskType.CLASSIFICATION: ["lgbm", "rf", "xgboost", "catboost"],
-            TaskType.REGRESSION: ["lgbm", "rf", "xgboost", "catboost"],
-            TaskType.CLUSTERING: list(DEFAULT_HYPERPARAMETERS.keys())
+            TaskType.CLASSIFICATION: [
+                "logistic_regression", "rf", "xgboost", "catboost", "lgbm"
+            ],
+            TaskType.REGRESSION: [
+                "linear_regression", "ridge", "lasso", "rf", "xgboost", "catboost", "lgbm"
+            ],
+            TaskType.CLUSTERING: list(DEFAULT_HYPERPARAMETERS.keys())  # e.g. kmeans, dbscan, etc.
         }
-
         default_models = {
-            TaskType.CLASSIFICATION: ["lgbm", "rf"],
-            TaskType.REGRESSION: ["lgbm", "rf"],
-            TaskType.CLUSTERING: ["kmeans", "hierarchical"]
+            TaskType.CLASSIFICATION: ["logistic_regression", "rf"],
+            TaskType.REGRESSION: ["linear_regression", "rf"],
+            TaskType.CLUSTERING: ["kmeans"]
         }
-
-        available = model_options.get(task_type, [])
-        defaults = default_models.get(task_type, [])
-        logger.debug(f"Available models: {available}, Default models: {defaults}")
-        return available, defaults
+        return model_options[task_type], default_models[task_type]
 
     def get_target_metrics(self, task_type: TaskType) -> Tuple[Optional[str], Optional[float]]:
-        logger.debug(f"Entering get_target_metrics with task_type: {task_type}")
+        """
+        Let the user pick a metric and target score.
+        """
         metric_options = {
             TaskType.CLASSIFICATION: ["accuracy", "f1_macro", "precision_macro", "recall_macro", "roc_auc"],
             TaskType.REGRESSION: ["r2", "mse", "mae", "rmse"],
             TaskType.CLUSTERING: ["silhouette"]
         }
-
         metric_explanations = {
             "accuracy": "Proportion of correct predictions (Classification).",
             "f1_macro": "Macro-averaged F1 score (Classification).",
@@ -239,20 +229,9 @@ class GentaAutoMLApp:
         }
 
         st.subheader("Select Target Metric and Score")
-        available_metrics = metric_options.get(task_type, [])
+        available_metrics = metric_options[task_type]
 
-        if not available_metrics:
-            logger.debug("No metrics available for this task type.")
-            st.warning("No metrics available for the selected task type.")
-            return None, None
-
-        metric_name = st.selectbox(
-            "Select performance metric",
-            options=available_metrics,
-            help="Choose the metric to evaluate model performance."
-        )
-        logger.debug(f"Selected metric: {metric_name}")
-
+        metric_name = st.selectbox("Select performance metric", options=available_metrics)
         if metric_name:
             st.info(metric_explanations.get(metric_name, "No explanation available."))
             default_target = self._get_default_target(metric_name)
@@ -261,193 +240,135 @@ class GentaAutoMLApp:
                 min_value=0.0,
                 max_value=self._get_max_target(metric_name),
                 value=default_target,
-                step=0.01,
-                help=f"Set the target score for {metric_name}."
+                step=0.01
             )
-            logger.debug(f"Target score for {metric_name} is {target_score}")
             return metric_name, float(target_score)
         else:
-            logger.debug("No metric was selected.")
             return None, None
 
     def _get_default_target(self, metric_name: str) -> float:
-        """Returns a sensible default target score for a given metric."""
         if metric_name in ["accuracy", "f1_macro", "precision_macro", "recall_macro", "roc_auc", "r2", "silhouette"]:
             return 0.8
         else:
             return 0.0
 
     def _get_max_target(self, metric_name: str) -> float:
-        """Returns a maximum allowed value for the target score."""
         if metric_name in ["accuracy", "f1_macro", "precision_macro", "recall_macro", "roc_auc", "r2", "silhouette"]:
             return 1.0
         else:
-            return 10000.0
+            return 1e5
 
     def get_hyperparameter_ranges(self, selected_models: List[str]) -> Dict[str, List[HyperParameterConfig]]:
-        logger.debug("Entering get_hyperparameter_ranges...")
+        """
+        Lets the user adjust hyperparameters for each selected model (optional).
+        Only relevant for clustering defaults in this example.
+        """
         st.subheader("Configure Hyperparameters (Optional)")
         use_advanced = st.checkbox(
             "Enable advanced hyperparameter configuration",
-            value=False,
-            help="Allows you to customize the hyperparameter search space for each model."
+            value=False
         )
-        logger.debug(f"Advanced configuration: {use_advanced}")
-        hyperparameter_configs: Dict[str, List[HyperParameterConfig]] = {}
+        hyperparameter_configs = {}
 
         for model in selected_models:
-            logger.debug(f"Processing hyperparameters for model: {model}")
-            if model not in DEFAULT_HYPERPARAMETERS:
-                logger.debug(f"No default hyperparameters found for model: {model}")
-                continue
-
-            default_configs = DEFAULT_HYPERPARAMETERS[model]
-            hyperparameter_configs[model] = []
-
-            if use_advanced:
-                st.write(f"### {model.upper()} Hyperparameters")
-                for hp in default_configs:
-                    with st.container():
-                        col1, col2, col3 = st.columns(3)
-                        with col1:
-                            min_val = st.number_input(
-                                f"{hp.name} min", value=hp.min_val, step=hp.step,
-                                key=f"{model}_{hp.name}_min"
+            if model in DEFAULT_HYPERPARAMETERS:
+                default_configs = DEFAULT_HYPERPARAMETERS[model]
+                if use_advanced:
+                    st.write(f"### {model.upper()} Hyperparameters")
+                    user_configs = []
+                    for hp in default_configs:
+                        with st.container():
+                            col1, col2, col3 = st.columns(3)
+                            with col1:
+                                min_val = st.number_input(
+                                    f"{hp.name} min [{model}]",
+                                    value=hp.min_val, step=hp.step
+                                )
+                            with col2:
+                                max_val = st.number_input(
+                                    f"{hp.name} max [{model}]",
+                                    value=hp.max_val, step=hp.step
+                                )
+                            with col3:
+                                default_val = st.number_input(
+                                    f"{hp.name} default [{model}]",
+                                    value=hp.default, step=hp.step
+                                )
+                            user_configs.append(
+                                HyperParameterConfig(
+                                    name=hp.name,
+                                    min_val=min_val,
+                                    max_val=max_val,
+                                    step=hp.step,
+                                    default=default_val
+                                )
                             )
-                        with col2:
-                            max_val = st.number_input(
-                                f"{hp.name} max", value=hp.max_val, step=hp.step,
-                                key=f"{model}_{hp.name}_max"
-                            )
-                        with col3:
-                            default_val = st.number_input(
-                                f"{hp.name} default", value=hp.default, step=hp.step,
-                                key=f"{model}_{hp.name}_default"
-                            )
-
-                        logger.debug(f"Hyperparameter {hp.name} for {model}: min={min_val}, max={max_val}, default={default_val}")
-                        hyperparameter_configs[model].append(
-                            HyperParameterConfig(hp.name, min_val, max_val, hp.step, default_val)
-                        )
-            else:
-                logger.debug(f"Using default hyperparameters for {model}")
-                hyperparameter_configs[model] = default_configs
-
-        logger.debug("Finished building hyperparameter configs.")
+                    hyperparameter_configs[model] = user_configs
+                else:
+                    # Use defaults if advanced config is not used
+                    hyperparameter_configs[model] = default_configs
         return hyperparameter_configs
 
     def get_model_config(self, df: pl.DataFrame) -> Optional[ModelConfig]:
-        logger.debug("Entering get_model_config...")
         st.header("Configure Your Model")
-
         if df is None:
-            logger.debug("No data available; prompting user to upload.")
             st.warning("Please upload data first.")
             return None
 
         with st.expander("Model Settings", expanded=True):
-            target_column = st.selectbox(
-                "Select target column",
-                options=df.columns,
-                help="Choose the column to predict (ignored for clustering)."
-            )
-            logger.debug(f"Selected target column: {target_column}")
+            # Target column selection
+            if len(df.columns) == 0:
+                st.error("No columns found in the dataset.")
+                return None
 
+            target_column = st.selectbox(
+                "Select target column (ignored for clustering)",
+                options=df.columns
+            )
+
+            # Task Type
             task_type_str = st.selectbox(
                 "Select task type",
-                options=[t.value for t in TaskType],
-                help="Choose the type of machine learning task."
+                options=[t.value for t in TaskType]
             )
-            try:
-                task_type = TaskType(task_type_str)
-            except ValueError:
-                st.error(f"Invalid task type selected: {task_type_str}")
-                return None
-            logger.debug(f"Selected task type: {task_type}")
+            task_type = TaskType(task_type_str)
 
-            auto_model_selection = st.checkbox(
-                "Enable Auto Model Selection (Advanced)",
-                value=False,
-                help="If enabled, the system will train all available models and automatically choose the best one based on the performance metric."
-            )
-            logger.debug(f"Auto model selection enabled: {auto_model_selection}")
+            # Basic settings
+            show_shap = st.checkbox("Show SHAP Explanations (Classification/Regression only)", value=True)
+            time_budget = st.number_input("Time budget (seconds)", min_value=60, max_value=3600, value=300, step=60)
+            n_clusters = 0
+            if task_type == TaskType.CLUSTERING:
+                n_clusters = st.number_input("Number of clusters", min_value=2, max_value=20, value=3)
 
+            random_seed = st.number_input("Random seed", min_value=0, max_value=1000, value=42, step=1)
+            verbosity = st.slider("Verbosity level", min_value=0, max_value=3, value=1)
+            auto_model_selection = st.checkbox("Enable Auto Model Selection", value=False)
+
+            # Model selection
             available_models, default_models = self.get_available_models(task_type)
-
             if auto_model_selection:
-                models = available_models
-                st.info("Auto model selection enabled. Using all available models for evaluation.")
+                st.info("Auto model selection enabled: all available models will be used.")
+                selected_models = available_models
             else:
-                models = st.multiselect(
-                    "Select models to train",
-                    options=available_models,
-                    default=default_models,
-                    help="Choose one or more models to train."
-                )
-                if not models:
+                selected_models = st.multiselect("Select models", available_models, default=default_models)
+                if not selected_models:
                     st.warning("Please select at least one model.")
-                    logger.debug("No models were selected.")
                     return None
-            logger.debug(f"Models to be used: {models}")
 
-            time_budget = st.number_input(
-                "Time budget (seconds)",
-                min_value=10,
-                max_value=3600,
-                value=60,
-                step=10,
-                help="Set the maximum time for training."
-            )
-            logger.debug(f"Time budget: {time_budget}")
-
-            n_clusters = st.number_input(
-                "Number of clusters (for clustering)",
-                min_value=2,
-                max_value=10,
-                value=3,
-                step=1,
-                help="Set the number of clusters (used by some clustering algorithms)."
-            ) if task_type == TaskType.CLUSTERING else 3
-            logger.debug(f"Number of clusters: {n_clusters}")
-
-            random_seed = st.number_input(
-                "Random seed",
-                min_value=0,
-                value=42,
-                step=1,
-                help="Set the random seed for reproducibility."
-            )
-            logger.debug(f"Random seed: {random_seed}")
-
-            verbosity = st.slider(
-                "Verbosity level",
-                min_value=0,
-                max_value=3,
-                value=1,
-                help="Set the logging verbosity level."
-            )
-            logger.debug(f"Verbosity level: {verbosity}")
-
-            show_shap = st.checkbox(
-                "Show SHAP explanations (classification/regression only)",
-                value=False,
-                help="Enable SHAP value explanations for model predictions."
-            ) if task_type in [TaskType.CLASSIFICATION, TaskType.REGRESSION] else False
-            logger.debug(f"Show SHAP: {show_shap}")
-
+            # Metric & Target Score
             metric_name, target_score = self.get_target_metrics(task_type)
-            if metric_name is None or target_score is None:
-                st.warning("Please select a metric and target score.")
-                logger.debug("No metric or target score selected.")
+            if not metric_name:
+                st.warning("Please select a metric.")
                 return None
 
-            hyperparameter_configs = self.get_hyperparameter_ranges(models)
-            logger.debug("Model configuration collected successfully.")
+            # Hyperparameters (optional)
+            hyperparameter_configs = self.get_hyperparameter_ranges(selected_models)
 
-            return ModelConfig(
+            # Construct and save ModelConfig
+            model_config = ModelConfig(
                 target_column=target_column,
                 task_type=task_type,
-                models=models,
+                models=selected_models,
                 time_budget=time_budget,
                 n_clusters=n_clusters,
                 random_seed=random_seed,
@@ -458,463 +379,495 @@ class GentaAutoMLApp:
                 hyperparameter_configs=hyperparameter_configs,
                 auto_model_selection=auto_model_selection
             )
+            st.session_state['model_config'] = model_config
+            return model_config
 
-    # --------------------------------------------------------------------------
-    # NEW: Compare multiple scikit-learn models side-by-side
-    # --------------------------------------------------------------------------
-    def compare_sklearn_models_app(self,
-                                   X: pd.DataFrame,
-                                   y: pd.Series,
-                                   model_names: List[str],
-                                   scoring: str,
-                                   cv: int = 5):
+    # --------------------------------------------------------------------
+    # 3) Train and Evaluate Model
+    # --------------------------------------------------------------------
+    def train_and_evaluate_model(self, model_config: ModelConfig) -> None:
         """
-        Compare the performance of multiple scikit-learn models using cross-validation.
-
-        Parameters
-        ----------
-        X : pd.DataFrame
-            Feature matrix.
-        y : pd.Series or np.ndarray
-            Target array.
-        model_names : List[str]
-            List of model names (e.g., ["LinearRegression", "Ridge", "Lasso"]).
-        scoring : str
-            Sklearn-compatible scoring method (e.g. "accuracy", "neg_mean_squared_error").
-        cv : int
-            Number of cross-validation folds.
+        Main logic for training, evaluating, and optionally selecting the best model.
         """
-        st.subheader("Compare Base scikit-learn Models")
-
-        # Map user-friendly strings to actual model objects
-        # You can add or remove as desired:
-        model_map = {
-            "LinearRegression": LinearRegression(),
-            "Ridge": Ridge(),
-            "Lasso": Lasso(),
-            "LogisticRegression": LogisticRegression(max_iter=1000),
-            "SVC": SVC(),
-            "SVR": SVR(),
-            "RandomForestClassifier": RandomForestClassifier(),
-            "RandomForestRegressor": RandomForestRegressor()
-        }
-
-        valid_models = []
-        for name in model_names:
-            if name in model_map:
-                valid_models.append(model_map[name])
-            else:
-                st.warning(f"'{name}' is not recognized or not supported in this demo.")
-
-        if not valid_models:
-            st.info("No valid scikit-learn models selected for comparison.")
+        if not model_config:
+            st.error("Model configuration is missing.")
             return
 
-        results = []
-        for model in valid_models:
-            model_clone = clone(model)
-            try:
-                scores = cross_val_score(model_clone, X, y, scoring=scoring, cv=cv, n_jobs=-1)
-                mean_score = np.mean(scores)
-                std_score = np.std(scores)
-                results.append({
-                    "Model": model.__class__.__name__,
-                    "Mean Score": mean_score,
-                    "Std Dev": std_score
-                })
-            except ValueError as ve:
-                st.error(f"Error evaluating {model.__class__.__name__}: {ve}")
-                logger.error(f"Error evaluating {model.__class__.__name__}: {ve}")
+        df = st.session_state.get('data')
+        if df is None:
+            st.error("No data loaded. Please upload data first.")
+            return
 
-        if results:
-            results_df = pd.DataFrame(results)
-            st.write("### Comparison Results")
-            st.dataframe(results_df)
+        st.subheader("Model Training and Evaluation")
 
-    # --------------------------------------------------------------------------
-    # Training (placeholder)
-    # --------------------------------------------------------------------------
-    def train_model(self, model_config: ModelConfig, df: pl.DataFrame):
-        """
-        Placeholder for model training logic.
-        Replace this function with your actual training process.
-        """
-        st.subheader("Training in Progress")
-        logger.info("Starting model training...")
-        import time
-        progress_bar = st.progress(0)
-        for percent_complete in range(0, 101, 10):
-            time.sleep(0.2)
-            progress_bar.progress(percent_complete)
-        st.success("Training completed successfully!")
-        logger.info("Model training completed.")
-
-        # ----------------------------------------------------------------------
-        # For demonstration, we create a *placeholder* model
-        # ----------------------------------------------------------------------
-        placeholder_model = {"model_name": "fake_model_object"}  # Replace with real model
-        st.session_state['trained_model'] = placeholder_model
-
-        # Convert Polars df to Pandas for convenience in SHAP, etc.
+        # Convert Polars -> Pandas for scikit-learn
         df_pandas = df.to_pandas()
 
-        # If classification/regression, separate X, y for SHAP
+        # If clustering, skip splitting. For classification/regression, do train/test split.
         if model_config.task_type != TaskType.CLUSTERING:
-            target = df_pandas[model_config.target_column].values
-            features = df_pandas.drop(columns=[model_config.target_column])
-            st.session_state['X_pd'] = features
-            st.session_state['y_pd'] = target
-        else:
-            st.session_state['X_pd'] = df_pandas
-            st.session_state['y_pd'] = None
+            X = df_pandas.drop(columns=[model_config.target_column])
+            y = df_pandas[model_config.target_column]
 
-    # --------------------------------------------------------------------------
-    # SHAP Analysis
-    # --------------------------------------------------------------------------
-    def generate_shap_analysis(self, model_config: ModelConfig):
-        """
-        Generate SHAP analysis if show_shap is True (for Classification/Regression only).
-        This is a placeholder approach. Replace with your actual model and predictor.
-        """
-        if not model_config.show_shap:
-            return  # Skip if SHAP is not enabled
-
-        if 'trained_model' not in st.session_state or st.session_state['trained_model'] is None:
-            st.warning("No trained model found for SHAP analysis.")
-            return
-
-        model = st.session_state['trained_model']
-        X = st.session_state['X_pd']
-        y = st.session_state['y_pd']
-
-        if X is None or y is None:
-            st.warning("No training data found for SHAP analysis.")
-            return
-
-        st.subheader("SHAP Analysis")
-
-        try:
-            # Example placeholder for demonstration: random predictor
-            def model_predict(data):
-                return np.random.rand(data.shape[0])
-
-            explainer = shap.KernelExplainer(model_predict, X.iloc[:50, :])
-            shap_values = explainer.shap_values(X.iloc[:50, :], nsamples=50)
-
-            st.session_state['shap_values'] = shap_values
-
-            plt.figure()
-            shap.summary_plot(shap_values, X.iloc[:50, :], plot_type="bar", show=False)
-            fig = plt.gcf()
-            st.pyplot(fig, bbox_inches='tight')
-            st.session_state['shap_fig'] = fig
-
-            st.success("SHAP analysis completed!")
-        except Exception as e:
-            st.error(f"Error generating SHAP explanations: {e}")
-            logger.error(f"Error in SHAP generation: {e}")
-
-    def evaluate_best_model(self) -> Dict[str, Any]:
-        """
-        Evaluates multiple models by splitting the data into training and test sets,
-        computes training and test scores based on the selected metric, and generates
-        an evaluation report including an evaluation table.
-        """
-        st.subheader("Model Evaluation Report")
-        logger.info("Evaluating models using a train/test split...")
-
-        model_config = st.session_state.get("model_config")
-        if model_config is None:
-            st.error("Model configuration not found!")
-            return {}
-
-        # For non-clustering tasks, get X and y from session state
-        if model_config.task_type != TaskType.CLUSTERING:
-            X = st.session_state.get("X_pd")
-            y = st.session_state.get("y_pd")
-            if X is None or y is None:
-                st.error("Training data not available!")
-                return {}
-            
-            # Automatically split the data (80% train, 20% test)
             X_train, X_test, y_train, y_test = train_test_split(
                 X, y, test_size=0.2, random_state=model_config.random_seed
             )
+            st.session_state['X_pd'] = X
+            st.session_state['y_pd'] = y
         else:
-            st.warning("Evaluation with train/test split is not applicable for clustering tasks.")
-            return {}
+            # For clustering, we consider X as the entire dataset
+            X_train = df_pandas
+            X_test = None
+            y_train = None
+            y_test = None
+            st.session_state['X_pd'] = df_pandas
+            st.session_state['y_pd'] = None
 
-        # Define metric functions mapping
-        metric_name = model_config.metric_name
-        metric_funcs = {
-            "accuracy": accuracy_score,
-            "f1_macro": lambda y_true, y_pred: f1_score(y_true, y_pred, average="macro"),
-            "precision_macro": lambda y_true, y_pred: precision_score(y_true, y_pred, average="macro"),
-            "recall_macro": lambda y_true, y_pred: recall_score(y_true, y_pred, average="macro"),
-            "roc_auc": roc_auc_score,  # Assumes probability outputs; may need adjustment
-            "r2": r2_score,
-            "mse": mean_squared_error,
-            "mae": mean_absolute_error,
-            "rmse": lambda y_true, y_pred: np.sqrt(mean_squared_error(y_true, y_pred))
-        }
-
-        if metric_name not in metric_funcs:
-            st.error(f"Selected metric '{metric_name}' is not supported for evaluation.")
-            return {}
-
-        metric_func = metric_funcs[metric_name]
-
-        # Create a mapping for model instantiation for demonstration.
-        # For classification and regression, you may use popular estimators.
-        # Here we assume:
-        #   - For Classification: lgbm -> LightGBMClassifier, rf -> RandomForestClassifier, etc.
-        #   - For Regression: lgbm -> LightGBMRegressor, rf -> RandomForestRegressor, etc.
-        # For the demo, we'll use scikit-learn models where possible.
-        from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
-        from sklearn.linear_model import LogisticRegression, LinearRegression
-
-        model_map = {}
-        if model_config.task_type == TaskType.CLASSIFICATION:
-            # For demonstration, we map common names to scikit-learn models.
-            model_map = {
-                "lgbm": LogisticRegression(max_iter=1000),
-                "rf": RandomForestClassifier(random_state=model_config.random_seed),
-                "xgboost": LogisticRegression(max_iter=1000),  # Placeholder; replace with XGBClassifier if available
-                "catboost": LogisticRegression(max_iter=1000)  # Placeholder; replace with CatBoostClassifier if available
-            }
-        elif model_config.task_type == TaskType.REGRESSION:
-            model_map = {
-                "lgbm": LinearRegression(),
-                "rf": RandomForestRegressor(random_state=model_config.random_seed),
-                "xgboost": LinearRegression(),  # Placeholder; replace with XGBRegressor if available
-                "catboost": LinearRegression()  # Placeholder; replace with CatBoostRegressor if available
-            }
-
-        evaluation_results = []
-        best_model_name = None
-        best_test_score = -np.inf  # Assume higher is better for most metrics; adjust if needed
-
+        results = {}
         for model_name in model_config.models:
-            if model_name not in model_map:
-                st.warning(f"Model '{model_name}' is not supported in the evaluation demo. Skipping.")
-                continue
-
-            model = model_map[model_name]
-            # Train the model on training data
+            st.write(f"### Training: {model_name.upper()}")
             try:
-                model.fit(X_train, y_train)
+                model = self.get_model_instance(model_name, model_config)
+
+                if model_config.task_type == TaskType.CLUSTERING:
+                    # Clustering training
+                    model.fit(X_train)
+                    evaluation_report = self.evaluate_clustering(model, X_train, model_config)
+                else:
+                    # Classification or Regression
+                    model.fit(X_train, y_train)
+                    evaluation_report = self.evaluate_model(
+                        model, X_test, y_test, model_config.task_type, model_config.metric_name
+                    )
+
+                results[model_name] = evaluation_report
+                # Store the latest trained model
+                st.session_state['trained_model'] = model
+                st.session_state['evaluation_report'] = evaluation_report
+
+                # Display the evaluation
+                st.write("**Evaluation Report**:")
+                st.write(evaluation_report)
+
+                # If SHAP is enabled (Classification/Regression)
+                if model_config.show_shap and model_config.task_type in [TaskType.CLASSIFICATION, TaskType.REGRESSION]:
+                    try:
+                        shap_values, shap_fig = self.get_shap_explanation(model, X_test)
+                        if shap_values is not None and shap_fig is not None:
+                            st.subheader("SHAP Summary Plot")
+                            st.pyplot(shap_fig)
+                            st.session_state['shap_values'] = shap_values
+                            st.session_state['shap_fig'] = shap_fig
+                    except Exception as e:
+                        st.error(f"Error generating SHAP explanation: {e}")
+                        logger.error(f"Error generating SHAP explanation: {e}")
+
             except Exception as e:
-                st.error(f"Error training {model_name}: {e}")
-                logger.error(f"Error training {model_name}: {e}")
-                continue
+                st.error(f"Error training/evaluating model {model_name}: {e}")
+                logger.error(f"Error training/evaluating model {model_name}: {e}")
 
-            # For classification tasks with roc_auc, we need probability estimates.
-            if model_config.task_type == TaskType.CLASSIFICATION and metric_name == "roc_auc":
-                try:
-                    y_pred_train = model.predict_proba(X_train)[:, 1]
-                    y_pred_test = model.predict_proba(X_test)[:, 1]
-                except Exception as e:
-                    st.warning(f"Model '{model_name}' does not support probability estimates. Using predictions instead.")
-                    y_pred_train = model.predict(X_train)
-                    y_pred_test = model.predict(X_test)
+        # Auto model selection
+        if model_config.auto_model_selection and model_config.task_type != TaskType.CLUSTERING:
+            best_model = self.select_best_model(results, model_config.metric_name)
+            if best_model is not None:
+                st.success(f"Auto Model Selection: Best model is '{best_model}'.")
+
+    def get_model_instance(self, model_name: str, model_config: ModelConfig):
+        """
+        Returns an instance of the specified model, based on the task type.
+        Extend this for XGBoost, CatBoost, LightGBM as needed.
+        """
+        rs = model_config.random_seed
+        if model_config.task_type == TaskType.CLUSTERING:
+            # Minimal examples of clustering models
+            if model_name == "kmeans":
+                # Possibly use user hyperparameters from model_config.hyperparameter_configs if you like
+                return KMeans(n_clusters=model_config.n_clusters, random_state=rs)
+            elif model_name == "dbscan":
+                return DBSCAN()
             else:
-                y_pred_train = model.predict(X_train)
-                y_pred_test = model.predict(X_test)
+                raise ValueError(f"Clustering model '{model_name}' not implemented.")
 
-            # Compute metric scores for train and test splits
-            try:
-                train_score = metric_func(y_train, y_pred_train)
-                test_score = metric_func(y_test, y_pred_test)
-            except Exception as e:
-                st.error(f"Error computing metric for {model_name}: {e}")
-                logger.error(f"Error computing metric for {model_name}: {e}")
-                continue
-
-            evaluation_results.append({
-                "Model": model_name,
-                "Train Score": train_score,
-                "Test Score": test_score
-            })
-
-            # For error metrics (mse, mae, rmse) lower is better, so invert the test score for selection
-            if metric_name in ["mse", "mae", "rmse"]:
-                score_for_selection = -test_score
+        # Classification or Regression
+        if model_name == "logistic_regression":
+            return LogisticRegression(max_iter=1000, random_state=rs)
+        elif model_name == "linear_regression":
+            return LinearRegression()
+        elif model_name == "ridge":
+            return Ridge(random_state=rs)
+        elif model_name == "lasso":
+            return Lasso(random_state=rs)
+        elif model_name == "rf":
+            if model_config.task_type == TaskType.CLASSIFICATION:
+                return RandomForestClassifier(random_state=rs)
             else:
-                score_for_selection = test_score
-
-            if score_for_selection > best_test_score:
-                best_test_score = score_for_selection
-                best_model_name = model_name
-
-        if evaluation_results:
-            results_df = pd.DataFrame(evaluation_results)
-            st.write("### Evaluation Table")
-            st.dataframe(results_df)
+                return RandomForestRegressor(random_state=rs)
+        elif model_name == "xgboost":
+            # Example placeholders, replace with xgboost.XGBClassifier/Regressor if installed
+            if model_config.task_type == TaskType.CLASSIFICATION:
+                return RandomForestClassifier(random_state=rs)  # placeholder
+            else:
+                return RandomForestRegressor(random_state=rs)  # placeholder
+        elif model_name == "catboost":
+            # Example placeholders, replace with catboost.CatBoostClassifier/Regressor if installed
+            if model_config.task_type == TaskType.CLASSIFICATION:
+                return RandomForestClassifier(random_state=rs)  # placeholder
+            else:
+                return RandomForestRegressor(random_state=rs)  # placeholder
+        elif model_name == "lgbm":
+            # Example placeholders, replace with lightgbm.LGBMClassifier/Regressor if installed
+            if model_config.task_type == TaskType.CLASSIFICATION:
+                return RandomForestClassifier(random_state=rs)  # placeholder
+            else:
+                return RandomForestRegressor(random_state=rs)  # placeholder
         else:
-            st.error("No evaluation results available.")
+            raise ValueError(f"Model '{model_name}' not recognized or implemented.")
+
+    # --------------------------------------------------------------------
+    # 4) Evaluation
+    # --------------------------------------------------------------------
+    def evaluate_model(self, model, X_test, y_test, task_type: TaskType, metric_name: str) -> Dict[str, float]:
+        """
+        Compute multiple metrics, but highlight the one the user picked as 'primary'.
+        """
+        if X_test is None or y_test is None:
             return {}
 
-        # Create a report dictionary
-        report = {
-            "Best Model": best_model_name if best_model_name is not None else "N/A",
-            "Best Test Score": best_test_score if best_model_name is not None else "N/A",
-            "Metric": metric_name,
-            "Evaluation Table": results_df.to_dict(orient="records")
-        }
+        y_pred = model.predict(X_test)
+        eval_report = {}
 
-        st.write("### Final Evaluation Report")
-        st.write(report)
-        st.session_state['evaluation_report'] = report
-        return report
+        if task_type == TaskType.CLASSIFICATION:
+            # Probability estimates for certain metrics (e.g. roc_auc)
+            try:
+                y_pred_proba = model.predict_proba(X_test)[:, 1]
+            except Exception:
+                y_pred_proba = None
 
-    def generate_markdown_report(self, report: Dict[str, Any]) -> str:
+            eval_report["accuracy"] = accuracy_score(y_test, y_pred)
+            eval_report["f1_macro"] = f1_score(y_test, y_pred, average="macro")
+            eval_report["precision_macro"] = precision_score(y_test, y_pred, average="macro")
+            eval_report["recall_macro"] = recall_score(y_test, y_pred, average="macro")
+
+            if y_pred_proba is not None:
+                eval_report["roc_auc"] = roc_auc_score(y_test, y_pred_proba)
+
+        elif task_type == TaskType.REGRESSION:
+            eval_report["r2"] = r2_score(y_test, y_pred)
+            eval_report["mse"] = mean_squared_error(y_test, y_pred)
+            eval_report["mae"] = mean_absolute_error(y_test, y_pred)
+            eval_report["rmse"] = np.sqrt(mean_squared_error(y_test, y_pred))
+
+        return eval_report
+
+    def evaluate_clustering(self, model, X, model_config: ModelConfig) -> Dict[str, float]:
         """
-        Create a comprehensive Markdown report that includes the main points of the evaluation,
-        model configuration, SHAP analysis, and all other available session state information.
+        Evaluate clustering using silhouette score (or other metrics).
+        """
+        labels = model.labels_ if hasattr(model, 'labels_') else model.predict(X)
+        eval_report = {}
+        if model_config.metric_name == "silhouette":
+            try:
+                score = silhouette_score(X, labels)
+                eval_report["silhouette"] = score
+            except Exception as e:
+                st.error(f"Error computing silhouette score: {e}")
+                logger.error(f"Error computing silhouette score: {e}")
+        return eval_report
+
+    def select_best_model(self, results: Dict[str, Dict[str, float]], primary_metric: str) -> Optional[str]:
+        """
+        Choose the best model based on the specified 'primary_metric'.
+        If the metric is an error metric (like 'mse'), lower is better; otherwise, higher is better.
+        """
+        best_model = None
+        best_score = float('-inf')
+        # If it's an error metric, we invert the logic
+        lower_is_better = primary_metric in ["mse", "mae", "rmse"]
+
+        for model_name, metrics in results.items():
+            metric_val = metrics.get(primary_metric)
+            if metric_val is None:
+                continue
+
+            # Decide how to compare
+            if lower_is_better:
+                # Convert to negative so that a lower metric_val => higher "score"
+                metric_val = -metric_val
+
+            if metric_val > best_score:
+                best_score = metric_val
+                best_model = model_name
+
+        return best_model
+
+    # --------------------------------------------------------------------
+    # 5) SHAP Explanation
+    # --------------------------------------------------------------------
+    def get_shap_explanation(self, model, X_test) -> Tuple[Optional[Any], Optional[plt.Figure]]:
+        """
+        Generates a SHAP explanation for the provided model using a subset of X_test.
+        Resets the index to avoid index issues that might trigger conversion errors.
+        """
+        if X_test is None or len(X_test) == 0:
+            return None, None
+
+        # Limit to a smaller subset and reset index to avoid potential indexing issues
+        sample_X = X_test.iloc[:50, :].reset_index(drop=True)
+        try:
+            explainer = shap.Explainer(model, sample_X)
+            shap_values = explainer(sample_X)
+            plt.figure()
+            shap.summary_plot(shap_values, sample_X, show=False)
+            fig = plt.gcf()
+            return shap_values, fig
+        except Exception as e:
+            logger.error(f"SHAP explanation error: {e}")
+            return None, None
+
+    # --------------------------------------------------------------------
+    # 6) Generate Markdown Report
+    # --------------------------------------------------------------------
+    def generate_markdown_report(self) -> str:
+        """
+        Generate a comprehensive Markdown report that includes:
+        - Dataset overview
+        - Model configuration details (including hyperparameters)
+        - Evaluation table for all trained models
+        - Best model highlights
+        - SHAP analysis info (if available)
         """
         import json
 
         lines = []
-        lines.append("# Genta AutoML Comprehensive Report\n")
-        lines.append("## Overview\n")
-        lines.append("This report provides an overview of the model evaluation, configuration, SHAP analysis, and additional session state details gathered during the AutoML process.\n")
+        lines.append("# Genta AutoML Report\n")
 
-        # Evaluation Summary
-        lines.append("## Model Evaluation Summary")
-        lines.append(f"- **Best Model**: {report.get('Best Model', 'N/A')}")
-        if 'Performance Score' in report:
-            lines.append(f"- **Performance Score**: {report.get('Performance Score', 'N/A')}")
-        elif 'Best Test Score' in report:
-            lines.append(f"- **Best Test Score**: {report.get('Best Test Score', 'N/A')}")
-        lines.append(f"- **Metric**: {report.get('Metric', 'N/A')}\n")
-
-        # SHAP Analysis Section
-        if st.session_state.get('shap_values') is not None:
-            lines.append("## SHAP Analysis")
-            lines.append("SHAP values were computed. A summary plot is shown in the UI, but is not embedded here.\n")
+        # ----------------------------------------------------------------------
+        # 1) Dataset Overview
+        # ----------------------------------------------------------------------
+        data = st.session_state.get("data")
+        if data is not None:
+            df_pandas = data.to_pandas()
+            rows, cols = df_pandas.shape
+            lines.append("## 1. Dataset Overview\n")
+            lines.append(f"- **Number of Rows**: {rows}")
+            lines.append(f"- **Number of Columns**: {cols}")
+            lines.append(f"- **Columns**: {list(df_pandas.columns)}\n")
         else:
-            lines.append("*(No SHAP analysis was performed or no SHAP values were found.)*\n")
+            lines.append("## 1. Dataset Overview\n")
+            lines.append("_No dataset found in session state._\n")
 
-        # Additional Session State Details
-        lines.append("## Additional Session State Details")
-        # Loop through session state keys and include relevant ones
-        for key, value in st.session_state.items():
-            # Optionally skip large or non-textual objects (like dataframes or figures)
-            if key in ['shap_fig', 'data']:
-                continue
-            lines.append(f"### {key}")
-            try:
-                # Try to serialize to JSON; if fails, fallback to string representation
-                value_str = json.dumps(value, indent=2, default=str)
-            except Exception:
-                value_str = str(value)
-            lines.append("```json")
-            lines.append(value_str)
-            lines.append("```\n")
+        # ----------------------------------------------------------------------
+        # 2) Model Configuration
+        # ----------------------------------------------------------------------
+        model_config = st.session_state.get("model_config")
+        lines.append("## 2. Model Configuration\n")
+        if model_config is not None:
+            lines.append(f"- **Task Type**: {model_config.task_type.value}")
+            lines.append(f"- **Target Column**: {model_config.target_column}")
+            lines.append(f"- **Selected Models**: {model_config.models}")
+            lines.append(f"- **Metric Name**: {model_config.metric_name}")
+            lines.append(f"- **Auto Model Selection**: {model_config.auto_model_selection}")
+            lines.append(f"- **Random Seed**: {model_config.random_seed}")
+            lines.append(f"- **Time Budget (seconds)**: {model_config.time_budget}")
+            if model_config.task_type == model_config.task_type.CLUSTERING:
+                lines.append(f"- **Number of Clusters**: {model_config.n_clusters}")
+            lines.append("")
+
+            # ------------------------------------------------------------------
+            # 2.1) Hyperparameter Configuration
+            # ------------------------------------------------------------------
+            lines.append("### Hyperparameters Used")
+            if model_config.hyperparameter_configs:
+                # We'll show a sub-table for each model's hyperparameters
+                for model_name, hp_list in model_config.hyperparameter_configs.items():
+                    if not hp_list:
+                        continue
+                    lines.append(f"**Model**: {model_name}")
+
+                    # Build a Markdown table
+                    table_header = "| Param Name | Min Value | Max Value | Step | Default |"
+                    table_sep    = "|------------|----------|----------|------|---------|"
+                    table_rows   = []
+                    for hp in hp_list:
+                        row = f"| {hp.name} | {hp.min_val} | {hp.max_val} | {hp.step} | {hp.default} |"
+                        table_rows.append(row)
+                    
+                    lines.append(table_header)
+                    lines.append(table_sep)
+                    lines.extend(table_rows)
+                    lines.append("")  # blank line after table
+            else:
+                lines.append("_No custom hyperparameter configuration found._\n")
+        else:
+            lines.append("_No model configuration found in session state._\n")
+
+        # ----------------------------------------------------------------------
+        # 3) Evaluation Results
+        # ----------------------------------------------------------------------
+        lines.append("## 3. Evaluation Results\n")
+        evaluation_report = st.session_state.get("evaluation_report", {})
+        if evaluation_report:
+            # If your evaluation_report is structured as a dictionary of 
+            # { "modelA": {...metrics...}, "modelB": {...metrics...}, "Best Model": "...", ... } 
+            # we can build a table of all model metrics:
+            best_model = evaluation_report.get("Best Model")
+
+            # Filter out special keys like "Best Model" or "Metric"
+            # Assume each key is a model name mapping to a dictionary of metrics
+            # Example: evaluation_report = {
+            #   "modelA": {"accuracy": 0.91, "f1_macro": 0.90}, 
+            #   "modelB": {"accuracy": 0.87, "f1_macro": 0.85},
+            #   "Best Model": "modelA",
+            #   ...
+            # }
+            # Adjust logic as needed if your actual structure differs.
+
+            # Collect only model-based metric dicts
+            model_metric_dicts = {
+                k: v for k, v in evaluation_report.items()
+                if isinstance(v, dict)  # metric dictionaries
+            }
+
+            if model_metric_dicts:
+                # We can gather all distinct metric names across models
+                all_metrics = set()
+                for metrics in model_metric_dicts.values():
+                    all_metrics.update(metrics.keys())
+                all_metrics = list(all_metrics)
+
+                # Build a Markdown table
+                table_header = "| Model | " + " | ".join(all_metrics) + " |"
+                table_sep = "|-------|" + "|".join(["----------"] * len(all_metrics)) + "|"
+                table_rows = []
+                for model_name, metrics in model_metric_dicts.items():
+                    row_values = []
+                    for m in all_metrics:
+                        val = metrics.get(m, "N/A")
+                        # Round float values if you want
+                        if isinstance(val, float):
+                            val = f"{val:.4f}"
+                        row_values.append(str(val))
+                    row_str = " | ".join(row_values)
+                    table_rows.append(f"| {model_name} | {row_str} |")
+
+                lines.append("### Overall Evaluation Table")
+                lines.append(table_header)
+                lines.append(table_sep)
+                lines.extend(table_rows)
+                lines.append("")  # blank line
+
+            # Show best model
+            if best_model:
+                lines.append(f"- **Best Model**: {best_model}\n")
+
+            # Optionally show the full report as JSON (if desired)
+            # lines.append("```json")
+            # lines.append(json.dumps(evaluation_report, indent=2, default=str))
+            # lines.append("```\n")
+
+        else:
+            lines.append("_No evaluation results found in session state._\n")
+
+        # ----------------------------------------------------------------------
+        # 4) SHAP Analysis
+        # ----------------------------------------------------------------------
+        lines.append("## 4. SHAP Analysis\n")
+        shap_values = st.session_state.get("shap_values")
+        if shap_values is not None:
+            lines.append(
+                "SHAP values were computed to interpret feature contributions. "
+                "A summary plot was displayed in the UI but not embedded in this Markdown."
+            )
+        else:
+            lines.append("_No SHAP analysis was performed or no SHAP values found._")
+
+        lines.append("")
+
+
+        lines.append("---")
+        lines.append("**Report generated by Genta AutoML**")
 
         return "\n".join(lines)
 
 
-    def download_markdown_report_button(self, md_content: str):
+    def download_markdown_report_button(self) -> None:
         """
-        Provides a button to download the evaluation report as Markdown
-        and saves it locally in the `result` directory.
+        Generates a new markdown report, shows it, and provides a button to download.
+        Saves locally with a timestamped filename.
         """
+        import datetime
+        import os
+
+        # 1) Generate the Markdown content
+        md_content = self.generate_markdown_report()
+        
+        # 2) Display it (optional) as raw Markdown in the UI
+        st.markdown(md_content)
+
+        # 3) Create the result folder if not exist
         if not os.path.exists("result"):
             os.makedirs("result")
 
-        local_filename = os.path.join("result", "report.md")
-        with open(local_filename, "w", encoding="utf-8") as f:
+        # 4) Generate timestamped filename
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"genta_automl_report_{timestamp}.md"
+        local_filepath = os.path.join("result", filename)
+
+        # 5) Save the file locally
+        with open(local_filepath, "w", encoding="utf-8") as f:
             f.write(md_content)
 
+        # 6) Provide download button to the user
         st.download_button(
             label="Download Markdown Report",
             data=md_content,
-            file_name="report.md",
+            file_name=filename,
             mime="text/markdown"
         )
-        st.success(f"Markdown report also saved locally to `{local_filename}`.")
+        st.success(f"Report saved locally to: {local_filepath}")
 
+
+    # --------------------------------------------------------------------
+    # 7) Main Execution
+    # --------------------------------------------------------------------
     def run(self):
-        """Main execution function of the app."""
+        """Main entry point for the Streamlit app."""
         df = self.load_data()
         if df is not None:
             model_config = self.get_model_config(df)
             if model_config:
-                st.session_state['model_config'] = model_config
-                st.success("Model configuration complete. Ready to train!")
-                st.write("## Configuration")
+                st.success("Model configuration complete. Review details below and click 'Train and Evaluate Model'.")
+                st.write("### Current Model Configuration")
                 st.write(model_config)
 
-                # --- NEW: Optional step to compare base scikit-learn models (Classification/Regression only) ---
-                if model_config.task_type in [TaskType.CLASSIFICATION, TaskType.REGRESSION]:
-                    st.info("You can optionally compare some base sklearn models before full training.")
-                    base_model_names = [
-                        "LinearRegression", "Ridge", "Lasso",
-                        "LogisticRegression", "SVC", "SVR",
-                        "RandomForestClassifier", "RandomForestRegressor"
-                    ]
+                if st.button("Train and Evaluate Model"):
+                    self.train_and_evaluate_model(model_config)
+                    st.info("Training and evaluation completed.")
 
-                    # Map your chosen metric_name to scikit-learn's scoring
-                    # For example: "mse" => "neg_mean_squared_error", etc.
-                    scikit_metric_map = {
-                        "accuracy": "accuracy",
-                        "f1_macro": "f1_macro",
-                        "precision_macro": "precision_macro",
-                        "recall_macro": "recall_macro",
-                        "roc_auc": "roc_auc",
-                        "r2": "r2",
-                        "mse": "neg_mean_squared_error",
-                        "mae": "neg_mean_absolute_error",
-                        "rmse": "neg_root_mean_squared_error"
-                    }
-                    # Make sure the chosen metric is valid for scikit
-                    chosen_metric = scikit_metric_map.get(model_config.metric_name, None)
+                # Optional: Generate a final "best model" report
+                if st.button("Generate Final Report"):
+                    # If you have a separate best-model selection logic or a final summary:
+                    final_report = {}
+                    # For example, if you stored something in st.session_state['evaluation_report']:
+                    if 'evaluation_report' in st.session_state and st.session_state['evaluation_report']:
+                        final_report = st.session_state['evaluation_report']
 
-                    selected_base_models = st.multiselect(
-                        "Select base sklearn models to compare",
-                        base_model_names,
-                        default=["LinearRegression"] if model_config.task_type == TaskType.REGRESSION else ["LogisticRegression"]
-                    )
+                    # Or you can store additional info in `final_report` as needed
+                    final_report["Best Model"] = "N/A"
+                    if 'trained_model' in st.session_state and st.session_state['trained_model']:
+                        final_report["Best Model"] = str(st.session_state['trained_model'])
 
-                    if st.button("Compare Base Models"):
-                        # Convert Polars to Pandas
-                        df_pd = df.to_pandas()
-                        # For clustering, there's no y, so skip
-                        if model_config.task_type != TaskType.CLUSTERING:
-                            y = df_pd[model_config.target_column]
-                            X = df_pd.drop(columns=[model_config.target_column])
-                            if chosen_metric:
-                                self.compare_sklearn_models_app(X, y, selected_base_models, scoring=chosen_metric)
-                            else:
-                                st.warning("Selected metric is not currently supported by scikit-learn scoring.")
-                        else:
-                            st.warning("Base model comparison is not available for clustering tasks.")
-
-                # -------------------------------------------------------------------
-                # Proceed with the normal "Train" button
-                # -------------------------------------------------------------------
-                if st.button("Train"):
-                    logger.info("Train button pressed.")
-                    self.train_model(model_config, df)
-
-                    # If user requested SHAP, generate it
-                    if model_config.show_shap:
-                        self.generate_shap_analysis(model_config)
-
-                    # Automatically evaluate the best model after training
-                    report = self.evaluate_best_model()
-
-                    # Generate a Markdown string
-                    md_report = self.generate_markdown_report(report)
-                    # Provide button to download the markdown report
-                    self.download_markdown_report_button(md_report)
+                    # Convert that to a Markdown report
+                    md_report = self.generate_markdown_report()
+                    st.markdown(md_report)
+                    if st.button("Generate & Download Final Report"):
+                        self.download_markdown_report_button()
 
                 else:
-                    st.info("Press the 'Train' button to start model training.")
+                    st.info("Click 'Generate Final Report' to create a downloadable Markdown summary.")
 
-# ------------------------------------------------------------------------------
-# Main execution
+# ------------------------------------------------------------------------
+# Entry point
+# ------------------------------------------------------------------------
 if __name__ == "__main__":
     app = GentaAutoMLApp()
     app.run()
