@@ -17,7 +17,7 @@ from contextlib import contextmanager
 from .batch_processor import BatchProcessor, BatchProcessorConfig
 from .preprocessor import DataPreprocessor, PreprocessorConfig, NormalizationType
 from .quantizer import Quantizer, QuantizationConfig
-from modules.configs import ModelConfig
+from modules.configs import CPUAcceleratedModelConfig
 
 EstimatorType = TypeVar('EstimatorType')
 logger = logging.getLogger(__name__)
@@ -31,9 +31,9 @@ class CPUAcceleratedModel(Generic[EstimatorType]):
     def __init__(
         self,
         estimator_class: type[EstimatorType],
-        config: Optional[ModelConfig] = None
+        config: Optional[CPUAcceleratedModelConfig] = None
     ):
-        self.config = config or ModelConfig()
+        self.config = config or CPUAcceleratedModelConfig()
         self._configure_logging()
         
         # Initialize components with optimized configurations
@@ -100,7 +100,12 @@ class CPUAcceleratedModel(Generic[EstimatorType]):
             batch_timeout=self.config.batch_timeout,
             processing_strategy=self.config.batch_processing_strategy,
             enable_monitoring=self.config.enable_monitoring,
-            monitoring_window=self.config.monitoring_window
+            monitoring_window=self.config.monitoring_window,
+            max_queue_size=self.config.max_batch_size * 2,
+            min_batch_size=self.config.initial_batch_size,
+            max_retries=3,
+            retry_delay=0.1,
+            max_workers=self.config.num_threads
         )
         self.batch_processor = BatchProcessor(batch_config)
 

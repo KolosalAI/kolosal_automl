@@ -1,21 +1,110 @@
 from dataclasses import dataclass, field
 from enum import Enum
-import numpy as np
 import os
-from typing import Optional
+import numpy as np
+from typing import Optional, List, Dict, Tuple
+
+# -----------------------------------------------------------------------------
+# Enums for Configuration Domains
+# -----------------------------------------------------------------------------
+
+class TaskType(Enum):
+    """Defines types of machine learning tasks."""
+    CLASSIFICATION = "Classification"
+    REGRESSION = "Regression"
+    CLUSTERING = "Clustering"
+
+    def __str__(self):
+        return self.value
 
 class BatchProcessingStrategy(Enum):
+    """Defines strategies for batch processing."""
     ADAPTIVE = "adaptive"  # Dynamically adjusts batch size
-    FIXED = "fixed"       # Uses fixed batch size
-    TIMEOUT = "timeout"   # Primarily driven by timeout
+    FIXED = "fixed"        # Uses fixed batch size
+    TIMEOUT = "timeout"    # Driven primarily by timeout
+
 class OptimizationLevel(Enum):
+    """Defines levels of CPU optimization."""
     NONE = "none"
     BASIC = "basic"
     ADVANCED = "advanced"
     MAXIMUM = "maximum"
 
+class NormalizationType(Enum):
+    """Defines types of data normalization."""
+    STANDARD = "standard"  # (x - mean) / std
+    MINMAX = "minmax"      # (x - min) / (max - min)
+    ROBUST = "robust"      # Using percentiles instead of min/max
+    NONE = "none"
+
+# -----------------------------------------------------------------------------
+# Hyperparameter Configuration
+# -----------------------------------------------------------------------------
+
 @dataclass
-class ModelConfig:
+class HyperParameterConfig:
+    """Configuration for a single hyperparameter."""
+    name: str
+    min_val: float
+    max_val: float
+    step: float
+    default: float
+
+# Default hyperparameters for selected models (e.g., for clustering)
+DEFAULT_HYPERPARAMETERS: Dict[str, List[HyperParameterConfig]] = {
+    "kmeans": [
+        HyperParameterConfig("n_clusters", 2, 10, 1, 3),
+        HyperParameterConfig("max_iter", 100, 500, 100, 300)
+    ],
+    "dbscan": [
+        HyperParameterConfig("eps", 0.1, 1.0, 0.1, 0.5),
+        HyperParameterConfig("min_samples", 2, 10, 1, 5)
+    ],
+    # Additional model hyperparameters can be added here.
+}
+
+# -----------------------------------------------------------------------------
+# Target Metrics Definition
+# -----------------------------------------------------------------------------
+
+@dataclass
+class TargetMetrics:
+    """Records evaluation results for a given metric."""
+    metric_name: str
+    target_score: float
+    achieved_value: float
+    is_achieved: bool
+
+# -----------------------------------------------------------------------------
+# AutoML Model Configurations
+# -----------------------------------------------------------------------------
+
+@dataclass
+class AutoMLModelConfig:
+    """Configuration for the AutoML model."""
+    target_column: str
+    task_type: TaskType
+    models: List[str]
+    time_budget: int
+    n_clusters: int
+    random_seed: int
+    verbosity: int
+    show_shap: bool
+    metric_name: str
+    target_score: float
+    hyperparameter_configs: Dict[str, List[HyperParameterConfig]]
+    auto_model_selection: bool
+    use_cv: bool
+
+# Alternate naming (ModelConfig) can be used interchangeably if needed.
+ModelConfig = AutoMLModelConfig
+
+# -----------------------------------------------------------------------------
+# CPU-Accelerated Model Configuration
+# -----------------------------------------------------------------------------
+
+@dataclass
+class CPUAcceleratedModelConfig:
     """Enhanced configuration for CPU-accelerated model."""
     # Processing configuration
     num_threads: int = field(default_factory=lambda: os.cpu_count() or 4)
@@ -49,6 +138,9 @@ class ModelConfig:
 
     # Resource limits
     memory_limit_gb: Optional[float] = None # Example: Limit memory usage
+# -----------------------------------------------------------------------------
+# Batch Processor Configuration
+# -----------------------------------------------------------------------------
 
 @dataclass
 class BatchProcessorConfig:
@@ -77,11 +169,9 @@ class BatchProcessorConfig:
         self.processing_strategy = processing_strategy
         self.max_workers = max_workers
 
-class NormalizationType(Enum):
-    STANDARD = "standard"  # (x - mean) / std
-    MINMAX = "minmax"     # (x - min) / (max - min)
-    ROBUST = "robust"     # Using percentiles instead of min/max
-    NONE = "none"
+# -----------------------------------------------------------------------------
+# Preprocessor Configuration
+# -----------------------------------------------------------------------------
 
 @dataclass
 class PreprocessorConfig:
@@ -89,24 +179,19 @@ class PreprocessorConfig:
     normalization: NormalizationType = NormalizationType.STANDARD
     epsilon: float = 1e-8
     clip_values: bool = True
-    clip_range: tuple[float, float] = (-5.0, 5.0)
-    robust_percentiles: tuple[float, float] = (1.0, 99.0)
+    clip_range: Tuple[float, float] = (-5.0, 5.0)
+    robust_percentiles: Tuple[float, float] = (1.0, 99.0)
     handle_inf: bool = True
     handle_nan: bool = True
     dtype: np.dtype = np.float32
 
+# -----------------------------------------------------------------------------
+# Quantization Configuration
+# -----------------------------------------------------------------------------
+
 @dataclass
 class QuantizationConfig:
-    """
-    Configuration for the Quantizer.
-    
-    Attributes:
-        dynamic_range: If True, automatically adjusts range based on data distribution.
-        cache_size: Size of the LRU cache for dequantization operations.
-        int8_min: Minimum value for int8 clipping.
-        int8_max: Maximum value for int8 clipping.
-        uint8_range: The range for uint8 normalization.
-    """
+    """Configuration for model quantization."""
     dynamic_range: bool = True
     cache_size: int = 128
     int8_min: int = -128
