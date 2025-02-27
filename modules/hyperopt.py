@@ -9,13 +9,17 @@ from sklearn.model_selection import cross_val_score
 
 # Import CPUAcceleratedModel and its configuration.
 try:
-    from .engine.engine import CPUAcceleratedModel
+    from .engine.inference_engine import CPUAcceleratedModel
 except ImportError:
-    from engine.engine import CPUAcceleratedModel
+    from modules.engine.inference_engine import CPUAcceleratedModel
 
-from .configs import CPUAcceleratedModelConfig
+try:
+    from .configs import CPUAcceleratedModelConfig
+except ImportError:
+    from configs import CPUAcceleratedModelConfig
 
 logger = logging.getLogger(__name__)
+
 class DefaultEstimator:
     """
     A simple estimator that wraps scikit-learn's LogisticRegression.
@@ -109,7 +113,13 @@ class HyperparameterOptimizer:
             if isinstance(val, list):
                 params[key] = self.rng.choice(val)
             elif isinstance(val, tuple) and len(val) == 2 and all(isinstance(x, (int, float)) for x in val):
-                params[key] = self.rng.uniform(val[0], val[1])
+                low, high = val
+                if isinstance(low, int) and isinstance(high, int):
+                    # For integer parameters
+                    params[key] = self.rng.integers(low, high + 1)  # +1 to include upper bound
+                else:
+                    # For float parameters
+                    params[key] = self.rng.uniform(low, high)
             else:
                 params[key] = val
         return params
@@ -128,12 +138,22 @@ class HyperparameterOptimizer:
             if self.scoring_function:
                 score = self.scoring_function(model, self.X, self.y)
             else:
-                scores = cross_val_score(model.estimator, self.X, self.y, cv=self.n_folds, scoring='accuracy')
-                score = np.mean(scores)
+                # Use model's score method if it exists, otherwise fall back to cross-validation
+                if hasattr(model, 'score'):
+                    score = model.score(self.X, self.y)
+                elif hasattr(model, 'estimator'):
+                    scores = cross_val_score(model.estimator, self.X, self.y, cv=self.n_folds, 
+                                            scoring='accuracy' if self.task == 'classification' else 'r2')
+                    score = np.mean(scores)
+                else:
+                    raise ValueError("Model has neither 'score' method nor 'estimator' attribute")
+            
             loss = 1.0 - score
 
             # Gather additional metrics.
-            metrics = model.get_metrics()
+            metrics = {}
+            if hasattr(model, 'get_metrics'):
+                metrics = model.get_metrics()
             metrics['fit_time'] = fit_time
             metrics['score'] = score
 
@@ -166,9 +186,10 @@ class HyperparameterOptimizer:
             if current_loss < best_loss:
                 best_loss = current_loss
                 best_params = params
-                best_metrics = result['metrics']
+                best_metrics = result.get('metrics', {})
                 # Instantiate and re-fit the best model using the sampled hyperparameters.
-                best_model_instance = self.model_class(config=CPUAcceleratedModelConfig(**params))
+                config = CPUAcceleratedModelConfig(**params)
+                best_model_instance = self.model_class(config=config)
                 best_model_instance.fit(self.X, self.y)
                 no_improve_counter = 0
             else:
@@ -182,13 +203,23 @@ class HyperparameterOptimizer:
             logger.warning("No valid model was found during optimization. Falling back to default configuration.")
             default_config = CPUAcceleratedModelConfig()
             best_model_instance = self.model_class(
-                config=CPUAcceleratedModelConfig(),
+                config=default_config,
                 estimator_class=DefaultEstimator
             )
             best_model_instance.fit(self.X, self.y)
+            
+            # Evaluate the fallback model
+            if hasattr(best_model_instance, 'score'):
+                score = best_model_instance.score(self.X, self.y)
+            else:
+                score = 0.5  # Default score value
+            best_loss = 1.0 - score
+            
             best_params = {}
-            best_loss = 0.0
-            best_metrics = best_model_instance.get_metrics()
+            best_metrics = {}
+            if hasattr(best_model_instance, 'get_metrics'):
+                best_metrics = best_model_instance.get_metrics()
+            best_metrics['score'] = score
 
         logger.info(f"Best hyperparameters found: {best_params}")
         self.best_model = best_model_instance
@@ -222,9 +253,13 @@ class HyperparameterOptimizer:
                     best_overall = result
                     best_candidate = name
 
-            logger.info(f"Best candidate model: {best_candidate} with hyperparameters: {candidate_results[best_candidate]['best_hyperparameters']}")
-            best_overall['best_model_candidate'] = best_candidate
-            return best_overall
+            if best_candidate is not None:
+                logger.info(f"Best candidate model: {best_candidate} with hyperparameters: {candidate_results[best_candidate]['best_hyperparameters']}")
+                best_overall['best_model_candidate'] = best_candidate
+                return best_overall
+            else:
+                logger.warning("No valid candidate model found")
+                return self._optimize_single()  # Fallback to default optimization
         else:
             return self._optimize_single()
 
@@ -243,7 +278,7 @@ class HyperparameterOptimizer:
 if __name__ == "__main__":
     np.random.seed(42)
     X_dummy = np.random.randn(100, 9).astype(np.float32)
-    y_dummy = np.random.randn(100).astype(np.float32)
+    y_dummy = np.random.randint(0, 2, size=100)  # Binary classification target
 
     optimizer = HyperparameterOptimizer(
         model_class=CPUAcceleratedModel,

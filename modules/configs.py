@@ -2,7 +2,404 @@ from dataclasses import dataclass, field
 from enum import Enum
 import os
 import numpy as np
-from typing import Optional, List, Dict, Tuple
+from typing import Optional, List, Dict, Tuple, NamedTuple, Callable, Any
+from dataclasses import dataclass, field, asdict
+from typing import Optional, Dict, Any, List
+from enum import Enum, auto
+import os
+
+# -----------------------------------------------------------------------------
+# Quantization Configuration
+# -----------------------------------------------------------------------------
+class QuantizationType(Enum):
+    INT8 = "int8"
+    UINT8 = "uint8"
+    INT16 = "int16"
+
+class QuantizationMode(Enum):
+    SYMMETRIC = "symmetric"
+    ASYMMETRIC = "asymmetric"
+    DYNAMIC_PER_BATCH = "dynamic_per_batch"
+    DYNAMIC_PER_CHANNEL = "dynamic_per_channel"
+
+@dataclass
+class QuantizationConfig:
+    """Configuration for the quantizer."""
+    quantization_type: str = QuantizationType.INT8.value
+    quantization_mode: str = QuantizationMode.DYNAMIC_PER_BATCH.value
+    enable_cache: bool = True
+    cache_size: int = 1024
+    buffer_size: int = 0  # 0 means no buffer
+    use_percentile: bool = False
+    min_percentile: float = 0.1
+    max_percentile: float = 99.9
+    error_on_nan: bool = False
+    error_on_inf: bool = False
+    # New options for better control
+    outlier_threshold: Optional[float] = None  # For handling outliers
+    num_bits: int = 8  # Allow custom bit widths
+    optimize_memory: bool = True  # Enable memory optimization
+
+
+# -----------------------------------------------------------------------------
+# Configuration for Batch Processing
+# -----------------------------------------------------------------------------
+
+class BatchProcessingStrategy(Enum):
+    """Strategy for batch processing."""
+    FIXED = auto()      # Use fixed batch size
+    ADAPTIVE = auto()   # Dynamically adjust batch size based on system load
+    GREEDY = auto()     # Process as many items as available up to max_batch_size
+
+class BatchPriority(Enum):
+    """Priority levels for batch processing."""
+    CRITICAL = 0    # Highest priority
+    HIGH = 1
+    NORMAL = 2      # Default priority
+    LOW = 3
+    BACKGROUND = 4  # Lowest priority
+
+class PrioritizedItem(NamedTuple):
+    """Item with priority for queue ordering."""
+    priority: int       # Lower number = higher priority
+    timestamp: float    # Time when item was added (for FIFO within same priority)
+    item: Any           # The actual item
+    
+    def __lt__(self, other):
+        # Compare first by priority, then by timestamp
+        if self.priority != other.priority:
+            return self.priority < other.priority
+        return self.timestamp < other.timestamp
+
+@dataclass
+class BatchProcessorConfig:
+    """Configuration for BatchProcessor."""
+    
+    # Batch sizing parameters
+    min_batch_size: int = 1
+    max_batch_size: int = 64
+    initial_batch_size: int = 16
+    
+    # Queue parameters
+    max_queue_size: int = 1000
+    enable_priority_queue: bool = False
+    
+    # Processing parameters
+    batch_timeout: float = 0.1  # Max time to wait for batch formation (seconds)
+    item_timeout: float = 10.0  # Max time to wait for single item processing (seconds)
+    min_batch_interval: float = 0.0  # Min time between batch processing (seconds)
+    
+    # Processing strategy
+    processing_strategy: BatchProcessingStrategy = BatchProcessingStrategy.ADAPTIVE
+    enable_adaptive_batching: bool = True
+    
+    # Retry parameters
+    max_retries: int = 2
+    retry_delay: float = 0.1  # Seconds between retries
+    reduce_batch_on_failure: bool = True
+    
+    # Memory management
+    max_batch_memory_mb: Optional[float] = None  # Max memory per batch in MB
+    enable_memory_optimization: bool = True
+    gc_batch_threshold: int = 32  # Run GC after processing batches larger than this
+    
+    # Monitoring and statistics
+    enable_monitoring: bool = True
+    monitoring_window: int = 100  # Number of batches to keep statistics for
+    
+    # Thread pool configuration
+    max_workers: int = 4
+    
+    # Health monitoring
+    enable_health_monitoring: bool = True
+    health_check_interval: float = 5.0  # Seconds between health checks
+    memory_warning_threshold: float = 70.0  # Memory usage percentage to trigger warning
+    memory_critical_threshold: float = 85.0  # Memory usage percentage to trigger critical actions
+    queue_warning_threshold: int = 100  # Queue size to trigger warning
+    queue_critical_threshold: int = 500  # Queue size to trigger critical actions
+    
+    # Debug mode
+    debug_mode: bool = False
+
+# -----------------------------------------------------------------------------
+# Configuration for Data Preprocessor
+# -----------------------------------------------------------------------------
+
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Optional, Tuple, Dict, Any, Callable, Union, List
+
+class NormalizationType(Enum):
+    NONE = "none"
+    STANDARD = "standard"
+    MINMAX = "minmax"
+    ROBUST = "robust"
+    CUSTOM = "custom"
+
+@dataclass
+class PreprocessorConfig:
+    """
+    Configuration parameters for the DataPreprocessor.
+    
+    Attributes:
+        normalization: Type of normalization to apply
+        version: Version string for the preprocessor
+        dtype: Data type to use for numerical operations
+        epsilon: Small constant to avoid division by zero
+        handle_nan: Whether to handle NaN values
+        nan_strategy: Strategy for handling NaN values ("mean", "median", "most_frequent", "zero")
+        handle_inf: Whether to handle infinite values
+        inf_strategy: Strategy for handling infinite values ("mean", "median", "zero")
+        clip_values: Whether to clip values to a specific range
+        clip_range: Range to clip values to (min, max)
+        detect_outliers: Whether to detect and handle outliers
+        outlier_method: Method for outlier detection ("iqr", "zscore", "isolation_forest")
+        outlier_params: Additional parameters for outlier detection
+        robust_percentiles: Percentiles to use for robust scaling (lower, upper)
+        enable_input_validation: Whether to validate input data
+        input_size_limit: Maximum number of samples to process (0 for no limit)
+        chunk_size: Size of chunks for processing large datasets (0 for no chunking)
+        cache_enabled: Whether to enable caching of transform results
+        cache_size: Size of the LRU cache for transform results
+        debug_mode: Whether to enable debug logging
+        parallel_processing: Whether to enable parallel processing
+        n_jobs: Number of parallel jobs (-1 for all cores)
+        enable_monitoring: Whether to collect performance metrics and monitoring data
+        custom_normalization_fn: Custom function for normalization statistics
+        custom_transform_fn: Custom function for data transformation
+    """
+    normalization: NormalizationType = NormalizationType.STANDARD
+    version: str = "1.0.0"
+    dtype: Any = float
+    epsilon: float = 1e-8
+    
+    # Data quality handling
+    handle_nan: bool = True
+    nan_strategy: str = "mean"
+    handle_inf: bool = True
+    inf_strategy: str = "mean"
+    
+    # Value constraints
+    clip_values: bool = False
+    clip_range: Tuple[float, float] = (-5.0, 5.0)
+    
+    # Outlier detection
+    detect_outliers: bool = False
+    outlier_method: str = "iqr"
+    outlier_params: Dict[str, Any] = field(default_factory=lambda: {
+        "threshold": 1.5,
+        "clip": True,
+        "contamination": "auto",
+        "n_estimators": 100,
+        "random_state": 42
+    })
+    
+    # Robust scaling parameters
+    robust_percentiles: Tuple[float, float] = (25.0, 75.0)
+    
+    # Validation and safety
+    enable_input_validation: bool = True
+    input_size_limit: int = 0  # 0 means no limit
+    
+    # Performance optimizations
+    chunk_size: int = 0  # 0 means no chunking
+    cache_enabled: bool = False
+    cache_size: int = 1000
+    
+    # Debugging, logging and monitoring
+    debug_mode: bool = False
+    enable_monitoring: bool = True
+    
+    # Parallel processing
+    parallel_processing: bool = False
+    n_jobs: int = -1  # -1 means use all cores
+    
+    # Custom functions
+    custom_normalization_fn: Optional[Callable[[np.ndarray], Dict[str, Any]]] = None
+    custom_transform_fn: Optional[Callable[[np.ndarray, Dict[str, Any]], np.ndarray]] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """
+        Convert the configuration to a dictionary for serialization.
+        
+        Returns:
+            Dictionary representation of the configuration
+        """
+        # Convert the configuration to a dictionary
+        config_dict = asdict(self)
+        
+        # Handle special types that need custom serialization
+        if 'normalization' in config_dict:
+            # Convert enum to string for JSON serialization
+            config_dict['normalization'] = self.normalization.name if self.normalization else 'NONE'
+        
+        # Remove non-serializable callable objects
+        if 'custom_normalization_fn' in config_dict:
+            config_dict['custom_normalization_fn'] = None
+        if 'custom_transform_fn' in config_dict:
+            config_dict['custom_transform_fn'] = None
+        
+        # Convert numpy dtypes to strings
+        if 'dtype' in config_dict and isinstance(config_dict['dtype'], np.dtype):
+            config_dict['dtype'] = str(config_dict['dtype'])
+        
+        return config_dict
+
+
+# -----------------------------------------------------------------------------
+# Configuration for CPU-accelerated Models Inference
+# -----------------------------------------------------------------------------
+
+@dataclass(order=True)
+class PrioritizedItem:
+    """Wrapper for prioritized queue items."""
+    priority: int
+    timestamp: float = field(compare=False)
+    item: Any = field(compare=False)
+# Define enums
+class OptimizationLevel(Enum):
+    NONE = auto()
+    BASIC = auto()
+    ADVANCED = auto()
+    EXTREME = auto()
+
+class ModelType(Enum):
+    SKLEARN = auto()
+    XGBOOST = auto()
+    LIGHTGBM = auto()
+    CUSTOM = auto()
+    ENSEMBLE = auto()
+
+class EngineState(Enum):
+    INITIALIZING = auto()
+    READY = auto()
+    LOADING = auto()
+    RUNNING = auto()
+    PAUSED = auto()
+    ERROR = auto()
+    STOPPING = auto()
+    STOPPED = auto()
+
+# -----------------------------------------------------------------------------
+# Configuration for CPU-accelerated Models
+# -----------------------------------------------------------------------------
+
+@dataclass
+class CPUAcceleratedModelConfig:
+    """
+    Enhanced configuration for CPU-accelerated model with advanced features.
+    
+    Configuration parameters are organized by functional category:
+    - Processing: Core processing settings
+    - Batching: Batch processing configuration
+    - Optimization: Performance optimization flags
+    - Caching: Result caching configuration
+    - Monitoring: Telemetry and observability
+    - Resource Management: System resource controls
+    - Advanced Features: Additional functionality
+    - Quantization: Model and input quantization settings
+    """
+    # Processing configuration
+    num_threads: int = field(default_factory=lambda: os.cpu_count() or 4)
+    optimization_level: OptimizationLevel = OptimizationLevel.ADVANCED
+    model_version: str = "1.0.0"
+    
+    # Batch processing settings
+    enable_batching: bool = True
+    initial_batch_size: int = 64
+    max_batch_size: int = 512
+    min_batch_size: int = 4
+    batch_timeout: float = 0.1
+    batch_processing_strategy: str = "adaptive"
+    enable_adaptive_batching: bool = True
+    target_latency_ms: float = 50.0  # Target latency for adaptive batching
+    
+    # Memory and performance optimizations
+    enable_memory_optimization: bool = True
+    enable_intel_optimization: bool = True
+    enable_quantization: bool = False
+    quantization_dtype: str = "int8"  # Options: int8, uint8, int16
+    enable_feature_scaling: bool = False  # Enable feature scaling in preprocessing
+    
+    # Caching and deduplication
+    enable_request_deduplication: bool = True
+    cache_ttl_seconds: int = 300  # Time-to-live for cache entries (5 minutes)
+    max_cache_entries: int = 1000  # Maximum number of cached entries
+    
+    # Monitoring and debugging
+    enable_monitoring: bool = True
+    debug_mode: bool = False
+    monitoring_window: int = 100
+    monitoring_interval: float = 5.0  # Monitor update interval in seconds
+    
+    # Resource management
+    memory_limit_gb: Optional[float] = None
+    memory_high_watermark_mb: float = 1024.0  # Trigger GC when memory exceeds this
+    enable_throttling: bool = False
+    max_concurrent_requests: int = 100
+    throttle_on_high_cpu: bool = False
+    cpu_threshold_percent: float = 80.0  # CPU threshold for throttling
+    set_cpu_affinity: bool = False  # Set CPU affinity for process
+    
+    # Advanced Features
+    enable_warmup: bool = True  # Perform model warmup to stabilize first-inference latency
+    enable_data_versioning: bool = False  # Track data version for cache invalidation
+    
+    # Quantization settings
+    quantization_config: Optional[QuantizationConfig] = None
+    enable_model_quantization: bool = False  # Quantize model weights
+    enable_input_quantization: bool = False  # Quantize input data
+    enable_quantization_aware_inference: bool = False  # Simulate quantization during inference
+    
+    # Extension points
+    custom_extensions: Dict[str, Any] = field(default_factory=dict)
+    
+    def __post_init__(self):
+        """Validate configuration parameters after initialization."""
+        # Ensure min_batch_size is not greater than initial_batch_size
+        if self.min_batch_size > self.initial_batch_size:
+            self.min_batch_size = self.initial_batch_size
+            
+        # Ensure initial_batch_size is not greater than max_batch_size
+        if self.initial_batch_size > self.max_batch_size:
+            self.initial_batch_size = self.max_batch_size
+            
+        # Set reasonable defaults for CPU thread count
+        if self.num_threads <= 0:
+            self.num_threads = os.cpu_count() or 4
+            
+        # Convert batch_processing_strategy to lowercase for case insensitivity
+        if isinstance(self.batch_processing_strategy, str):
+            self.batch_processing_strategy = self.batch_processing_strategy.lower()
+            
+        # Set default quantization config if not provided but quantization is enabled
+        if (self.enable_quantization or self.enable_model_quantization or 
+            self.enable_input_quantization) and self.quantization_config is None:
+            self.quantization_config = QuantizationConfig(
+                quantization_type=self.quantization_dtype,
+                quantization_mode=QuantizationMode.DYNAMIC_PER_BATCH.value
+            )
+                
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert config to a dictionary for serialization."""
+        config_dict = {k: v for k, v in self.__dict__.items() 
+                if not k.startswith('_') and not callable(v)}
+        
+        # Handle nested QuantizationConfig
+        if self.quantization_config is not None:
+            config_dict['quantization_config'] = asdict(self.quantization_config)
+        
+        return config_dict
+                
+    @classmethod
+    def from_dict(cls, config_dict: Dict[str, Any]) -> 'CPUAcceleratedModelConfig':
+        """Create config from a dictionary."""
+        # Handle nested QuantizationConfig if present
+        if 'quantization_config' in config_dict and isinstance(config_dict['quantization_config'], dict):
+            config_dict['quantization_config'] = QuantizationConfig(**config_dict['quantization_config'])
+        
+        return cls(**config_dict)
+
 
 # -----------------------------------------------------------------------------
 # Enums for Configuration Domains
@@ -16,26 +413,6 @@ class TaskType(Enum):
 
     def __str__(self):
         return self.value
-
-class BatchProcessingStrategy(Enum):
-    """Defines strategies for batch processing."""
-    ADAPTIVE = "adaptive"  # Dynamically adjusts batch size
-    FIXED = "fixed"        # Uses fixed batch size
-    TIMEOUT = "timeout"    # Driven primarily by timeout
-
-class OptimizationLevel(Enum):
-    """Defines levels of CPU optimization."""
-    NONE = "none"
-    BASIC = "basic"
-    ADVANCED = "advanced"
-    MAXIMUM = "maximum"
-
-class NormalizationType(Enum):
-    """Defines types of data normalization."""
-    STANDARD = "standard"  # (x - mean) / std
-    MINMAX = "minmax"      # (x - min) / (max - min)
-    ROBUST = "robust"      # Using percentiles instead of min/max
-    NONE = "none"
 
 # -----------------------------------------------------------------------------
 # Hyperparameter Configuration
@@ -99,101 +476,41 @@ class AutoMLModelConfig:
 # Alternate naming (ModelConfig) can be used interchangeably if needed.
 ModelConfig = AutoMLModelConfig
 
-# -----------------------------------------------------------------------------
-# CPU-Accelerated Model Configuration
-# -----------------------------------------------------------------------------
 
-@dataclass
-class CPUAcceleratedModelConfig:
-    """Enhanced configuration for CPU-accelerated model."""
-    # Processing configuration
-    num_threads: int = field(default_factory=lambda: os.cpu_count() or 4)
-    optimization_level: OptimizationLevel = OptimizationLevel.ADVANCED
+def optimize_for_inference(model: Any, model_type: ModelType) -> Any:
+    """
+    Apply optimizations to model for faster inference.
     
-    # Batch processing settings
-    enable_batching: bool = True
-    initial_batch_size: int = 64
-    max_batch_size: int = 512
-    batch_timeout: float = 0.1
+    Args:
+        model: The model to optimize
+        model_type: Type of the model
+        
+    Returns:
+        Optimized model
+    """
+    # Model-specific optimizations
+    if model_type == ModelType.SKLEARN:
+        # Some sklearn models can be optimized
+        if hasattr(model, 'n_jobs'):
+            # Set parallel jobs to 1 for inference (avoid overhead)
+            model.n_jobs = 1
     
-    # Memory and performance optimizations
-    enable_memory_optimization: bool = True
-    enable_intel_optimization: bool = True
-    enable_quantization: bool = False
+    elif model_type == ModelType.XGBOOST:
+        # XGBoost optimizations
+        try:
+            # Use predictor type that is faster for CPU
+            model.set_param('predictor', 'cpu_predictor')
+            # Set number of threads
+            model.set_param('nthread', os.cpu_count() or 4)
+        except:
+            pass
     
-    # Monitoring and debugging
-    enable_monitoring: bool = True
-    debug_mode: bool = False
-    monitoring_window: int = 100
-
-    # Feature Flags
-    enable_request_deduplication: bool = False
-    enable_data_versioning: bool = False
-    model_version: str = "1.0.0" # Example
-    monitoring_interval: int = 60 # seconds
-
-    # Advanced parameters
-    quantization_dtype: str = "int8" # Example: Supports int8, uint8, int16
-    batch_processing_strategy: BatchProcessingStrategy = BatchProcessingStrategy.ADAPTIVE
-
-    # Resource limits
-    memory_limit_gb: Optional[float] = None # Example: Limit memory usage
-# -----------------------------------------------------------------------------
-# Batch Processor Configuration
-# -----------------------------------------------------------------------------
-
-@dataclass
-class BatchProcessorConfig:
-    def __init__(self,
-                 batch_timeout: float,
-                 max_queue_size: int,
-                 initial_batch_size: int,
-                 min_batch_size: int,
-                 max_batch_size: int,
-                 enable_monitoring: bool,
-                 monitoring_window: int,
-                 max_retries: int,
-                 retry_delay: float,
-                 processing_strategy: BatchProcessingStrategy,
-                 max_workers: int = 4  # Add max_workers here
-                 ):
-        self.batch_timeout = batch_timeout
-        self.max_queue_size = max_queue_size
-        self.initial_batch_size = initial_batch_size
-        self.min_batch_size = min_batch_size
-        self.max_batch_size = max_batch_size
-        self.enable_monitoring = enable_monitoring
-        self.monitoring_window = monitoring_window
-        self.max_retries = max_retries
-        self.retry_delay = retry_delay
-        self.processing_strategy = processing_strategy
-        self.max_workers = max_workers
-
-# -----------------------------------------------------------------------------
-# Preprocessor Configuration
-# -----------------------------------------------------------------------------
-
-@dataclass
-class PreprocessorConfig:
-    """Configuration for data preprocessing."""
-    normalization: NormalizationType = NormalizationType.STANDARD
-    epsilon: float = 1e-8
-    clip_values: bool = True
-    clip_range: Tuple[float, float] = (-5.0, 5.0)
-    robust_percentiles: Tuple[float, float] = (1.0, 99.0)
-    handle_inf: bool = True
-    handle_nan: bool = True
-    dtype: np.dtype = np.float32
-
-# -----------------------------------------------------------------------------
-# Quantization Configuration
-# -----------------------------------------------------------------------------
-
-@dataclass
-class QuantizationConfig:
-    """Configuration for model quantization."""
-    dynamic_range: bool = True
-    cache_size: int = 128
-    int8_min: int = -128
-    int8_max: int = 127
-    uint8_range: float = 255.0
+    elif model_type == ModelType.LIGHTGBM:
+        # LightGBM optimizations
+        try:
+            # Set number of threads for inference
+            model.params['num_threads'] = os.cpu_count() or 4
+        except:
+            pass
+    
+    return model
