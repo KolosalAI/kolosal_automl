@@ -3,12 +3,12 @@ import numpy as np
 import os
 import tempfile
 import shutil
-
 from typing import Dict, Any
-
-# Make sure to import your DataPreprocessor, PreprocessorConfig, NormalizationType, etc.
+import pytest
+# Import the DataPreprocessor, PreprocessorConfig, NormalizationType, and exceptions
 from modules.engine.data_preprocessor import DataPreprocessor
 from modules.configs import PreprocessorConfig, NormalizationType
+from modules.engine.data_preprocessor import InputValidationError, PreprocessingError
 
 
 class TestDataPreprocessor(unittest.TestCase):
@@ -51,7 +51,7 @@ class TestDataPreprocessor(unittest.TestCase):
 
     def test_fit_transform_standard(self):
         """
-        Test standard (z-score) normalization: 
+        Test standard (z-score) normalization:
         - Fit the preprocessor on data with NaN/inf
         - Transform the data
         - Check that the transformed data has mean approx 0 and std approx 1
@@ -103,7 +103,7 @@ class TestDataPreprocessor(unittest.TestCase):
 
     def test_outlier_detection_iqr(self):
         """
-        Test outlier handling with IQR. 
+        Test outlier handling with IQR.
         We expect outliers to be clipped to the lower/upper IQR range.
         """
         # Fit with the current config (IQR outliers detection is enabled)
@@ -150,7 +150,7 @@ class TestDataPreprocessor(unittest.TestCase):
         if 'mean' in stats_after_first_batch:
             self.assertTrue(
                 not np.allclose(stats_after_first_batch['mean'],
-                                stats_after_second_batch['mean']),
+                               stats_after_second_batch['mean']),
                 "Means after second batch should differ from the first batch in partial fit"
             )
 
@@ -160,7 +160,7 @@ class TestDataPreprocessor(unittest.TestCase):
 
     def test_inverse_transform_standard(self):
         """
-        Test that inverse_transform roughly recovers the original data for 
+        Test that inverse_transform roughly recovers the original data for
         Standard normalization.
         """
         self.preprocessor.fit(self.X)
@@ -172,10 +172,10 @@ class TestDataPreprocessor(unittest.TestCase):
         # Check shape
         self.assertEqual(X_inverted.shape, self.X.shape)
 
-        # Because outliers are clipped and NaNs replaced, 
-        # the recovered data won't be identical, 
+        # Because outliers are clipped and NaNs replaced,
+        # the recovered data won't be identical,
         # but it should be close where data wasn't NaN/Inf or clipped.
-        # We'll test the approximate difference on a subset that wasn't 
+        # We'll test the approximate difference on a subset that wasn't
         # originally NaN or inf or out of normal range.
 
         # Filter out the rows with special values
@@ -223,12 +223,18 @@ class TestDataPreprocessor(unittest.TestCase):
             # Remove temp directory
             shutil.rmtree(temp_dir)
 
-    def test_exception_unfitted_transform(self):
-        """
-        Test that calling transform on an unfitted preprocessor raises an error.
-        """
-        with self.assertRaises(RuntimeError):
-            _ = self.preprocessor.transform(self.X)
+    def test_transform_unfitted_preprocessor_raises_error(self):
+        # Create a default configuration and an unfitted preprocessor.
+        config = PreprocessorConfig()
+        preprocessor = DataPreprocessor(config)
+        
+        # Dummy data for transformation.
+        data = np.array([[1, 2], [3, 4]])
+        
+        # Assert that calling transform on an unfitted preprocessor raises an Exception
+        # with the expected error message.
+        with pytest.raises(Exception, match="Preprocessor must be fitted before transform"):
+            preprocessor.transform(data)
 
     def test_exception_dimension_mismatch(self):
         """
@@ -236,9 +242,11 @@ class TestDataPreprocessor(unittest.TestCase):
         """
         # Fit with 5 features
         self.preprocessor.fit(self.X)
-        X_wrong_dim = np.random.randn(10, 3)  # Only 3 features
-        with self.assertRaisesRegex(InputValidationError, "features"):
+        X_wrong_dim = np.random.randn(10, 3)  #
+        # Only 3 features
+        with self.assertRaises(InputValidationError) as context:
             _ = self.preprocessor.transform(X_wrong_dim)
+        self.assertIn("Expected 5 features, got 3", str(context.exception))
 
     def test_reset(self):
         """

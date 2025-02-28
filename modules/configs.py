@@ -125,98 +125,65 @@ class BatchProcessorConfig:
 # Configuration for Data Preprocessor
 # -----------------------------------------------------------------------------
 
-from dataclasses import dataclass, field
-from enum import Enum
-from typing import Optional, Tuple, Dict, Any, Callable, Union, List
-
 class NormalizationType(Enum):
-    NONE = "none"
-    STANDARD = "standard"
-    MINMAX = "minmax"
-    ROBUST = "robust"
-    CUSTOM = "custom"
+    """Enumeration of supported normalization strategies."""
+    NONE = auto()
+    STANDARD = auto()  # z-score normalization: (x - mean) / std
+    MINMAX = auto()    # Min-max scaling: (x - min) / (max - min)
+    ROBUST = auto()    # Robust scaling using percentiles
+    CUSTOM = auto()    # Custom normalization function
 
 @dataclass
 class PreprocessorConfig:
-    """
-    Configuration parameters for the DataPreprocessor.
-    
-    Attributes:
-        normalization: Type of normalization to apply
-        version: Version string for the preprocessor
-        dtype: Data type to use for numerical operations
-        epsilon: Small constant to avoid division by zero
-        handle_nan: Whether to handle NaN values
-        nan_strategy: Strategy for handling NaN values ("mean", "median", "most_frequent", "zero")
-        handle_inf: Whether to handle infinite values
-        inf_strategy: Strategy for handling infinite values ("mean", "median", "zero")
-        clip_values: Whether to clip values to a specific range
-        clip_range: Range to clip values to (min, max)
-        detect_outliers: Whether to detect and handle outliers
-        outlier_method: Method for outlier detection ("iqr", "zscore", "isolation_forest")
-        outlier_params: Additional parameters for outlier detection
-        robust_percentiles: Percentiles to use for robust scaling (lower, upper)
-        enable_input_validation: Whether to validate input data
-        input_size_limit: Maximum number of samples to process (0 for no limit)
-        chunk_size: Size of chunks for processing large datasets (0 for no chunking)
-        cache_enabled: Whether to enable caching of transform results
-        cache_size: Size of the LRU cache for transform results
-        debug_mode: Whether to enable debug logging
-        parallel_processing: Whether to enable parallel processing
-        n_jobs: Number of parallel jobs (-1 for all cores)
-        enable_monitoring: Whether to collect performance metrics and monitoring data
-        custom_normalization_fn: Custom function for normalization statistics
-        custom_transform_fn: Custom function for data transformation
-    """
+    """Configuration for the data preprocessor."""
+    # Normalization settings
     normalization: NormalizationType = NormalizationType.STANDARD
-    version: str = "1.0.0"
-    dtype: Any = float
-    epsilon: float = 1e-8
-    
-    # Data quality handling
-    handle_nan: bool = True
-    nan_strategy: str = "mean"
-    handle_inf: bool = True
-    inf_strategy: str = "mean"
-    
-    # Value constraints
-    clip_values: bool = False
-    clip_range: Tuple[float, float] = (-5.0, 5.0)
-    
-    # Outlier detection
-    detect_outliers: bool = False
-    outlier_method: str = "iqr"
-    outlier_params: Dict[str, Any] = field(default_factory=lambda: {
-        "threshold": 1.5,
-        "clip": True,
-        "contamination": "auto",
-        "n_estimators": 100,
-        "random_state": 42
-    })
-    
-    # Robust scaling parameters
     robust_percentiles: Tuple[float, float] = (25.0, 75.0)
     
-    # Validation and safety
+    # Data handling settings
+    handle_nan: bool = True
+    handle_inf: bool = True
+    nan_strategy: str = "mean"  # Options: "mean", "median", "most_frequent", "zero"
+    inf_strategy: str = "mean"  # Options: "mean", "median", "zero"
+    
+    # Outlier handling
+    detect_outliers: bool = False
+    outlier_method: str = "iqr"  # Options: "iqr", "zscore", "isolation_forest"
+    outlier_params: Dict[str, Any] = field(default_factory=lambda: {
+        "threshold": 1.5,  # For IQR: threshold * IQR, for zscore: threshold * std
+        "clip": True,      # Whether to clip or replace outliers
+        "n_estimators": 100,  # For isolation_forest
+        "contamination": "auto"  # For isolation_forest
+    })
+    
+    # Data clipping
+    clip_values: bool = False
+    clip_range: Tuple[float, float] = (-np.inf, np.inf)
+    
+    # Data validation
     enable_input_validation: bool = True
-    input_size_limit: int = 0  # 0 means no limit
+    input_size_limit: Optional[int] = None  # Max number of samples
     
-    # Performance optimizations
-    chunk_size: int = 0  # 0 means no chunking
-    cache_enabled: bool = False
-    cache_size: int = 1000
-    
-    # Debugging, logging and monitoring
-    debug_mode: bool = False
-    enable_monitoring: bool = True
-    
-    # Parallel processing
+    # Performance settings
     parallel_processing: bool = False
-    n_jobs: int = -1  # -1 means use all cores
+    n_jobs: int = -1  # -1 for all cores
+    chunk_size: Optional[int] = None  # Process large data in chunks of this size
+    cache_enabled: bool = True
+    cache_size: int = 128  # LRU cache size
+    
+    # Numeric precision
+    dtype: np.dtype = np.float64
+    epsilon: float = 1e-10  # Small value to avoid division by zero
+    
+    # Debugging and logging
+    debug_mode: bool = False
     
     # Custom functions
-    custom_normalization_fn: Optional[Callable[[np.ndarray], Dict[str, Any]]] = None
-    custom_transform_fn: Optional[Callable[[np.ndarray, Dict[str, Any]], np.ndarray]] = None
+    custom_normalization_fn: Optional[Callable] = None
+    custom_transform_fn: Optional[Callable] = None
+    
+    # Version info
+    version: str = "1.0.0"
 
     def to_dict(self) -> Dict[str, Any]:
         """

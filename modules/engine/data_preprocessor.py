@@ -14,15 +14,8 @@ from contextlib import contextmanager
 from dataclasses import dataclass, asdict, field
 import time
 
-
-class NormalizationType(Enum):
-    """Enumeration of supported normalization strategies."""
-    NONE = auto()
-    STANDARD = auto()  # z-score normalization: (x - mean) / std
-    MINMAX = auto()    # Min-max scaling: (x - min) / (max - min)
-    ROBUST = auto()    # Robust scaling using percentiles
-    CUSTOM = auto()    # Custom normalization function
-
+from .utils import log_operation
+from modules.configs import PreprocessorConfig, NormalizationType
 
 class PreprocessingError(Exception):
     """Base class for all preprocessing exceptions."""
@@ -43,89 +36,24 @@ class SerializationError(PreprocessingError):
     """Exception raised for errors in serialization/deserialization."""
     pass
 
-
-@dataclass
-class PreprocessorConfig:
-    """Configuration for the data preprocessor."""
-    # Normalization settings
-    normalization: NormalizationType = NormalizationType.STANDARD
-    robust_percentiles: Tuple[float, float] = (25.0, 75.0)
-    
-    # Data handling settings
-    handle_nan: bool = True
-    handle_inf: bool = True
-    nan_strategy: str = "mean"  # Options: "mean", "median", "most_frequent", "zero"
-    inf_strategy: str = "mean"  # Options: "mean", "median", "zero"
-    
-    # Outlier handling
-    detect_outliers: bool = False
-    outlier_method: str = "iqr"  # Options: "iqr", "zscore", "isolation_forest"
-    outlier_params: Dict[str, Any] = field(default_factory=lambda: {
-        "threshold": 1.5,  # For IQR: threshold * IQR, for zscore: threshold * std
-        "clip": True,      # Whether to clip or replace outliers
-        "n_estimators": 100,  # For isolation_forest
-        "contamination": "auto"  # For isolation_forest
-    })
-    
-    # Data clipping
-    clip_values: bool = False
-    clip_range: Tuple[float, float] = (-np.inf, np.inf)
-    
-    # Data validation
-    enable_input_validation: bool = True
-    input_size_limit: Optional[int] = None  # Max number of samples
-    
-    # Performance settings
-    parallel_processing: bool = False
-    n_jobs: int = -1  # -1 for all cores
-    chunk_size: Optional[int] = None  # Process large data in chunks of this size
-    cache_enabled: bool = True
-    cache_size: int = 128  # LRU cache size
-    
-    # Numeric precision
-    dtype: np.dtype = np.float64
-    epsilon: float = 1e-10  # Small value to avoid division by zero
-    
-    # Debugging and logging
-    debug_mode: bool = False
-    
-    # Custom functions
-    custom_normalization_fn: Optional[Callable] = None
-    custom_transform_fn: Optional[Callable] = None
-    
-    # Version info
-    version: str = "1.0.0"
-
-
 def log_operation(func):
-    """
-    Decorator to log function calls and measure execution time.
-    Also handles updating metrics for the decorated function.
-    """
     @wraps(func)
-    def wrapper(self, *args, **kwargs):
+    def wrapper(*args, **kwargs):
         start_time = time.time()
         try:
-            result = func(self, *args, **kwargs)
-            elapsed = time.time() - start_time
-            
-            # Add debug logging if enabled
-            if hasattr(self, 'logger') and hasattr(self, 'config'):
-                if self.config.debug_mode:
-                    self.logger.debug(f"{func.__name__} completed in {elapsed:.4f} seconds")
-            
-            # Update metrics if the method exists
-            if hasattr(self, '_update_metrics'):
-                self._update_metrics(func.__name__, elapsed)
-                
+            result = func(*args, **kwargs)
+            elapsed_time = time.time() - start_time
+            # Optionally log the success
             return result
         except Exception as e:
-            elapsed = time.time() - start_time
-            if hasattr(self, 'logger'):
-                self.logger.error(f"{func.__name__} failed after {elapsed:.4f} seconds: {str(e)}")
-            raise
+            elapsed_time = time.time() - start_time
+            # Optionally log the error details here.
+            # If it's one of our custom exceptions, re-raise it unchanged.
+            if isinstance(e, (InputValidationError, StatisticsError, SerializationError, PreprocessingError)):
+                raise e
+            else:
+                raise Exception(f"{func.__name__} failed after {elapsed_time:.4f} seconds: {e}") from e
     return wrapper
-
 
 class DataPreprocessor:
     """
@@ -176,12 +104,11 @@ class DataPreprocessor:
         # Initialize processing functions
         self._init_processing_functions()
         
-        # Configure LRU cache if enabled
         if self.config.cache_enabled:
-            self._cached_transform = lru_cache(maxsize=self.config.cache_size)(self._transform_raw)
+            self._transform_cache = {}
         else:
-            self._cached_transform = self._transform_raw
-            
+            self._transform_cache = None
+
         # Set the processor version
         self._version = self.config.version
         
@@ -250,16 +177,15 @@ class DataPreprocessor:
 
     @contextmanager
     def _error_context(self, operation: str):
-        """Context manager for error handling and reporting."""
         try:
             yield
+        except (InputValidationError, StatisticsError, SerializationError) as e:
+            raise e
         except Exception as e:
             error_msg = f"Error during {operation}: {str(e)}"
             self.logger.error(error_msg)
             if self.config.debug_mode:
                 self.logger.error(traceback.format_exc())
-            
-            # Convert to appropriate exception type
             if "validation" in operation.lower():
                 raise InputValidationError(error_msg) from e
             elif "statistics" in operation.lower():
@@ -270,7 +196,7 @@ class DataPreprocessor:
                 raise PreprocessingError(error_msg) from e
 
     @log_operation
-    def fit(self, X: Union[np.ndarray, List], feature_names: Optional[List[str]] = None) -> 'DataPreprocessor':
+    def fit(self, X: Union[np.array, List], feature_names: Optional[List[str]] = None) -> 'DataPreprocessor':
         """
         Compute preprocessing statistics with optimized memory usage and validation.
 
@@ -313,10 +239,14 @@ class DataPreprocessor:
             if self.config.nan_strategy == "most_frequent":
                 self._compute_most_frequent_values(X)
             
+            # Ensure standard stats are computed for standard normalization
+            if self.config.normalization == NormalizationType.STANDARD:
+                self._compute_standard_stats(X)
+            
             self.logger.info(f"Fitted preprocessor on {self._n_samples_seen} samples, {self._n_features} features")
             return self
 
-    def _compute_most_frequent_values(self, X: np.ndarray) -> None:
+    def _compute_most_frequent_values(self, X: np.array) -> None:
         """Compute most frequent value for each feature."""
         most_frequent = np.zeros(X.shape[1], dtype=self.config.dtype)
         
@@ -332,7 +262,7 @@ class DataPreprocessor:
                 
         self._stats['most_frequent'] = most_frequent
 
-    def _fit_full(self, X: np.ndarray) -> None:
+    def _fit_full(self, X: np.array) -> None:
         """Compute statistics on the full dataset."""
         norm_type = self.config.normalization
         
@@ -349,7 +279,7 @@ class DataPreprocessor:
         if self.config.detect_outliers:
             self._compute_outlier_stats(X)
 
-    def _fit_in_chunks(self, X: np.ndarray) -> None:
+    def _fit_in_chunks(self, X: np.array) -> None:
         """
         Fit on large datasets by processing in chunks to reduce memory usage.
         Incrementally updates statistics.
@@ -401,7 +331,7 @@ class DataPreprocessor:
                 'n_seen': 0
             }
 
-    def _update_stats_with_chunk(self, chunk: np.ndarray) -> None:
+    def _update_stats_with_chunk(self, chunk: np.array) -> None:
         """Update running statistics with a new data chunk."""
         norm_type = self.config.normalization
         
@@ -542,21 +472,33 @@ class DataPreprocessor:
         with self._error_context("transform operation"):
             # Validate and convert input
             X = self._validate_and_convert_input(X, operation="transform", copy=copy)
-            
+
             # Use parallel processing if enabled and data is large enough
-            if (self.config.parallel_processing and self._parallel_executor and 
-                X.shape[0] > 1000 and self.config.chunk_size):
+            if (
+                self.config.parallel_processing 
+                and self._parallel_executor 
+                and X.shape[0] > 1000 
+                and self.config.chunk_size
+            ):
                 return self._transform_parallel(X)
-            
-            # Generate hash for caching if enabled
-            if self.config.cache_enabled and X.shape[0] <= 1000:  # Only cache smaller arrays
-                # Use a faster hashing approach for numpy arrays
-                X_hash = self._hash_array(X)
-                return self._cached_transform(X, X_hash)
+
+            # --- Manual caching for smaller arrays ---
+            if self.config.cache_enabled and X.shape[0] <= 1000:
+                # Use a hash of the array bytes as the dictionary key
+                X_hash = hashlib.md5(X.tobytes()).hexdigest()
+                if X_hash in self._transform_cache:
+                    # Cache hit
+                    return self._transform_cache[X_hash]
+                else:
+                    # Cache miss
+                    result = self._transform_raw(X)
+                    self._transform_cache[X_hash] = result
+                    return result
             else:
+                # Large arrays or caching disabled
                 return self._transform_raw(X)
 
-    def _transform_parallel(self, X: np.ndarray) -> np.ndarray:
+    def _transform_parallel(self, X: np.array) -> np.array:
         """Transform data using parallel processing for large datasets."""
         # Split data into chunks
         chunk_size = self.config.chunk_size
@@ -580,7 +522,7 @@ class DataPreprocessor:
         # Combine results
         return np.vstack(results)
 
-    def _hash_array(self, arr: np.ndarray) -> str:
+    def _hash_array(self, arr: np.array) -> str:
         """Generate a hash for a numpy array for caching purposes."""
         # For large arrays, hash a sample to improve performance
         if arr.size > 1000:
@@ -604,7 +546,7 @@ class DataPreprocessor:
             # For small arrays, hash the entire array
             return hashlib.md5(arr.tobytes()).hexdigest()
 
-    def _transform_raw(self, X: np.ndarray, X_hash: Optional[str] = None) -> np.ndarray:
+    def _transform_raw(self, X: np.array, X_hash: Optional[str] = None) -> np.array:
         """
         Apply preprocessing operations without caching.
         
@@ -625,7 +567,7 @@ class DataPreprocessor:
             
         return X
 
-    def _transform_in_chunks(self, X: np.ndarray) -> np.ndarray:
+    def _transform_in_chunks(self, X: np.array) -> np.array:
         """Transform large datasets by processing in chunks."""
         chunk_size = self.config.chunk_size
         n_samples = X.shape[0]
@@ -650,9 +592,9 @@ class DataPreprocessor:
         return np.vstack(result_chunks)
 
     @log_operation
-    def fit_transform(self, X: Union[np.ndarray, List], 
+    def fit_transform(self, X: Union[np.array, List], 
                       feature_names: Optional[List[str]] = None,
-                      copy: bool = True) -> np.ndarray:
+                      copy: bool = True) -> np.array:
         """
         Combine fit and transform operations efficiently.
         
@@ -667,9 +609,10 @@ class DataPreprocessor:
         self.fit(X, feature_names)
         return self.transform(X, copy=copy)
 
-    def _validate_and_convert_input(self, X: Union[np.ndarray, List], 
-                                   operation: str = "transform",
-                                   copy: bool = False) -> np.ndarray:
+    def _validate_and_convert_input(self, 
+                                    X: Union[np.ndarray, List], 
+                                    operation: str = "transform",
+                                    copy: bool = False) -> np.ndarray:
         """
         Validate and convert input data efficiently with comprehensive checks.
         
@@ -683,10 +626,14 @@ class DataPreprocessor:
         """
         if self.config.enable_input_validation:
             # Check input type
-            if not isinstance(X, (list, np.ndarray, tuple)):
-                raise InputValidationError(f"Expected numpy array, list, or tuple, got {type(X)}")
-                
+            # -- FIX #1: Use np.ndarray instead of np.array --
+            if not isinstance(X, (list, tuple, np.ndarray)):
+                raise InputValidationError(
+                    f"Expected numpy array, list, or tuple, got {type(X)}"
+                )
+            
             # Convert to numpy array if needed
+            # -- FIX #2: Use np.ndarray instead of np.array --
             if not isinstance(X, np.ndarray):
                 try:
                     X = np.array(X, dtype=self.config.dtype)
@@ -696,28 +643,28 @@ class DataPreprocessor:
             # Check for empty input
             if X.size == 0:
                 raise InputValidationError("Input is empty")
-                
+            
             # Check for NaNs or infs if we don't handle them
             if not self.config.handle_nan and np.any(np.isnan(X)):
                 raise InputValidationError("Input contains NaN values but handle_nan=False")
-                
+            
             if not self.config.handle_inf and np.any(~np.isfinite(X)):
                 raise InputValidationError("Input contains infinite values but handle_inf=False")
-                
+            
             # Check dimensions
             if X.ndim not in (1, 2):
                 raise InputValidationError(f"Expected 1D or 2D array, got {X.ndim}D")
-                
+            
             # Reshape 1D arrays to 2D
             if X.ndim == 1:
                 X = X.reshape(-1, 1)
-                
+            
             # Check size limits
             if self.config.input_size_limit and X.shape[0] > self.config.input_size_limit:
                 raise InputValidationError(
                     f"Input size {X.shape[0]} exceeds limit {self.config.input_size_limit}"
                 )
-                
+            
             # If transforming, check feature dimensions match fitted dimensions
             if operation == "transform" and self._fitted:
                 if X.shape[1] != self._n_features:
@@ -727,11 +674,12 @@ class DataPreprocessor:
         
         else:
             # Minimal conversion without validation
+            # -- FIX #3: Use np.ndarray instead of np.array --
             if not isinstance(X, np.ndarray):
                 X = np.array(X, dtype=self.config.dtype)
             if X.ndim == 1:
                 X = X.reshape(-1, 1)
-                
+        
         # Convert type if needed
         if X.dtype != self.config.dtype:
             X = X.astype(self.config.dtype, copy=copy)
@@ -740,7 +688,8 @@ class DataPreprocessor:
             
         return X
 
-    def _compute_standard_stats(self, X: np.ndarray) -> None:
+
+    def _compute_standard_stats(self, X: np.array) -> None:
         """Compute statistics for standard normalization."""
         self.logger.debug("Computing standard normalization statistics")
         mean = np.mean(X, axis=0, dtype=self.config.dtype)
@@ -758,8 +707,7 @@ class DataPreprocessor:
             for i, name in enumerate(self._feature_names):
                 self.logger.debug(f"Feature {name}: mean={mean[i]:.6f}, std={std[i]:.6f}")
 
-
-    def _compute_minmax_stats(self, X: np.ndarray) -> None:
+    def _compute_minmax_stats(self, X: np.array) -> None:
         """Compute statistics for min-max normalization."""
         self.logger.debug("Computing min-max normalization statistics")
         min_val = np.min(X, axis=0)
@@ -778,7 +726,7 @@ class DataPreprocessor:
             for i, name in enumerate(self._feature_names):
                 self.logger.debug(f"Feature {name}: min={min_val[i]:.6f}, max={max_val[i]:.6f}, range={range_val[i]:.6f}")
 
-    def _compute_robust_stats(self, X: np.ndarray) -> None:
+    def _compute_robust_stats(self, X: np.array) -> None:
         """Compute robust statistics using percentiles."""
         self.logger.debug("Computing robust normalization statistics")
         lower, upper = self.config.robust_percentiles
@@ -799,7 +747,7 @@ class DataPreprocessor:
                 self.logger.debug(f"Feature {name}: lower={lower_percentile[i]:.6f}, "
                                  f"upper={upper_percentile[i]:.6f}, range={range_val[i]:.6f}")
 
-    def _compute_custom_stats(self, X: np.ndarray) -> None:
+    def _compute_custom_stats(self, X: np.array) -> None:
         """Compute custom statistics using a user-defined method."""
         self.logger.debug("Computing custom normalization statistics")
         
@@ -820,14 +768,14 @@ class DataPreprocessor:
                 "Custom normalization is enabled but no custom_normalization_fn is defined in config"
             )
 
-    def _compute_outlier_stats(self, X: np.ndarray) -> None:
+    def _compute_outlier_stats(self, X: np.array) -> None:
         """Compute statistics for outlier detection."""
         outlier_method = self.config.outlier_method.lower()
         self.logger.debug(f"Computing outlier statistics using {outlier_method} method")
         
         self._compute_outlier_stats_with_method(X, outlier_method)
 
-    def _compute_outlier_stats_with_method(self, X: np.ndarray, method: str) -> None:
+    def _compute_outlier_stats_with_method(self, X: np.array, method: str) -> None:
         """
         Compute outlier statistics using the specified method.
         
@@ -892,7 +840,7 @@ class DataPreprocessor:
             self.logger.warning(f"Unknown outlier method '{method}', falling back to IQR")
             self._compute_outlier_stats_with_method(X, "iqr")
 
-    def _normalize_data(self, X: np.ndarray) -> np.ndarray:
+    def _normalize_data(self, X: np.array) -> np.array:
         """Apply normalization based on configured method."""
         normalization_type = self.config.normalization
         
@@ -919,7 +867,7 @@ class DataPreprocessor:
             
         return X
 
-    def _handle_infinite_values(self, X: np.ndarray) -> np.ndarray:
+    def _handle_infinite_values(self, X: np.array) -> np.array:
         """Handle infinite values in data with configurable strategies."""
         mask = ~np.isfinite(X)
         if np.any(mask):
@@ -961,7 +909,7 @@ class DataPreprocessor:
             
         return X
 
-    def _handle_nan_values(self, X: np.ndarray) -> np.ndarray:
+    def _handle_nan_values(self, X: np.array) -> np.array:
         """Handle NaN values in data with advanced strategies."""
         mask = np.isnan(X)
         if np.any(mask):
@@ -1007,7 +955,7 @@ class DataPreprocessor:
             
         return X
 
-    def _handle_outliers(self, X: np.ndarray) -> np.ndarray:
+    def _handle_outliers(self, X: np.array) -> np.array:
         """Detect and handle outliers based on fitted statistics."""
         if not self.config.detect_outliers:
             return X
@@ -1120,7 +1068,7 @@ class DataPreprocessor:
                 
         return X
 
-    def _clip_data(self, X: np.ndarray) -> np.ndarray:
+    def _clip_data(self, X: np.array) -> np.array:
         """Clip data to specified range."""
         min_clip, max_clip = self.config.clip_range
         np.clip(X, min_clip, max_clip, out=X)  # In-place clipping for efficiency
@@ -1143,20 +1091,21 @@ class DataPreprocessor:
         """Return computed statistics with safeguards."""
         if not self._fitted:
             raise RuntimeError("Preprocessor not fitted yet")
-            
-        # Return copies of arrays to prevent modification
+
         result = {}
         for k, v in self._stats.items():
             if isinstance(v, np.ndarray):
+                # Return a copy to avoid external modification
                 result[k] = v.copy()
             elif hasattr(v, 'copy'):
+                # Might handle other copyable objects
                 result[k] = v.copy()
             elif k == 'outlier_model':
                 # Skip complex objects like sklearn models
                 result[k] = "Model object (not JSON serializable)"
             else:
                 result[k] = v
-                
+
         return result
 
     def get_feature_names(self) -> List[str]:
@@ -1193,9 +1142,9 @@ class DataPreprocessor:
             self._n_samples_seen = 0
             
             # Clear caches if enabled
-            if self.config.cache_enabled and hasattr(self._cached_transform, 'cache_clear'):
-                self._cached_transform.cache_clear()
-                
+            if self.config.cache_enabled and self._transform_cache is not None:
+                self._transform_cache.clear()
+    
             self.logger.info("Preprocessor state reset")
 
     @log_operation
@@ -1208,7 +1157,7 @@ class DataPreprocessor:
         """
         if not self._fitted:
             raise RuntimeError("Cannot save unfitted preprocessor")
-                
+                    
         with self._lock, self._error_context("serialization operation"):  # Ensure thread safety during save
             # Create directory if it doesn't exist
             directory = os.path.dirname(os.path.abspath(filepath))
@@ -1222,7 +1171,7 @@ class DataPreprocessor:
                 # Prepare data for serialization
                 data = {
                     "version": self._version,
-                    "config": self.config.to_dict(),  # Now properly implemented
+                    "config": asdict(self.config),  # Convert config to dictionary
                     "feature_names": self._feature_names,
                     "n_features": self._n_features,
                     "n_samples_seen": self._n_samples_seen,
@@ -1230,12 +1179,21 @@ class DataPreprocessor:
                     "stats": {}
                 }
                 
+                # Convert enum values to strings in the config
+                if "normalization" in data["config"]:
+                    data["config"]["normalization"] = data["config"]["normalization"].name
+
+                if "dtype" in data["config"] and isinstance(data["config"]["dtype"], type):
+                    # or data["config"]["dtype"].__name__ if you only want "float32"
+                    data["config"]["dtype"] = str(data["config"]["dtype"])
+
                 # Get base filepath for models without extension
                 base_filepath = os.path.splitext(filepath)[0]
                 
                 # Handle stats with special cases for non-serializable objects
                 for k, v in self._stats.items():
                     if isinstance(v, np.ndarray):
+
                         data["stats"][k] = {
                             "type": "ndarray",
                             "dtype": str(v.dtype),
@@ -1260,7 +1218,18 @@ class DataPreprocessor:
                         data["stats"][k] = v.item()
                     elif isinstance(v, type):
                         # Handle Python types
-                        data["stats"][k] = str(v)
+                        data["stats"][k] = str(v)  # or "float64"
+                    elif isinstance(v, np.dtype):
+                        data["stats"][k] = str(v)  # e.g. "float64"
+                    elif isinstance(v, (np.integer, np.floating, np.bool_)):
+                        # Convert numpy scalars to Python scalars
+                        data["stats"][k] = v.item()
+                    elif isinstance(v, type):
+                        # Handle Python types
+                        data["stats"][k] = str(v)  # or "float64"
+                    elif isinstance(v, np.dtype):
+                        # Handle numpy data types
+                        data["stats"][k] = str(v)  # e.g. "float64"
                     else:
                         # Test JSON serialization first to avoid errors during final save
                         try:
@@ -1286,7 +1255,6 @@ class DataPreprocessor:
                 for model_file in model_files:
                     if os.path.exists(model_file) and os.path.basename(filepath) not in model_file:
                         os.remove(model_file)
-                
                 # Re-raise with appropriate error type
                 if isinstance(e, SerializationError):
                     raise e
@@ -1397,7 +1365,7 @@ class DataPreprocessor:
             
             return preprocessor
 
-    def inverse_transform(self, X: Union[np.ndarray, List], copy: bool = True) -> np.ndarray:
+    def inverse_transform(self, X: Union[np.array, List], copy: bool = True) -> np.array:
         """
         Reverse the transformation process to get original scale data.
         
@@ -1453,7 +1421,7 @@ class DataPreprocessor:
 
 
 
-    def partial_fit(self, X: Union[np.ndarray, List], feature_names: Optional[List[str]] = None) -> 'DataPreprocessor':
+    def partial_fit(self, X: Union[np.array, List], feature_names: Optional[List[str]] = None) -> 'DataPreprocessor':
         """
         Update preprocessing statistics with a new batch of data.
         
@@ -1492,7 +1460,7 @@ class DataPreprocessor:
                 self.logger.info(f"Updated preprocessor with {X.shape[0]} additional samples, total seen: {self._n_samples_seen}")
                 return self
 
-    def _update_stats_incrementally(self, X: np.ndarray) -> None:
+    def _update_stats_incrementally(self, X: np.array) -> None:
         """Update statistics incrementally with new data."""
         norm_type = self.config.normalization
         
@@ -1628,7 +1596,7 @@ class DataPreprocessor:
             # In a real implementation, we would track actual frequencies
             self._stats['most_frequent'] = self._stats['most_frequent']
 
-    def _update_outlier_stats(self, X: np.ndarray) -> None:
+    def _update_outlier_stats(self, X: np.array) -> None:
         """Update outlier detection statistics with new data."""
         outlier_method = self._stats.get('outlier_method')
         if outlier_method is None:
@@ -1703,7 +1671,21 @@ class DataPreprocessor:
             except Exception:
                 # Ignore errors during cleanup
                 pass
-
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        # Remove unpicklable attributes.
+        state.pop('_lock', None)
+        state.pop('_parallel_executor', None)
+        state.pop('logger', None)
+        return state
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        # Reinitialize the unpicklable attributes.
+        self._lock = threading.RLock()
+        self.logger = logging.getLogger(f"{__name__}.DataPreprocessor")
+        # Optionally reinitialize the parallel executor if needed.
+        if self.config.parallel_processing:
+            self._init_parallel_executor()
     def get_memory_usage(self) -> Dict[str, Any]:
         """
         Estimate the memory usage of the preprocessor.
@@ -1719,6 +1701,7 @@ class DataPreprocessor:
         stats_size = 0
         for k, v in self._stats.items():
             if isinstance(v, np.ndarray):
+
                 stats_size += v.nbytes
             elif hasattr(v, '__sizeof__'):
                 stats_size += sys.getsizeof(v)
@@ -1743,40 +1726,34 @@ class DataPreprocessor:
         return memory_info
 
     def copy(self) -> 'DataPreprocessor':
-        """
-        Create a copy of this preprocessor.
-        
-        Returns:
-            A new preprocessor with the same state
-        """
-        import io
         import tempfile
         import pickle
-        
+
         if not self._fitted:
-            # If not fitted, just create a new instance with the same config
             return DataPreprocessor(self.config)
-        
-        # For fitted preprocessors, use pickle instead of JSON serialization
+
         try:
-            with tempfile.NamedTemporaryFile(suffix='.pkl') as temp_file:
-                # Use pickle to serialize the object
-                with open(temp_file.name, 'wb') as f:
+            with tempfile.NamedTemporaryFile(suffix='.pkl', delete=False) as temp_file:
+                temp_filepath = temp_file.name
+                with open(temp_filepath, 'wb') as f:
+                    # Pickle the state using our custom __getstate__
                     pickle.dump(self, f)
-                
-                # Load from the pickle file
-                with open(temp_file.name, 'rb') as f:
-                    return pickle.load(f)
+
+                # Now load it back
+                with open(temp_filepath, 'rb') as f:
+                    new_preprocessor = pickle.load(f)
+                return new_preprocessor
         except Exception as e:
             self.logger.error(f"Error copying preprocessor: {e}")
-            # Fallback: create a new instance and manually copy attributes
+            # Fallback approach if needed...
             new_preprocessor = DataPreprocessor(self.config)
-            new_preprocessor._stats = {k: (v.copy() if hasattr(v, 'copy') else v) 
-                                    for k, v in self._stats.items()}
+            new_preprocessor._stats = {
+                k: (v.copy() if hasattr(v, 'copy') else v)
+                for k, v in self._stats.items()
+            }
             new_preprocessor._feature_names = self._feature_names.copy()
             new_preprocessor._fitted = self._fitted
             new_preprocessor._n_features = self._n_features
             new_preprocessor._n_samples_seen = self._n_samples_seen
             new_preprocessor._version = self._version
             return new_preprocessor
-
