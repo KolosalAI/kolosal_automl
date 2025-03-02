@@ -6,7 +6,12 @@ from typing import Optional, List, Dict, Tuple, NamedTuple, Callable, Any
 from dataclasses import dataclass, field, asdict
 from typing import Optional, Dict, Any, List
 from enum import Enum, auto
+import json
 import os
+
+# Constants definitions
+CHECKPOINT_PATH = "./checkpoints"
+MODEL_REGISTRY_PATH = "./model_registry"
 
 # -----------------------------------------------------------------------------
 # Quantization Configuration
@@ -326,115 +331,415 @@ class InferenceEngineConfig:
         }
 
 # -----------------------------------------------------------------------------
-# Enums for Configuration Domains
+# Configuration for Training Engine
 # -----------------------------------------------------------------------------
 
-class TaskType(Enum):
-    """Defines types of machine learning tasks."""
-    CLASSIFICATION = "Classification"
-    REGRESSION = "Regression"
-    CLUSTERING = "Clustering"
+# Define enums
+class TrainingMode(Enum):
+    STANDARD = auto()
+    INCREMENTAL = auto()
+    TRANSFER = auto()
+    DISTRIBUTED = auto()
+    HYPERPARAMETER_SEARCH = auto()
+    AUTO_ML = auto()
 
-    def __str__(self):
-        return self.value
+class TrainingState(Enum):
+    INITIALIZING = auto()
+    READY = auto()
+    PREPROCESSING = auto()
+    FEATURE_ENGINEERING = auto()
+    TRAINING = auto()
+    EVALUATING = auto()
+    OPTIMIZING = auto()
+    SAVING = auto()
+    PAUSED = auto()
+    ERROR = auto()
+    STOPPING = auto()
+    STOPPED = auto()
+    COMPLETED = auto()
 
-# -----------------------------------------------------------------------------
-# Hyperparameter Configuration
-# -----------------------------------------------------------------------------
+class OptimizationStrategy(Enum):
+    GRID_SEARCH = auto()
+    RANDOM_SEARCH = auto()
+    BAYESIAN = auto()
+    GENETIC = auto()
+    CUSTOM = auto()
+
+class DataSplitStrategy(Enum):
+    RANDOM = auto()
+    STRATIFIED = auto()
+    GROUP = auto()
+    TIME_SERIES = auto()
+    CUSTOM = auto()
+
+class ModelType(Enum):
+    SKLEARN = auto()
+    XGBOOST = auto()
+    LIGHTGBM = auto()
+    CUSTOM = auto()
+    ENSEMBLE = auto()
 
 @dataclass
-class HyperParameterConfig:
-    """Configuration for a single hyperparameter."""
-    name: str
-    min_val: float
-    max_val: float
-    step: float
-    default: float
-
-# Default hyperparameters for selected models (e.g., for clustering)
-DEFAULT_HYPERPARAMETERS: Dict[str, List[HyperParameterConfig]] = {
-    "kmeans": [
-        HyperParameterConfig("n_clusters", 2, 10, 1, 3),
-        HyperParameterConfig("max_iter", 100, 500, 100, 300)
-    ],
-    "dbscan": [
-        HyperParameterConfig("eps", 0.1, 1.0, 0.1, 0.5),
-        HyperParameterConfig("min_samples", 2, 10, 1, 5)
-    ],
-    # Additional model hyperparameters can be added here.
-}
-
-# -----------------------------------------------------------------------------
-# Target Metrics Definition
-# -----------------------------------------------------------------------------
-
-@dataclass
-class TargetMetrics:
-    """Records evaluation results for a given metric."""
-    metric_name: str
-    target_score: float
-    achieved_value: float
-    is_achieved: bool
-
-# -----------------------------------------------------------------------------
-# AutoML Model Configurations
-# -----------------------------------------------------------------------------
-
-@dataclass
-class AutoMLModelConfig:
-    """Configuration for the AutoML model."""
-    target_column: str
-    task_type: TaskType
-    models: List[str]
-    time_budget: int
-    n_clusters: int
-    random_seed: int
-    verbosity: int
-    show_shap: bool
-    metric_name: str
-    target_score: float
-    hyperparameter_configs: Dict[str, List[HyperParameterConfig]]
-    auto_model_selection: bool
-    use_cv: bool
-
-# Alternate naming (ModelConfig) can be used interchangeably if needed.
-ModelConfig = AutoMLModelConfig
-
-
-def optimize_for_inference(model: Any, model_type: ModelType) -> Any:
-    """
-    Apply optimizations to model for faster inference.
+class DatasetConfig:
+    """Configuration for dataset handling"""
+    train_path: Optional[str] = None
+    validation_path: Optional[str] = None
+    test_path: Optional[str] = None
     
-    Args:
-        model: The model to optimize
-        model_type: Type of the model
+    # Dataset splitting parameters
+    test_size: float = 0.2
+    validation_size: float = 0.2
+    split_strategy: DataSplitStrategy = DataSplitStrategy.RANDOM
+    random_seed: int = 42
+    stratify_column: Optional[str] = None
+    group_column: Optional[str] = None
+    time_column: Optional[str] = None
+    
+    # Data processing options
+    handle_missing: bool = True
+    handle_outliers: bool = True
+    handle_categorical: bool = True
+    handle_imbalance: bool = False
+    imbalance_strategy: str = "oversample"  # oversample, undersample, smote, etc.
+    
+    # Data format 
+    csv_separator: str = ","
+    encoding: str = "utf-8"
+    has_header: bool = True
+    
+    # In-memory vs out-of-memory processing
+    enable_chunking: bool = False
+    chunk_size: int = 10000
+    
+    # Feature columns configuration
+    feature_columns: List[str] = field(default_factory=list)
+    target_column: Optional[str] = None
+    weight_column: Optional[str] = None
+    id_column: Optional[str] = None
+    categorical_columns: List[str] = field(default_factory=list)
+    numerical_columns: List[str] = field(default_factory=list)
+    datetime_columns: List[str] = field(default_factory=list)
+    text_columns: List[str] = field(default_factory=list)
+    
+    # Dataset versioning
+    enable_versioning: bool = False
+    version: str = "1.0.0"
+    compute_dataset_hash: bool = False
+
+@dataclass
+class FeatureEngineeringConfig:
+    """Configuration for feature engineering"""
+    enable_feature_selection: bool = False
+    feature_selection_method: str = "importance"  # importance, correlation, recursive
+    max_features: Optional[int] = None
+    min_feature_importance: float = 0.01
+    
+    enable_polynomial_features: bool = False
+    polynomial_degree: int = 2
+    interaction_only: bool = True
+    
+    enable_feature_encoding: bool = True
+    encoding_method: str = "auto"  # auto, onehot, label, target, frequency, etc.
+    max_onehot_cardinality: int = 10
+    
+    enable_dimensionality_reduction: bool = False
+    dimensionality_reduction_method: str = "pca"  # pca, t-sne, umap, etc.
+    target_dimensions: Optional[int] = None
+    variance_threshold: float = 0.95
+    
+    enable_feature_generation: bool = False
+    datetime_features: bool = True
+    text_features: bool = False
+    aggregation_features: bool = False
+    
+    enable_scaling: bool = True
+    scaling_method: str = "standard"  # standard, minmax, robust, etc.
+    
+    custom_transformers: Dict[str, Any] = field(default_factory=dict)
+
+@dataclass
+class ModelTrainingConfig:
+    """Configuration for model training"""
+    model_type: ModelType = ModelType.SKLEARN
+    model_class: Optional[str] = None  # e.g., "sklearn.ensemble.RandomForestClassifier"
+    problem_type: str = "classification"  # classification, regression, multi-label, etc.
+    
+    # Model hyperparameters
+    hyperparameters: Dict[str, Any] = field(default_factory=dict)
+    
+    # Training parameters
+    num_epochs: Optional[int] = None
+    batch_size: Optional[int] = None
+    learning_rate: Optional[float] = None
+    early_stopping: bool = True
+    early_stopping_patience: int = 10
+    early_stopping_metric: str = "auto"  # auto, accuracy, f1, mse, etc.
+    
+    # Cross-validation
+    enable_cross_validation: bool = False
+    cv_folds: int = 5
+    cv_strategy: str = "kfold"  # kfold, stratified, group, etc.
+    
+    # Multi-threading and parallelism
+    n_jobs: int = -1
+    enable_threading: bool = True
+    use_gpu: bool = False
+
+    # Checkpointing
+    enable_checkpointing: bool = False
+    checkpoint_interval: int = 1  # checkpoint every N epochs
+    keep_checkpoint_max: int = 3  # keep last N checkpoints
+    
+    # Class weights for imbalanced classification
+    class_weight: str = "balanced"  # balanced, balanced_subsample, None or custom dict
+    
+    # Objective function
+    objective: Optional[str] = None  # custom objective for XGBoost/LightGBM
+    
+    # Regularization
+    l1_regularization: Optional[float] = None
+    l2_regularization: Optional[float] = None
+    
+    # Custom metrics to monitor
+    metrics: List[str] = field(default_factory=list)
+    
+    # Advanced options
+    enable_calibration: bool = False
+    calibration_method: str = "isotonic"  # isotonic, sigmoid
+    
+    # Feature importance
+    compute_feature_importance: bool = True
+    importance_type: str = "auto"  # gain, split, permutation, etc.
+
+@dataclass
+class HyperparameterOptimizationConfig:
+    """Configuration for hyperparameter optimization"""
+    enabled: bool = False
+    strategy: OptimizationStrategy = OptimizationStrategy.RANDOM_SEARCH
+    
+    # Optimization parameters
+    max_trials: int = 10
+    max_time_minutes: Optional[int] = None
+    metric: str = "auto"  # auto, accuracy, f1, mse, etc.
+    direction: str = "maximize"  # maximize, minimize
+    
+    # Search space definition
+    param_grid: Dict[str, Any] = field(default_factory=dict)
+    
+    # Cross-validation settings during optimization
+    cv_folds: int = 3
+    
+    # Parallel optimization
+    n_parallel_trials: int = 1
+    
+    # Bayesian optimization settings (for optuna)
+    pruning: bool = True
+    pruner: str = "median"  # median, hyperband, etc.
+    sampler: str = "tpe"  # tpe, random, grid, etc.
+    
+    # Early stopping for hyperparameter search
+    early_stopping: bool = True
+    early_stopping_patience: int = 5
+
+@dataclass
+class ModelEvaluationConfig:
+    """Configuration for model evaluation"""
+    metrics: List[str] = field(default_factory=lambda: ["auto"])
+    
+    # Classification specific metrics
+    classification_threshold: float = 0.5
+    average_method: str = "weighted"  # weighted, macro, micro, etc.
+    
+    # Evaluation datasets
+    evaluate_on_train: bool = True
+    evaluate_on_validation: bool = True
+    evaluate_on_test: bool = True
+    
+    # Additional evaluation processes
+    confusion_matrix: bool = True
+    classification_report: bool = True
+    roc_curve: bool = True
+    precision_recall_curve: bool = True
+    calibration_curve: bool = False
+    
+    # Feature importance evaluation
+    compute_permutation_importance: bool = False
+    n_repeats: int = 10
+    
+    # Cross-validation evaluation
+    use_cross_validation: bool = False
+    cv_folds: int = 5
+    
+    # Saving evaluation results
+    save_predictions: bool = True
+    save_evaluation_report: bool = True
+    
+    # Model explainability
+    enable_explainability: bool = False
+    explainability_method: str = "shap"  # shap, lime, etc.
+    max_samples_to_explain: int = 100
+
+@dataclass
+class ModelRegistryConfig:
+    """Configuration for model registry and versioning"""
+    registry_path: str = MODEL_REGISTRY_PATH
+    
+    # Model metadata
+    model_name: str = "model"
+    model_version: str = "1.0.0"
+    description: str = ""
+    tags: List[str] = field(default_factory=list)
+    
+    # Versioning
+    auto_version: bool = True
+    version_strategy: str = "semver"  # semver, timestamp, incremental, etc.
+    
+    # Artifacts to save with the model
+    save_preprocessor: bool = True
+    save_feature_names: bool = True
+    save_metrics: bool = True
+    save_hyperparameters: bool = True
+    save_training_history: bool = True
+    save_feature_importance: bool = True
+    
+    # Model formats
+    save_formats: List[str] = field(default_factory=lambda: ["pickle"])
+    
+    # AWS S3/GCS/Azure Blob integration
+    enable_cloud_storage: bool = False
+    cloud_provider: str = "aws"  # aws, gcp, azure
+    cloud_bucket: str = ""
+    cloud_path: str = ""
+    
+    # Model deployment
+    auto_deploy: bool = False
+    deployment_target: str = "local"  # local, docker, kubernetes, etc.
+    
+    # Model lifecycle
+    enable_lifecycle_management: bool = False
+    archive_old_versions: bool = True
+    max_versions_to_keep: int = 5
+
+@dataclass
+class CPUTrainingConfig:
+    """
+    Complete configuration for CPU-optimized training with advanced features.
+    
+    Configuration parameters are organized by functional category:
+    - Training: Core training settings
+    - Dataset: Dataset handling and splitting
+    - Feature Engineering: Feature transformations and selection
+    - Model: Model-specific parameters
+    - Optimization: Hyperparameter optimization settings
+    - Evaluation: Model evaluation and metrics
+    - Registry: Model versioning and storage
+    - Resource Management: System resource controls
+    - Monitoring: Telemetry and observability
+    """
+    # Dataset configuration
+    dataset: DatasetConfig = field(default_factory=DatasetConfig)
+    
+    # Feature engineering configuration
+    feature_engineering: FeatureEngineeringConfig = field(default_factory=FeatureEngineeringConfig)
+    
+    # Model training configuration
+    model_training: ModelTrainingConfig = field(default_factory=ModelTrainingConfig)
+    
+    # Hyperparameter optimization configuration
+    hyperparameter_optimization: HyperparameterOptimizationConfig = field(default_factory=HyperparameterOptimizationConfig)
+    
+    # Model evaluation configuration
+    model_evaluation: ModelEvaluationConfig = field(default_factory=ModelEvaluationConfig)
+    
+    # Model registry configuration
+    model_registry: ModelRegistryConfig = field(default_factory=ModelRegistryConfig)
+    
+    # Core training settings
+    training_mode: TrainingMode = TrainingMode.STANDARD
+    random_seed: int = 42
+    
+    # Resource management
+    num_threads: int = field(default_factory=lambda: os.cpu_count() or 4)
+    memory_limit_gb: Optional[float] = None
+    enable_intel_optimization: bool = True
+    use_disk_offloading: bool = False
+    temp_directory: str = "./tmp"
+    
+    # Monitoring and debugging
+    enable_monitoring: bool = True
+    debug_mode: bool = False
+    log_level: str = "INFO"
+    monitoring_interval: float = 5.0  # seconds
+    
+    # Advanced options
+    enable_distributed_training: bool = False
+    distributed_backend: str = "multiprocessing"  # multiprocessing, dask, ray, etc.
+    num_workers: int = 1
+    
+    enable_auto_resume: bool = True
+    resume_from_checkpoint: Optional[str] = None
+    
+    # Callbacks and hooks
+    callbacks: Dict[str, Any] = field(default_factory=dict)
+    
+    # Development options
+    experimental_features: bool = False
+    
+    def __post_init__(self):
+        """Validate configuration parameters after initialization."""
+        # Set reasonable defaults for CPU thread count
+        if self.num_threads <= 0:
+            self.num_threads = os.cpu_count() or 4
+            
+        # Configure model_training.n_jobs based on num_threads if not set
+        if self.model_training.n_jobs <= 0:
+            self.model_training.n_jobs = self.num_threads
+            
+        # Create directories if they don't exist
+        os.makedirs(self.model_registry.registry_path, exist_ok=True)
+        os.makedirs(self.temp_directory, exist_ok=True)
+        os.makedirs(CHECKPOINT_PATH, exist_ok=True)
         
-    Returns:
-        Optimized model
-    """
-    # Model-specific optimizations
-    if model_type == ModelType.SKLEARN:
-        # Some sklearn models can be optimized
-        if hasattr(model, 'n_jobs'):
-            # Set parallel jobs to 1 for inference (avoid overhead)
-            model.n_jobs = 1
+        # For distributed training, adjust worker count
+        if self.enable_distributed_training and self.num_workers <= 0:
+            self.num_workers = max(1, (os.cpu_count() or 4) - 1)
+            
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert config to a dictionary for serialization."""
+        return asdict(self)
     
-    elif model_type == ModelType.XGBOOST:
-        # XGBoost optimizations
-        try:
-            # Use predictor type that is faster for CPU
-            model.set_param('predictor', 'cpu_predictor')
-            # Set number of threads
-            model.set_param('nthread', os.cpu_count() or 4)
-        except:
-            pass
+    @classmethod
+    def from_dict(cls, config_dict: Dict[str, Any]) -> 'CPUTrainingConfig':
+        """Create config from a dictionary."""
+        # Handle nested configurations
+        if 'dataset' in config_dict and isinstance(config_dict['dataset'], dict):
+            config_dict['dataset'] = DatasetConfig(**config_dict['dataset'])
+        
+        if 'feature_engineering' in config_dict and isinstance(config_dict['feature_engineering'], dict):
+            config_dict['feature_engineering'] = FeatureEngineeringConfig(**config_dict['feature_engineering'])
+        
+        if 'model_training' in config_dict and isinstance(config_dict['model_training'], dict):
+            config_dict['model_training'] = ModelTrainingConfig(**config_dict['model_training'])
+        
+        if 'hyperparameter_optimization' in config_dict and isinstance(config_dict['hyperparameter_optimization'], dict):
+            config_dict['hyperparameter_optimization'] = HyperparameterOptimizationConfig(**config_dict['hyperparameter_optimization'])
+        
+        if 'model_evaluation' in config_dict and isinstance(config_dict['model_evaluation'], dict):
+            config_dict['model_evaluation'] = ModelEvaluationConfig(**config_dict['model_evaluation'])
+        
+        if 'model_registry' in config_dict and isinstance(config_dict['model_registry'], dict):
+            config_dict['model_registry'] = ModelRegistryConfig(**config_dict['model_registry'])
+        
+        return cls(**config_dict)
     
-    elif model_type == ModelType.LIGHTGBM:
-        # LightGBM optimizations
-        try:
-            # Set number of threads for inference
-            model.params['num_threads'] = os.cpu_count() or 4
-        except:
-            pass
+    @classmethod
+    def from_json(cls, json_path: str) -> 'CPUTrainingConfig':
+        """Load configuration from a JSON file."""
+        with open(json_path, 'r') as f:
+            config_dict = json.load(f)
+        return cls.from_dict(config_dict)
     
-    return model
+    def to_json(self, json_path: str) -> None:
+        """Save configuration to a JSON file."""
+        with open(json_path, 'w') as f:
+            json.dump(self.to_dict(), f, indent=2)

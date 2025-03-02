@@ -1,4 +1,4 @@
-from collections import deque, OrderedDict
+from collections import OrderedDict
 import time
 import threading
 from typing import Any, Dict, Tuple

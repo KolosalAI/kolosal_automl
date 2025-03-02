@@ -2,14 +2,13 @@ from typing import Tuple, Optional, Callable, List, Dict, TypeVar, Generic, Unio
 from queue import Queue, Empty, PriorityQueue, Full
 from threading import Event, Thread, Lock, RLock
 import numpy as np
-from numpy.typing import NDArray, ArrayLike
+from numpy.typing import NDArray
 import time
 import logging
 from concurrent.futures import Future, ThreadPoolExecutor
 import weakref
 from collections import deque
 import statistics
-import threading
 import gc
 
 # Try to import psutil for memory monitoring

@@ -1,71 +1,32 @@
 import os
 import sys
-import time
-import logging
-import pickle
-import hashlib
-import threading
-import warnings
 import gc
 import json
+import time
+import pickle
+import shutil
+import logging
+import traceback
+import threading
 import uuid
 import numpy as np
-import pandas as pd
-from typing import Dict, List, Any, Optional, Union, Tuple, Callable, TypeVar, Generic, Set
-from dataclasses import dataclass, field, asdict
-from enum import Enum, auto
-from datetime import datetime, timedelta
-from functools import wraps, lru_cache, partial
+import polars as pl
+
+from datetime import datetime
 from contextlib import contextmanager
-import traceback
-import signal
-import psutil
-from collections import deque, OrderedDict, defaultdict
-from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, Future
+from typing import Optional, Dict, Any, List, Union, Tuple, Callable
+from dataclasses import asdict
+from sklearn.model_selection import (
+    train_test_split, cross_val_score, KFold, StratifiedKFold
+)
+from sklearn.metrics import (
+    accuracy_score, precision_score, recall_score, f1_score,
+    roc_auc_score, mean_squared_error, r2_score, confusion_matrix
+)
+from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
+from sklearn.exceptions import NotFittedError
 
-# Optional imports for specific optimizations
-try:
-    import joblib
-    JOBLIB_AVAILABLE = True
-except ImportError:
-    JOBLIB_AVAILABLE = False
-
-try:
-    import sklearn
-    from sklearn.model_selection import (
-        train_test_split, KFold, StratifiedKFold, GroupKFold, 
-        cross_val_score, GridSearchCV, RandomizedSearchCV
-    )
-    from sklearn.metrics import (
-        accuracy_score, precision_score, recall_score, f1_score, 
-        roc_auc_score, mean_squared_error, r2_score
-    )
-    SKLEARN_AVAILABLE = True
-    # Try to enable Intel optimizations for scikit-learn
-    try:
-        from sklearnex import patch_sklearn
-        patch_sklearn()
-        SKLEARN_OPTIMIZED = True
-    except ImportError:
-        SKLEARN_OPTIMIZED = False
-except ImportError:
-    SKLEARN_AVAILABLE = False
-    SKLEARN_OPTIMIZED = False
-
-try:
-    # Check for Intel's Python Distribution
-    import intel
-    INTEL_PYTHON = True
-except ImportError:
-    INTEL_PYTHON = False
-
-try:
-    import mkl
-    MKL_AVAILABLE = True
-except ImportError:
-    MKL_AVAILABLE = False
-
-# Optional ML libraries
+# Conditional imports
 try:
     import xgboost as xgb
     XGBOOST_AVAILABLE = True
@@ -84,3265 +45,2803 @@ try:
 except ImportError:
     OPTUNA_AVAILABLE = False
 
-# Import local modules (from inference engine)
-from data_preprocessor import DataPreprocessor, PreprocessorConfig, NormalizationType
-from configs import QuantizationConfig
+try:
+    import sklearn
+    SKLEARN_AVAILABLE = True
+except ImportError:
+    SKLEARN_AVAILABLE = False
 
-# Define constants
-MODEL_REGISTRY_PATH = os.environ.get("MODEL_REGISTRY_PATH", "./models")
-DEFAULT_LOG_PATH = os.environ.get("LOG_PATH", "./logs")
-DEFAULT_DATA_PATH = os.environ.get("DATA_PATH", "./data")
-CHECKPOINT_PATH = os.environ.get("CHECKPOINT_PATH", "./checkpoints")
-MAX_RETRY_ATTEMPTS = 3
-MEMORY_CHECK_INTERVAL = 30  # seconds
+try:
+    import mkl
+    MKL_AVAILABLE = True
+except ImportError:
+    MKL_AVAILABLE = False
 
-# Define enums
-class TrainingMode(Enum):
-    STANDARD = auto()
-    INCREMENTAL = auto()
-    TRANSFER = auto()
-    DISTRIBUTED = auto()
-    HYPERPARAMETER_SEARCH = auto()
-    AUTO_ML = auto()
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
 
-class TrainingState(Enum):
-    INITIALIZING = auto()
-    READY = auto()
-    PREPROCESSING = auto()
-    FEATURE_ENGINEERING = auto()
-    TRAINING = auto()
-    EVALUATING = auto()
-    OPTIMIZING = auto()
-    SAVING = auto()
-    PAUSED = auto()
-    ERROR = auto()
-    STOPPING = auto()
-    STOPPED = auto()
-    COMPLETED = auto()
+from modules.configs import CPUTrainingConfig, ModelType, OptimizationStrategy, DataSplitStrategy, TrainingState
+from modules.engine.data_preprocessor import DataPreprocessor
 
-class OptimizationStrategy(Enum):
-    GRID_SEARCH = auto()
-    RANDOM_SEARCH = auto()
-    BAYESIAN = auto()
-    GENETIC = auto()
-    CUSTOM = auto()
 
-class DataSplitStrategy(Enum):
-    RANDOM = auto()
-    STRATIFIED = auto()
-    GROUP = auto()
-    TIME_SERIES = auto()
-    CUSTOM = auto()
-
-class ModelType(Enum):
-    SKLEARN = auto()
-    XGBOOST = auto()
-    LIGHTGBM = auto()
-    CUSTOM = auto()
-    ENSEMBLE = auto()
-
-@dataclass
-class DatasetConfig:
-    """Configuration for dataset handling"""
-    train_path: Optional[str] = None
-    validation_path: Optional[str] = None
-    test_path: Optional[str] = None
+class PolarsPreprocessor:
+    """Adaptation layer to make sklearn preprocessors work with Polars dataframes."""
     
-    # Dataset splitting parameters
-    test_size: float = 0.2
-    validation_size: float = 0.2
-    split_strategy: DataSplitStrategy = DataSplitStrategy.RANDOM
-    random_seed: int = 42
-    stratify_column: Optional[str] = None
-    group_column: Optional[str] = None
-    time_column: Optional[str] = None
+    def __init__(self, preprocessor):
+        self.preprocessor = preprocessor
+        self.column_order = None
     
-    # Data processing options
-    handle_missing: bool = True
-    handle_outliers: bool = True
-    handle_categorical: bool = True
-    handle_imbalance: bool = False
-    imbalance_strategy: str = "oversample"  # oversample, undersample, smote, etc.
+    def fit(self, df: pl.DataFrame):
+        # Convert to numpy for sklearn preprocessor
+        pandas_df = df.to_pandas()
+        self.column_order = pandas_df.columns.tolist()
+        self.preprocessor.fit(pandas_df)
+        return self
     
-    # Data format 
-    csv_separator: str = ","
-    encoding: str = "utf-8"
-    has_header: bool = True
-    
-    # In-memory vs out-of-memory processing
-    enable_chunking: bool = False
-    chunk_size: int = 10000
-    
-    # Feature columns configuration
-    feature_columns: List[str] = field(default_factory=list)
-    target_column: Optional[str] = None
-    weight_column: Optional[str] = None
-    id_column: Optional[str] = None
-    categorical_columns: List[str] = field(default_factory=list)
-    numerical_columns: List[str] = field(default_factory=list)
-    datetime_columns: List[str] = field(default_factory=list)
-    text_columns: List[str] = field(default_factory=list)
-    
-    # Dataset versioning
-    enable_versioning: bool = False
-    version: str = "1.0.0"
-    compute_dataset_hash: bool = False
-
-@dataclass
-class FeatureEngineeringConfig:
-    """Configuration for feature engineering"""
-    enable_feature_selection: bool = False
-    feature_selection_method: str = "importance"  # importance, correlation, recursive
-    max_features: Optional[int] = None
-    min_feature_importance: float = 0.01
-    
-    enable_polynomial_features: bool = False
-    polynomial_degree: int = 2
-    interaction_only: bool = True
-    
-    enable_feature_encoding: bool = True
-    encoding_method: str = "auto"  # auto, onehot, label, target, frequency, etc.
-    max_onehot_cardinality: int = 10
-    
-    enable_dimensionality_reduction: bool = False
-    dimensionality_reduction_method: str = "pca"  # pca, t-sne, umap, etc.
-    target_dimensions: Optional[int] = None
-    variance_threshold: float = 0.95
-    
-    enable_feature_generation: bool = False
-    datetime_features: bool = True
-    text_features: bool = False
-    aggregation_features: bool = False
-    
-    enable_scaling: bool = True
-    scaling_method: str = "standard"  # standard, minmax, robust, etc.
-    
-    custom_transformers: Dict[str, Any] = field(default_factory=dict)
-
-@dataclass
-class ModelTrainingConfig:
-    """Configuration for model training"""
-    model_type: ModelType = ModelType.SKLEARN
-    model_class: Optional[str] = None  # e.g., "sklearn.ensemble.RandomForestClassifier"
-    problem_type: str = "classification"  # classification, regression, multi-label, etc.
-    
-    # Model hyperparameters
-    hyperparameters: Dict[str, Any] = field(default_factory=dict)
-    
-    # Training parameters
-    num_epochs: Optional[int] = None
-    batch_size: Optional[int] = None
-    learning_rate: Optional[float] = None
-    early_stopping: bool = True
-    early_stopping_patience: int = 10
-    early_stopping_metric: str = "auto"  # auto, accuracy, f1, mse, etc.
-    
-    # Cross-validation
-    enable_cross_validation: bool = False
-    cv_folds: int = 5
-    cv_strategy: str = "kfold"  # kfold, stratified, group, etc.
-    
-    # Multi-threading and parallelism
-    n_jobs: int = -1
-    enable_threading: bool = True
-    use_gpu: bool = False
-    
-    # Checkpointing
-    enable_checkpointing: bool = False
-    checkpoint_interval: int = 1  # checkpoint every N epochs
-    keep_checkpoint_max: int = 3  # keep last N checkpoints
-    
-    # Class weights for imbalanced classification
-    class_weight: str = "balanced"  # balanced, balanced_subsample, None or custom dict
-    
-    # Objective function
-    objective: Optional[str] = None  # custom objective for XGBoost/LightGBM
-    
-    # Regularization
-    l1_regularization: Optional[float] = None
-    l2_regularization: Optional[float] = None
-    
-    # Custom metrics to monitor
-    metrics: List[str] = field(default_factory=list)
-    
-    # Advanced options
-    enable_calibration: bool = False
-    calibration_method: str = "isotonic"  # isotonic, sigmoid
-    
-    # Feature importance
-    compute_feature_importance: bool = True
-    importance_type: str = "auto"  # gain, split, permutation, etc.
-
-@dataclass
-class HyperparameterOptimizationConfig:
-    """Configuration for hyperparameter optimization"""
-    enabled: bool = False
-    strategy: OptimizationStrategy = OptimizationStrategy.RANDOM_SEARCH
-    
-    # Optimization parameters
-    max_trials: int = 10
-    max_time_minutes: Optional[int] = None
-    metric: str = "auto"  # auto, accuracy, f1, mse, etc.
-    direction: str = "maximize"  # maximize, minimize
-    
-    # Search space definition
-    param_grid: Dict[str, Any] = field(default_factory=dict)
-    
-    # Cross-validation settings during optimization
-    cv_folds: int = 3
-    
-    # Parallel optimization
-    n_parallel_trials: int = 1
-    
-    # Bayesian optimization settings (for optuna)
-    pruning: bool = True
-    pruner: str = "median"  # median, hyperband, etc.
-    sampler: str = "tpe"  # tpe, random, grid, etc.
-    
-    # Early stopping for hyperparameter search
-    early_stopping: bool = True
-    early_stopping_patience: int = 5
-
-@dataclass
-class ModelEvaluationConfig:
-    """Configuration for model evaluation"""
-    metrics: List[str] = field(default_factory=lambda: ["auto"])
-    
-    # Classification specific metrics
-    classification_threshold: float = 0.5
-    average_method: str = "weighted"  # weighted, macro, micro, etc.
-    
-    # Evaluation datasets
-    evaluate_on_train: bool = True
-    evaluate_on_validation: bool = True
-    evaluate_on_test: bool = True
-    
-    # Additional evaluation processes
-    confusion_matrix: bool = True
-    classification_report: bool = True
-    roc_curve: bool = True
-    precision_recall_curve: bool = True
-    calibration_curve: bool = False
-    
-    # Feature importance evaluation
-    compute_permutation_importance: bool = False
-    n_repeats: int = 10
-    
-    # Cross-validation evaluation
-    use_cross_validation: bool = False
-    cv_folds: int = 5
-    
-    # Saving evaluation results
-    save_predictions: bool = True
-    save_evaluation_report: bool = True
-    
-    # Model explainability
-    enable_explainability: bool = False
-    explainability_method: str = "shap"  # shap, lime, etc.
-    max_samples_to_explain: int = 100
-
-@dataclass
-class ModelRegistryConfig:
-    """Configuration for model registry and versioning"""
-    registry_path: str = MODEL_REGISTRY_PATH
-    
-    # Model metadata
-    model_name: str = "model"
-    model_version: str = "1.0.0"
-    description: str = ""
-    tags: List[str] = field(default_factory=list)
-    
-    # Versioning
-    auto_version: bool = True
-    version_strategy: str = "semver"  # semver, timestamp, incremental, etc.
-    
-    # Artifacts to save with the model
-    save_preprocessor: bool = True
-    save_feature_names: bool = True
-    save_metrics: bool = True
-    save_hyperparameters: bool = True
-    save_training_history: bool = True
-    save_feature_importance: bool = True
-    
-    # Model formats
-    save_formats: List[str] = field(default_factory=lambda: ["pickle"])
-    
-    # AWS S3/GCS/Azure Blob integration
-    enable_cloud_storage: bool = False
-    cloud_provider: str = "aws"  # aws, gcp, azure
-    cloud_bucket: str = ""
-    cloud_path: str = ""
-    
-    # Model deployment
-    auto_deploy: bool = False
-    deployment_target: str = "local"  # local, docker, kubernetes, etc.
-    
-    # Model lifecycle
-    enable_lifecycle_management: bool = False
-    archive_old_versions: bool = True
-    max_versions_to_keep: int = 5
-
-@dataclass
-class CPUTrainingConfig:
-    """
-    Complete configuration for CPU-optimized training with advanced features.
-    
-    Configuration parameters are organized by functional category:
-    - Training: Core training settings
-    - Dataset: Dataset handling and splitting
-    - Feature Engineering: Feature transformations and selection
-    - Model: Model-specific parameters
-    - Optimization: Hyperparameter optimization settings
-    - Evaluation: Model evaluation and metrics
-    - Registry: Model versioning and storage
-    - Resource Management: System resource controls
-    - Monitoring: Telemetry and observability
-    """
-    # Dataset configuration
-    dataset: DatasetConfig = field(default_factory=DatasetConfig)
-    
-    # Feature engineering configuration
-    feature_engineering: FeatureEngineeringConfig = field(default_factory=FeatureEngineeringConfig)
-    
-    # Model training configuration
-    model_training: ModelTrainingConfig = field(default_factory=ModelTrainingConfig)
-    
-    # Hyperparameter optimization configuration
-    hyperparameter_optimization: HyperparameterOptimizationConfig = field(default_factory=HyperparameterOptimizationConfig)
-    
-    # Model evaluation configuration
-    model_evaluation: ModelEvaluationConfig = field(default_factory=ModelEvaluationConfig)
-    
-    # Model registry configuration
-    model_registry: ModelRegistryConfig = field(default_factory=ModelRegistryConfig)
-    
-    # Core training settings
-    training_mode: TrainingMode = TrainingMode.STANDARD
-    random_seed: int = 42
-    
-    # Resource management
-    num_threads: int = field(default_factory=lambda: os.cpu_count() or 4)
-    memory_limit_gb: Optional[float] = None
-    enable_intel_optimization: bool = True
-    use_disk_offloading: bool = False
-    temp_directory: str = "./tmp"
-    
-    # Monitoring and debugging
-    enable_monitoring: bool = True
-    debug_mode: bool = False
-    log_level: str = "INFO"
-    monitoring_interval: float = 5.0  # seconds
-    
-    # Advanced options
-    enable_distributed_training: bool = False
-    distributed_backend: str = "multiprocessing"  # multiprocessing, dask, ray, etc.
-    num_workers: int = 1
-    
-    enable_auto_resume: bool = True
-    resume_from_checkpoint: Optional[str] = None
-    
-    # Callbacks and hooks
-    callbacks: Dict[str, Any] = field(default_factory=dict)
-    
-    # Development options
-    experimental_features: bool = False
-    
-    def __post_init__(self):
-        """Validate configuration parameters after initialization."""
-        # Set reasonable defaults for CPU thread count
-        if self.num_threads <= 0:
-            self.num_threads = os.cpu_count() or 4
+    def transform(self, df: pl.DataFrame) -> pl.DataFrame:
+        # Ensure columns match expected order
+        if self.column_order:
+            missing_cols = set(self.column_order) - set(df.columns)
+            if missing_cols:
+                for col in missing_cols:
+                    df = df.with_columns(pl.lit(None).alias(col))
             
-        # Configure model_training.n_jobs based on num_threads if not set
-        if self.model_training.n_jobs <= 0:
-            self.model_training.n_jobs = self.num_threads
-            
-        # Create directories if they don't exist
-        os.makedirs(self.model_registry.registry_path, exist_ok=True)
-        os.makedirs(self.temp_directory, exist_ok=True)
-        os.makedirs(CHECKPOINT_PATH, exist_ok=True)
+            # Reorder columns to match expected order
+            df = df.select(self.column_order)
         
-        # For distributed training, adjust worker count
-        if self.enable_distributed_training and self.num_workers <= 0:
-            self.num_workers = max(1, (os.cpu_count() or 4) - 1)
-            
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert config to a dictionary for serialization."""
-        return asdict(self)
-    
-    @classmethod
-    def from_dict(cls, config_dict: Dict[str, Any]) -> 'CPUTrainingConfig':
-        """Create config from a dictionary."""
-        # Handle nested configurations
-        if 'dataset' in config_dict and isinstance(config_dict['dataset'], dict):
-            config_dict['dataset'] = DatasetConfig(**config_dict['dataset'])
+        # Convert to numpy, transform, convert back to polars
+        pandas_df = df.to_pandas()
+        transformed = self.preprocessor.transform(pandas_df)
         
-        if 'feature_engineering' in config_dict and isinstance(config_dict['feature_engineering'], dict):
-            config_dict['feature_engineering'] = FeatureEngineeringConfig(**config_dict['feature_engineering'])
-        
-        if 'model_training' in config_dict and isinstance(config_dict['model_training'], dict):
-            config_dict['model_training'] = ModelTrainingConfig(**config_dict['model_training'])
-        
-        if 'hyperparameter_optimization' in config_dict and isinstance(config_dict['hyperparameter_optimization'], dict):
-            config_dict['hyperparameter_optimization'] = HyperparameterOptimizationConfig(**config_dict['hyperparameter_optimization'])
-        
-        if 'model_evaluation' in config_dict and isinstance(config_dict['model_evaluation'], dict):
-            config_dict['model_evaluation'] = ModelEvaluationConfig(**config_dict['model_evaluation'])
-        
-        if 'model_registry' in config_dict and isinstance(config_dict['model_registry'], dict):
-            config_dict['model_registry'] = ModelRegistryConfig(**config_dict['model_registry'])
-        
-        return cls(**config_dict)
-    
-    @classmethod
-    def from_json(cls, json_path: str) -> 'CPUTrainingConfig':
-        """Load configuration from a JSON file."""
-        with open(json_path, 'r') as f:
-            config_dict = json.load(f)
-        return cls.from_dict(config_dict)
-    
-    def to_json(self, json_path: str) -> None:
-        """Save configuration to a JSON file."""
-        with open(json_path, 'w') as f:
-            json.dump(self.to_dict(), f, indent=2)
-
-
-class TrainingMetrics:
-    """Class to track and report model training performance metrics with thread safety."""
-    
-    def __init__(self):
-        self.lock = threading.RLock()
-        self.reset()
-    
-    def reset(self) -> None:
-        """Reset all metrics."""
-        with self.lock:
-            # Training progress
-            self.current_epoch = 0
-            self.total_epochs = 0
-            self.start_time = None
-            self.end_time = None
-            
-            # Performance metrics
-            self.train_metrics = {}
-            self.validation_metrics = {}
-            self.test_metrics = {}
-            
-            # Training history for epochs
-            self.history = defaultdict(list)
-            
-            # Hyperparameter optimization tracking
-            self.hpo_trials = []
-            self.best_hpo_trial = None
-            
-            # Resource usage tracking
-            self.memory_usage = []
-            self.cpu_usage = []
-            
-            # Feature importance
-            self.feature_importance = {}
-            
-            # Cross-validation results
-            self.cv_results = None
-            
-            # Preprocessing stats
-            self.preprocessing_stats = {}
-            
-            # Errors and warnings
-            self.error_count = 0
-            self.warning_count = 0
-            self.errors = []
-            self.warnings = []
-    
-    def start_training(self, total_epochs: int) -> None:
-        """Record the start of training."""
-        with self.lock:
-            self.start_time = time.time()
-            self.total_epochs = total_epochs
-            self.current_epoch = 0
-    
-    def end_training(self) -> None:
-        """Record the end of training."""
-        with self.lock:
-            self.end_time = time.time()
-    
-    def update_epoch(self, epoch: int, train_metrics: Dict[str, float], 
-                    validation_metrics: Optional[Dict[str, float]] = None) -> None:
-        """Update metrics for an epoch."""
-        with self.lock:
-            self.current_epoch = epoch
-            
-            # Store current metrics
-            self.train_metrics = train_metrics
-            if validation_metrics:
-                self.validation_metrics = validation_metrics
-            
-            # Update history
-            for k, v in train_metrics.items():
-                self.history[f"train_{k}"].append(v)
-            
-            if validation_metrics:
-                for k, v in validation_metrics.items():
-                    self.history[f"val_{k}"].append(v)
-            
-            # Add epoch to history
-            self.history["epoch"].append(epoch)
-            
-            # Add timestamp
-            self.history["timestamp"].append(time.time())
-    
-    def set_test_metrics(self, test_metrics: Dict[str, float]) -> None:
-        """Set metrics from final model evaluation on test set."""
-        with self.lock:
-            self.test_metrics = test_metrics
-    
-    def add_hpo_trial(self, trial_id: str, params: Dict[str, Any], 
-                     metrics: Dict[str, float], duration: float) -> None:
-        """Record a hyperparameter optimization trial."""
-        with self.lock:
-            trial_info = {
-                "trial_id": trial_id,
-                "params": params,
-                "metrics": metrics,
-                "duration": duration,
-                "timestamp": time.time()
-            }
-            self.hpo_trials.append(trial_info)
-            
-            # Update best trial if this is the first or better than current best
-            primary_metric = next(iter(metrics.keys())) if metrics else None
-            
-            if primary_metric and (
-                self.best_hpo_trial is None or 
-                metrics[primary_metric] > self.best_hpo_trial["metrics"][primary_metric]
-            ):
-                self.best_hpo_trial = trial_info
-    
-    def set_feature_importance(self, importance_dict: Dict[str, float]) -> None:
-        """Set feature importance values."""
-        with self.lock:
-            self.feature_importance = importance_dict
-    
-    def set_cv_results(self, cv_results: Dict[str, List[float]]) -> None:
-        """Set cross-validation results."""
-        with self.lock:
-            self.cv_results = cv_results
-    
-    def record_resource_usage(self, memory_mb: float, cpu_percent: float) -> None:
-        """Record system resource usage."""
-        with self.lock:
-            self.memory_usage.append((time.time(), memory_mb))
-            self.cpu_usage.append((time.time(), cpu_percent))
-    
-    def set_preprocessing_stats(self, stats: Dict[str, Any]) -> None:
-        """Set statistics from data preprocessing."""
-        with self.lock:
-            self.preprocessing_stats = stats
-    
-    def record_error(self, error_msg: str) -> None:
-        """Record an error that occurred during training."""
-        with self.lock:
-            self.error_count += 1
-            self.errors.append({
-                "timestamp": time.time(),
-                "message": error_msg
-            })
-    
-    def record_warning(self, warning_msg: str) -> None:
-        """Record a warning that occurred during training."""
-        with self.lock:
-            self.warning_count += 1
-            self.warnings.append({
-                "timestamp": time.time(),
-                "message": warning_msg
-            })
-    
-    def get_progress(self) -> Dict[str, Any]:
-        """Get current training progress information."""
-        with self.lock:
-            progress = {
-                "current_epoch": self.current_epoch,
-                "total_epochs": self.total_epochs,
-                "progress_percent": (self.current_epoch / max(1, self.total_epochs)) * 100
-            }
-            
-            # Calculate time stats if training has started
-            if self.start_time:
-                elapsed = time.time() - self.start_time
-                progress["elapsed_time"] = elapsed
-                
-                # Estimate remaining time if we have at least one epoch
-                if self.current_epoch > 0:
-                    time_per_epoch = elapsed / self.current_epoch
-                    remaining_epochs = self.total_epochs - self.current_epoch
-                    progress["estimated_remaining_time"] = time_per_epoch * remaining_epochs
-                    progress["estimated_total_time"] = time_per_epoch * self.total_epochs
-            
-            return progress
-    
-    def get_latest_metrics(self) -> Dict[str, Any]:
-        """Get the most recent metrics."""
-        with self.lock:
-            metrics = {
-                "train": self.train_metrics,
-                "validation": self.validation_metrics,
-                "test": self.test_metrics,
-                "epoch": self.current_epoch
-            }
-            
-            # Add performance metrics if available
-            if self.history and self.history.get("epoch"):
-                # Get metrics for current epoch
-                for key in self.history:
-                    if key not in ["epoch", "timestamp"] and self.history[key]:
-                        metrics[key] = self.history[key][-1]
-            
-            return metrics
-    
-    def get_best_metrics(self) -> Dict[str, Any]:
-        """Get the best metrics achieved during training."""
-        with self.lock:
-            best_metrics = {}
-            
-            # Find best validation metrics if available
-            for key in self.history:
-                if key.startswith("val_") and self.history[key]:
-                    # For metrics where higher is better (accuracy, f1, etc.)
-                    if any(metric in key.lower() for metric in 
-                          ["accuracy", "precision", "recall", "f1", "auc", "r2"]):
-                        best_idx = np.argmax(self.history[key])
-                        best_value = max(self.history[key])
-                        best_metrics[key] = best_value
-                    
-                    # For metrics where lower is better (loss, error, etc.)
-                    elif any(metric in key.lower() for metric in 
-                            ["loss", "error", "mse", "mae", "rmse"]):
-                        best_idx = np.argmin(self.history[key])
-                        best_value = min(self.history[key])
-                        best_metrics[key] = best_value
-            
-            # Add corresponding train metrics from the same epoch if available
-            if best_metrics and "val_" in next(iter(best_metrics.keys())) and best_idx is not None:
-                for key in self.history:
-                    if key.startswith("train_") and len(self.history[key]) > best_idx:
-                        best_metrics[key] = self.history[key][best_idx]
-                        
-                # Add epoch number
-                if len(self.history["epoch"]) > best_idx:
-                    best_metrics["best_epoch"] = self.history["epoch"][best_idx]
-            
-            return best_metrics
-    
-    def get_all_metrics(self) -> Dict[str, Any]:
-        """Get all recorded metrics and statistics."""
-        with self.lock:
-            return {
-                "training_history": dict(self.history),
-                "test_metrics": self.test_metrics,
-                "feature_importance": self.feature_importance,
-                "cv_results": self.cv_results,
-                "hpo_trials": self.hpo_trials,
-                "best_hpo_trial": self.best_hpo_trial,
-                "preprocessing_stats": self.preprocessing_stats,
-                "resource_usage": {
-                    "memory": self.memory_usage,
-                    "cpu": self.cpu_usage
-                },
-                "errors": {
-                    "count": self.error_count,
-                    "details": self.errors
-                },
-                "warnings": {
-                    "count": self.warning_count,
-                    "details": self.warnings
-                },
-                "timing": {
-                    "start_time": self.start_time,
-                    "end_time": self.end_time,
-                    "total_duration": (self.end_time - self.start_time) if self.end_time else None
-                }
-            }
-
-
-class ModelCheckpoint:
-    """Manages model checkpointing during training."""
-    
-    def __init__(self, 
-                checkpoint_dir: str = CHECKPOINT_PATH,
-                max_checkpoints: int = 3, 
-                save_best_only: bool = True,
-                metric: str = "val_loss", 
-                mode: str = "min",
-                verbose: bool = True):
-        """
-        Initialize checkpoint manager.
-        
-        Args:
-            checkpoint_dir: Directory to save checkpoints
-            max_checkpoints: Maximum number of recent checkpoints to keep
-            save_best_only: Whether to save only when monitored metric improves
-            metric: Metric to monitor for improvement
-            mode: 'min' or 'max' to determine if higher or lower values are better
-            verbose: Whether to print checkpoint messages
-        """
-        self.checkpoint_dir = checkpoint_dir
-        self.max_checkpoints = max_checkpoints
-        self.save_best_only = save_best_only
-        self.metric = metric
-        self.mode = mode
-        self.verbose = verbose
-        
-        # Ensure directory exists
-        os.makedirs(checkpoint_dir, exist_ok=True)
-        
-        # Track metrics for determining best model
-        self.best_value = float('inf') if mode == 'min' else float('-inf')
-        self.checkpoint_files = []
-        
-        # Load existing checkpoints list if present
-        self._load_checkpoint_metadata()
-    
-    def _load_checkpoint_metadata(self) -> None:
-        """Load metadata about existing checkpoints."""
-        metadata_path = os.path.join(self.checkpoint_dir, "checkpoint_metadata.json")
-        if os.path.exists(metadata_path):
-            try:
-                with open(metadata_path, 'r') as f:
-                    metadata = json.load(f)
-                    
-                self.checkpoint_files = metadata.get('checkpoint_files', [])
-                self.best_value = metadata.get('best_value', 
-                                             float('inf') if self.mode == 'min' else float('-inf'))
-            except Exception as e:
-                print(f"Error loading checkpoint metadata: {e}")
-                self.checkpoint_files = []
-    
-    def _save_checkpoint_metadata(self) -> None:
-        """Save metadata about existing checkpoints."""
-        metadata_path = os.path.join(self.checkpoint_dir, "checkpoint_metadata.json")
-        try:
-            metadata = {
-                'checkpoint_files': self.checkpoint_files,
-                'best_value': self.best_value,
-                'last_updated': datetime.now().isoformat()
-            }
-            
-            with open(metadata_path, 'w') as f:
-                json.dump(metadata, f, indent=2)
-        except Exception as e:
-            print(f"Error saving checkpoint metadata: {e}")
-    
-    def save(self, model, epoch: int, metrics: Dict[str, float]) -> str:
-        """
-        Save a model checkpoint.
-        
-        Args:
-            model: The model to save
-            epoch: Current epoch number
-            metrics: Dictionary of metrics
-            
-        Returns:
-            Path to the saved checkpoint
-        """
-        # Skip if save_best_only and metric is not present or not improved
-        if self.save_best_only:
-            if self.metric not in metrics:
-                if self.verbose:
-                    print(f"Warning: Metric '{self.metric}' not found in metrics")
-                return None
-            
-            current_value = metrics[self.metric]
-            if (self.mode == 'min' and current_value >= self.best_value) or \
-               (self.mode == 'max' and current_value <= self.best_value):
-                return None
-            
-            # Update best value
-            self.best_value = current_value
-        
-        # Create checkpoint filename
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        checkpoint_name = f"checkpoint_epoch_{epoch:03d}_{timestamp}.pkl"
-        checkpoint_path = os.path.join(self.checkpoint_dir, checkpoint_name)
-        
-        # Save the model
-        try:
-            # Create metadata to save with model
-            checkpoint_data = {
-                'model': model,
-                'epoch': epoch,
-                'metrics': metrics,
-                'timestamp': timestamp
-            }
-            
-            # Use joblib if available for better performance, otherwise pickle
-            if JOBLIB_AVAILABLE:
-                joblib.dump(checkpoint_data, checkpoint_path)
+        # If result is numpy array, convert to DataFrame with original column names
+        if isinstance(transformed, np.ndarray):
+            if transformed.shape[1] == len(self.column_order):
+                return pl.DataFrame(transformed, schema=self.column_order)
             else:
-                with open(checkpoint_path, 'wb') as f:
-                    pickle.dump(checkpoint_data, f)
-            
-            # Add to checkpoint files list
-            self.checkpoint_files.append({
-                'filename': checkpoint_name,
-                'path': checkpoint_path,
-                'epoch': epoch,
-                'metrics': metrics,
-                'timestamp': timestamp
-            })
-            
-            # Keep only max_checkpoints
-            if len(self.checkpoint_files) > self.max_checkpoints:
-                old_checkpoint = self.checkpoint_files.pop(0)
-                old_path = old_checkpoint['path']
-                if os.path.exists(old_path):
-                    os.remove(old_path)
-            
-            # Update metadata
-            self._save_checkpoint_metadata()
-            
-            if self.verbose:
-                print(f"Saved checkpoint: {checkpoint_path}")
-                
-            return checkpoint_path
+                # Column count changed - use generic names
+                return pl.DataFrame(transformed)
         
-        except Exception as e:
-            print(f"Error saving checkpoint: {e}")
-            return None
-    
-    def load_latest(self) -> Dict[str, Any]:
-        """
-        Load the latest checkpoint.
-        
-        Returns:
-            Dictionary with model and metadata, or None if no checkpoints
-        """
-        if not self.checkpoint_files:
-            return None
-        
-        # Get the latest checkpoint
-        latest_checkpoint = self.checkpoint_files[-1]
-        checkpoint_path = latest_checkpoint['path']
-        
-        return self.load_checkpoint(checkpoint_path)
-    
-    def load_best(self) -> Dict[str, Any]:
-        """
-        Load the best checkpoint based on monitored metric.
-        
-        Returns:
-            Dictionary with model and metadata, or None if no checkpoints
-        """
-        if not self.checkpoint_files:
-            return None
-        
-        # Find the best checkpoint
-        if self.mode == 'min':
-            best_idx = np.argmin([c['metrics'].get(self.metric, float('inf')) 
-                                 for c in self.checkpoint_files])
-        else:
-            best_idx = np.argmax([c['metrics'].get(self.metric, float('-inf')) 
-                                 for c in self.checkpoint_files])
-        
-        best_checkpoint = self.checkpoint_files[best_idx]
-        checkpoint_path = best_checkpoint['path']
-        
-        return self.load_checkpoint(checkpoint_path)
-    
-    def load_checkpoint(self, checkpoint_path: str) -> Dict[str, Any]:
-        """
-        Load a specific checkpoint.
-        
-        Args:
-            checkpoint_path: Path to the checkpoint file
-            
-        Returns:
-            Dictionary with model and metadata, or None if error
-        """
-        if not os.path.exists(checkpoint_path):
-            print(f"Checkpoint not found: {checkpoint_path}")
-            return None
-        
-        try:
-            # Load the checkpoint
-            if JOBLIB_AVAILABLE:
-                checkpoint_data = joblib.load(checkpoint_path)
-            else:
-                with open(checkpoint_path, 'rb') as f:
-                    checkpoint_data = pickle.load(f)
-            
-            if self.verbose:
-                print(f"Loaded checkpoint: {checkpoint_path}")
-                
-            return checkpoint_data
-        
-        except Exception as e:
-            print(f"Error loading checkpoint: {e}")
-            return None
-    
-    def get_checkpoint_info(self) -> List[Dict[str, Any]]:
-        """
-        Get information about available checkpoints.
-        
-        Returns:
-            List of checkpoint information dictionaries
-        """
-        # Return a copy of checkpoint files without the full paths
-        return [{k: v for k, v in c.items() if k != 'path'} 
-                for c in self.checkpoint_files]
+        # If result is already a pandas DataFrame, convert to polars
+        return pl.from_pandas(transformed)
 
 
 class TrainingEngine:
     """
-    High-performance CPU-optimized training engine with Intel optimizations,
-    comprehensive monitoring, and advanced model training features.
+    A production-ready engine for CPU-based training of ML models at scale.
+    Uses polars for efficient data handling and implements various optimizations
+    for memory management, parallel processing, and error handling.
     """
-    
-    def __init__(self, config: Optional[CPUTrainingConfig] = None):
-        """
-        Initialize the training engine.
-        
-        Args:
-            config: Configuration for the training engine
-        """
-        self.config = config or CPUTrainingConfig()
-        
-        # Set up logging
-        self.logger = self._setup_logging()
-        
-        # Initialize state
+
+    def __init__(self, config: 'CPUTrainingConfig', logger: Optional[logging.Logger] = None):
+        self.config = config
+        self.logger = logger or self._setup_logger()
+
         self.state = TrainingState.INITIALIZING
-        self.model = None
+        self.start_time = datetime.now()
+        self.end_time = None
+
+        # Datasets in memory - using polars instead of pandas
+        self.train_data = None
+        self.validation_data = None
+        self.test_data = None
+
+        # Feature columns / preprocessor
+        self.feature_columns: List[str] = []
         self.preprocessor = None
-        self.feature_engineerer = None
-        
-        # Data containers
-        self.X_train = None
-        self.y_train = None
-        self.X_val = None
-        self.y_val = None
-        self.X_test = None
-        self.y_test = None
-        self.sample_weights = None
-        
-        # Feature info
-        self.feature_names = []
-        self.target_names = []
-        
-        # Training metrics and monitoring
-        self.metrics = TrainingMetrics()
-        
-        # Create checkpoint manager if checkpointing is enabled
-        if self.config.model_training.enable_checkpointing:
-            self.checkpoint_manager = ModelCheckpoint(
-                checkpoint_dir=CHECKPOINT_PATH,
-                max_checkpoints=self.config.model_training.keep_checkpoint_max,
-                save_best_only=True,
-                metric=self.config.model_training.early_stopping_metric 
-                       if self.config.model_training.early_stopping_metric != 'auto' else 'val_loss',
-                mode='min' if any(x in self.config.model_training.early_stopping_metric.lower()
-                                for x in ['loss', 'error', 'mse', 'mae', 'rmse']) else 'max',
-                verbose=self.config.debug_mode
-            )
-        else:
-            self.checkpoint_manager = None
-        
-        # Thread safety
-        self.state_lock = threading.RLock()
-        
-        # Set up threading
-        self._setup_threading()
-        
-        # Set up monitoring and resource management
-        self._setup_monitoring()
-        
-        # Configure Intel optimizations if enabled
-        if self.config.enable_intel_optimization:
-            self._setup_intel_optimizations()
-            
-        # Signal handlers for graceful shutdown
-        self._setup_signal_handlers()
-        
-        # Change state to ready
-        self.state = TrainingState.READY
-        self.logger.info(f"Training engine initialized with version {self.config.model_registry.model_version}")
-    
-    def _setup_logging(self) -> logging.Logger:
-        """Set up logging for the training engine."""
-        logger = logging.getLogger(f"{__name__}.TrainingEngine")
-        
-        # Configure logging based on debug mode
-        log_level_str = self.config.log_level.upper()
+
+        # Model references
+        self.model = None
+        self.best_model = None
+
+        # Evaluation results
+        self.evaluation_results = {}
+
+        # For resource monitoring
+        self.monitoring_thread = None
+        self.stop_monitoring_event = threading.Event()
+        self.resource_usage = []
+
+        # Unique ID for this training run
+        self.training_id = str(uuid.uuid4())
+
+        # Runtime metrics
+        self.runtime_metrics = {
+            "preprocessing_time": 0,
+            "feature_engineering_time": 0,
+            "training_time": 0,
+            "evaluation_time": 0,
+            "optimization_time": 0,
+            "total_time": 0,
+            "peak_memory_usage_mb": 0
+        }
+
+        # Copy callbacks if provided
+        self.callbacks = dict(self.config.callbacks) if self.config.callbacks else {}
+
+        # If using Intel MKL, optionally set threads
+        self._configure_resources()
+
+        # Prepare and validate internal components (preprocessor, etc.)
+        self._initialize_components()
+
+        self.logger.info(f"Training Engine initialized (ID={self.training_id})")
+        self.logger.debug(f"Configuration:\n{json.dumps(config.to_dict(), indent=2, default=str)}")
+
+        self._set_state(TrainingState.READY)
+
+    def _setup_logger(self) -> logging.Logger:
+        """Set up a structured logger for the training engine with rotation."""
+        logger = logging.getLogger(f"training_engine_{int(time.time())}")
+        logger.setLevel(getattr(logging, self.config.log_level.upper(), logging.INFO))
+
+        # Console handler with structured format
+        ch = logging.StreamHandler()
+        ch.setLevel(logger.level)
+        formatter = logging.Formatter('%(asctime)s | %(levelname)s | %(name)s | %(message)s')
+        ch.setFormatter(formatter)
+        logger.addHandler(ch)
+
+        # File handler with rotation
         try:
-            level = getattr(logging, log_level_str)
-        except AttributeError:
-            level = logging.INFO
-            print(f"Invalid log level: {log_level_str}, using INFO")
-        
-        logger.setLevel(level)
-        
-        # Ensure log directory exists
-        os.makedirs(DEFAULT_LOG_PATH, exist_ok=True)
-        
-        # Only add handlers if there are none
-        if not logger.handlers:
-            # Console handler
-            console_handler = logging.StreamHandler()
-            console_handler.setLevel(level)
-            
-            # File handler
-            model_name = self.config.model_registry.model_name
-            model_version = self.config.model_registry.model_version
-            file_handler = logging.FileHandler(
-                os.path.join(DEFAULT_LOG_PATH, f"training_{model_name}_{model_version}.log")
+            from logging.handlers import RotatingFileHandler
+            os.makedirs("logs", exist_ok=True)
+            fh = RotatingFileHandler(
+                f"logs/training_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log",
+                maxBytes=10*1024*1024,  # 10MB
+                backupCount=5
             )
-            file_handler.setLevel(level)
-            
-            # Create formatter
-            formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-            console_handler.setFormatter(formatter)
-            file_handler.setFormatter(formatter)
-            
-            # Add handlers
-            logger.addHandler(console_handler)
-            logger.addHandler(file_handler)
-        
+            fh.setLevel(logger.level)
+            fh.setFormatter(formatter)
+            logger.addHandler(fh)
+        except Exception as e:
+            # Fall back to regular file handler if RotatingFileHandler fails
+            os.makedirs("logs", exist_ok=True)
+            fh = logging.FileHandler(f"logs/training_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
+            fh.setLevel(logger.level)
+            fh.setFormatter(formatter)
+            logger.addHandler(fh)
+            logger.warning(f"Failed to set up rotating file handler: {e}. Using standard file handler.")
+
         return logger
-    
-    def _setup_threading(self) -> None:
-        """Configure threading and parallelism."""
-        # Set number of threads for numpy/MKL if available
-        thread_count = self.config.num_threads
+
+    def _configure_resources(self):
+        """Configure CPU threads, memory limits, etc., based on config."""
+        if self.config.enable_intel_optimization and MKL_AVAILABLE:
+            self.logger.info(f"Setting MKL threads to {self.config.num_threads}")
+            mkl.set_num_threads(self.config.num_threads)
+
+        # Set environment variables for thread control
+        thread_count = str(self.config.num_threads)
+        os.environ["OMP_NUM_THREADS"] = thread_count
+        os.environ["OPENBLAS_NUM_THREADS"] = thread_count
+        os.environ["MKL_NUM_THREADS"] = thread_count
+        os.environ["VECLIB_MAXIMUM_THREADS"] = thread_count
+        os.environ["NUMEXPR_NUM_THREADS"] = thread_count
         
-        # Set environment variables for better thread control
-        os.environ["OMP_NUM_THREADS"] = str(thread_count)
-        os.environ["MKL_NUM_THREADS"] = str(thread_count)
-        os.environ["OPENBLAS_NUM_THREADS"] = str(thread_count)
-        
-        # Set thread count for numpy if using OpenBLAS/MKL
+        # Configure polars thread pool
         try:
-            import numpy as np
-            np.set_num_threads(thread_count)
-        except (ImportError, AttributeError):
-            pass
-        
-        # Configure MKL settings if available
-        if MKL_AVAILABLE:
-            try:
-                mkl.set_num_threads(thread_count)
-                self.logger.info(f"MKL configured with {thread_count} threads")
-            except Exception as e:
-                self.logger.warning(f"Failed to configure MKL: {str(e)}")
-        
-        # Create thread pool for parallel tasks
-        self.thread_pool = ThreadPoolExecutor(
-            max_workers=thread_count,
-            thread_name_prefix="TrainingWorker"
-        )
-        
-        # Create process pool for distributed processing if enabled
+            pl.Config.set_global_threads(self.config.num_threads)
+            self.logger.info(f"Polars global threads set to {self.config.num_threads}")
+        except Exception as e:
+            self.logger.warning(f"Failed to set Polars thread count: {e}")
+
+        if self.config.memory_limit_gb:
+            self.logger.info(f"Memory limit set to {self.config.memory_limit_gb} GB")
+            # We'll use this in our memory monitoring
+
         if self.config.enable_distributed_training:
-            self.process_pool = ProcessPoolExecutor(
-                max_workers=self.config.num_workers,
-                thread_name_prefix="DistributedWorker"
+            self.logger.warning(
+                f"Distributed training is enabled. Backend: {self.config.distributed_backend}. "
+                "Currently, only a placeholder – actual distributed logic not yet implemented."
             )
-        
-        self.logger.info(f"Threading configured with {thread_count} threads")
-    
-    def _setup_intel_optimizations(self) -> None:
-        """Configure Intel-specific optimizations."""
-        if not self.config.enable_intel_optimization:
-            return
-        
-        # Log status of Intel optimizations
-        optimizations = []
-        
-        # Configure Intel MKL if available
-        if MKL_AVAILABLE:
-            try:
-                # Configure MKL for best performance
-                mkl.set_threading_layer("intel")
-                mkl.set_dynamic(False)
-                optimizations.append("MKL")
-            except Exception as e:
-                self.logger.warning(f"Failed to configure MKL optimizations: {str(e)}")
-        
-        # Check for scikit-learn optimizations
-        if SKLEARN_AVAILABLE and SKLEARN_OPTIMIZED:
-            optimizations.append("scikit-learn-intelex")
-        
-        # Check if we're running Intel Python Distribution
-        if INTEL_PYTHON:
-            optimizations.append("Intel Python Distribution")
-        
-        if optimizations:
-            self.logger.info(f"Intel optimizations enabled: {', '.join(optimizations)}")
-        else:
-            self.logger.warning("No Intel optimizations are available")
-    
-    def _setup_monitoring(self) -> None:
-        """Set up monitoring and resource management."""
-        if not self.config.enable_monitoring:
-            return
-        
-        # Create monitoring thread
-        self.monitor_stop_event = threading.Event()
-        self.monitor_thread = threading.Thread(
-            target=self._monitoring_loop,
-            daemon=True,
-            name="TrainingMonitor"
-        )
-        
-        # Start monitoring thread
-        self.monitor_thread.start()
-        self.logger.info("Monitoring thread started")
-    
-    def _setup_signal_handlers(self) -> None:
-        """Set up signal handlers for graceful shutdown."""
+
+    def _initialize_components(self):
+        """
+        Initialize preprocessor, check dependency availability, etc.
+        This is also where you'd set up custom data preprocessors or chunk-based readers.
+        """
+        self.logger.info("Initializing data preprocessor...")
         try:
-            signal.signal(signal.SIGINT, self._signal_handler)
-            signal.signal(signal.SIGTERM, self._signal_handler)
-            self.logger.info("Signal handlers registered for graceful shutdown")
-        except (AttributeError, ValueError) as e:
-            # Signal handling might not work in certain environments (e.g., Windows)
-            self.logger.warning(f"Could not set up signal handlers: {e}")
-    
-    def _signal_handler(self, sig, frame) -> None:
-        """Handle termination signals."""
-        self.logger.info(f"Received signal {sig}, initiating graceful shutdown")
-        self.stop_training()
-    
-    def _monitoring_loop(self) -> None:
-        """Background thread for monitoring system resources."""
-        check_interval = self.config.monitoring_interval
+            base_preprocessor = DataPreprocessor(
+                handle_missing=self.config.dataset.handle_missing,
+                handle_outliers=self.config.dataset.handle_outliers,
+                handle_categorical=self.config.dataset.handle_categorical,
+                encoding_method=self.config.feature_engineering.encoding_method,
+                enable_scaling=self.config.feature_engineering.enable_scaling,
+                scaling_method=self.config.feature_engineering.scaling_method,
+            )
+            # Wrap with adapter for Polars
+            self.preprocessor = PolarsPreprocessor(base_preprocessor)
+            self.logger.info("Data preprocessor initialized successfully.")
+        except Exception as e:
+            self.logger.error(f"Failed to initialize preprocessor: {e}")
+            if self.config.debug_mode:
+                self.logger.error(traceback.format_exc())
+            raise
         
-        while not self.monitor_stop_event.is_set():
+        self._check_dependencies()
+
+    def _check_dependencies(self):
+        """Check that required libraries for the chosen model are installed."""
+        mt = self.config.model_training.model_type
+        if mt == ModelType.XGBOOST and not XGBOOST_AVAILABLE:
+            raise ImportError("XGBoost model requested but xgboost is not installed.")
+        if mt == ModelType.LIGHTGBM and not LIGHTGBM_AVAILABLE:
+            raise ImportError("LightGBM model requested but lightgbm is not installed.")
+        if mt == ModelType.SKLEARN and not SKLEARN_AVAILABLE:
+            raise ImportError("Scikit-learn requested but is not installed.")
+
+    def _set_state(self, new_state: 'TrainingState'):
+        """Update the engine state and trigger appropriate callbacks."""
+        old_state = self.state
+        self.state = new_state
+        self.logger.info(f"State transition: {old_state.name} -> {new_state.name}")
+
+        # Execute callback if defined
+        callback_name = f"on_{new_state.name.lower()}"
+        if callback_name in self.callbacks:
             try:
-                # Check memory usage
-                process = psutil.Process(os.getpid())
-                memory_info = process.memory_info()
-                memory_mb = memory_info.rss / (1024 * 1024)
-                cpu_percent = process.cpu_percent(interval=0.1)
-                
-                # Update metrics
-                self.metrics.record_resource_usage(memory_mb, cpu_percent)
-                
-                # Check if we've exceeded memory limit
-                if self.config.memory_limit_gb and memory_mb > (self.config.memory_limit_gb * 1024):
-                    self.logger.warning(
-                        f"Memory usage ({memory_mb:.1f} MB) exceeds limit "
-                        f"({self.config.memory_limit_gb * 1024:.1f} MB), triggering GC"
-                    )
-                    gc.collect()
-                
-                # Sleep until next check
-                time.sleep(check_interval)
-                
+                self.callbacks[callback_name](self)
             except Exception as e:
-                self.logger.error(f"Error in monitoring loop: {str(e)}")
+                self.logger.error(f"Error in callback {callback_name}: {str(e)}")
                 if self.config.debug_mode:
                     self.logger.error(traceback.format_exc())
-                
-                # Sleep with reduced interval on error
-                time.sleep(max(1.0, check_interval / 2))
-    
-    def load_data(self) -> bool:
-        """
-        Load and split data according to configuration.
-        
-        Returns:
-            Success flag
-        """
-        self.logger.info("Loading data...")
-        
-        with self.state_lock:
-            self.state = TrainingState.PREPROCESSING
-        
+
+    @contextmanager
+    def _time_context(self, key: str):
+        """Context manager to measure execution time of a block and update metrics."""
+        start = time.time()
+        peak_memory_before = self._get_current_memory_usage()
         try:
-            dataset_config = self.config.dataset
+            yield
+        finally:
+            elapsed = time.time() - start
+            peak_memory_after = self._get_current_memory_usage()
+            peak_memory_increase = max(0, peak_memory_after - peak_memory_before)
             
-            # Check if paths are provided
-            if dataset_config.train_path:
-                # Load from separate train/val/test files if provided
-                self._load_data_from_files()
+            self.runtime_metrics[key] += elapsed
+            self.runtime_metrics["peak_memory_usage_mb"] = max(
+                self.runtime_metrics["peak_memory_usage_mb"], 
+                peak_memory_after
+            )
+            
+            self.logger.debug(
+                f"{key} took {elapsed:.2f} seconds. "
+                f"Memory usage: {peak_memory_after:.1f} MB (+{peak_memory_increase:.1f} MB)"
+            )
+
+    def _get_current_memory_usage(self) -> float:
+        """Get current memory usage in MB."""
+        if PSUTIL_AVAILABLE:
+            try:
+                process = psutil.Process(os.getpid())
+                memory_info = process.memory_info()
+                return memory_info.rss / (1024 * 1024)  # Convert to MB
+            except Exception:
+                return 0
+        return 0
+
+    # ------------------
+    # MONITORING
+    # ------------------
+    def start_monitoring(self):
+        """Start background resource monitoring if enabled."""
+        if not self.config.enable_monitoring or not PSUTIL_AVAILABLE:
+            return
+
+        def monitor():
+            try:
+                self.logger.info("Resource monitoring started")
+                while not self.stop_monitoring_event.is_set():
+                    try:
+                        proc = psutil.Process(os.getpid())
+                        with proc.oneshot():  # More efficient batch collection of metrics
+                            cpu = proc.cpu_percent(interval=0.1)
+                            mem = proc.memory_info()
+                            mem_percent = proc.memory_percent()
+                            
+                            # Also check system-wide resources
+                            system_cpu = psutil.cpu_percent()
+                            system_mem = psutil.virtual_memory()
+
+                        resource_data = {
+                            'timestamp': datetime.now().isoformat(),
+                            'cpu_percent': cpu,
+                            'system_cpu_percent': system_cpu,
+                            'rss_mb': mem.rss / (1024 ** 2),
+                            'memory_percent': mem_percent,
+                            'system_memory_percent': system_mem.percent,
+                            'state': self.state.name
+                        }
+                        
+                        self.resource_usage.append(resource_data)
+
+                        # Log periodically to not flood logs
+                        if len(self.resource_usage) % 30 == 0:
+                            self.logger.debug(
+                                f"Resource usage: Process CPU={cpu:.1f}%, "
+                                f"System CPU={system_cpu:.1f}%, "
+                                f"RSS={mem.rss/1024**2:.1f}MB ({mem_percent:.1f}%), "
+                                f"System Mem={system_mem.percent:.1f}%"
+                            )
+
+                        # Check if we're approaching memory limit
+                        if self.config.memory_limit_gb and mem.rss > self.config.memory_limit_gb * 0.9 * 1024**3:
+                            self.logger.warning(
+                                f"Approaching memory limit: {mem.rss/1024**3:.2f}GB used, "
+                                f"limit is {self.config.memory_limit_gb}GB"
+                            )
+
+                        time.sleep(self.config.monitoring_interval)
+                    except Exception as e:
+                        self.logger.error(f"Error in monitoring thread: {e}")
+                        time.sleep(5)  # Avoid tight loop in case of recurring errors
+            except Exception as e:
+                self.logger.error(f"Fatal error in monitoring thread: {e}")
+                if self.config.debug_mode:
+                    self.logger.error(traceback.format_exc())
+
+        self.monitoring_thread = threading.Thread(target=monitor, daemon=True)
+        self.monitoring_thread.start()
+
+    def stop_monitoring(self):
+        """Stop the resource monitoring thread."""
+        if self.monitoring_thread and self.monitoring_thread.is_alive():
+            self.stop_monitoring_event.set()
+            self.monitoring_thread.join(timeout=5)
+            if self.monitoring_thread.is_alive():
+                self.logger.warning("Resource monitoring thread did not terminate gracefully")
             else:
-                # Otherwise assume data will be set programmatically
-                self.logger.warning("No data path provided. Use set_data() to provide training data.")
-                return False
-            
-            self.logger.info(f"Data loaded successfully: {self.X_train.shape[0]} training samples")
-            
-            if self.X_val is not None:
-                self.logger.info(f"Validation data: {self.X_val.shape[0]} samples")
-            
-            if self.X_test is not None:
-                self.logger.info(f"Test data: {self.X_test.shape[0]} samples")
-            
-            return True
-            
+                self.logger.info("Resource monitoring stopped")
+
+    # ------------------
+    # DATA LOADING
+    # ------------------
+    def load_data(self):
+        """
+        Load data from local files or streaming sources.
+        Handle train/val/test splits if needed, plus optional imbalance correction.
+        Optimized for large datasets using Polars.
+        """
+        self._set_state(TrainingState.PREPROCESSING)
+        ds_cfg = self.config.dataset
+
+        with self._time_context("preprocessing_time"):
+            if ds_cfg.enable_chunking and ds_cfg.train_path:
+                # Use Polars' lazy loading and streaming capabilities
+                self.logger.info(f"Lazy/chunk-based data loading from: {ds_cfg.train_path}")
+                self.train_data = self._load_chunked_data(ds_cfg.train_path)
+            else:
+                # Normal direct load
+                if ds_cfg.train_path:
+                    self.logger.info(f"Loading train dataset from {ds_cfg.train_path}")
+                    self.train_data = self._load_single_file(ds_cfg.train_path)
+
+            # Optional separate val/test files
+            if ds_cfg.validation_path:
+                self.logger.info(f"Loading validation dataset from {ds_cfg.validation_path}")
+                self.validation_data = self._load_single_file(ds_cfg.validation_path)
+
+            if ds_cfg.test_path:
+                self.logger.info(f"Loading test dataset from {ds_cfg.test_path}")
+                self.test_data = self._load_single_file(ds_cfg.test_path)
+
+            # If no separate val/test, we might split below:
+            if (not self.validation_data) and (not self.test_data):
+                self.logger.info("No separate validation/test sets found. Splitting from training data...")
+                self._split_dataset()
+
+            # Now that we have train data, we can set up features and target
+            if ds_cfg.target_column is None:
+                raise ValueError("No target column set in dataset config.")
+            self._extract_features_and_target()
+
+            # Class imbalance handling
+            if ds_cfg.handle_imbalance and self.config.dataset.imbalance_strategy:
+                self._handle_class_imbalance()
+
+            # Apply preprocessing and feature engineering
+            self._apply_preprocessing()
+
+    def _load_single_file(self, path: str) -> pl.DataFrame:
+        """Load a single file efficiently using Polars."""
+        try:
+            if path.endswith('.csv'):
+                return pl.read_csv(
+                    path,
+                    separator=self.config.dataset.csv_separator,
+                    encoding=self.config.dataset.encoding,
+                    has_header=self.config.dataset.has_header
+                )
+            elif path.endswith('.parquet'):
+                return pl.read_parquet(path)
+            elif path.endswith('.ipc') or path.endswith('.arrow'):
+                return pl.read_ipc(path)
+            elif path.endswith('.json'):
+                return pl.read_json(path)
+            elif path.endswith('.pkl') or path.endswith('.pickle'):
+                with open(path, 'rb') as f:
+                    df = pickle.load(f)
+                    # If pandas, convert to polars
+                    if hasattr(df, 'to_dict'):  # Simple check for pandas-like object
+                        return pl.from_pandas(df)
+                    return df
+            else:
+                raise ValueError(f"Unsupported file format: {path}")
         except Exception as e:
-            self.logger.error(f"Error loading data: {str(e)}")
+            self.logger.error(f"Error loading file {path}: {e}")
             if self.config.debug_mode:
                 self.logger.error(traceback.format_exc())
-            
-            self.state = TrainingState.ERROR
-            return False
-    
-    def _load_data_from_files(self) -> None:
-        """Load data from files specified in configuration."""
-        dataset_config = self.config.dataset
-        
-        # Determine file format and load accordingly
-        train_path = dataset_config.train_path
-        file_ext = os.path.splitext(train_path)[1].lower()
-        
-        # Load train data
-        if file_ext == '.csv':
-            train_data = pd.read_csv(
-                train_path, 
-                sep=dataset_config.csv_separator,
-                encoding=dataset_config.encoding,
-                header=0 if dataset_config.has_header else None
-            )
-        elif file_ext == '.parquet':
-            train_data = pd.read_parquet(train_path)
-        elif file_ext == '.jsonl' or file_ext == '.json':
-            train_data = pd.read_json(train_path, lines=(file_ext == '.jsonl'))
-        else:
-            raise ValueError(f"Unsupported file format: {file_ext}")
-        
-        # Extract features and target
-        if not dataset_config.feature_columns and not dataset_config.target_column:
-            # Auto-detect: assume last column is target if not specified
-            feature_cols = train_data.columns[:-1]
-            target_col = train_data.columns[-1]
-        else:
-            # Use specified columns
-            feature_cols = dataset_config.feature_columns
-            if not feature_cols:  # If still empty, use all non-target columns
-                feature_cols = [c for c in train_data.columns if c != dataset_config.target_column]
-            
-            target_col = dataset_config.target_column
-        
-        # Store feature names
-        self.feature_names = feature_cols
-        
-        # Extract feature dataframe and target series
-        X_all = train_data[feature_cols]
-        y_all = train_data[target_col]
-        
-        # Store target name or names
-        if isinstance(y_all, pd.DataFrame):
-            self.target_names = y_all.columns.tolist()
-        else:
-            self.target_names = [target_col]
-        
-        # Handle weight column if specified
-        if dataset_config.weight_column and dataset_config.weight_column in train_data:
-            self.sample_weights = train_data[dataset_config.weight_column].values
-        
-        # Check if separate validation and test files are provided
-        if dataset_config.validation_path and dataset_config.test_path:
-            # Load validation data
-            if os.path.exists(dataset_config.validation_path):
-                val_data = self._load_dataset_file(dataset_config.validation_path)
-                self.X_val = val_data[feature_cols]
-                self.y_val = val_data[target_col]
-            
-            # Load test data
-            if os.path.exists(dataset_config.test_path):
-                test_data = self._load_dataset_file(dataset_config.test_path)
-                self.X_test = test_data[feature_cols]
-                self.y_test = test_data[target_col]
-                
-            # Use loaded train data as-is
-            self.X_train = X_all
-            self.y_train = y_all
-        else:
-            # Split the data according to configuration
-            self._split_data(X_all, y_all)
-    
-    def _load_dataset_file(self, file_path: str) -> pd.DataFrame:
-        """Load a dataset file in the appropriate format."""
-        dataset_config = self.config.dataset
-        file_ext = os.path.splitext(file_path)[1].lower()
-        
-        if file_ext == '.csv':
-            return pd.read_csv(
-                file_path, 
-                sep=dataset_config.csv_separator,
-                encoding=dataset_config.encoding,
-                header=0 if dataset_config.has_header else None
-            )
-        elif file_ext == '.parquet':
-            return pd.read_parquet(file_path)
-        elif file_ext == '.jsonl' or file_ext == '.json':
-            return pd.read_json(file_path, lines=(file_ext == '.jsonl'))
-        else:
-            raise ValueError(f"Unsupported file format: {file_ext}")
-    
-    def _split_data(self, X: pd.DataFrame, y: pd.Series) -> None:
-        """Split data into train, validation, and test sets."""
-        dataset_config = self.config.dataset
-        split_strategy = dataset_config.split_strategy
-        
-        # First split off test data
-        if dataset_config.test_size > 0:
-            if split_strategy == DataSplitStrategy.STRATIFIED and dataset_config.stratify_column:
-                # For classification, use stratified split
-                stratify = y if dataset_config.stratify_column == dataset_config.target_column else X[dataset_config.stratify_column]
-                X_temp, self.X_test, y_temp, self.y_test = train_test_split(
-                    X, y, 
-                    test_size=dataset_config.test_size,
-                    random_state=dataset_config.random_seed,
-                    stratify=stratify
-                )
-            elif split_strategy == DataSplitStrategy.GROUP and dataset_config.group_column:
-                # Group-based split (e.g., for data with groups/clusters)
-                groups = X[dataset_config.group_column]
-                
-                # We need to use GroupKFold for splitting with groups
-                gkf = GroupKFold(n_splits=int(1 / dataset_config.test_size))
-                train_idx, test_idx = next(gkf.split(X, y, groups))
-                
-                X_temp, self.X_test = X.iloc[train_idx], X.iloc[test_idx]
-                y_temp, self.y_test = y.iloc[train_idx], y.iloc[test_idx]
-                
-            elif split_strategy == DataSplitStrategy.TIME_SERIES and dataset_config.time_column:
-                # Time-based split (latest data as test)
-                time_col = dataset_config.time_column
-                # Sort by time
-                temp_df = pd.concat([X, y], axis=1)
-                temp_df = temp_df.sort_values(by=time_col)
-                
-                # Split off latest data as test
-                split_idx = int(len(temp_df) * (1 - dataset_config.test_size))
-                train_temp = temp_df.iloc[:split_idx]
-                test_temp = temp_df.iloc[split_idx:]
-                
-                # Extract features and target
-                X_temp = train_temp[X.columns]
-                y_temp = train_temp[y.name]
-                self.X_test = test_temp[X.columns]
-                self.y_test = test_temp[y.name]
-                
-            else:
-                # Regular random split
-                X_temp, self.X_test, y_temp, self.y_test = train_test_split(
-                    X, y, 
-                    test_size=dataset_config.test_size,
-                    random_state=dataset_config.random_seed
-                )
-        else:
-            X_temp, y_temp = X, y
-        
-        # Then split validation data from remaining training data
-        if dataset_config.validation_size > 0:
-            validation_ratio = dataset_config.validation_size / (1 - dataset_config.test_size)
-            
-            if split_strategy == DataSplitStrategy.STRATIFIED and dataset_config.stratify_column:
-                # For classification, use stratified split for validation too
-                stratify = y_temp if dataset_config.stratify_column == dataset_config.target_column else X_temp[dataset_config.stratify_column]
-                self.X_train, self.X_val, self.y_train, self.y_val = train_test_split(
-                    X_temp, y_temp, 
-                    test_size=validation_ratio,
-                    random_state=dataset_config.random_seed,
-                    stratify=stratify
-                )
-            elif split_strategy == DataSplitStrategy.GROUP and dataset_config.group_column:
-                # Group-based split for validation
-                groups = X_temp[dataset_config.group_column]
-                
-                # Use GroupKFold for validation split too
-                gkf = GroupKFold(n_splits=int(1 / validation_ratio))
-                train_idx, val_idx = next(gkf.split(X_temp, y_temp, groups))
-                
-                self.X_train, self.X_val = X_temp.iloc[train_idx], X_temp.iloc[val_idx]
-                self.y_train, self.y_val = y_temp.iloc[train_idx], y_temp.iloc[val_idx]
-                
-            elif split_strategy == DataSplitStrategy.TIME_SERIES and dataset_config.time_column:
-                # Time-based split for validation (latest remaining data)
-                time_col = dataset_config.time_column
-                # Sort by time
-                temp_df = pd.concat([X_temp, y_temp], axis=1)
-                temp_df = temp_df.sort_values(by=time_col)
-                
-                # Split off latest data as validation
-                split_idx = int(len(temp_df) * (1 - validation_ratio))
-                train_temp = temp_df.iloc[:split_idx]
-                val_temp = temp_df.iloc[split_idx:]
-                
-                # Extract features and target
-                self.X_train = train_temp[X.columns]
-                self.y_train = train_temp[y.name]
-                self.X_val = val_temp[X.columns]
-                self.y_val = val_temp[y.name]
-                
-            else:
-                # Regular random split for validation
-                self.X_train, self.X_val, self.y_train, self.y_val = train_test_split(
-                    X_temp, y_temp, 
-                    test_size=validation_ratio,
-                    random_state=dataset_config.random_seed
-                )
-        else:
-            # No validation set
-            self.X_train, self.y_train = X_temp, y_temp
-            self.X_val, self.y_val = None, None
-    
-    def set_data(self, X_train: Union[np.ndarray, pd.DataFrame], 
-                y_train: Union[np.ndarray, pd.Series],
-                X_val: Optional[Union[np.ndarray, pd.DataFrame]] = None,
-                y_val: Optional[Union[np.ndarray, pd.Series]] = None,
-                X_test: Optional[Union[np.ndarray, pd.DataFrame]] = None,
-                y_test: Optional[Union[np.ndarray, pd.Series]] = None,
-                sample_weights: Optional[np.ndarray] = None,
-                feature_names: Optional[List[str]] = None) -> None:
+            raise
+
+    def _load_chunked_data(self, path: str) -> pl.DataFrame:
         """
-        Set data for training directly.
-        
-        Args:
-            X_train: Training features
-            y_train: Training target
-            X_val: Optional validation features
-            y_val: Optional validation target
-            X_test: Optional test features
-            y_test: Optional test target
-            sample_weights: Optional sample weights
-            feature_names: Optional feature names
+        Load data in chunks using Polars streaming capabilities.
+        Useful for large datasets that don't fit in memory.
         """
-        self.logger.info("Setting training data...")
+        chunk_size = self.config.dataset.chunk_size or 100000
         
         try:
-            # Store data
-            self.X_train = X_train
-            self.y_train = y_train
-            self.X_val = X_val
-            self.y_val = y_val
-            self.X_test = X_test
-            self.y_test = y_test
-            self.sample_weights = sample_weights
-            
-            # Set feature names if provided
-            if feature_names is not None:
-                self.feature_names = feature_names
-            elif isinstance(X_train, pd.DataFrame):
-                self.feature_names = X_train.columns.tolist()
-            
-            # Set target names
-            if isinstance(y_train, pd.DataFrame):
-                self.target_names = y_train.columns.tolist()
-            elif isinstance(y_train, pd.Series):
-                self.target_names = [y_train.name] if y_train.name else ['target']
+            # Use polars lazy evaluation for large files
+            if path.endswith('.csv'):
+                self.logger.info(f"Streaming CSV in chunks of {chunk_size} rows")
+                df = pl.scan_csv(
+                    path,
+                    separator=self.config.dataset.csv_separator,
+                    encoding=self.config.dataset.encoding,
+                    has_header=self.config.dataset.has_header
+                )
+            elif path.endswith('.parquet'):
+                self.logger.info(f"Streaming Parquet in chunks")
+                df = pl.scan_parquet(path)
             else:
-                self.target_names = ['target']
+                self.logger.warning(f"Chunked loading not optimized for {path}. Loading entire file.")
+                return self._load_single_file(path)
             
-            self.logger.info(f"Data set successfully: {X_train.shape[0]} training samples")
-            
-            if X_val is not None:
-                self.logger.info(f"Validation data: {X_val.shape[0]} samples")
-            
-            if X_test is not None:
-                self.logger.info(f"Test data: {X_test.shape[0]} samples")
+            # Execute the lazy query
+            return df.collect()
             
         except Exception as e:
-            self.logger.error(f"Error setting data: {str(e)}")
+            self.logger.error(f"Error loading chunked data from {path}: {e}")
             if self.config.debug_mode:
                 self.logger.error(traceback.format_exc())
+            raise
+
+    def _split_dataset(self):
+        """Split self.train_data into train/validation/test based on config."""
+        ds_cfg = self.config.dataset
+        
+        # Convert to pandas temporarily for sklearn's split functions
+        # In future, we could implement these directly with polars
+        train_pandas = self.train_data.to_pandas()
+        
+        if ds_cfg.split_strategy == DataSplitStrategy.RANDOM:
+            # Typical random split
+            tv_data, test_data = train_test_split(
+                train_pandas,
+                test_size=ds_cfg.test_size,
+                random_state=ds_cfg.random_seed
+            )
+            val_ratio = ds_cfg.validation_size / (1 - ds_cfg.test_size)
+            train_data, val_data = train_test_split(
+                tv_data,
+                test_size=val_ratio,
+                random_state=ds_cfg.random_seed
+            )
+        elif ds_cfg.split_strategy == DataSplitStrategy.STRATIFIED:
+            tv_data, test_data = train_test_split(
+                train_pandas,
+                test_size=ds_cfg.test_size,
+                random_state=ds_cfg.random_seed,
+                stratify=train_pandas[ds_cfg.stratify_column]
+            )
+            val_ratio = ds_cfg.validation_size / (1 - ds_cfg.test_size)
+            train_data, val_data = train_test_split(
+                tv_data,
+                test_size=val_ratio,
+                random_state=ds_cfg.random_seed,
+                stratify=tv_data[ds_cfg.stratify_column]
+            )
+        elif ds_cfg.split_strategy == DataSplitStrategy.TIME_SERIES:
+            # Time-series split implementation
+            if not ds_cfg.time_column:
+                raise ValueError("time_column must be specified for TIME_SERIES split strategy")
             
-            self.state = TrainingState.ERROR
-    
-    def preprocess_data(self) -> bool:
-        """
-        Preprocess data according to configuration.
+            # Sort by time column
+            train_pandas = train_pandas.sort_values(ds_cfg.time_column)
+            
+            # Calculate split indices
+            n = len(train_pandas)
+            test_idx = int(n * (1 - ds_cfg.test_size))
+            val_idx = int(test_idx * (1 - ds_cfg.validation_size / (1 - ds_cfg.test_size)))
+            
+            # Split data
+            train_data = train_pandas[:val_idx]
+            val_data = train_pandas[val_idx:test_idx]
+            test_data = train_pandas[test_idx:]
+        elif ds_cfg.split_strategy == DataSplitStrategy.GROUP:
+            if not ds_cfg.group_column:
+                raise ValueError("group_column must be specified for GROUP split strategy")
+            
+            # This is a simple implementation - more sophisticated group-based splitting
+            # would require a custom implementation
+            groups = train_pandas[ds_cfg.group_column].unique()
+            np.random.seed(ds_cfg.random_seed)
+            np.random.shuffle(groups)
+            
+            n_groups = len(groups)
+            test_groups = groups[:int(n_groups * ds_cfg.test_size)]
+            remaining_groups = groups[int(n_groups * ds_cfg.test_size):]
+            val_groups = remaining_groups[:int(len(remaining_groups) * ds_cfg.validation_size / (1 - ds_cfg.test_size))]
+            train_groups = remaining_groups[int(len(remaining_groups) * ds_cfg.validation_size / (1 - ds_cfg.test_size)):]
+            
+            train_data = train_pandas[train_pandas[ds_cfg.group_column].isin(train_groups)]
+            val_data = train_pandas[train_pandas[ds_cfg.group_column].isin(val_groups)]
+            test_data = train_pandas[train_pandas[ds_cfg.group_column].isin(test_groups)]
+        else:
+            raise ValueError(f"Unsupported split strategy: {ds_cfg.split_strategy}")
         
-        Returns:
-            Success flag
-        """
-        self.logger.info("Preprocessing data...")
+        # Convert back to polars
+        self.train_data = pl.from_pandas(train_data)
+        self.validation_data = pl.from_pandas(val_data)
+        self.test_data = pl.from_pandas(test_data)
         
-        with self.state_lock:
-            self.state = TrainingState.PREPROCESSING
+        self.logger.info(
+            f"Data split complete. Train: {len(self.train_data)} rows, "
+            f"Validation: {len(self.validation_data)} rows, "
+            f"Test: {len(self.test_data)} rows"
+        )
+
+    def _extract_features_and_target(self):
+        """Identify which columns are features vs. the target."""
+        ds_cfg = self.config.dataset
+
+        if ds_cfg.feature_columns:
+            self.feature_columns = ds_cfg.feature_columns
+        else:
+            # Get all column names from the dataframe
+            all_cols = self.train_data.columns
+            exclude = {ds_cfg.target_column}
+            if ds_cfg.id_column:
+                exclude.add(ds_cfg.id_column)
+            if ds_cfg.weight_column:
+                exclude.add(ds_cfg.weight_column)
+            if ds_cfg.stratify_column and ds_cfg.stratify_column not in exclude:
+                exclude.add(ds_cfg.stratify_column)
+            if ds_cfg.time_column and ds_cfg.time_column not in exclude:
+                exclude.add(ds_cfg.time_column)
+            if ds_cfg.group_column and ds_cfg.group_column not in exclude:
+                exclude.add(ds_cfg.group_column)
+                
+            self.feature_columns = [c for c in all_cols if c not in exclude]
+
+        self.logger.info(f"Number of feature columns: {len(self.feature_columns)} | Target: {ds_cfg.target_column}")
+        
+        # Log data types for debugging
+        if self.config.debug_mode:
+            dtypes = {col: str(dtype) for col, dtype in zip(self.train_data.columns, self.train_data.dtypes)}
+            self.logger.debug(f"Data types: {dtypes}")
+
+    def _handle_class_imbalance(self):
+        """
+        Handle class imbalance for classification tasks.
+        Note: This requires conversion to pandas as imblearn doesn't support Polars directly.
+        """
+        if self.config.model_training.problem_type != "classification":
+            return
+
+        strategy = self.config.dataset.imbalance_strategy.lower()
+        self.logger.info(f"Handling class imbalance via: {strategy} strategy")
+        
+        # Convert to pandas for resampling
+        train_df = self.train_data.to_pandas()
+        X = train_df[self.feature_columns]
+        y = train_df[self.config.dataset.target_column]
+        
+        # Log class distribution before
+        class_counts_before = y.value_counts().to_dict()
+        self.logger.info(f"Class distribution before resampling: {class_counts_before}")
         
         try:
-            if self.X_train is None:
-                self.logger.error("No training data available for preprocessing")
-                return False
+            # Import imblearn conditionally
+            try:
+                from imblearn.over_sampling import RandomOverSampler, SMOTE
+                from imblearn.under_sampling import RandomUnderSampler
+                from imblearn.combine import SMOTEENN, SMOTETomek
+                imblearn_available = True
+            except ImportError:
+                imblearn_available = False
+                self.logger.warning("imblearn not available. Skipping class imbalance handling.")
+                return
             
-            dataset_config = self.config.dataset
+            if not imblearn_available:
+                return
+                
+            if strategy == "oversample":
+                sampler = RandomOverSampler(random_state=self.config.dataset.random_seed)
+            elif strategy == "undersample":
+                sampler = RandomUnderSampler(random_state=self.config.dataset.random_seed)
+            elif strategy == "smote":
+                sampler = SMOTE(random_state=self.config.dataset.random_seed)
+            elif strategy == "smote_enn":
+                sampler = SMOTEENN(random_state=self.config.dataset.random_seed)
+            elif strategy == "smote_tomek":
+                sampler = SMOTETomek(random_state=self.config.dataset.random_seed)
+            else:
+                self.logger.warning(f"Unknown imbalance strategy: {strategy}. Skipping resampling.")
+                return
+
+            # Apply resampling
+            X_res, y_res = sampler.fit_resample(X, y)
             
-            # Create preprocessing stats dictionary
-            preprocessing_stats = {
-                "original_shape": self.X_train.shape,
-                "missing_values_before": {},
-                "categorical_counts": {},
-                "numerical_stats": {}
+            # Reconstruct DataFrame and convert back to Polars
+            resampled_df = pd.DataFrame(X_res, columns=self.feature_columns)
+            resampled_df[self.config.dataset.target_column] = y_res
+            
+            # Preserve any non-feature columns that weren't included in X
+            for col in train_df.columns:
+                if col not in resampled_df.columns and col != self.config.dataset.target_column:
+                    if col in train_df.columns:
+                        # For any column that was in original but not in resampled, handle it
+                        # This is a simplification - in production you might need a more sophisticated approach
+                        resampled_df[col] = np.nan
+            
+            self.train_data = pl.from_pandas(resampled_df)
+            
+            # Log class distribution after
+            class_counts_after = y_res.value_counts().to_dict()
+            self.logger.info(f"Class distribution after resampling: {class_counts_after}")
+            self.logger.info(f"Resampled training set shape: {X_res.shape}")
+            
+        except Exception as e:
+            self.logger.error(f"Error during imbalance handling: {str(e)}")
+            if self.config.debug_mode:
+                self.logger.error(traceback.format_exc())
+            # Continue with original data
+            self.logger.info("Continuing with original data due to error in resampling")
+
+    def _apply_preprocessing(self):
+        """Fit the preprocessor on train_data, then transform train/val/test."""
+        self.logger.info("Applying preprocessing to datasets")
+        try:
+            # Fit preprocessor on training data
+            self.logger.info("Fitting preprocessor on train data")
+            self.preprocessor.fit(self.train_data)
+            
+            # Transform datasets
+            self.logger.info("Transforming train data")
+            self.train_data = self.preprocessor.transform(self.train_data)
+            
+            if self.validation_data is not None:
+                self.logger.info("Transforming validation data")
+                self.validation_data = self.preprocessor.transform(self.validation_data)
+                
+            if self.test_data is not None:
+                self.logger.info("Transforming test data")
+                self.test_data = self.preprocessor.transform(self.test_data)
+                
+            self.logger.info("Preprocessing complete")
+        except Exception as e:
+            self.logger.error(f"Error during preprocessing: {e}")
+            if self.config.debug_mode:
+                self.logger.error(traceback.format_exc())
+            raise
+
+    # ------------------
+    # FEATURE ENGINEERING
+    # ------------------
+    def engineer_features(self):
+        """
+        Perform feature engineering steps on the datasets.
+        Uses Polars expressions for efficient computation.
+        """
+        self._set_state(TrainingState.FEATURE_ENGINEERING)
+        with self._time_context("feature_engineering_time"):
+            fe_cfg = self.config.feature_engineering
+            self.logger.info("Starting feature engineering steps...")
+
+            # Implement polynomial features manually with Polars
+            if fe_cfg.enable_polynomial_features and fe_cfg.polynomial_degree > 1:
+                self.logger.info(f"Generating polynomial features (degree={fe_cfg.polynomial_degree})")
+                self._generate_polynomial_features(fe_cfg.polynomial_degree)
+
+            # Dimensionality reduction
+            if fe_cfg.enable_dimensionality_reduction:
+                self.logger.info(f"Applying dimensionality reduction: {fe_cfg.dimensionality_reduction_method}")
+                self._apply_dimensionality_reduction(fe_cfg.dimensionality_reduction_method)
+
+            # Feature selection
+            if fe_cfg.enable_feature_selection:
+                self.logger.info(f"Selecting features by method: {fe_cfg.feature_selection_method}")
+                self._apply_feature_selection(fe_cfg.feature_selection_method)
+
+            # Custom feature generation
+            if fe_cfg.enable_feature_generation:
+                self.logger.info("Generating new features")
+                self._generate_custom_features()
+
+            self.logger.info("Feature engineering completed")
+
+    def _generate_polynomial_features(self, degree: int):
+        """Generate polynomial and interaction features using Polars expressions."""
+        try:
+            # We'll create combinations of features up to the given degree
+            numeric_features = [
+                col for col in self.feature_columns
+                if pl.col(col).dtype in [pl.Float32, pl.Float64, pl.Int32, pl.Int64, pl.UInt32, pl.UInt64]
+            ]
+            
+            if not numeric_features:
+                self.logger.warning("No numeric features found for polynomial feature generation")
+                return
+                
+            self.logger.info(f"Generating polynomial features from {len(numeric_features)} numeric features")
+            
+            # Create combinations for each dataset
+            for dataset_name in ['train_data', 'validation_data', 'test_data']:
+                dataset = getattr(self, dataset_name)
+                if dataset is None:
+                    continue
+                
+                # Generate new columns for each power
+                new_cols = []
+                for i in range(2, degree + 1):
+                    for col in numeric_features:
+                        new_col_name = f"{col}_pow{i}"
+                        new_cols.append(pl.col(col).pow(i).alias(new_col_name))
+                
+                # Generate interaction terms (2-way only to avoid explosion of features)
+                for i, col1 in enumerate(numeric_features):
+                    for col2 in numeric_features[i+1:]:
+                        new_col_name = f"{col1}_x_{col2}"
+                        new_cols.append((pl.col(col1) * pl.col(col2)).alias(new_col_name))
+                
+                # Apply transformations
+                if new_cols:
+                    setattr(self, dataset_name, dataset.with_columns(new_cols))
+                    
+                    # Update feature columns list after first dataset
+                    if dataset_name == 'train_data':
+                        self.feature_columns = dataset.columns
+                        
+            self.logger.info(f"Generated polynomial features. New feature count: {len(self.feature_columns)}")
+        except Exception as e:
+            self.logger.error(f"Error generating polynomial features: {e}")
+            if self.config.debug_mode:
+                self.logger.error(traceback.format_exc())
+
+    def _apply_dimensionality_reduction(self, method: str):
+        """Apply dimensionality reduction to the feature set."""
+        try:
+            if method.lower() == 'pca':
+                from sklearn.decomposition import PCA
+                
+                # We need original numpy arrays for PCA
+                X_train = self.train_data.select(self.feature_columns).to_numpy()
+                
+                # Determine number of components
+                n_components = min(
+                    len(self.feature_columns),
+                    self.config.feature_engineering.max_components or len(self.feature_columns)
+                )
+                
+                # Initialize and fit PCA
+                pca = PCA(n_components=n_components)
+                pca.fit(X_train)
+                
+                # Determine how many components to keep based on explained variance
+                var_threshold = self.config.feature_engineering.variance_threshold or 0.95
+                cum_var = np.cumsum(pca.explained_variance_ratio_)
+                n_components_kept = np.argmax(cum_var >= var_threshold) + 1
+                
+                self.logger.info(
+                    f"PCA: Using {n_components_kept} components to explain "
+                    f"{cum_var[n_components_kept-1]*100:.2f}% of variance"
+                )
+                
+                # Transform data and create new dataframes
+                for dataset_name in ['train_data', 'validation_data', 'test_data']:
+                    dataset = getattr(self, dataset_name)
+                    if dataset is None:
+                        continue
+                    
+                    # Get non-feature columns
+                    non_feature_cols = [col for col in dataset.columns if col not in self.feature_columns]
+                    non_feature_data = dataset.select(non_feature_cols)
+                    
+                    # Transform feature data
+                    X = dataset.select(self.feature_columns).to_numpy()
+                    X_reduced = pca.transform(X)[:, :n_components_kept]
+                    
+                    # Create new column names for PCA components
+                    pca_cols = [f"pca_{i}" for i in range(n_components_kept)]
+                    
+                    # Create new DataFrame with PCA components and original non-feature columns
+                    reduced_df = pl.DataFrame(X_reduced, schema=pca_cols)
+                    setattr(self, dataset_name, pl.concat([non_feature_data, reduced_df], how="horizontal"))
+                
+                # Update feature columns list
+                self.feature_columns = pca_cols
+                self.logger.info(f"Dimensionality reduction complete: {len(self.feature_columns)} features retained")
+                
+            elif method.lower() == 'tsne' or method.lower() == 'umap':
+                self.logger.warning(f"{method} dimensionality reduction is not implemented")
+            else:
+                self.logger.warning(f"Unsupported dimensionality reduction method: {method}")
+        except Exception as e:
+            self.logger.error(f"Error in dimensionality reduction: {e}")
+            if self.config.debug_mode:
+                self.logger.error(traceback.format_exc())
+
+    def _apply_feature_selection(self, method: str):
+        """Select most important features based on specified method."""
+        try:
+            # Extract feature data
+            X_train = self.train_data.select(self.feature_columns).to_numpy()
+            y_train = self.train_data.select(self.config.dataset.target_column).to_numpy().ravel()
+            
+            # Feature selection based on specified method
+            if method.lower() == 'variance':
+                from sklearn.feature_selection import VarianceThreshold
+                
+                threshold = self.config.feature_engineering.variance_threshold or 0.0
+                selector = VarianceThreshold(threshold=threshold)
+                selector.fit(X_train)
+                mask = selector.get_support()
+                
+                selected_features = [self.feature_columns[i] for i in range(len(self.feature_columns)) if mask[i]]
+                
+            elif method.lower() in ['f_classif', 'chi2', 'mutual_info_classif']:
+                from sklearn.feature_selection import SelectKBest, f_classif, chi2, mutual_info_classif
+                
+                k = self.config.feature_engineering.num_features_to_select or min(20, len(self.feature_columns))
+                
+                if method.lower() == 'f_classif':
+                    selector = SelectKBest(f_classif, k=k)
+                elif method.lower() == 'chi2':
+                    # Chi2 requires non-negative features
+                    if (X_train < 0).any():
+                        self.logger.warning("Chi2 requires non-negative features. Using f_classif instead.")
+                        selector = SelectKBest(f_classif, k=k)
+                    else:
+                        selector = SelectKBest(chi2, k=k)
+                else:  # mutual_info_classif
+                    selector = SelectKBest(mutual_info_classif, k=k)
+                
+                selector.fit(X_train, y_train)
+                mask = selector.get_support()
+                
+                selected_features = [self.feature_columns[i] for i in range(len(self.feature_columns)) if mask[i]]
+                
+            elif method.lower() in ['l1', 'lasso']:
+                from sklearn.feature_selection import SelectFromModel
+                from sklearn.linear_model import Lasso
+                
+                alpha = self.config.feature_engineering.alpha or 0.01
+                selector = SelectFromModel(Lasso(alpha=alpha))
+                selector.fit(X_train, y_train)
+                mask = selector.get_support()
+                
+                selected_features = [self.feature_columns[i] for i in range(len(self.feature_columns)) if mask[i]]
+                
+            elif method.lower() == 'tree_importance':
+                from sklearn.feature_selection import SelectFromModel
+                from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+                
+                if self.config.model_training.problem_type == 'classification':
+                    model = RandomForestClassifier(n_estimators=100, random_state=self.config.dataset.random_seed)
+                else:
+                    model = RandomForestRegressor(n_estimators=100, random_state=self.config.dataset.random_seed)
+                
+                selector = SelectFromModel(model, threshold='mean')
+                selector.fit(X_train, y_train)
+                mask = selector.get_support()
+                
+                selected_features = [self.feature_columns[i] for i in range(len(self.feature_columns)) if mask[i]]
+                
+            else:
+                self.logger.warning(f"Unsupported feature selection method: {method}")
+                return
+            
+            # Apply selection to all datasets
+            if selected_features:
+                self.logger.info(f"Selected {len(selected_features)} features out of {len(self.feature_columns)}")
+                self.feature_columns = selected_features
+                
+                # Keep only selected feature columns and non-feature columns
+                for dataset_name in ['train_data', 'validation_data', 'test_data']:
+                    dataset = getattr(self, dataset_name)
+                    if dataset is None:
+                        continue
+                    
+                    # Get non-feature columns (ones not in the original feature set)
+                    non_feature_cols = [col for col in dataset.columns if col not in self.feature_columns]
+                    
+                    # Create new DataFrame with only selected features and non-feature columns
+                    setattr(self, dataset_name, dataset.select(non_feature_cols + selected_features))
+        except Exception as e:
+            self.logger.error(f"Error in feature selection: {e}")
+            if self.config.debug_mode:
+                self.logger.error(traceback.format_exc())
+
+    def _generate_custom_features(self):
+        """Generate custom features based on domain knowledge or feature engineering rules."""
+        try:
+            fe_cfg = self.config.feature_engineering
+            
+            # Date-based feature generation
+            if fe_cfg.enable_date_features and self.config.dataset.time_column:
+                time_col = self.config.dataset.time_column
+                self.logger.info(f"Generating date features from {time_col}")
+                
+                for dataset_name in ['train_data', 'validation_data', 'test_data']:
+                    dataset = getattr(self, dataset_name)
+                    if dataset is None or time_col not in dataset.columns:
+                        continue
+                    
+                    # Determine if we need to parse the date
+                    if dataset.schema[time_col] not in [pl.Date, pl.Datetime]:
+                        # Create a new DataFrame with parsed datetime
+                        setattr(self, dataset_name, dataset.with_column(
+                            pl.col(time_col).str.to_datetime().alias(time_col)))
+                        dataset = getattr(self, dataset_name)
+                    
+                    # Generate date features
+                    date_features = [
+                        pl.col(time_col).dt.year().alias(f"{time_col}_year"),
+                        pl.col(time_col).dt.month().alias(f"{time_col}_month"),
+                        pl.col(time_col).dt.day().alias(f"{time_col}_day"),
+                        pl.col(time_col).dt.weekday().alias(f"{time_col}_weekday"),
+                        pl.col(time_col).dt.hour().alias(f"{time_col}_hour"),
+                        pl.col(time_col).dt.quarter().alias(f"{time_col}_quarter"),
+                        # Add more date features as needed
+                    ]
+                    
+                    # Apply transformations
+                    setattr(self, dataset_name, dataset.with_columns(date_features))
+                    
+                    # Update feature columns list after first dataset
+                    if dataset_name == 'train_data':
+                        new_cols = [expr.output_name() for expr in date_features]
+                        self.feature_columns.extend(new_cols)
+            
+            # Text-based feature generation
+            if fe_cfg.enable_text_features and fe_cfg.text_columns:
+                self.logger.info(f"Text feature generation is not fully implemented")
+                # In a production environment, you would add text processing here
+                
+            # Aggregation-based features
+            if fe_cfg.enable_aggregation_features and fe_cfg.aggregation_columns:
+                self.logger.info(f"Generating aggregation features")
+                
+                # Example: For each categorical column, generate stats of numeric columns
+                cat_cols = fe_cfg.aggregation_columns
+                num_cols = [col for col in self.feature_columns if col not in cat_cols]
+                
+                for dataset_name in ['train_data', 'validation_data', 'test_data']:
+                    dataset = getattr(self, dataset_name)
+                    if dataset is None:
+                        continue
+                    
+                    new_features = []
+                    for cat_col in cat_cols:
+                        if cat_col not in dataset.columns:
+                            continue
+                            
+                        # Get group aggregations (only for training set)
+                        if dataset_name == 'train_data':
+                            # Group by categorical column and calculate aggregations
+                            aggs = {}
+                            for num_col in num_cols[:5]:  # Limit to first 5 numeric cols to avoid explosion
+                                aggs[f"{cat_col}_{num_col}_mean"] = pl.col(num_col).mean()
+                                aggs[f"{cat_col}_{num_col}_std"] = pl.col(num_col).std()
+                                
+                            # Compute aggregations
+                            agg_df = dataset.groupby(cat_col).agg(**aggs).collect()
+                            
+                            # Join back with original data to get aggregated features
+                            setattr(self, dataset_name, dataset.join(agg_df, on=cat_col, how="left"))
+                            
+                            # Update feature columns after first dataset
+                            self.feature_columns.extend(list(aggs.keys()))
+            
+            self.logger.info(f"Custom feature generation complete. Final feature count: {len(self.feature_columns)}")
+        except Exception as e:
+            self.logger.error(f"Error generating custom features: {e}")
+            if self.config.debug_mode:
+                self.logger.error(traceback.format_exc())
+
+    # ------------------
+    # MODEL TRAINING
+    # ------------------
+    def train_model(self):
+        """Train the model with the selected strategy (direct, CV, HPO)."""
+        self._set_state(TrainingState.TRAINING)
+        with self._time_context("training_time"):
+            self.logger.info("Initializing and training the model")
+            self._initialize_model()
+
+            if self.config.hyperparameter_optimization.enabled:
+                self._train_with_hpo()
+            else:
+                if self.config.model_training.enable_cross_validation:
+                    self._train_with_cross_validation()
+                else:
+                    self._train_direct()
+
+    def _initialize_model(self):
+        """Create the model instance from config."""
+        cfg = self.config.model_training
+        try:
+            if cfg.model_type == ModelType.SKLEARN:
+                if not cfg.model_class:
+                    raise ValueError("model_class must be specified for sklearn model.")
+                mod_path, cls_name = cfg.model_class.rsplit('.', 1)
+                mod = __import__(mod_path, fromlist=[cls_name])
+                ModelClass = getattr(mod, cls_name)
+                self.model = ModelClass(**cfg.hyperparameters)
+                self.logger.info(f"Initialized {cls_name} model with params: {cfg.hyperparameters}")
+
+            elif cfg.model_type == ModelType.XGBOOST:
+                if not XGBOOST_AVAILABLE:
+                    raise ImportError("XGBoost is not installed")
+                    
+                params = cfg.hyperparameters.copy()
+                if "objective" not in params:
+                    params["objective"] = (
+                        "binary:logistic" if cfg.problem_type == "classification" else "reg:squarederror"
+                    )
+                self.model = xgb.XGBModel(**params)
+                self.logger.info(f"Initialized XGBoost model with params: {params}")
+
+            elif cfg.model_type == ModelType.LIGHTGBM:
+                if not LIGHTGBM_AVAILABLE:
+                    raise ImportError("LightGBM is not installed")
+                    
+                params = cfg.hyperparameters.copy()
+                if "objective" not in params:
+                    params["objective"] = (
+                        "binary" if cfg.problem_type == "classification" else "regression"
+                    )
+                self.model = lgb.LGBMModel(**params)
+                self.logger.info(f"Initialized LightGBM model with params: {params}")
+
+            elif cfg.model_type == ModelType.CUSTOM:
+                self.logger.warning("Custom model type specified, expecting an externally assigned self.model")
+                if not self.model:
+                    raise ValueError("For CUSTOM model type, self.model must be pre-assigned before training")
+            else:
+                raise ValueError(f"Unsupported ModelType: {cfg.model_type}")
+        except Exception as e:
+            self.logger.error(f"Error initializing model: {e}")
+            if self.config.debug_mode:
+                self.logger.error(traceback.format_exc())
+            raise
+
+    def _train_direct(self):
+        """Train model on the entire training set, optionally with early stopping if validation set is available."""
+        X_train, y_train, X_val, y_val = self._prepare_data_for_training()
+        self._fit_model(self.model, X_train, y_train, X_val, y_val)
+        self.best_model = self.model
+        self.logger.info("Model training completed (direct training)")
+
+    def _train_with_cross_validation(self):
+        """Perform cross-validation on the model, then refit on the entire training set."""
+        cfg = self.config.model_training
+        X_train, y_train, X_val, y_val = self._prepare_data_for_training()  # for final refit
+
+        # Determine scoring
+        scoring = "neg_mean_squared_error" if cfg.problem_type == "regression" else "accuracy"
+        if cfg.cv_scoring:
+            scoring = cfg.cv_scoring
+
+        # Choose CV type
+        if cfg.cv_strategy == "stratified" and cfg.problem_type == "classification":
+            cv = StratifiedKFold(n_splits=cfg.cv_folds, shuffle=True, random_state=self.config.dataset.random_seed)
+        else:
+            cv = KFold(n_splits=cfg.cv_folds, shuffle=True, random_state=self.config.dataset.random_seed)
+
+        self.logger.info(f"Starting {cfg.cv_folds}-fold cross-validation with scoring='{scoring}'")
+        
+        try:
+            scores = cross_val_score(
+                self.model, X_train, y_train, 
+                cv=cv, scoring=scoring, 
+                n_jobs=cfg.n_jobs
+            )
+            
+            self.logger.info(f"CV Scores: {scores}")
+            self.logger.info(f"Mean CV score: {scores.mean():.4f} (+/- {scores.std():.4f})")
+            
+            # Store CV results
+            self.cv_results_ = {
+                "scores": scores.tolist(),
+                "mean_score": float(scores.mean()),
+                "std_score": float(scores.std())
+            }
+
+            # Refit on the entire training set
+            self._fit_model(self.model, X_train, y_train, X_val, y_val)
+            self.best_model = self.model
+            self.logger.info("Model training with cross-validation completed")
+        except Exception as e:
+            self.logger.error(f"Error during cross-validation: {e}")
+            if self.config.debug_mode:
+                self.logger.error(traceback.format_exc())
+            raise
+
+    def _train_with_hpo(self):
+        """Train model with hyperparameter optimization (GridSearch, RandomSearch, or Bayesian)."""
+        self._set_state(TrainingState.OPTIMIZING)
+        with self._time_context("optimization_time"):
+            hpo = self.config.hyperparameter_optimization
+            try:
+                if hpo.strategy == OptimizationStrategy.GRID_SEARCH:
+                    self._hpo_grid_search()
+                elif hpo.strategy == OptimizationStrategy.RANDOM_SEARCH:
+                    self._hpo_random_search()
+                elif hpo.strategy == OptimizationStrategy.BAYESIAN:
+                    if OPTUNA_AVAILABLE:
+                        self._hpo_optuna()
+                    else:
+                        self.logger.warning("Optuna not available, defaulting to RandomSearch")
+                        self._hpo_random_search()
+                else:
+                    raise ValueError(f"Unsupported HPO strategy: {hpo.strategy}")
+            except Exception as e:
+                self.logger.error(f"Error during hyperparameter optimization: {e}")
+                if self.config.debug_mode:
+                    self.logger.error(traceback.format_exc())
+                raise
+
+        self._set_state(TrainingState.TRAINING)
+
+    # ------------------
+    # HELPER TRAIN METHODS
+    # ------------------
+    def _prepare_data_for_training(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """Convert Polars DataFrames to NumPy arrays for training."""
+        ds = self.config.dataset
+        X_train = self.train_data.select(self.feature_columns).to_numpy()
+        y_train = self.train_data.select(ds.target_column).to_numpy().ravel()
+        
+        X_val, y_val = None, None
+        if self.validation_data is not None:
+            X_val = self.validation_data.select(self.feature_columns).to_numpy()
+            y_val = self.validation_data.select(ds.target_column).to_numpy().ravel()
+            
+        return X_train, y_train, X_val, y_val
+
+    def _fit_model(self, model, X_train, y_train, X_val=None, y_val=None):
+        """Fit the model with appropriate parameters and early stopping if possible."""
+        cfg = self.config.model_training
+        fit_params = {}
+        
+        # For XGBoost and LightGBM, set up early stopping
+        if (cfg.model_type in [ModelType.XGBOOST, ModelType.LIGHTGBM]) and X_val is not None and y_val is not None:
+            fit_params["eval_set"] = [(X_train, y_train), (X_val, y_val)]
+            
+            if cfg.early_stopping:
+                fit_params["early_stopping_rounds"] = cfg.early_stopping_patience
+                
+            if cfg.num_epochs is not None:
+                # unify param for both xgb and lgbm
+                fit_params["n_estimators"] = cfg.num_epochs
+                
+            # Add verbosity control
+            fit_params["verbose"] = True if self.config.debug_mode else False
+        
+        # Add sample weights if configured
+        if cfg.sample_weights and self.config.dataset.weight_column:
+            try:
+                weights = self.train_data.select(self.config.dataset.weight_column).to_numpy().ravel()
+                fit_params["sample_weight"] = weights
+                self.logger.info("Using sample weights for training")
+            except Exception as e:
+                self.logger.warning(f"Could not use sample weights: {e}")
+
+        # Fit the model with timing
+        start = time.time()
+        try:
+            model.fit(X_train, y_train, **fit_params)
+            end = time.time()
+            self.logger.info(f"Model fit completed in {end - start:.2f} seconds")
+        except Exception as e:
+            self.logger.error(f"Error during model fitting: {e}")
+            if self.config.debug_mode:
+                self.logger.error(traceback.format_exc())
+            raise
+
+    # ------------------
+    # GRID SEARCH / RANDOM SEARCH
+    # ------------------
+    def _hpo_grid_search(self):
+        """Perform grid search for hyperparameter optimization."""
+        X_train, y_train, _, _ = self._prepare_data_for_training()
+        hpo = self.config.hyperparameter_optimization
+        
+        # Set up scoring function
+        scoring = None if hpo.metric == "auto" else hpo.metric
+        
+        # Set up CV strategy
+        if self.config.model_training.cv_strategy == "stratified" and self.config.model_training.problem_type == "classification":
+            cv = StratifiedKFold(n_splits=hpo.cv_folds, shuffle=True, random_state=self.config.dataset.random_seed)
+        else:
+            cv = KFold(n_splits=hpo.cv_folds, shuffle=True, random_state=self.config.dataset.random_seed)
+            
+        # Create grid search object
+        grid_cv = GridSearchCV(
+            self.model,
+            param_grid=hpo.param_grid,
+            cv=cv,
+            n_jobs=self.config.model_training.n_jobs,
+            scoring=scoring,
+            verbose=2 if self.config.debug_mode else 0,
+            refit=True
+        )
+        
+        # Fit grid search
+        self.logger.info(f"Starting grid search with {hpo.cv_folds}-fold CV")
+        start = time.time()
+        grid_cv.fit(X_train, y_train)
+        end = time.time()
+        
+        self.logger.info(f"Grid search completed in {end - start:.2f} seconds")
+        self._assign_best_model(grid_cv)
+
+    def _hpo_random_search(self):
+        """Perform random search for hyperparameter optimization."""
+        X_train, y_train, _, _ = self._prepare_data_for_training()
+        hpo = self.config.hyperparameter_optimization
+        
+        # Set up scoring function
+        scoring = None if hpo.metric == "auto" else hpo.metric
+        
+        # Set up CV strategy
+        if self.config.model_training.cv_strategy == "stratified" and self.config.model_training.problem_type == "classification":
+            cv = StratifiedKFold(n_splits=hpo.cv_folds, shuffle=True, random_state=self.config.dataset.random_seed)
+        else:
+            cv = KFold(n_splits=hpo.cv_folds, shuffle=True, random_state=self.config.dataset.random_seed)
+            
+        # Create random search object
+        random_cv = RandomizedSearchCV(
+            self.model,
+            param_distributions=hpo.param_grid,
+            n_iter=hpo.max_trials,
+            cv=cv,
+            n_jobs=self.config.model_training.n_jobs,
+            scoring=scoring,
+            verbose=2 if self.config.debug_mode else 0,
+            random_state=self.config.dataset.random_seed,
+            refit=True
+        )
+        
+        # Fit random search
+        self.logger.info(f"Starting random search with {hpo.max_trials} trials, {hpo.cv_folds}-fold CV")
+        start = time.time()
+        random_cv.fit(X_train, y_train)
+        end = time.time()
+        
+        self.logger.info(f"Random search completed in {end - start:.2f} seconds")
+        self._assign_best_model(random_cv)
+
+    def _assign_best_model(self, search_cv):
+        """Store the best model and parameters from a search CV object."""
+        try:
+            self.logger.info(f"Best parameters from search: {search_cv.best_params_}")
+            self.logger.info(f"Best CV score: {search_cv.best_score_:.4f}")
+            
+            # Store results
+            self.hpo_results = {
+                "best_params": search_cv.best_params_,
+                "best_score": float(search_cv.best_score_),
+                "cv_results": {
+                    "mean_test_score": search_cv.cv_results_["mean_test_score"].tolist(),
+                    "std_test_score": search_cv.cv_results_["std_test_score"].tolist(),
+                    "params": [str(p) for p in search_cv.cv_results_["params"]]
+                }
             }
             
-            # Convert pandas to numpy if needed for consistent processing
-            X_train_values = self.X_train.values if isinstance(self.X_train, pd.DataFrame) else self.X_train
-            
-            # Track original types and shapes
-            if isinstance(self.X_train, pd.DataFrame):
-                preprocessing_stats["original_dtypes"] = self.X_train.dtypes.to_dict()
-                
-                # Count missing values before preprocessing
-                preprocessing_stats["missing_values_before"] = self.X_train.isna().sum().to_dict()
-                
-                # Get stats for categorical features
-                for col in dataset_config.categorical_columns:
-                    if col in self.X_train.columns:
-                        preprocessing_stats["categorical_counts"][col] = self.X_train[col].value_counts().to_dict()
-                
-                # Get stats for numerical features
-                for col in dataset_config.numerical_columns:
-                    if col in self.X_train.columns:
-                        preprocessing_stats["numerical_stats"][col] = {
-                            "mean": self.X_train[col].mean(),
-                            "std": self.X_train[col].std(),
-                            "min": self.X_train[col].min(),
-                            "max": self.X_train[col].max(),
-                            "median": self.X_train[col].median()
-                        }
-            
-            # Create preprocessor configuration
-            preprocessor_config = PreprocessorConfig(
-                handle_missing=dataset_config.handle_missing,
-                handle_outliers=dataset_config.handle_outliers,
-                handle_categorical=dataset_config.handle_categorical,
-                scaling_method=self.config.feature_engineering.scaling_method 
-                    if self.config.feature_engineering.enable_scaling else None,
-                categorical_encoding=self.config.feature_engineering.encoding_method 
-                    if self.config.feature_engineering.enable_feature_encoding else None,
-                max_onehot_cardinality=self.config.feature_engineering.max_onehot_cardinality,
-                categorical_columns=dataset_config.categorical_columns,
-                numerical_columns=dataset_config.numerical_columns,
-                datetime_columns=dataset_config.datetime_columns,
-                text_columns=dataset_config.text_columns
-            )
-            
-            # Create preprocessor and fit on training data
-            self.preprocessor = DataPreprocessor(preprocessor_config)
-            X_train_processed = self.preprocessor.fit_transform(self.X_train)
-            
-            # Process validation data if available
-            X_val_processed = None
-            if self.X_val is not None:
-                X_val_processed = self.preprocessor.transform(self.X_val)
-                
-            # Process test data if available
-            X_test_processed = None
-            if self.X_test is not None:
-                X_test_processed = self.preprocessor.transform(self.X_test)
-                
-            # Update data with processed versions
-            self.X_train = X_train_processed
-            self.X_val = X_val_processed
-            self.X_test = X_test_processed
-            
-            # Update feature names if they've changed
-            self.feature_names = self.preprocessor.get_feature_names()
-            
-            # Add preprocessing results to stats
-            preprocessing_stats["processed_shape"] = self.X_train.shape
-            preprocessing_stats["feature_names"] = self.feature_names
-            
-            # Feature engineering if configured
-            if self.config.feature_engineering.enable_feature_generation:
-                self._generate_features()
-            
-            if self.config.feature_engineering.enable_feature_selection:
-                self._select_features()
-                
-            # Update metrics with preprocessing stats
-            self.metrics.set_preprocessing_stats(preprocessing_stats)
-            
-            self.logger.info(f"Data preprocessing completed. Shape after preprocessing: {self.X_train.shape}")
-            return True
-            
+            # Use the best estimator
+            self.best_model = search_cv.best_estimator_
+            self.model = self.best_model
         except Exception as e:
-            self.logger.error(f"Error preprocessing data: {str(e)}")
+            self.logger.error(f"Error assigning best model: {e}")
             if self.config.debug_mode:
                 self.logger.error(traceback.format_exc())
-            
-            self.state = TrainingState.ERROR
-            return False
+            raise
 
-    def _generate_features(self) -> None:
-        """Generate additional features based on configuration."""
-        self.logger.info("Generating additional features...")
+    # ------------------
+    # BAYESIAN / OPTUNA
+    # ------------------
+    def _hpo_optuna(self):
+        """Perform Bayesian optimization using Optuna."""
+        import optuna  # guaranteed by the check above
+        from optuna.samplers import TPESampler, RandomSampler
+        from optuna.pruners import MedianPruner, HyperbandPruner
         
-        fe_config = self.config.feature_engineering
-        dataset_config = self.config.dataset
-        
-        try:
-            # Skip if no data or feature generation is disabled
-            if self.X_train is None or not fe_config.enable_feature_generation:
-                return
-                
-            # Convert to DataFrame if numpy array
-            X_train_df = self.X_train
-            if not isinstance(X_train_df, pd.DataFrame):
-                X_train_df = pd.DataFrame(self.X_train, columns=self.feature_names)
-                
-            X_val_df = None
-            if self.X_val is not None:
-                if not isinstance(self.X_val, pd.DataFrame):
-                    X_val_df = pd.DataFrame(self.X_val, columns=self.feature_names)
-                else:
-                    X_val_df = self.X_val
-                    
-            X_test_df = None
-            if self.X_test is not None:
-                if not isinstance(self.X_test, pd.DataFrame):
-                    X_test_df = pd.DataFrame(self.X_test, columns=self.feature_names)
-                else:
-                    X_test_df = self.X_test
-            
-            # Datetime features
-            if fe_config.datetime_features and dataset_config.datetime_columns:
-                for col in dataset_config.datetime_columns:
-                    if col in X_train_df.columns:
-                        # Ensure datetime type
-                        X_train_df[col] = pd.to_datetime(X_train_df[col])
-                        
-                        # Extract date components
-                        X_train_df[f"{col}_year"] = X_train_df[col].dt.year
-                        X_train_df[f"{col}_month"] = X_train_df[col].dt.month
-                        X_train_df[f"{col}_day"] = X_train_df[col].dt.day
-                        X_train_df[f"{col}_dayofweek"] = X_train_df[col].dt.dayofweek
-                        X_train_df[f"{col}_quarter"] = X_train_df[col].dt.quarter
-                        X_train_df[f"{col}_is_weekend"] = X_train_df[col].dt.dayofweek >= 5
-                        
-                        # Apply to validation and test as well
-                        if X_val_df is not None and col in X_val_df.columns:
-                            X_val_df[col] = pd.to_datetime(X_val_df[col])
-                            X_val_df[f"{col}_year"] = X_val_df[col].dt.year
-                            X_val_df[f"{col}_month"] = X_val_df[col].dt.month
-                            X_val_df[f"{col}_day"] = X_val_df[col].dt.day
-                            X_val_df[f"{col}_dayofweek"] = X_val_df[col].dt.dayofweek
-                            X_val_df[f"{col}_quarter"] = X_val_df[col].dt.quarter
-                            X_val_df[f"{col}_is_weekend"] = X_val_df[col].dt.dayofweek >= 5
-                        
-                        if X_test_df is not None and col in X_test_df.columns:
-                            X_test_df[col] = pd.to_datetime(X_test_df[col])
-                            X_test_df[f"{col}_year"] = X_test_df[col].dt.year
-                            X_test_df[f"{col}_month"] = X_test_df[col].dt.month
-                            X_test_df[f"{col}_day"] = X_test_df[col].dt.day
-                            X_test_df[f"{col}_dayofweek"] = X_test_df[col].dt.dayofweek
-                            X_test_df[f"{col}_quarter"] = X_test_df[col].dt.quarter
-                            X_test_df[f"{col}_is_weekend"] = X_test_df[col].dt.dayofweek >= 5
-            
-            # Polynomial features if configured
-            if fe_config.enable_polynomial_features:
-                if SKLEARN_AVAILABLE:
-                    from sklearn.preprocessing import PolynomialFeatures
-                    
-                    # Identify numeric columns
-                    numeric_cols = dataset_config.numerical_columns
-                    if not numeric_cols and isinstance(X_train_df, pd.DataFrame):
-                        numeric_cols = X_train_df.select_dtypes(include=[np.number]).columns.tolist()
-                    
-                    if numeric_cols:
-                        # Select only numeric features for polynomial generation
-                        X_numeric = X_train_df[numeric_cols].values
-                        
-                        # Create polynomial features
-                        poly = PolynomialFeatures(
-                            degree=fe_config.polynomial_degree,
-                            interaction_only=fe_config.interaction_only,
-                            include_bias=False
-                        )
-                        
-                        # Transform data
-                        X_poly = poly.fit_transform(X_numeric)
-                        
-                        # Create feature names
-                        poly_feature_names = poly.get_feature_names_out(numeric_cols)
-                        
-                        # Add new features to original dataframe
-                        poly_df = pd.DataFrame(X_poly, columns=poly_feature_names)
-                        # Only keep the interaction terms, not the original features
-                        poly_df = poly_df.iloc[:, len(numeric_cols):]
-                        X_train_df = pd.concat([X_train_df, poly_df], axis=1)
-                        
-                        # Apply to validation and test sets
-                        if X_val_df is not None:
-                            X_val_numeric = X_val_df[numeric_cols].values
-                            X_val_poly = poly.transform(X_val_numeric)
-                            val_poly_df = pd.DataFrame(X_val_poly, columns=poly_feature_names)
-                            val_poly_df = val_poly_df.iloc[:, len(numeric_cols):]
-                            X_val_df = pd.concat([X_val_df, val_poly_df], axis=1)
-                        
-                        if X_test_df is not None:
-                            X_test_numeric = X_test_df[numeric_cols].values
-                            X_test_poly = poly.transform(X_test_numeric)
-                            test_poly_df = pd.DataFrame(X_test_poly, columns=poly_feature_names)
-                            test_poly_df = test_poly_df.iloc[:, len(numeric_cols):]
-                            X_test_df = pd.concat([X_test_df, test_poly_df], axis=1)
-            
-            # Update feature names and dataframes
-            self.feature_names = X_train_df.columns.tolist()
-            self.X_train = X_train_df
-            self.X_val = X_val_df
-            self.X_test = X_test_df
-            
-            self.logger.info(f"Feature generation complete. New feature count: {len(self.feature_names)}")
-            
-        except Exception as e:
-            self.logger.error(f"Error generating features: {str(e)}")
-            if self.config.debug_mode:
-                self.logger.error(traceback.format_exc())
+        hpo = self.config.hyperparameter_optimization
+        X_train, y_train, X_val, y_val = self._prepare_data_for_training()
+        mt = self.config.model_training.model_type
 
-    def _select_features(self) -> None:
-        """Select features based on importance or other criteria."""
-        self.logger.info("Performing feature selection...")
-        
-        fe_config = self.config.feature_engineering
-        
-        try:
-            # Skip if disabled or no data
-            if not fe_config.enable_feature_selection or self.X_train is None:
-                return
-                
-            # Ensure we have sklearn
-            if not SKLEARN_AVAILABLE:
-                self.logger.warning("Feature selection requires scikit-learn, which is not available")
-                return
-                
-            # Convert to numpy arrays if needed
-            X_train = self.X_train.values if isinstance(self.X_train, pd.DataFrame) else self.X_train
-            y_train = self.y_train.values if isinstance(self.y_train, pd.DataFrame) or isinstance(self.y_train, pd.Series) else self.y_train
-            
-            feature_names = self.feature_names
-            
-            # Different selection methods
-            method = fe_config.feature_selection_method.lower()
-            
-            # Track selected features and their scores
-            selected_features = []
-            feature_scores = {}
-            
-            if method == 'importance':
-                # Use a tree-based model to calculate feature importances
-                if self.config.model_training.problem_type == 'classification':
-                    from sklearn.ensemble import RandomForestClassifier
-                    model = RandomForestClassifier(n_estimators=50, n_jobs=self.config.num_threads)
+        def objective(trial):
+            # Build param dictionary from param_grid
+            trial_params = {}
+            for param_name, space in hpo.param_grid.items():
+                if isinstance(space, dict):
+                    # handle low/high or choices
+                    if "choices" in space:
+                        trial_params[param_name] = trial.suggest_categorical(param_name, space["choices"])
+                    else:
+                        low = space.get("low")
+                        high = space.get("high")
+                        step = space.get("step", None)
+                        log = space.get("log", False)
+                        # Decide float vs. int
+                        if isinstance(low, int) and isinstance(high, int) and not log:
+                            trial_params[param_name] = trial.suggest_int(param_name, low, high, step=step or 1)
+                        else:
+                            trial_params[param_name] = trial.suggest_float(param_name, low, high, step=step, log=log)
+                elif isinstance(space, list):
+                    trial_params[param_name] = trial.suggest_categorical(param_name, space)
                 else:
-                    from sklearn.ensemble import RandomForestRegressor
-                    model = RandomForestRegressor(n_estimators=50, n_jobs=self.config.num_threads)
-                    
-                # Fit the model
-                model.fit(X_train, y_train)
-                
-                # Get feature importances
-                importances = model.feature_importances_
-                
-                # Sort features by importance
-                indices = np.argsort(importances)[::-1]
-                
-                # Create feature scores dictionary
-                for i, idx in enumerate(indices):
-                    feature_scores[feature_names[idx]] = importances[idx]
-                
-                # Apply threshold or take top N
-                if fe_config.max_features:
-                    selected_indices = indices[:fe_config.max_features]
-                else:
-                    selected_indices = indices[importances[indices] >= fe_config.min_feature_importance]
-                    
-                # Get selected feature names
-                selected_features = [feature_names[i] for i in selected_indices]
-                
-            elif method == 'correlation':
-                # Use correlation for feature selection
-                from sklearn.feature_selection import SelectKBest, f_classif, f_regression
-                
-                # Choose proper statistical test
-                if self.config.model_training.problem_type == 'classification':
-                    score_func = f_classif
-                else:
-                    score_func = f_regression
-                    
-                # Determine number of features to select
-                k = fe_config.max_features if fe_config.max_features else int(X_train.shape[1] * 0.5)
-                
-                # Create and fit selector
-                selector = SelectKBest(score_func=score_func, k=k)
-                selector.fit(X_train, y_train)
-                
-                # Get selected feature mask and scores
-                selected_mask = selector.get_support()
-                scores = selector.scores_
-                
-                # Get selected feature names and scores
-                for i, (name, selected) in enumerate(zip(feature_names, selected_mask)):
-                    if selected:
-                        selected_features.append(name)
-                    feature_scores[name] = scores[i]
-                    
-            elif method == 'recursive':
-                # Use Recursive Feature Elimination
-                from sklearn.feature_selection import RFECV
-                
-                # Create a base model
-                if self.config.model_training.problem_type == 'classification':
-                    from sklearn.ensemble import RandomForestClassifier
-                    model = RandomForestClassifier(n_estimators=50, n_jobs=self.config.num_threads)
-                else:
-                    from sklearn.ensemble import RandomForestRegressor
-                    model = RandomForestRegressor(n_estimators=50, n_jobs=self.config.num_threads)
-                
-                # Create RFE selector with cross-validation
-                min_features = 1
-                if fe_config.max_features:
-                    max_features = min(fe_config.max_features, X_train.shape[1])
-                else:
-                    max_features = X_train.shape[1]
-                    
-                selector = RFECV(
-                    estimator=model,
-                    step=1,
-                    cv=5,
-                    scoring='accuracy' if self.config.model_training.problem_type == 'classification' else 'neg_mean_squared_error',
-                    min_features_to_select=min_features,
-                    n_jobs=self.config.num_threads
-                )
-                
-                # Fit selector
-                selector.fit(X_train, y_train)
-                
-                # Get selected features
-                selected_mask = selector.support_
-                ranking = selector.ranking_
-                
-                # Create feature scores based on ranking (lower is better)
-                max_rank = np.max(ranking)
-                
-                # Get selected feature names and scores
-                for i, (name, selected, rank) in enumerate(zip(feature_names, selected_mask, ranking)):
-                    if selected:
-                        selected_features.append(name)
-                    # Convert ranking to a score (higher is better)
-                    feature_scores[name] = (max_rank - rank + 1) / max_rank
-            
-            # Apply feature selection if features were selected
-            if selected_features:
-                self.logger.info(f"Selected {len(selected_features)} features out of {len(feature_names)}")
-                
-                # Filter features in dataframes
-                if isinstance(self.X_train, pd.DataFrame):
-                    self.X_train = self.X_train[selected_features]
-                    if self.X_val is not None and isinstance(self.X_val, pd.DataFrame):
-                        self.X_val = self.X_val[selected_features]
-                    if self.X_test is not None and isinstance(self.X_test, pd.DataFrame):
-                        self.X_test = self.X_test[selected_features]
-                else:
-                    # For numpy arrays, create a boolean mask
-                    mask = np.array([name in selected_features for name in feature_names])
-                    self.X_train = self.X_train[:, mask]
-                    if self.X_val is not None:
-                        self.X_val = self.X_val[:, mask]
-                    if self.X_test is not None:
-                        self.X_test = self.X_test[:, mask]
-                
-                # Update feature names
-                self.feature_names = selected_features
-                
-                # Store feature importance scores
-                self.metrics.set_feature_importance({name: feature_scores.get(name, 0.0) for name in selected_features})
-                
-        except Exception as e:
-            self.logger.error(f"Error selecting features: {str(e)}")
-            if self.config.debug_mode:
-                self.logger.error(traceback.format_exc())
+                    self.logger.warning(f"Unsupported param space for {param_name}: {space}")
 
-    def train_model(self) -> bool:
-        """
-        Train the model according to configuration.
-        
-        Returns:
-            Success flag
-        """
-        self.logger.info("Starting model training...")
-        
-        with self.state_lock:
-            if self.state not in [TrainingState.READY, TrainingState.PREPROCESSING]:
-                self.logger.error(f"Cannot start training from state {self.state}")
-                return False
-            self.state = TrainingState.TRAINING
-        
-        try:
-            # Ensure we have training data
-            if self.X_train is None or self.y_train is None:
-                self.logger.error("No training data available")
-                self.state = TrainingState.ERROR
-                return False
-            
-            # Reset metrics for tracking training progress
-            self.metrics.reset()
-            
-            # Handle hyperparameter optimization if enabled
-            if self.config.hyperparameter_optimization.enabled:
-                self.state = TrainingState.OPTIMIZING
-                self.logger.info("Starting hyperparameter optimization...")
-                success = self.optimize_hyperparameters()
-                if not success:
-                    self.logger.error("Hyperparameter optimization failed")
-                    self.state = TrainingState.ERROR
-                    return False
-            
-            # Get total epochs, using 1 for non-epoch based models
-            total_epochs = self.config.model_training.num_epochs or 1
-            
-            # Start timing and metrics tracking
-            self.metrics.start_training(total_epochs)
-            
-            # Initialize model
-            success = self._initialize_model()
-            if not success:
-                self.logger.error("Model initialization failed")
-                self.state = TrainingState.ERROR
-                return False
-            
-            # Training loop
-            with self.state_lock:
-                self.state = TrainingState.TRAINING
-            
-            self.logger.info(f"Training model with {total_epochs} epochs...")
-            
-            # Actual training implementation differs for each model type
-            if self.config.model_training.model_type == ModelType.SKLEARN:
-                success = self._train_sklearn_model()
-            elif self.config.model_training.model_type == ModelType.XGBOOST:
-                success = self._train_xgboost_model()
-            elif self.config.model_training.model_type == ModelType.LIGHTGBM:
-                success = self._train_lightgbm_model()
+            # Build new model with these params
+            candidate_model = None
+            if mt == ModelType.XGBOOST:
+                candidate_model = xgb.XGBModel(**trial_params)
+            elif mt == ModelType.LIGHTGBM:
+                candidate_model = lgb.LGBMModel(**trial_params)
+            elif mt == ModelType.SKLEARN:
+                # Must have a valid model_class
+                mod_path, cls_name = self.config.model_training.model_class.rsplit('.', 1)
+                mod = __import__(mod_path, fromlist=[cls_name])
+                CandidateClass = getattr(mod, cls_name)
+                candidate_model = CandidateClass(**trial_params)
             else:
-                success = self._train_custom_model()
+                raise ValueError(f"Optuna not supported for model type {mt} or custom logic needed.")
+
+            # Optionally do early stopping if possible
+            if X_val is not None and y_val is not None and self.config.model_training.early_stopping:
+                candidate_model.fit(
+                    X_train, y_train,
+                    eval_set=[(X_val, y_val)],
+                    early_stopping_rounds=self.config.model_training.early_stopping_patience,
+                    verbose=False
+                )
+                # Evaluate performance on X_val
+                pred_val = candidate_model.predict(X_val)
+                score = self._compute_optuna_score(y_val, pred_val, hpo)
+            else:
+                # Or cross-validation
+                score = self._cross_val_score(candidate_model, X_train, y_train, hpo)
+
+            return score if hpo.direction == "maximize" else -score
+
+        # Set up sampler/pruner
+        sampler = None
+        if hpo.sampler == "tpe":
+            sampler = TPESampler(seed=self.config.dataset.random_seed)
+        elif hpo.sampler == "random":
+            sampler = RandomSampler(seed=self.config.dataset.random_seed)
+
+        pruner = None
+        if hpo.pruning:
+            if hpo.pruner == "median":
+                pruner = MedianPruner()
+            elif hpo.pruner == "hyperband":
+                pruner = HyperbandPruner()
+
+        # Create and run study
+        study = optuna.create_study(direction=hpo.direction, sampler=sampler, pruner=pruner)
+        
+        self.logger.info(
+            f"Starting Optuna optimization with {hpo.max_trials} trials, "
+            f"timeout={hpo.max_time_minutes} min, "
+            f"direction={hpo.direction}"
+        )
+        
+        start_time = time.time()
+        study.optimize(
+            objective,
+            n_trials=hpo.max_trials,
+            timeout=(hpo.max_time_minutes * 60 if hpo.max_time_minutes else None),
+            n_jobs=hpo.n_parallel_trials or 1,
+            show_progress_bar=True
+        )
+        end_time = time.time()
+
+        self.logger.info(f"Optuna optimization completed in {end_time - start_time:.2f} seconds")
+        self.logger.info(f"Best trial: {study.best_trial.number}, value: {study.best_value:.4f}")
+        self.logger.info(f"Best parameters: {study.best_params}")
+
+        # Store results
+        self.hpo_results = {
+            "best_params": study.best_params,
+            "best_score": float(study.best_value),
+            "best_trial": study.best_trial.number,
+            "n_trials": len(study.trials),
+            "optimization_time": end_time - start_time
+        }
+
+        # Build final best model, fit on entire training set
+        final_params = study.best_params
+        if mt == ModelType.XGBOOST:
+            self.best_model = xgb.XGBModel(**final_params)
+        elif mt == ModelType.LIGHTGBM:
+            self.best_model = lgb.LGBMModel(**final_params)
+        else:
+            mod_path, cls_name = self.config.model_training.model_class.rsplit('.', 1)
+            mod = __import__(mod_path, fromlist=[cls_name])
+            CandidateClass = getattr(mod, cls_name)
+            self.best_model = CandidateClass(**final_params)
+
+        # Fit the best model on all data
+        self._fit_model(self.best_model, X_train, y_train, X_val, y_val)
+        self.model = self.best_model
+
+    def _compute_optuna_score(self, y_true, y_pred, hpo_cfg):
+        """Compute a simple score for the objective function in Optuna."""
+        if self.config.model_training.problem_type == "regression":
+            if hpo_cfg.metric == "rmse":
+                return -np.sqrt(mean_squared_error(y_true, y_pred))
+            elif hpo_cfg.metric == "mae":
+                return -np.mean(np.abs(y_true - y_pred))
+            elif hpo_cfg.metric == "r2":
+                return r2_score(y_true, y_pred)
+            else:
+                return -mean_squared_error(y_true, y_pred)  # negative MSE to maximize
+        else:
+            # Classification metrics
+            if hpo_cfg.metric == "accuracy" or hpo_cfg.metric == "auto":
+                return accuracy_score(y_true, y_pred)
+            elif hpo_cfg.metric == "f1":
+                return f1_score(y_true, y_pred, average="weighted")
+            elif hpo_cfg.metric == "precision":
+                return precision_score(y_true, y_pred, average="weighted")
+            elif hpo_cfg.metric == "recall":
+                return recall_score(y_true, y_pred, average="weighted")
+            elif hpo_cfg.metric == "auc" and len(np.unique(y_true)) == 2:
+                # Only for binary classification
+                return roc_auc_score(y_true, y_pred)
+            else:
+                return accuracy_score(y_true, y_pred)
+
+    def _cross_val_score(self, model, X, y, hpo_cfg):
+        """Compute a cross-validation score with config-based folds."""
+        scoring = None if hpo_cfg.metric == "auto" else hpo_cfg.metric
+        
+        if self.config.model_training.cv_strategy == "stratified" and self.config.model_training.problem_type == "classification":
+            cv = StratifiedKFold(n_splits=hpo_cfg.cv_folds, shuffle=True, random_state=self.config.dataset.random_seed)
+        else:
+            cv = KFold(n_splits=hpo_cfg.cv_folds, shuffle=True, random_state=self.config.dataset.random_seed)
             
-            if not success:
-                self.logger.error("Model training failed")
-                self.state = TrainingState.ERROR
-                return False
+        try:
+            scores = cross_val_score(model, X, y, cv=cv, scoring=scoring, n_jobs=1)
+            return scores.mean()
+        except Exception as e:
+            self.logger.warning(f"Error in cross-validation: {e}. Returning -inf.")
+            return float("-inf")
+
+    # ------------------
+    # EVALUATION
+    # ------------------
+    def evaluate_model(self):
+        """Evaluate the trained model on train, validation and test sets."""
+        self._set_state(TrainingState.EVALUATING)
+        with self._time_context("evaluation_time"):
+            self.logger.info("Evaluating the trained model")
             
-            # Calculate feature importance if enabled
+            if not self.best_model:
+                self.logger.warning("No best_model found; using self.model.")
+                model = self.model
+            else:
+                model = self.best_model
+
+            eval_cfg = self.config.model_evaluation
+            results = {}
+
+            if eval_cfg.evaluate_on_train:
+                results["train"] = self._evaluate_dataset(model, self.train_data, "train")
+
+            if eval_cfg.evaluate_on_validation and self.validation_data is not None:
+                results["validation"] = self._evaluate_dataset(model, self.validation_data, "validation")
+
+            if eval_cfg.evaluate_on_test and self.test_data is not None:
+                results["test"] = self._evaluate_dataset(model, self.test_data, "test")
+
+            self.evaluation_results = results
+            self._log_evaluation_summary()
+
+            # Additional evaluation for classification
+            if self.config.model_training.problem_type == "classification":
+                self._additional_classification_artifacts(model)
+
+            # Feature importance
             if self.config.model_training.compute_feature_importance:
                 self._compute_feature_importance()
-            
-            # Evaluate the model
-            with self.state_lock:
-                self.state = TrainingState.EVALUATING
-            
-            success = self.evaluate_model()
-            if not success:
-                self.logger.warning("Model evaluation had issues")
-                # Don't fail the whole training because of evaluation issues
-            
-            # Record the end of training
-            self.metrics.end_training()
-            
-            # Save model if configured
-            if self.config.model_registry.save_formats:
-                with self.state_lock:
-                    self.state = TrainingState.SAVING
-                
-                success = self.save_model()
-                if not success:
-                    self.logger.error("Failed to save model")
-                    self.state = TrainingState.ERROR
-                    return False
-            
-            with self.state_lock:
-                self.state = TrainingState.COMPLETED
-            
-            training_time = self.metrics.get_progress().get("elapsed_time", 0)
-            self.logger.info(f"Model training completed in {training_time:.2f} seconds")
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Error during model training: {str(e)}")
-            if self.config.debug_mode:
-                self.logger.error(traceback.format_exc())
-            
-            with self.state_lock:
-                self.state = TrainingState.ERROR
-                
-            return False
 
-    def _initialize_model(self) -> bool:
-        """Initialize the model based on configuration."""
-        try:
-            model_config = self.config.model_training
-            model_type = model_config.model_type
-            
-            # Get appropriate parameters from configuration
-            params = model_config.hyperparameters.copy()
-            
-            if model_type == ModelType.SKLEARN:
-                # Import the appropriate model class
-                if model_config.model_class:
-                    module_path, class_name = model_config.model_class.rsplit('.', 1)
-                    module = importlib.import_module(module_path)
-                    model_class = getattr(module, class_name)
-                    
-                    # Set n_jobs parameter if applicable
-                    if hasattr(model_class, 'n_jobs'):
-                        params['n_jobs'] = model_config.n_jobs
-                    
-                    # Create the model instance
-                    self.model = model_class(**params)
-                    
-                else:
-                    # Default models based on problem type if no class specified
-                    if model_config.problem_type == 'classification':
-                        from sklearn.ensemble import RandomForestClassifier
-                        self.model = RandomForestClassifier(
-                            n_estimators=100,
-                            n_jobs=model_config.n_jobs,
-                            **params
-                        )
-                    else:
-                        from sklearn.ensemble import RandomForestRegressor
-                        self.model = RandomForestRegressor(
-                            n_estimators=100,
-                            n_jobs=model_config.n_jobs,
-                            **params
-                        )
-                        
-            elif model_type == ModelType.XGBOOST:
-                if not XGBOOST_AVAILABLE:
-                    self.logger.error("XGBoost not available but required for model type")
-                    return False
-                    
-                # Set objective based on problem type if not specified
-                if 'objective' not in params and model_config.objective is None:
-                    if model_config.problem_type == 'classification':
-                        # Check if binary or multi-class
-                        if np.unique(self.y_train).size <= 2:
-                            params['objective'] = 'binary:logistic'
-                        else:
-                            params['objective'] = 'multi:softprob'
-                            params['num_class'] = np.unique(self.y_train).size
-                    else:
-                        params['objective'] = 'reg:squarederror'
-                
-                # Add model parameters
-                if model_config.n_jobs > 0:
-                    params['nthread'] = model_config.n_jobs
-                    
-                if model_config.use_gpu:
-                    params['tree_method'] = 'gpu_hist'
-                else:
-                    params['tree_method'] = 'hist'  # Fast histogram-based algorithm
-                    
-                # Create the model
-                self.model = xgb.XGBModel(**params)
-                
-            elif model_type == ModelType.LIGHTGBM:
-                if not LIGHTGBM_AVAILABLE:
-                    self.logger.error("LightGBM not available but required for model type")
-                    return False
-                    
-                # Set objective based on problem type if not specified
-                if 'objective' not in params and model_config.objective is None:
-                    if model_config.problem_type == 'classification':
-                        # Check if binary or multi-class
-                        if np.unique(self.y_train).size <= 2:
-                            params['objective'] = 'binary'
-                        else:
-                            params['objective'] = 'multiclass'
-                            params['num_class'] = np.unique(self.y_train).size
-                    else:
-                        params['objective'] = 'regression'
-                
-                # Add model parameters
-                if model_config.n_jobs > 0:
-                    params['num_threads'] = model_config.n_jobs
-                    
-                if model_config.use_gpu:
-                    params['device'] = 'gpu'
-                    
-                # Create the model
-                if model_config.problem_type == 'classification':
-                    self.model = lgb.LGBMClassifier(**params)
-                else:
-                    self.model = lgb.LGBMRegressor(**params)
-                    
-            else:
-                # Custom model implementation
-                if not model_config.model_class:
-                    self.logger.error("Model class must be specified for custom models")
-                    return False
-                    
-                # Import and instantiate the custom model
-                module_path, class_name = model_config.model_class.rsplit('.', 1)
-                module = importlib.import_module(module_path)
-                model_class = getattr(module, class_name)
-                
-                # Create the model instance
-                self.model = model_class(**params)
-            
-            self.logger.info(f"Model initialized: {type(self.model).__name__}")
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Error initializing model: {str(e)}")
-            if self.config.debug_mode:
-                self.logger.error(traceback.format_exc())
-            return False
+            self.logger.info("Model evaluation completed")
 
-    def _train_sklearn_model(self) -> bool:
-        """Train a scikit-learn model."""
-        model_config = self.config.model_training
+    def _evaluate_dataset(self, model, dataset: pl.DataFrame, ds_name: str):
+        """Compute predictions and standard metrics for a dataset."""
+        ds_cfg = self.config.dataset
+        
+        # Extract features and target
+        X = dataset.select(self.feature_columns).to_numpy()
+        y_true = dataset.select(ds_cfg.target_column).to_numpy().ravel()
+
+        # Classification vs regression
+        if self.config.model_training.problem_type == "classification":
+            y_pred = model.predict(X)
+            y_prob = None
+            
+            if hasattr(model, 'predict_proba'):
+                try:
+                    y_prob_raw = model.predict_proba(X)
+                    if y_prob_raw.shape[1] == 2:
+                        y_prob = y_prob_raw[:, 1]
+                    else:
+                        y_prob = y_prob_raw
+                except Exception as e:
+                    self.logger.warning(f"Could not compute prediction probabilities: {e}")
+                    
+            metrics = self._compute_classification_metrics(y_true, y_pred, y_prob)
+        else:
+            # regression
+            y_pred = model.predict(X)
+            metrics = self._compute_regression_metrics(y_true, y_pred)
+
+        self.logger.info(f"Evaluation on {ds_name} - metrics: {metrics}")
+        return {"metrics": metrics, "predictions": y_pred}
+
+    def _compute_classification_metrics(self, y_true, y_pred, y_prob=None):
+        """Compute classification metrics like accuracy, precision, recall, F1, possibly AUC."""
+        eval_cfg = self.config.model_evaluation
+        avg_method = eval_cfg.average_method or "binary"
+        
+        metrics = {}
+        metrics["accuracy"] = float(accuracy_score(y_true, y_pred))
+        metrics["precision"] = float(precision_score(y_true, y_pred, average=avg_method, zero_division=0))
+        metrics["recall"] = float(recall_score(y_true, y_pred, average=avg_method, zero_division=0))
+        metrics["f1"] = float(f1_score(y_true, y_pred, average=avg_method, zero_division=0))
+
+        # ROC AUC if binary or if you handle multi-class carefully
+        if y_prob is not None and len(np.unique(y_true)) == 2:
+            try:
+                metrics["roc_auc"] = float(roc_auc_score(y_true, y_prob))
+            except Exception as e:
+                self.logger.warning(f"Could not compute ROC AUC: {e}")
+                
+        return metrics
+
+    def _compute_regression_metrics(self, y_true, y_pred):
+        """Compute regression metrics."""
+        mse_val = mean_squared_error(y_true, y_pred)
+        return {
+            "mse": float(mse_val),
+            "rmse": float(np.sqrt(mse_val)),
+            "r2": float(r2_score(y_true, y_pred)),
+            "mae": float(np.mean(np.abs(y_true - y_pred)))
+        }
+
+    def _log_evaluation_summary(self):
+        """Log a summary of evaluation metrics for all datasets."""
+        self.logger.info("==== Evaluation Summary ====")
+        for ds_name, res in self.evaluation_results.items():
+            self.logger.info(f"--- {ds_name.upper()} ---")
+            for k, v in res["metrics"].items():
+                self.logger.info(f"{k}: {v:.4f}")
+        self.logger.info("===========================")
+
+    def _additional_classification_artifacts(self, model):
+        """Compute confusion matrix, classification report for classification models."""
+        eval_cfg = self.config.model_evaluation
+
+        # Confusion matrix on the validation or test set
+        if eval_cfg.confusion_matrix:
+            # prioritize validation, then test, else train
+            ds_for_cm = None
+            preds = None
+            if (self.validation_data is not None) and ("validation" in self.evaluation_results):
+                ds_for_cm = self.validation_data
+                preds = self.evaluation_results["validation"]["predictions"]
+            elif (self.test_data is not None) and ("test" in self.evaluation_results):
+                ds_for_cm = self.test_data
+                preds = self.evaluation_results["test"]["predictions"]
+            elif "train" in self.evaluation_results:
+                ds_for_cm = self.train_data
+                preds = self.evaluation_results["train"]["predictions"]
+
+            if ds_for_cm is not None:
+                y_true = ds_for_cm.select(self.config.dataset.target_column).to_numpy().ravel()
+                cm = confusion_matrix(y_true, preds)
+                self.logger.info(f"Confusion Matrix:\n{cm}")
+                
+                # Store confusion matrix in results
+                self.evaluation_results["confusion_matrix"] = cm.tolist()
+
+        # Classification report
+        if eval_cfg.classification_report and hasattr(sklearn.metrics, "classification_report"):
+            try:
+                from sklearn.metrics import classification_report
+                # same logic picking which dataset for the report
+                if (self.validation_data is not None) and ("validation" in self.evaluation_results):
+                    y_true = self.validation_data.select(self.config.dataset.target_column).to_numpy().ravel()
+                    y_pred = self.evaluation_results["validation"]["predictions"]
+                else:
+                    y_true = self.train_data.select(self.config.dataset.target_column).to_numpy().ravel()
+                    y_pred = self.evaluation_results["train"]["predictions"]
+                    
+                rep = classification_report(y_true, y_pred)
+                self.logger.info(f"Classification Report:\n{rep}")
+                
+                # Also get report as dict for JSON serialization
+                rep_dict = classification_report(y_true, y_pred, output_dict=True)
+                self.evaluation_results["classification_report"] = rep_dict
+            except Exception as e:
+                self.logger.warning(f"Could not generate classification report: {e}")
+
+    def _compute_feature_importance(self):
+        """Compute and log feature importance from the model if available."""
+        model = self.best_model if self.best_model else self.model
         
         try:
-            # Convert to numpy arrays if needed
-            X_train = self.X_train.values if isinstance(self.X_train, pd.DataFrame) else self.X_train
-            y_train = self.y_train.values if isinstance(self.y_train, pd.DataFrame) or isinstance(self.y_train, pd.Series) else self.y_train
-            
-            X_val = None
-            y_val = None
-            if self.X_val is not None and self.y_val is not None:
-                X_val = self.X_val.values if isinstance(self.X_val, pd.DataFrame) else self.X_val
-                y_val = self.y_val.values if isinstance(self.y_val, pd.DataFrame) or isinstance(self.y_val, pd.Series) else self.y_val
-            
-            # For scikit-learn models, there's typically just one "epoch"
-            # but we can use cross-validation or multiple fits for ensemble building
-            
-            # Handle cross-validation if enabled
-            if model_config.enable_cross_validation:
-                self.logger.info("Training with cross-validation...")
+            if hasattr(model, "feature_importances_"):
+                importances = model.feature_importances_
+                # Create a Polars DataFrame for feature importances
+                importance_data = {
+                    "feature": self.feature_columns,
+                    "importance": importances
+                }
+                fi = pl.DataFrame(importance_data)
+                fi = fi.sort("importance", descending=True)
+                self.feature_importance_ = fi
                 
-                # Setup cross-validation strategy
-                if model_config.cv_strategy == 'stratified' and model_config.problem_type == 'classification':
-                    from sklearn.model_selection import StratifiedKFold
-                    cv = StratifiedKFold(n_splits=model_config.cv_folds, shuffle=True, random_state=self.config.random_seed)
+                # Log top features
+                top_features = fi.head(20)
+                self.logger.info(f"Top feature importances:\n{top_features}")
+                
+                # Store as serializable dict
+                self.feature_importance_dict = {
+                    "feature": fi["feature"].to_list(),
+                    "importance": fi["importance"].to_list()
+                }
+            else:
+                self.logger.info("Feature importances not available for this model")
+                
+                # Try SHAP for feature importance if requested
+                if self.config.model_evaluation.compute_shap and self.config.debug_mode:
+                    self.logger.info("SHAP feature importance not implemented in this version")
+        except Exception as e:
+            self.logger.warning(f"Error computing feature importance: {e}")
+
+    # ------------------
+    # REGISTRY / SAVING
+    # ------------------
+    def save_model(self):
+        """Save the trained model and associated artifacts to the registry."""
+        self._set_state(TrainingState.SAVING)
+        self.logger.info("Saving model/artifacts to registry...")
+        
+        try:
+            reg_cfg = self.config.model_registry
+            model_name = reg_cfg.model_name
+            version = self._resolve_model_version()
+
+            model_dir = os.path.join(reg_cfg.registry_path, model_name, version)
+            os.makedirs(model_dir, exist_ok=True)
+
+            # Save model
+            model_path = os.path.join(model_dir, "model.pkl")
+            with open(model_path, "wb") as f:
+                pickle.dump(self.best_model or self.model, f)
+            self.logger.info(f"Model saved: {model_path}")
+
+            # Save preprocessor
+            if reg_cfg.save_preprocessor and self.preprocessor:
+                preproc_path = os.path.join(model_dir, "preprocessor.pkl")
+                with open(preproc_path, "wb") as f:
+                    pickle.dump(self.preprocessor, f)
+                self.logger.info(f"Preprocessor saved: {preproc_path}")
+
+            # Save feature columns
+            if reg_cfg.save_feature_names:
+                fc_path = os.path.join(model_dir, "feature_columns.json")
+                with open(fc_path, "w") as f:
+                    json.dump(self.feature_columns, f)
+                self.logger.info(f"Feature columns saved: {fc_path}")
+
+            # Save metrics
+            if reg_cfg.save_metrics and self.evaluation_results:
+                metrics_file = os.path.join(model_dir, "metrics.json")
+                # Clean up results for JSON serialization
+                results_cleaned = {}
+                for ds_name, ds_res in self.evaluation_results.items():
+                    if ds_name in ["confusion_matrix", "classification_report"]:
+                        results_cleaned[ds_name] = ds_res
+                    else:
+                        met = ds_res.get("metrics", {})
+                        results_cleaned[ds_name] = {"metrics": met}
+                with open(metrics_file, "w") as f:
+                    json.dump(results_cleaned, f, indent=2)
+                self.logger.info(f"Metrics saved: {metrics_file}")
+
+            # Save config
+            if reg_cfg.save_hyperparameters:
+                cfg_path = os.path.join(model_dir, "config.json")
+                with open(cfg_path, "w") as f:
+                    json.dump(self.config.to_dict(), f, indent=2, default=str)
+                self.logger.info(f"Config saved: {cfg_path}")
+
+            # Save feature importance
+            if reg_cfg.save_feature_importance and hasattr(self, "feature_importance_dict"):
+                fi_path = os.path.join(model_dir, "feature_importance.json")
+                with open(fi_path, "w") as f:
+                    json.dump(self.feature_importance_dict, f, indent=2)
+                self.logger.info(f"Feature importance saved: {fi_path}")
+
+            # Save HPO results if available
+            if hasattr(self, "hpo_results") and self.hpo_results:
+                hpo_path = os.path.join(model_dir, "hpo_results.json")
+                with open(hpo_path, "w") as f:
+                    json.dump(self.hpo_results, f, indent=2)
+                self.logger.info(f"HPO results saved: {hpo_path}")
+
+            # Save resource usage if monitored
+            if self.resource_usage:
+                resource_path = os.path.join(model_dir, "resource_usage.json")
+                with open(resource_path, "w") as f:
+                    # Sample resource usage to prevent huge files
+                    if len(self.resource_usage) > 1000:
+                        step = len(self.resource_usage) // 1000
+                        sampled = self.resource_usage[::step]
+                    else:
+                        sampled = self.resource_usage
+                    json.dump(sampled, f)
+                self.logger.info(f"Resource usage saved: {resource_path}")
+
+            # Metadata
+            metadata = {
+                "model_name": model_name,
+                "model_version": version,
+                "description": reg_cfg.description,
+                "tags": reg_cfg.tags,
+                "creation_time": datetime.now().isoformat(),
+                "framework": self.config.model_training.model_type.name,
+                "python_version": sys.version,
+                "training_id": self.training_id,
+                "runtime_metrics": self.runtime_metrics
+            }
+            meta_path = os.path.join(model_dir, "metadata.json")
+            with open(meta_path, "w") as f:
+                json.dump(metadata, f, indent=2)
+            self.logger.info(f"Metadata saved: {meta_path}")
+
+            # Optionally auto-deploy
+            if reg_cfg.auto_deploy:
+                self._deploy_model(model_dir)
+
+            # Lifecycle management (archiving older versions)
+            if reg_cfg.enable_lifecycle_management:
+                self._manage_lifecycle(model_name)
+                
+            self.logger.info(f"Model and artifacts successfully saved to {model_dir}")
+            
+        except Exception as e:
+            self.logger.error(f"Error saving model: {e}")
+            if self.config.debug_mode:
+                self.logger.error(traceback.format_exc())
+            raise
+
+    def _resolve_model_version(self) -> str:
+        """Determine the appropriate model version based on configuration."""
+        reg_cfg = self.config.model_registry
+        if not reg_cfg.auto_version:
+            return reg_cfg.model_version
+            
+        strategy = reg_cfg.version_strategy
+        base_dir = os.path.join(reg_cfg.registry_path, reg_cfg.model_name)
+        os.makedirs(base_dir, exist_ok=True)
+
+        if strategy == "timestamp":
+            return datetime.now().strftime("%Y%m%d_%H%M%S")
+        elif strategy == "incremental":
+            existing = [d for d in os.listdir(base_dir) if os.path.isdir(os.path.join(base_dir, d))]
+            if not existing:
+                return "1"
+            try:
+                numeric = [int(x) for x in existing if x.isdigit()]
+                return str(max(numeric) + 1 if numeric else 1)
+            except Exception:
+                return "1"
+        elif strategy == "semver":
+            # parse semver from model_version
+            ver = reg_cfg.model_version
+            try:
+                major, minor, patch = map(int, ver.split("."))
+                patch += 1
+                return f"{major}.{minor}.{patch}"
+            except Exception:
+                return ver
+        else:
+            return reg_cfg.model_version
+
+    def _deploy_model(self, model_dir: str):
+        """Deploy the model to the specified target environment."""
+        self.logger.info(f"Auto-deployment to: {self.config.model_registry.deployment_target}")
+        
+        # This is a placeholder. In a production environment, you would add code to:
+        # 1. Package the model (Docker, ZIP, etc.)
+        # 2. Upload to deployment target (S3, GCS, Azure Blob, etc.)
+        # 3. Trigger deployment process (API call, message queue, etc.)
+        # 4. Verify deployment status
+        
+        deployment_target = self.config.model_registry.deployment_target
+        if deployment_target == "local":
+            # Example local deployment - create a symlink in a deployment directory
+            deploy_dir = os.path.join(self.config.model_registry.registry_path, "deployed")
+            os.makedirs(deploy_dir, exist_ok=True)
+            
+            model_name = self.config.model_registry.model_name
+            deploy_path = os.path.join(deploy_dir, model_name)
+            
+            # Remove existing symlink if it exists
+            if os.path.islink(deploy_path):
+                os.unlink(deploy_path)
+                
+            # Create new symlink
+            try:
+                os.symlink(model_dir, deploy_path, target_is_directory=True)
+                self.logger.info(f"Model deployed (symlink) to {deploy_path}")
+            except Exception as e:
+                self.logger.error(f"Failed to create deployment symlink: {e}")
+        else:
+            self.logger.info(f"Deployment to {deployment_target} not implemented")
+
+    def _manage_lifecycle(self, model_name: str):
+        """Manage model lifecycle by archiving old versions."""
+        reg_cfg = self.config.model_registry
+        base_dir = os.path.join(reg_cfg.registry_path, model_name)
+        if not os.path.exists(base_dir):
+            return
+
+        if reg_cfg.archive_old_versions:
+            versions = [d for d in os.listdir(base_dir) if os.path.isdir(os.path.join(base_dir, d))]
+            
+            # Create a list of (version, timestamp) tuples
+            version_times = []
+            for v in versions:
+                meta_path = os.path.join(base_dir, v, "metadata.json")
+                if os.path.exists(meta_path):
+                    with open(meta_path, "r") as f:
+                        try:
+                            meta = json.load(f)
+                            ctime = datetime.fromisoformat(meta["creation_time"])
+                            version_times.append((v, ctime))
+                        except Exception:
+                            # Fall back to file modification time
+                            st_mtime = os.path.getmtime(os.path.join(base_dir, v))
+                            version_times.append((v, datetime.fromtimestamp(st_mtime)))
                 else:
-                    from sklearn.model_selection import KFold
-                    cv = KFold(n_splits=model_config.cv_folds, shuffle=True, random_state=self.config.random_seed)
+                    # No metadata, use modification time
+                    st_mtime = os.path.getmtime(os.path.join(base_dir, v))
+                    version_times.append((v, datetime.fromtimestamp(st_mtime)))
+                    
+            # Sort by timestamp (newest first)
+            version_times.sort(key=lambda x: x[1], reverse=True)
+
+            # Archive old versions
+            if len(version_times) > reg_cfg.max_versions_to_keep:
+                to_archive = version_times[reg_cfg.max_versions_to_keep:]
+                arch_dir = os.path.join(reg_cfg.registry_path, "archived", model_name)
+                os.makedirs(arch_dir, exist_ok=True)
                 
-                # Scores to track during CV
-                cv_scores = defaultdict(list)
+                for v, _ in to_archive:
+                    src = os.path.join(base_dir, v)
+                    dst = os.path.join(arch_dir, v)
+                    try:
+                        shutil.move(src, dst)
+                        self.logger.info(f"Archived old model version: {v}")
+                    except Exception as e:
+                        self.logger.warning(f"Could not archive version {v}: {str(e)}")
+
+    # ------------------
+    # MAIN RUN & CLEANUP
+    # ------------------
+    def run(self) -> Dict[str, Any]:
+        """Execute the complete training pipeline from data loading to model saving."""
+        self.logger.info("Starting the training pipeline")
+        self.start_time = datetime.now()
+        
+        if self.config.enable_monitoring:
+            self.start_monitoring()
+            
+        try:
+            self.load_data()
+            self.engineer_features()
+            self.train_model()
+            self.evaluate_model()
+            self.save_model()
+
+            self._set_state(TrainingState.COMPLETED)
+            self.end_time = datetime.now()
+            duration = (self.end_time - self.start_time).total_seconds()
+            self.runtime_metrics["total_time"] = duration
+            self.logger.info(f"Training pipeline completed in {duration:.2f} seconds")
+            
+            model_path = os.path.join(
+                self.config.model_registry.registry_path,
+                self.config.model_registry.model_name,
+                self._resolve_model_version()
+            )
+            
+            return {
+                "success": True,
+                "training_id": self.training_id,
+                "model_path": model_path,
+                "metrics": self.evaluation_results,
+                "runtime_metrics": self.runtime_metrics
+            }
+        except Exception as ex:
+            self.logger.error(f"Error in training pipeline: {ex}")
+            if self.config.debug_mode:
+                self.logger.error(traceback.format_exc())
                 
-                # Perform cross-validation manually to keep track of per-fold metrics
-                for fold, (train_idx, val_idx) in enumerate(cv.split(X_train, y_train)):
-                    self.logger.info(f"Training fold {fold+1}/{model_config.cv_folds}")
+            self._set_state(TrainingState.FAILED)
+            self.end_time = datetime.now()
+            duration = (self.end_time - self.start_time).total_seconds()
+            self.runtime_metrics["total_time"] = duration
+            
+            return {
+                "success": False,
+                "training_id": self.training_id,
+                "error": str(ex),
+                "runtime_metrics": self.runtime_metrics
+            }
+        finally:
+            if self.config.enable_monitoring:
+                self.stop_monitoring()
+            self.cleanup()
+
+    def cleanup(self):
+        """Clean up resources, flush logs, etc."""
+        # Free up memory
+        if self.config.debug_mode:
+            self.logger.info("Running cleanup...")
+            
+        if self.config.memory_optimization.free_memory_on_cleanup:
+            del_attrs = [
+                "train_data", "validation_data", "test_data",
+                "model", "best_model", "preprocessor"
+            ]
+            for attr in del_attrs:
+                if hasattr(self, attr) and getattr(self, attr) is not None:
+                    setattr(self, attr, None)
                     
-                    # Split data for this fold
-                    X_fold_train, X_fold_val = X_train[train_idx], X_train[val_idx]
-                    y_fold_train, y_fold_val = y_train[train_idx], y_train[val_idx]
-                    
-                    # Clone the model for each fold
-                    from sklearn.base import clone
-                    fold_model = clone(self.model)
-                    
-                    # Train the model
-                    fold_model.fit(X_fold_train, y_fold_train)
-                    
-                    # Evaluate on validation fold
-                    fold_metrics = self._evaluate_sklearn_model(fold_model, X_fold_val, y_fold_val)
-                    
-                    # Store metrics for this fold
-                    for metric_name, metric_value in fold_metrics.items():
-                        cv_scores[metric_name].append(metric_value)
-                    
-                    # Log progress for this fold
-                    metrics_str = ", ".join([f"{k}: {v:.4f}" for k, v in fold_metrics.items()])
-                    self.logger.info(f"Fold {fold+1} - {metrics_str}")
-                    
-                    # Update overall metrics with fold progress
-                    epoch_metrics = {
-                        "fold": fold + 1,
-                        "train_loss": 0.0,  # We don't typically get loss from sklearn models
+            # Force garbage collection
+            gc.collect()
+            self.logger.debug("Memory cleanup completed")
+
+    def inference(self, data, output_type: str = "dict"):
+        """
+        Perform inference with the trained model.
+        
+        Args:
+            data: A DataFrame, array, or dictionary of input data
+            output_type: Format of output ("dict", "array", "dataframe")
+            
+        Returns:
+            Predictions in the requested format
+        """
+        if not (self.model or self.best_model):
+            raise NotFittedError("Model is not trained yet.")
+            
+        model = self.best_model if self.best_model else self.model
+        
+        # Convert input to appropriate format
+        if isinstance(data, pl.DataFrame):
+            # Make sure we have all required feature columns
+            missing_cols = set(self.feature_columns) - set(data.columns)
+            if missing_cols:
+                raise ValueError(f"Missing required feature columns: {missing_cols}")
+                
+            # Apply preprocessor if available
+            if self.preprocessor:
+                processed_data = self.preprocessor.transform(data)
+                X = processed_data.select(self.feature_columns).to_numpy()
+            else:
+                X = data.select(self.feature_columns).to_numpy()
+        elif isinstance(data, dict):
+            # Convert dict to DataFrame
+            df = pl.DataFrame([data])
+            return self.inference(df, output_type)
+        elif isinstance(data, (list, np.ndarray)):
+            # Assume data is already preprocessed and in correct order
+            X = np.array(data)
+        else:
+            raise ValueError(f"Unsupported data type for inference: {type(data)}")
+            
+        # Generate predictions
+        if self.config.model_training.problem_type == "classification":
+            y_pred = model.predict(X)
+            if hasattr(model, 'predict_proba'):
+                try:
+                    y_prob = model.predict_proba(X)
+                    result = {
+                        "predictions": y_pred,
+                        "probabilities": y_prob
                     }
-                    for k, v in fold_metrics.items():
-                        epoch_metrics[f"val_{k}"] = v
-                    
-                    self.metrics.update_epoch(fold + 1, {"loss": 0.0}, epoch_metrics)
-                
-                # Compute mean and std of CV scores
-                cv_results = {}
-                for metric_name, values in cv_scores.items():
-                    cv_results[f"{metric_name}_mean"] = np.mean(values)
-                    cv_results[f"{metric_name}_std"] = np.std(values)
-                    
-                # Log final CV results
-                self.logger.info("Cross-validation results:")
-                for name, value in cv_results.items():
-                    self.logger.info(f"{name}: {value:.4f}")
-                
-                # Store CV results in metrics
-                self.metrics.set_cv_results(cv_results)
-                
-                # After CV, train final model on all data
-                self.logger.info("Training final model on all data")
-                
-            # Actual model training
-            sample_weights = self.sample_weights
-            
-            # Check if we should use class weights for imbalanced classification
-            if model_config.problem_type == 'classification' and model_config.class_weight and hasattr(self.model, 'class_weight'):
-                if model_config.class_weight == 'balanced' or model_config.class_weight == 'balanced_subsample':
-                    self.model.class_weight = model_config.class_weight
-                elif isinstance(model_config.class_weight, dict):
-                    self.model.class_weight = model_config.class_weight
-                    
-            # Fit the model
-            self.model.fit(X_train, y_train, sample_weight=sample_weights)
-            
-            # Compute training metrics
-            train_metrics = self._evaluate_sklearn_model(self.model, X_train, y_train)
-            self.logger.info(f"Training metrics: {train_metrics}")
-            
-            # Compute validation metrics if validation data exists
-            val_metrics = None
-            if X_val is not None and y_val is not None:
-                val_metrics = self._evaluate_sklearn_model(self.model, X_val, y_val)
-                self.logger.info(f"Validation metrics: {val_metrics}")
-            
-            # Update final epoch metrics
-            self.metrics.update_epoch(1, train_metrics, val_metrics)
-            
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Error training scikit-learn model: {str(e)}")
-            if self.config.debug_mode:
-                self.logger.error(traceback.format_exc())
-            return False
-
-    def _train_xgboost_model(self) -> bool:
-        """Train an XGBoost model."""
-        if not XGBOOST_AVAILABLE:
-            self.logger.error("XGBoost not available but required for model type")
-            return False
-        
-        model_config = self.config.model_training
-        
-        try:
-            # Convert to appropriate format for XGBoost
-            if isinstance(self.X_train, pd.DataFrame):
-                X_train = self.X_train
-                feature_names = self.X_train.columns.tolist()
+                except Exception:
+                    result = {"predictions": y_pred}
             else:
-                X_train = self.X_train
-                feature_names = self.feature_names
+                result = {"predictions": y_pred}
+        else:
+            # Regression
+            y_pred = model.predict(X)
+            result = {"predictions": y_pred}
             
-            y_train = self.y_train
-            
-            # Prepare validation data if available
-            eval_sets = []
-            eval_names = []
-            
-            if self.X_val is not None and self.y_val is not None:
-                X_val = self.X_val
-                y_val = self.y_val
-                eval_sets.append((X_val, y_val))
-                eval_names.append('validation')
-            
-            # Add training data as an evaluation set
-            eval_sets.append((X_train, y_train))
-            eval_names.append('train')
-            
-            # Prepare sample weights if available
-            sample_weights = self.sample_weights
-            
-            # Setup early stopping if enabled
-            early_stopping_rounds = None
-            if model_config.early_stopping and len(eval_sets) > 1:
-                early_stopping_rounds = model_config.early_stopping_patience
-            
-            # Set number of training rounds (epochs)
-            num_boost_round = model_config.num_epochs or 100
-            
-            # Callbacks for XGBoost
-            callbacks = []
-            
-            # Add checkpointing callback if enabled
-            if model_config.enable_checkpointing:
-                # XGBoost has a built-in checkpointing mechanism
-                checkpoint_callback = xgb.callback.TrainingCheckPoint(
-                    directory=CHECKPOINT_PATH,
-                    iterations=model_config.checkpoint_interval,
-                    name=f"xgb_checkpoint_{self.config.model_registry.model_name}"
-                )
-                callbacks.append(checkpoint_callback)
-            
-            # Custom callback for metrics tracking
-            class MetricsCallback(xgb.callback.TrainingCallback):
-                def __init__(self, training_engine):
-                    self.training_engine = training_engine
-                    
-                def after_iteration(self, model, epoch, evals_log):
-                    # Get metrics from evals_log
-                    train_metrics = {}
-                    val_metrics = {}
-                    
-                    # Extract metrics for training set
-                    for metric, values in evals_log.get('train', {}).items():
-                        train_metrics[metric] = values[-1]
-                    
-                    # Extract metrics for validation set if available
-                    for metric, values in evals_log.get('validation', {}).items():
-                        val_metrics[metric] = values[-1]
-                    
-                    # Update metrics in the training engine
-                    self.training_engine.metrics.update_epoch(epoch, train_metrics, val_metrics)
-                    
-                    # Log progress
-                    self.training_engine.logger.info(f"Epoch {epoch}/{num_boost_round} - "
-                                                f"Train: {train_metrics}, "
-                                                f"Validation: {val_metrics}")
-                    
-                    return False  # Continue training
-            
-            # Add metrics callback
-            callbacks.append(MetricsCallback(self))
-            
-            # Start metrics tracking
-            self.metrics.start_training(num_boost_round)
-            
-            # Convert to DMatrix for better performance
-            dtrain = xgb.DMatrix(X_train, label=y_train, weight=sample_weights, feature_names=feature_names)
-            
-            evals = [(dtrain, 'train')]
-            if len(eval_sets) > 1:
-                dval = xgb.DMatrix(X_val, label=y_val, feature_names=feature_names)
-                evals.append((dval, 'validation'))
-            
-            # Create parameters dictionary
-            params = self.model.get_params()
-            
-            # Remove non-booster parameters that are passed separately to train
-            for param in ['n_estimators', 'early_stopping_rounds', 'verbose']:
-                if param in params:
-                    del params[param]
-            
-            # Train the model
-            self.logger.info(f"Training XGBoost model with {num_boost_round} boosting rounds")
-            
-            # Use Booster.train API for more flexibility
-            self.model = xgb.train(
-                params=params,
-                dtrain=dtrain,
-                num_boost_round=num_boost_round,
-                evals=evals,
-                early_stopping_rounds=early_stopping_rounds,
-                callbacks=callbacks,
-                verbose_eval=False  # We handle logging in the callback
-            )
-            
-            # Set feature names in the model for later use
-            self.model.feature_names = feature_names
-            
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Error training XGBoost model: {str(e)}")
-            if self.config.debug_mode:
-                self.logger.error(traceback.format_exc())
-            return False
-
-    def _train_lightgbm_model(self) -> bool:
-        """Train a LightGBM model."""
-        if not LIGHTGBM_AVAILABLE:
-            self.logger.error("LightGBM not available but required for model type")
-            return False
-        
-        model_config = self.config.model_training
-        
-        try:
-            # Prepare data for LightGBM
-            if isinstance(self.X_train, pd.DataFrame):
-                X_train = self.X_train
-                feature_names = self.X_train.columns.tolist()
+        # Format output
+        if output_type == "dict":
+            # Convert to standard Python types for JSON serialization
+            if isinstance(result["predictions"], np.ndarray):
+                result["predictions"] = result["predictions"].tolist()
+            if "probabilities" in result and isinstance(result["probabilities"], np.ndarray):
+                result["probabilities"] = result["probabilities"].tolist()
+            return result
+        elif output_type == "array":
+            return y_pred
+        elif output_type == "dataframe":
+            if isinstance(data, pl.DataFrame):
+                if "probabilities" in result and result["probabilities"].shape[1] > 1:
+                    # Add class probabilities as columns
+                    probs = result["probabilities"]
+                    prob_cols = {f"probability_{i}": probs[:, i] for i in range(probs.shape[1])}
+                    return data.with_columns([
+                        pl.lit(result["predictions"]).alias("prediction"),
+                        *[pl.lit(v).alias(k) for k, v in prob_cols.items()]
+                    ])
+                else:
+                    return data.with_column(pl.lit(result["predictions"]).alias("prediction"))
             else:
-                X_train = self.X_train
-                feature_names = self.feature_names
-            
-            y_train = self.y_train
-            
-            # Prepare validation data if available
-            eval_sets = []
-            eval_names = []
-            
-            if self.X_val is not None and self.y_val is not None:
-                X_val = self.X_val
-                y_val = self.y_val
-                eval_sets.append((X_val, y_val))
-                eval_names.append('validation')
-            
-            # Prepare sample weights if available
-            sample_weights = self.sample_weights
-            
-            # Set number of training rounds (epochs)
-            num_boost_round = model_config.num_epochs or 100
-            
-            # Setup early stopping if enabled
-            early_stopping_rounds = None
-            if model_config.early_stopping and len(eval_sets) > 0:
-                early_stopping_rounds = model_config.early_stopping_patience
-            
-            # Create LightGBM datasets
-            lgb_train = lgb.Dataset(
-                X_train, 
-                y_train, 
-                weight=sample_weights,
-                feature_name=feature_names
-            )
-            
-            lgb_eval = None
-            if len(eval_sets) > 0:
-                lgb_eval = lgb.Dataset(
-                    X_val, 
-                    y_val, 
-                    reference=lgb_train,
-                    feature_name=feature_names
-                )
-            
-            # Create parameters dictionary
-            params = self.model.get_params()
-            
-            # Remove non-booster parameters that are passed separately to train
-            for param in ['n_estimators', 'early_stopping_rounds', 'verbose']:
-                if param in params:
-                    del params[param]
-            
-            # Add objective and metric if not specified
-            if 'objective' not in params:
-                if model_config.problem_type == 'classification':
-                    if np.unique(y_train).size <= 2:
-                        params['objective'] = 'binary'
-                    else:
-                        params['objective'] = 'multiclass'
-                        params['num_class'] = np.unique(y_train).size
+                # Create a new DataFrame
+                if "probabilities" in result and len(result["probabilities"].shape) > 1:
+                    probs = result["probabilities"]
+                    prob_cols = {f"probability_{i}": probs[:, i] for i in range(probs.shape[1])}
+                    return pl.DataFrame({
+                        "prediction": result["predictions"],
+                        **prob_cols
+                    })
                 else:
-                    params['objective'] = 'regression'
-            
-            if 'metric' not in params:
-                if model_config.problem_type == 'classification':
-                    if np.unique(y_train).size <= 2:
-                        params['metric'] = 'binary_logloss'
-                    else:
-                        params['metric'] = 'multi_logloss'
-                else:
-                    params['metric'] = 'rmse'
-            
-            # Setup callbacks
-            callbacks = []
-            
-            # Add checkpointing callback if enabled
-            if model_config.enable_checkpointing:
-                checkpoint_callback = lgb.callback.create_checkpoint(
-                    checkpoint_interval=model_config.checkpoint_interval,
-                    directory=CHECKPOINT_PATH,
-                    name=f"lgb_checkpoint_{self.config.model_registry.model_name}"
-                )
-                callbacks.append(checkpoint_callback)
-            
-            # Custom callback for metrics tracking
-            class MetricsCallback:
-                def __init__(self, training_engine):
-                    self.training_engine = training_engine
-                    
-                def __call__(self, env):
-                    # Extract iteration (epoch)
-                    epoch = env.iteration + 1
-                    
-                    # Extract metrics
-                    train_metrics = {}
-                    val_metrics = {}
-                    
-                    # For training metrics
-                    for name, value in zip(env.evaluation_result_list[0][1::2], env.evaluation_result_list[0][2::2]):
-                        train_metrics[name] = value
-                    
-                    # For validation metrics if available
-                    if len(env.evaluation_result_list) > 1:
-                        for name, value in zip(env.evaluation_result_list[1][1::2], env.evaluation_result_list[1][2::2]):
-                            val_metrics[name] = value
-                    
-                    # Update metrics in the training engine
-                    self.training_engine.metrics.update_epoch(epoch, train_metrics, val_metrics)
-                    
-                    # Log progress
-                    self.training_engine.logger.info(f"Epoch {epoch}/{num_boost_round} - "
-                                                f"Train: {train_metrics}, "
-                                                f"Validation: {val_metrics}")
-            
-            # Add metrics callback
-            callbacks.append(MetricsCallback(self))
-            
-            # Start metrics tracking
-            self.metrics.start_training(num_boost_round)
-            
-            # Train the model
-            self.logger.info(f"Training LightGBM model with {num_boost_round} boosting rounds")
-            
-            self.model = lgb.train(
-                params=params,
-                train_set=lgb_train,
-                num_boost_round=num_boost_round,
-                valid_sets=[lgb_train, lgb_eval] if lgb_eval else [lgb_train],
-                valid_names=['train', 'validation'] if lgb_eval else ['train'],
-                callbacks=callbacks,
-                early_stopping_rounds=early_stopping_rounds,
-                verbose_eval=False  # We handle logging in the callback
-            )
-            
-            # Attach feature names to the model for later use
-            self.model.feature_names = feature_names
-            
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Error training LightGBM model: {str(e)}")
-            if self.config.debug_mode:
-                self.logger.error(traceback.format_exc())
-            return False
+                    return pl.DataFrame({"prediction": result["predictions"]})
+        else:
+            raise ValueError(f"Unsupported output_type: {output_type}")
 
-    def _train_custom_model(self) -> bool:
-        """Train a custom model."""
-        self.logger.info("Training custom model...")
-        
-        model_config = self.config.model_training
-        
+    def get_memory_usage(self, as_dict=False):
+        """Return current memory usage of the training engine components."""
+        if not PSUTIL_AVAILABLE:
+            return None
+            
         try:
-            # Check if model has the required train method
-            if not hasattr(self.model, 'train') and not hasattr(self.model, 'fit'):
-                self.logger.error("Custom model must implement either train() or fit() method")
-                return False
+            # Get current process
+            process = psutil.Process(os.getpid())
             
-            # Determine which method to use
-            train_method = getattr(self.model, 'train', None) or getattr(self.model, 'fit')
+            # Get memory info
+            mem_info = process.memory_info()
             
-            # Prepare data
-            X_train = self.X_train
-            y_train = self.y_train
+            # Estimate size of key objects
+            def obj_size(obj):
+                if obj is None:
+                    return 0
+                try:
+                    # For DataFrames
+                    if hasattr(obj, 'memory_usage'):
+                        try:
+                            # Polars memory_usage handles deep=True differently
+                            return obj.estimated_size() if hasattr(obj, 'estimated_size') else obj.memory_usage(deep=True).sum()
+                        except Exception:
+                            pass
+                    # For numpy arrays
+                    if hasattr(obj, 'nbytes'):
+                        return obj.nbytes
+                    # For other objects
+                    return sys.getsizeof(obj)
+                except Exception:
+                    return 0
             
-            # Prepare validation data if available
-            validation_data = None
-            if self.X_val is not None and self.y_val is not None:
-                validation_data = (self.X_val, self.y_val)
+            # Calculate memory for key components
+            train_data_mem = obj_size(self.train_data)
+            valid_data_mem = obj_size(self.validation_data)
+            test_data_mem = obj_size(self.test_data)
+            model_mem = obj_size(self.model)
+            best_model_mem = obj_size(self.best_model)
             
-            # Get number of epochs
-            num_epochs = model_config.num_epochs or 1
-            
-            # Start metrics tracking
-            self.metrics.start_training(num_epochs)
-            
-            # Define callback for tracking metrics
-            def metrics_callback(epoch, train_metrics, val_metrics=None):
-                self.metrics.update_epoch(epoch, train_metrics, val_metrics)
-                metrics_str = ", ".join([f"{k}: {v:.4f}" for k, v in train_metrics.items()])
-                if val_metrics:
-                    val_str = ", ".join([f"{k}: {v:.4f}" for k, v in val_metrics.items()])
-                    metrics_str += f" | Validation: {val_str}"
-                self.logger.info(f"Epoch {epoch}/{num_epochs} - {metrics_str}")
-            
-            # Create training parameters
-            train_params = {
-                'validation_data': validation_data,
-                'epochs': num_epochs,
-                'batch_size': model_config.batch_size,
-                'callbacks': [metrics_callback],
-                'early_stopping': model_config.early_stopping,
-                'early_stopping_patience': model_config.early_stopping_patience
+            # Build memory report
+            memory_info = {
+                "process_rss_bytes": mem_info.rss,
+                "process_rss_mb": mem_info.rss / (1024 * 1024),
+                "process_vms_mb": mem_info.vms / (1024 * 1024),
+                "train_data_mb": train_data_mem / (1024 * 1024),
+                "validation_data_mb": valid_data_mem / (1024 * 1024),
+                "test_data_mb": test_data_mem / (1024 * 1024),
+                "model_mb": model_mem / (1024 * 1024),
+                "best_model_mb": best_model_mem / (1024 * 1024),
+                "total_tracked_mb": (train_data_mem + valid_data_mem + test_data_mem + model_mem + best_model_mem) / (1024 * 1024),
+                "system_memory_percent": psutil.virtual_memory().percent
             }
             
-            # Call the training method with appropriate parameters
-            train_method(X_train, y_train, **train_params)
-            
-            return True
-            
+            if not as_dict:
+                # Format as string for logging
+                mem_str = (
+                    f"Memory usage (MB): Process={memory_info['process_rss_mb']:.1f}, "
+                    f"Train data={memory_info['train_data_mb']:.1f}, "
+                    f"Val data={memory_info['validation_data_mb']:.1f}, "
+                    f"Test data={memory_info['test_data_mb']:.1f}, "
+                    f"Models={memory_info['model_mb']:.1f}/{memory_info['best_model_mb']:.1f}, "
+                    f"System {memory_info['system_memory_percent']}% used"
+                )
+                return mem_str
+            else:
+                return memory_info
         except Exception as e:
-            self.logger.error(f"Error training custom model: {str(e)}")
-            if self.config.debug_mode:
-                self.logger.error(traceback.format_exc())
-            return False
+            self.logger.warning(f"Error getting memory usage: {e}")
+            return None
 
-    def _evaluate_sklearn_model(self, model, X, y) -> Dict[str, float]:
+    def get_runtime_metrics(self):
+        """Return runtime metrics for the training run."""
+        metrics = self.runtime_metrics.copy()
+        
+        # Add current timestamp and elapsed time if still running
+        if self.state != TrainingState.COMPLETED and self.state != TrainingState.FAILED:
+            elapsed = (datetime.now() - self.start_time).total_seconds()
+            metrics["elapsed_time"] = elapsed
+            metrics["total_time"] = elapsed
+            
+        # Add peak memory usage
+        if PSUTIL_AVAILABLE:
+            try:
+                memory_usage = self.get_memory_usage(as_dict=True)
+                if memory_usage:
+                    metrics["peak_memory_usage_mb"] = max(
+                        metrics.get("peak_memory_usage_mb", 0),
+                        memory_usage["process_rss_mb"]
+                    )
+            except Exception:
+                pass
+                
+        return metrics
+
+    def load_from_registry(self, model_name: str, version: str = None):
         """
-        Evaluate a scikit-learn model and return metrics.
+        Load a trained model from the registry.
         
         Args:
-            model: The model to evaluate
-            X: Features
-            y: Target values
+            model_name: Name of the model to load
+            version: Version to load, or None for latest
             
         Returns:
-            Dictionary of evaluation metrics
+            Boolean indicating success
         """
-        if not SKLEARN_AVAILABLE:
-            return {"error": 1.0}
+        reg_cfg = self.config.model_registry
+        base_dir = os.path.join(reg_cfg.registry_path, model_name)
         
-        metrics = {}
-        model_config = self.config.model_training
-        problem_type = model_config.problem_type
-        
-        try:
-            # Make predictions
-            if hasattr(model, 'predict_proba') and problem_type == 'classification':
-                y_pred_proba = model.predict_proba(X)
-                if y_pred_proba.shape[1] == 2:  # Binary classification
-                    y_pred_proba = y_pred_proba[:, 1]  # Get positive class probabilities
-                
-                y_pred = (y_pred_proba > self.config.model_evaluation.classification_threshold).astype(int) \
-                    if y_pred_proba.ndim == 1 else np.argmax(y_pred_proba, axis=1)
-            else:
-                y_pred = model.predict(X)
+        if not os.path.exists(base_dir):
+            self.logger.error(f"Model {model_name} not found in registry")
+            return False
             
-            # Calculate metrics based on problem type
-            if problem_type == 'classification':
-                # Classification metrics
-                metrics['accuracy'] = accuracy_score(y, y_pred)
-                
-                # For binary classification
-                if len(np.unique(y)) <= 2:
-                    metrics['precision'] = precision_score(y, y_pred, average=self.config.model_evaluation.average_method, zero_division=0)
-                    metrics['recall'] = recall_score(y, y_pred, average=self.config.model_evaluation.average_method, zero_division=0)
-                    metrics['f1'] = f1_score(y, y_pred, average=self.config.model_evaluation.average_method, zero_division=0)
-                    
-                    # Add ROC AUC if we have probabilities
-                    if 'y_pred_proba' in locals():
-                        metrics['roc_auc'] = roc_auc_score(y, y_pred_proba)
-                else:
-                    # Multi-class metrics
-                    metrics['precision'] = precision_score(y, y_pred, average=self.config.model_evaluation.average_method, zero_division=0)
-                    metrics['recall'] = recall_score(y, y_pred, average=self.config.model_evaluation.average_method, zero_division=0)
-                    metrics['f1'] = f1_score(y, y_pred, average=self.config.model_evaluation.average_method, zero_division=0)
-            
-            else:
-                # Regression metrics
-                metrics['mse'] = mean_squared_error(y, y_pred)
-                metrics['rmse'] = np.sqrt(metrics['mse'])
-                metrics['r2'] = r2_score(y, y_pred)
-            
-            return metrics
-            
-        except Exception as e:
-            self.logger.error(f"Error evaluating scikit-learn model: {str(e)}")
-            if self.config.debug_mode:
-                self.logger.error(traceback.format_exc())
-            return {"error": 1.0}
-
-    def evaluate_model(self) -> bool:
-        """
-        Evaluate the trained model on training, validation, and test sets.
-        
-        Returns:
-            Success flag
-        """
-        self.logger.info("Evaluating model...")
-        
-        with self.state_lock:
-            if self.state not in [TrainingState.TRAINING, TrainingState.EVALUATING, TrainingState.COMPLETED]:
-                self.logger.error(f"Cannot evaluate model from state {self.state}")
+        # Determine version to load
+        if version is None:
+            # Find latest version by creation time in metadata
+            versions = [d for d in os.listdir(base_dir) if os.path.isdir(os.path.join(base_dir, d))]
+            if not versions:
+                self.logger.error(f"No versions found for model {model_name}")
                 return False
-            self.state = TrainingState.EVALUATING
-        
+                
+            latest_version = None
+            latest_time = None
+            
+            for v in versions:
+                meta_path = os.path.join(base_dir, v, "metadata.json")
+                if os.path.exists(meta_path):
+                    try:
+                        with open(meta_path, "r") as f:
+                            meta = json.load(f)
+                            created = datetime.fromisoformat(meta["creation_time"])
+                            if latest_time is None or created > latest_time:
+                                latest_time = created
+                                latest_version = v
+                    except Exception:
+                        pass
+                        
+            if latest_version is None:
+                # Fall back to using the directory with newest modification time
+                version_times = [(v, os.path.getmtime(os.path.join(base_dir, v))) for v in versions]
+                version_times.sort(key=lambda x: x[1], reverse=True)
+                latest_version = version_times[0][0]
+                
+            version = latest_version
+            
+        model_dir = os.path.join(base_dir, version)
+        if not os.path.exists(model_dir):
+            self.logger.error(f"Version {version} not found for model {model_name}")
+            return False
+            
+        # Load the model
         try:
-            # Ensure model is trained
-            if self.model is None:
-                self.logger.error("No model available for evaluation")
+            model_path = os.path.join(model_dir, "model.pkl")
+            if not os.path.exists(model_path):
+                self.logger.error(f"Model file not found at {model_path}")
                 return False
-            
-            model_config = self.config.model_training
-            eval_config = self.config.model_evaluation
-            
-            # Evaluate on training set if enabled
-            if eval_config.evaluate_on_train and self.X_train is not None:
-                self.logger.info("Evaluating on training data...")
                 
-                if model_config.model_type == ModelType.SKLEARN:
-                    train_metrics = self._evaluate_sklearn_model(self.model, self.X_train, self.y_train)
-                elif model_config.model_type == ModelType.XGBOOST:
-                    train_metrics = self._evaluate_xgboost_model(self.X_train, self.y_train)
-                elif model_config.model_type == ModelType.LIGHTGBM:
-                    train_metrics = self._evaluate_lightgbm_model(self.X_train, self.y_train)
-                else:
-                    train_metrics = self._evaluate_custom_model(self.X_train, self.y_train)
-                    
-                self.logger.info(f"Training metrics: {train_metrics}")
-            
-            # Evaluate on validation set if enabled and available
-            if eval_config.evaluate_on_validation and self.X_val is not None:
-                self.logger.info("Evaluating on validation data...")
+            with open(model_path, "rb") as f:
+                self.model = pickle.load(f)
                 
-                if model_config.model_type == ModelType.SKLEARN:
-                    val_metrics = self._evaluate_sklearn_model(self.model, self.X_val, self.y_val)
-                elif model_config.model_type == ModelType.XGBOOST:
-                    val_metrics = self._evaluate_xgboost_model(self.X_val, self.y_val)
-                elif model_config.model_type == ModelType.LIGHTGBM:
-                    val_metrics = self._evaluate_lightgbm_model(self.X_val, self.y_val)
-                else:
-                    val_metrics = self._evaluate_custom_model(self.X_val, self.y_val)
-                    
-                self.logger.info(f"Validation metrics: {val_metrics}")
+            self.best_model = self.model
             
-            # Evaluate on test set if enabled and available
-            if eval_config.evaluate_on_test and self.X_test is not None:
-                self.logger.info("Evaluating on test data...")
-                
-                if model_config.model_type == ModelType.SKLEARN:
-                    test_metrics = self._evaluate_sklearn_model(self.model, self.X_test, self.y_test)
-                elif model_config.model_type == ModelType.XGBOOST:
-                    test_metrics = self._evaluate_xgboost_model(self.X_test, self.y_test)
-                elif model_config.model_type == ModelType.LIGHTGBM:
-                    test_metrics = self._evaluate_lightgbm_model(self.X_test, self.y_test)
-                else:
-                    test_metrics = self._evaluate_custom_model(self.X_test, self.y_test)
-                    
-                self.logger.info(f"Test metrics: {test_metrics}")
-                
-                # Store test metrics
-                self.metrics.set_test_metrics(test_metrics)
+            # Load preprocessor if available
+            preproc_path = os.path.join(model_dir, "preprocessor.pkl")
+            if os.path.exists(preproc_path):
+                with open(preproc_path, "rb") as f:
+                    self.preprocessor = pickle.load(f)
             
-            # Generate additional evaluation artifacts if enabled
-            if model_config.problem_type == 'classification':
-                if eval_config.confusion_matrix and self.X_test is not None:
-                    self._generate_confusion_matrix(self.X_test, self.y_test)
-                    
-                if eval_config.roc_curve and self.X_test is not None:
-                    self._generate_roc_curve(self.X_test, self.y_test)
-                    
-                if eval_config.precision_recall_curve and self.X_test is not None:
-                    self._generate_precision_recall_curve(self.X_test, self.y_test)
+            # Load feature columns
+            fc_path = os.path.join(model_dir, "feature_columns.json")
+            if os.path.exists(fc_path):
+                with open(fc_path, "r") as f:
+                    self.feature_columns = json.load(f)
             
-            # Calculate permutation importance if enabled
-            if eval_config.compute_permutation_importance and self.X_test is not None:
-                self._compute_permutation_importance()
+            self.logger.info(f"Loaded model {model_name} version {version} from registry")
             
+            # Also load metadata
+            meta_path = os.path.join(model_dir, "metadata.json")
+            if os.path.exists(meta_path):
+                with open(meta_path, "r") as f:
+                    self.model_metadata = json.load(f)
+                    
+            # Set state to reflect loaded model
+            self._set_state(TrainingState.LOADED)
             return True
             
         except Exception as e:
-            self.logger.error(f"Error evaluating model: {str(e)}")
+            self.logger.error(f"Error loading model from registry: {e}")
             if self.config.debug_mode:
                 self.logger.error(traceback.format_exc())
-            
-            with self.state_lock:
-                self.state = TrainingState.ERROR
-                
             return False
-
-    def _evaluate_xgboost_model(self, X, y) -> Dict[str, float]:
-        """Evaluate an XGBoost model."""
-        metrics = {}
-        model_config = self.config.model_training
-        problem_type = model_config.problem_type
+    # ------------------
+    # MODEL COMPARISON & ANALYSIS
+    # ------------------
+    def compare_model_versions(self, model_name: str, versions: List[str] = None):
+        """
+        Compare metrics from different versions of the same model.
         
-        try:
-            # Create DMatrix for prediction
-            dtest = xgb.DMatrix(X, label=y, feature_names=self.feature_names)
+        Args:
+            model_name: Name of the model to compare versions
+            versions: List of versions to compare, or None for all versions
             
-            # Make predictions
-            if problem_type == 'classification':
-                y_pred_proba = self.model.predict(dtest)
+        Returns:
+            Dictionary with comparison results
+        """
+        reg_cfg = self.config.model_registry
+        base_dir = os.path.join(reg_cfg.registry_path, model_name)
+        
+        if not os.path.exists(base_dir):
+            self.logger.error(f"Model {model_name} not found in registry")
+            return None
+        
+        # Get available versions
+        available_versions = [d for d in os.listdir(base_dir) 
+                              if os.path.isdir(os.path.join(base_dir, d))]
+        
+        if not available_versions:
+            self.logger.error(f"No versions found for model {model_name}")
+            return None
+            
+        # Filter to requested versions if specified
+        if versions:
+            found_versions = [v for v in versions if v in available_versions]
+            if not found_versions:
+                self.logger.error(f"None of the requested versions {versions} found")
+                return None
+            compare_versions = found_versions
+        else:
+            compare_versions = available_versions
+            
+        # Load metrics for each version
+        version_metrics = {}
+        for version in compare_versions:
+            metrics_path = os.path.join(base_dir, version, "metrics.json")
+            if os.path.exists(metrics_path):
+                try:
+                    with open(metrics_path, "r") as f:
+                        metrics = json.load(f)
+                    version_metrics[version] = metrics
+                except Exception as e:
+                    self.logger.warning(f"Could not load metrics for version {version}: {e}")
+        
+        if not version_metrics:
+            self.logger.error("No metrics found for any of the versions")
+            return None
+            
+        # Create comparison DataFrame
+        comparison = {}
+        
+        # Collect all metric names across all versions
+        all_metrics = set()
+        for ver_data in version_metrics.values():
+            for dataset in ["validation", "test"]:
+                if dataset in ver_data and "metrics" in ver_data[dataset]:
+                    all_metrics.update(ver_data[dataset]["metrics"].keys())
+        
+        # Prioritize validation, then test metrics
+        for metric in all_metrics:
+            metric_values = {}
+            for version, ver_data in version_metrics.items():
+                # Try validation first, then test
+                for dataset in ["validation", "test"]:
+                    if (dataset in ver_data and "metrics" in ver_data[dataset] and 
+                            metric in ver_data[dataset]["metrics"]):
+                        metric_values[version] = ver_data[dataset]["metrics"][metric]
+                        break
+            comparison[metric] = metric_values
+            
+        # Determine best version for each metric
+        best_versions = {}
+        for metric, values in comparison.items():
+            if not values:
+                continue
                 
-                # For binary classification
-                if len(np.unique(y)) <= 2:
-                    y_pred = (y_pred_proba > self.config.model_evaluation.classification_threshold).astype(int)
+            # Determine if higher is better (most metrics) or lower is better (error metrics)
+            lower_is_better = any(m in metric.lower() for m in ["error", "loss", "mse", "rmse", "mae"])
+            
+            # Find best version
+            best_value = None
+            best_ver = None
+            for ver, val in values.items():
+                if best_value is None:
+                    best_value = val
+                    best_ver = ver
+                elif lower_is_better and val < best_value:
+                    best_value = val
+                    best_ver = ver
+                elif not lower_is_better and val > best_value:
+                    best_value = val
+                    best_ver = ver
                     
-                    # Classification metrics
-                    metrics['accuracy'] = accuracy_score(y, y_pred)
-                    metrics['precision'] = precision_score(y, y_pred, average=self.config.model_evaluation.average_method, zero_division=0)
-                    metrics['recall'] = recall_score(y, y_pred, average=self.config.model_evaluation.average_method, zero_division=0)
-                    metrics['f1'] = f1_score(y, y_pred, average=self.config.model_evaluation.average_method, zero_division=0)
-                    metrics['roc_auc'] = roc_auc_score(y, y_pred_proba)
-                    
-                else:
-                    # Multi-class
-                    y_pred = np.argmax(y_pred_proba, axis=1) if y_pred_proba.ndim > 1 else np.round(y_pred_proba).astype(int)
-                    
-                    # Classification metrics
-                    metrics['accuracy'] = accuracy_score(y, y_pred)
-                    metrics['precision'] = precision_score(y, y_pred, average=self.config.model_evaluation.average_method, zero_division=0)
-                    metrics['recall'] = recall_score(y, y_pred, average=self.config.model_evaluation.average_method, zero_division=0)
-                    metrics['f1'] = f1_score(y, y_pred, average=self.config.model_evaluation.average_method, zero_division=0)
-                    
+            best_versions[metric] = {
+                "version": best_ver,
+                "value": best_value
+            }
+            
+        summary = {
+            "comparison": comparison,
+            "best_versions": best_versions,
+            "available_versions": available_versions,
+            "compared_versions": compare_versions
+        }
+        
+        return summary
+
+    def generate_training_report(self, include_plots: bool = False):
+        """
+        Generate a comprehensive training report with all relevant information.
+        
+        Args:
+            include_plots: Whether to generate and include plots in the report
+            
+        Returns:
+            Dictionary with full training report
+        """
+        report = {
+            "training_id": self.training_id,
+            "model_name": self.config.model_registry.model_name,
+            "status": self.state.name,
+            "timestamp": datetime.now().isoformat(),
+            "training_time": {
+                "start": self.start_time.isoformat() if self.start_time else None,
+                "end": self.end_time.isoformat() if self.end_time else None,
+                "duration_seconds": (self.end_time - self.start_time).total_seconds() 
+                                    if self.end_time and self.start_time else None
+            },
+            "configuration": self.config.to_dict(),
+            "runtime_metrics": self.runtime_metrics,
+            "evaluation_results": self.evaluation_results,
+            "feature_information": {
+                "feature_count": len(self.feature_columns),
+                "features": self.feature_columns
+            }
+        }
+        
+        # Add feature importance if available
+        if hasattr(self, "feature_importance_dict"):
+            report["feature_importance"] = self.feature_importance_dict
+            
+        # Add HPO results if available
+        if hasattr(self, "hpo_results"):
+            report["hyperparameter_optimization"] = self.hpo_results
+            
+        # Add CV results if available
+        if hasattr(self, "cv_results_"):
+            report["cross_validation"] = self.cv_results_
+            
+        # Add dataset statistics
+        dataset_stats = {}
+        for ds_name, ds in [
+            ("train", self.train_data),
+            ("validation", self.validation_data),
+            ("test", self.test_data)
+        ]:
+            if ds is not None:
+                dataset_stats[ds_name] = {
+                    "row_count": len(ds),
+                    "column_count": len(ds.columns),
+                    "memory_usage_mb": ds.estimated_size() / (1024 * 1024) if hasattr(ds, 'estimated_size') else None
+                }
+                
+                # Add basic statistics if dataset is small enough
+                if len(ds) < 100000 and self.config.debug_mode:
+                    try:
+                        # Get basic statistics using Polars describe method
+                        stats_df = ds.describe()
+                        # Convert to dict for JSON serialization
+                        stats_dict = {}
+                        for col in stats_df.columns:
+                            if col == "statistic":
+                                continue
+                            stat_values = {}
+                            for i, stat_name in enumerate(stats_df["statistic"]):
+                                stat_values[stat_name] = stats_df[col][i]
+                            stats_dict[col] = stat_values
+                        dataset_stats[ds_name]["statistics"] = stats_dict
+                    except Exception as e:
+                        self.logger.warning(f"Could not compute statistics for {ds_name} dataset: {e}")
+        
+        report["dataset_statistics"] = dataset_stats
+        
+        # Add resource usage information
+        if self.resource_usage:
+            # Sample resource usage to keep report size reasonable
+            if len(self.resource_usage) > 100:
+                step = len(self.resource_usage) // 100
+                sampled_usage = self.resource_usage[::step]
             else:
-                # Regression
-                y_pred = self.model.predict(dtest)
+                sampled_usage = self.resource_usage
                 
-                # Regression metrics
-                metrics['mse'] = mean_squared_error(y, y_pred)
-                metrics['rmse'] = np.sqrt(metrics['mse'])
-                metrics['r2'] = r2_score(y, y_pred)
+            report["resource_usage"] = {
+                "samples": sampled_usage,
+                "peak_memory_mb": max(r.get("rss_mb", 0) for r in self.resource_usage) if self.resource_usage else None,
+                "peak_cpu_percent": max(r.get("cpu_percent", 0) for r in self.resource_usage) if self.resource_usage else None
+            }
             
-            return metrics
+        # Add plots if requested and bokeh is available
+        if include_plots:
+            report["plots"] = "Plots generation not implemented"
             
-        except Exception as e:
-            self.logger.error(f"Error evaluating XGBoost model: {str(e)}")
-            if self.config.debug_mode:
-                self.logger.error(traceback.format_exc())
-            return {"error": 1.0}
+        return report
 
-    def _evaluate_lightgbm_model(self, X, y) -> Dict[str, float]:
-        """Evaluate a LightGBM model."""
-        metrics = {}
-        model_config = self.config.model_training
-        problem_type = model_config.problem_type
+    # ------------------
+    # MODEL EXPLAINABILITY
+    # ------------------
+    def explain_prediction(self, data, method="shap"):
+        """
+        Generate explanations for model predictions.
         
-        try:
-            # Make predictions
-            if problem_type == 'classification':
-                if hasattr(self.model, 'predict_proba'):
-                    y_pred_proba = self.model.predict_proba(X)
-                else:
-                    y_pred_proba = self.model.predict(X, raw_score=False, pred_leaf=False, pred_contrib=False, num_iteration=None)
-                
-                # For binary classification
-                if len(np.unique(y)) <= 2:
-                    if isinstance(y_pred_proba, np.ndarray) and y_pred_proba.ndim > 1:
-                        y_pred_proba = y_pred_proba[:, 1]  # Get positive class probabilities
-                    
-                    y_pred = (y_pred_proba > self.config.model_evaluation.classification_threshold).astype(int)
-                    
-                    # Classification metrics
-                    metrics['accuracy'] = accuracy_score(y, y_pred)
-                    metrics['precision'] = precision_score(y, y_pred, average=self.config.model_evaluation.average_method, zero_division=0)
-                    metrics['recall'] = recall_score(y, y_pred, average=self.config.model_evaluation.average_method, zero_division=0)
-                    metrics['f1'] = f1_score(y, y_pred, average=self.config.model_evaluation.average_method, zero_division=0)
-                    metrics['roc_auc'] = roc_auc_score(y, y_pred_proba)
-                    
-                else:
-                    # Multi-class
-                    y_pred = np.argmax(y_pred_proba, axis=1) if y_pred_proba.ndim > 1 else np.round(y_pred_proba).astype(int)
-                    
-                    # Classification metrics
-                    metrics['accuracy'] = accuracy_score(y, y_pred)
-                    metrics['precision'] = precision_score(y, y_pred, average=self.config.model_evaluation.average_method, zero_division=0)
-                    metrics['recall'] = recall_score(y, y_pred, average=self.config.model_evaluation.average_method, zero_division=0)
-                    metrics['f1'] = f1_score(y, y_pred, average=self.config.model_evaluation.average_method, zero_division=0)
-                    
+        Args:
+            data: Data for which to explain predictions
+            method: Explanation method (shap, lime, etc.)
+            
+        Returns:
+            Dictionary with explanation results
+        """
+        if method.lower() not in ["shap", "lime", "permutation", "pdp"]:
+            self.logger.warning(f"Unsupported explanation method: {method}")
+            return None
+            
+        # Check if we have a model
+        if not (self.model or self.best_model):
+            raise NotFittedError("Model is not trained yet.")
+            
+        model = self.best_model if self.best_model else self.model
+        
+        # Convert input to appropriate format
+        if isinstance(data, pl.DataFrame):
+            # Apply preprocessor if available
+            if self.preprocessor:
+                processed_data = self.preprocessor.transform(data)
+                X = processed_data.select(self.feature_columns).to_numpy()
             else:
-                # Regression
-                y_pred = self.model.predict(X)
+                X = data.select(self.feature_columns).to_numpy()
+        elif isinstance(data, dict):
+            # Convert dict to DataFrame
+            df = pl.DataFrame([data])
+            return self.explain_prediction(df, method)
+        elif isinstance(data, (list, np.ndarray)):
+            # Assume data is already preprocessed and in correct order
+            X = np.array(data)
+        else:
+            raise ValueError(f"Unsupported data type for explanation: {type(data)}")
+            
+        # SHAP explanations
+        if method.lower() == "shap":
+            try:
+                import shap
+                explainer = None
                 
-                # Regression metrics
-                metrics['mse'] = mean_squared_error(y, y_pred)
-                metrics['rmse'] = np.sqrt(metrics['mse'])
-                metrics['r2'] = r2_score(y, y_pred)
-            
-            return metrics
-            
-        except Exception as e:
-            self.logger.error(f"Error evaluating LightGBM model: {str(e)}")
-            if self.config.debug_mode:
-                self.logger.error(traceback.format_exc())
-            return {"error": 1.0}
-
-    def _evaluate_custom_model(self, X, y) -> Dict[str, float]:
-        """Evaluate a custom model."""
-        metrics = {}
-        model_config = self.config.model_training
-        problem_type = model_config.problem_type
-        
-        try:
-            # Check if model has a custom evaluate method
-            if hasattr(self.model, 'evaluate'):
-                return self.model.evaluate(X, y)
-            
-            # Otherwise implement standard evaluation based on problem type
-            if problem_type == 'classification':
-                # Check for predict_proba method
-                if hasattr(self.model, 'predict_proba'):
-                    y_pred_proba = self.model.predict_proba(X)
-                    
-                    # For binary classification
-                    if len(np.unique(y)) <= 2:
-                        if y_pred_proba.ndim > 1 and y_pred_proba.shape[1] > 1:
-                            y_pred_proba = y_pred_proba[:, 1]  # Get positive class probabilities
-                        
-                        threshold = self.config.model_evaluation.classification_threshold
-                        y_pred = (y_pred_proba > threshold).astype(int)
-                        
-                        # Classification metrics
-                        metrics['accuracy'] = accuracy_score(y, y_pred)
-                        metrics['precision'] = precision_score(y, y_pred, 
-                                                            average=self.config.model_evaluation.average_method, 
-                                                            zero_division=0)
-                        metrics['recall'] = recall_score(y, y_pred, 
-                                                        average=self.config.model_evaluation.average_method, 
-                                                        zero_division=0)
-                        metrics['f1'] = f1_score(y, y_pred, 
-                                                average=self.config.model_evaluation.average_method, 
-                                                zero_division=0)
-                        metrics['roc_auc'] = roc_auc_score(y, y_pred_proba)
+                # Choose appropriate explainer based on model type
+                mt = self.config.model_training.model_type
+                if mt == ModelType.XGBOOST:
+                    explainer = shap.TreeExplainer(model)
+                elif mt == ModelType.LIGHTGBM:
+                    explainer = shap.TreeExplainer(model)
+                elif mt == ModelType.SKLEARN:
+                    model_type = type(model).__name__
+                    if "Random" in model_type or "Forest" in model_type or "Tree" in model_type:
+                        explainer = shap.TreeExplainer(model)
                     else:
-                        # Multi-class
-                        y_pred = np.argmax(y_pred_proba, axis=1)
-                        
-                        # Classification metrics
-                        metrics['accuracy'] = accuracy_score(y, y_pred)
-                        metrics['precision'] = precision_score(y, y_pred, 
-                                                            average=self.config.model_evaluation.average_method, 
-                                                            zero_division=0)
-                        metrics['recall'] = recall_score(y, y_pred, 
-                                                        average=self.config.model_evaluation.average_method, 
-                                                        zero_division=0)
-                        metrics['f1'] = f1_score(y, y_pred, 
-                                                average=self.config.model_evaluation.average_method, 
-                                                zero_division=0)
-                else:
-                    # Use predict method for hard classification
-                    y_pred = self.model.predict(X)
+                        explainer = shap.KernelExplainer(model.predict, shap.sample(X, 100))
+                
+                if explainer is None:
+                    self.logger.warning("Could not determine appropriate SHAP explainer for model")
+                    return None
                     
-                    # Classification metrics
-                    metrics['accuracy'] = accuracy_score(y, y_pred)
-                    metrics['precision'] = precision_score(y, y_pred, 
-                                                        average=self.config.model_evaluation.average_method, 
-                                                        zero_division=0)
-                    metrics['recall'] = recall_score(y, y_pred, 
-                                                    average=self.config.model_evaluation.average_method, 
-                                                    zero_division=0)
-                    metrics['f1'] = f1_score(y, y_pred, 
-                                            average=self.config.model_evaluation.average_method, 
-                                            zero_division=0)
+                # Calculate SHAP values
+                shap_values = explainer.shap_values(X)
+                
+                # Format output
+                explanation = {
+                    "method": "shap",
+                    "feature_names": self.feature_columns,
+                    "base_value": explainer.expected_value if hasattr(explainer, "expected_value") else None
+                }
+                
+                # Handle different output formats from different explainers
+                if isinstance(shap_values, list):
+                    # Multi-class case
+                    explanation["shap_values"] = [values.tolist() for values in shap_values]
+                else:
+                    # Binary or regression case
+                    explanation["shap_values"] = shap_values.tolist()
+                    
+                return explanation
+            except ImportError:
+                self.logger.error("SHAP package not installed. Install with: pip install shap")
+                return None
+            except Exception as e:
+                self.logger.error(f"Error generating SHAP explanations: {e}")
+                if self.config.debug_mode:
+                    self.logger.error(traceback.format_exc())
+                return None
+                
+        elif method.lower() == "lime":
+            self.logger.warning("LIME explanations not implemented")
+            return None
+            
+        elif method.lower() == "permutation":
+            try:
+                from sklearn.inspection import permutation_importance
+                
+                # Get training data for background distribution
+                X_train = self.train_data.select(self.feature_columns).to_numpy()
+                y_train = self.train_data.select(self.config.dataset.target_column).to_numpy().ravel()
+                
+                # Calculate permutation importance
+                r = permutation_importance(
+                    model, X_train, y_train, 
+                    n_repeats=10, 
+                    random_state=self.config.dataset.random_seed
+                )
+                
+                # Format output
+                perm_imp = {
+                    "method": "permutation_importance",
+                    "feature_names": self.feature_columns,
+                    "importances_mean": r.importances_mean.tolist(),
+                    "importances_std": r.importances_std.tolist()
+                }
+                
+                return perm_imp
+            except ImportError:
+                self.logger.error("scikit-learn permutation_importance not available")
+                return None
+            except Exception as e:
+                self.logger.error(f"Error calculating permutation importance: {e}")
+                if self.config.debug_mode:
+                    self.logger.error(traceback.format_exc())
+                return None
+                
+        elif method.lower() == "pdp":
+            self.logger.warning("Partial Dependence Plot explanations not implemented")
+            return None
+            
+        return None
+
+    # ------------------
+    # API METHODS
+    # ------------------
+    def get_status(self):
+        """Get current status of the training engine."""
+        return {
+            "training_id": self.training_id,
+            "state": self.state.name,
+            "start_time": self.start_time.isoformat() if self.start_time else None,
+            "end_time": self.end_time.isoformat() if self.end_time else None,
+            "model_name": self.config.model_registry.model_name,
+            "feature_count": len(self.feature_columns) if self.feature_columns else 0,
+            "runtime_metrics": self.get_runtime_metrics()
+        }
+        
+    def to_dict(self):
+        """Convert important training engine attributes to a dictionary."""
+        return {
+            "training_id": self.training_id,
+            "state": self.state.name,
+            "config": self.config.to_dict(),
+            "runtime_metrics": self.runtime_metrics,
+            "evaluation_results": self.evaluation_results if hasattr(self, "evaluation_results") else None,
+            "feature_columns": self.feature_columns
+        }
+        
+    def batch_predict(self, data_path: str, output_path: str, chunk_size: int = 10000):
+        """
+        Perform batch prediction on a large dataset, processing in chunks.
+        
+        Args:
+            data_path: Path to input data file
+            output_path: Path where to save predictions
+            chunk_size: Number of rows to process at once
+            
+        Returns:
+            Dictionary with prediction results summary
+        """
+        if not (self.model or self.best_model):
+            raise NotFittedError("Model is not trained yet.")
+            
+        model = self.best_model if self.best_model else self.model
+        
+        # Determine file format and appropriate reader
+        if data_path.endswith('.csv'):
+            reader = pl.scan_csv(
+                data_path,
+                separator=self.config.dataset.csv_separator,
+                has_header=self.config.dataset.has_header
+            )
+        elif data_path.endswith('.parquet'):
+            reader = pl.scan_parquet(data_path)
+        else:
+            raise ValueError(f"Unsupported file format for batch prediction: {data_path}")
+            
+        # Setup output file
+        out_ext = output_path.split('.')[-1] if '.' in output_path else 'csv'
+        if out_ext not in ['csv', 'parquet']:
+            self.logger.warning(f"Unsupported output format: {out_ext}. Defaulting to CSV.")
+            out_ext = 'csv'
+            output_path = f"{output_path}.csv"
+            
+        # Process in batches
+        total_rows = 0
+        processed_rows = 0
+        
+        # Get total count for progress reporting
+        try:
+            # This might be expensive for some file formats
+            total_rows = reader.select(pl.count()).collect().item()
+            self.logger.info(f"Starting batch prediction on {total_rows} rows")
+        except Exception:
+            self.logger.info(f"Could not determine total row count. Starting batch prediction.")
+        
+        # Process chunks
+        start_time = time.time()
+        
+        # First chunk flag to handle headers properly
+        first_chunk = True
+        
+        # Process the data in chunks
+        for batch in reader.collect(streaming=True):
+            batch_size = len(batch)
+            processed_rows += batch_size
+            
+            # Apply preprocessor if available
+            if self.preprocessor:
+                processed_batch = self.preprocessor.transform(batch)
+                X = processed_batch.select(self.feature_columns).to_numpy()
+            else:
+                # Make sure we have the required columns
+                missing_cols = set(self.feature_columns) - set(batch.columns)
+                if missing_cols:
+                    self.logger.error(f"Missing columns in batch: {missing_cols}")
+                    raise ValueError(f"Missing required feature columns: {missing_cols}")
+                X = batch.select(self.feature_columns).to_numpy()
+                
+            # Generate predictions
+            if self.config.model_training.problem_type == "classification":
+                y_pred = model.predict(X)
+                
+                # Add probabilities if available
+                if hasattr(model, 'predict_proba'):
+                    try:
+                        y_prob = model.predict_proba(X)
+                        result_batch = batch.with_column(pl.lit(y_pred).alias("prediction"))
+                        
+                        # Add probability columns for each class
+                        if y_prob.shape[1] > 1:
+                            for i in range(y_prob.shape[1]):
+                                result_batch = result_batch.with_column(
+                                    pl.lit(y_prob[:, i]).alias(f"probability_class_{i}")
+                                )
+                        else:
+                            result_batch = result_batch.with_column(
+                                pl.lit(y_prob[:, 0]).alias("probability")
+                            )
+                    except Exception as e:
+                        self.logger.warning(f"Could not generate prediction probabilities: {e}")
+                        result_batch = batch.with_column(pl.lit(y_pred).alias("prediction"))
+                else:
+                    result_batch = batch.with_column(pl.lit(y_pred).alias("prediction"))
             else:
                 # Regression
-                y_pred = self.model.predict(X)
+                y_pred = model.predict(X)
+                result_batch = batch.with_column(pl.lit(y_pred).alias("prediction"))
                 
-                # Regression metrics
-                metrics['mse'] = mean_squared_error(y, y_pred)
-                metrics['rmse'] = np.sqrt(metrics['mse'])
-                metrics['r2'] = r2_score(y, y_pred)
-                
-            return metrics
-            
-        except Exception as e:
-            self.logger.error(f"Error evaluating custom model: {str(e)}")
-            if self.config.debug_mode:
-                self.logger.error(traceback.format_exc())
-            return {"error": 1.0}
-
-    def _generate_confusion_matrix(self, X, y_true) -> bool:
-        """
-        Generate and save a confusion matrix visualization.
-        
-        Args:
-            X: Features
-            y_true: True labels
-            
-        Returns:
-            Success flag
-        """
-        try:
-            self.logger.info("Generating confusion matrix...")
-            
-            # Make predictions
-            if hasattr(self.model, 'predict_proba') and self.config.model_training.problem_type == 'classification':
-                y_proba = self.model.predict_proba(X)
-                if y_proba.ndim > 1 and y_proba.shape[1] == 2:  # Binary classification
-                    threshold = self.config.model_evaluation.classification_threshold
-                    y_pred = (y_proba[:, 1] > threshold).astype(int)
-                else:  # Multi-class
-                    y_pred = np.argmax(y_proba, axis=1)
-            else:
-                y_pred = self.model.predict(X)
-                
-            # Calculate confusion matrix
-            cm = confusion_matrix(y_true, y_pred)
-            
-            # Get class names if available
-            class_names = self.config.model_evaluation.class_names
-            if class_names is None:
-                if hasattr(self, 'encoder') and hasattr(self.encoder, 'classes_'):
-                    class_names = list(self.encoder.classes_)
+            # Write results
+            if out_ext == 'csv':
+                mode = 'w' if first_chunk else 'a'
+                header = first_chunk
+                result_batch.write_csv(output_path, has_header=header, mode=mode)
+            elif out_ext == 'parquet':
+                if first_chunk:
+                    result_batch.write_parquet(output_path)
                 else:
-                    class_names = [str(i) for i in range(len(np.unique(y_true)))]
+                    # Append to existing parquet file
+                    # This is not ideal for parquet - better to collect all predictions first
+                    # but keeping the pattern consistent with CSV
+                    existing = pl.read_parquet(output_path)
+                    combined = pl.concat([existing, result_batch])
+                    combined.write_parquet(output_path)
+                    
+            first_chunk = False
             
-            # Create figure
-            plt.figure(figsize=(10, 8))
-            sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', 
-                        xticklabels=class_names, 
-                        yticklabels=class_names)
-            plt.xlabel('Predicted')
-            plt.ylabel('True')
-            plt.title('Confusion Matrix')
-            
-            # Save figure
-            artifact_path = os.path.join(self.artifacts_path, 'confusion_matrix.png')
-            plt.savefig(artifact_path)
-            plt.close()
-            
-            self.logger.info(f"Confusion matrix saved to {artifact_path}")
-            
-            # Add to artifacts registry
-            self.artifacts.register('confusion_matrix', artifact_path, 'image/png')
-            
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Error generating confusion matrix: {str(e)}")
-            if self.config.debug_mode:
-                self.logger.error(traceback.format_exc())
-            return False
-
-    def _generate_roc_curve(self, X, y_true) -> bool:
-        """
-        Generate and save a ROC curve visualization.
-        
-        Args:
-            X: Features
-            y_true: True labels
-            
-        Returns:
-            Success flag
-        """
-        try:
-            self.logger.info("Generating ROC curve...")
-            
-            # Only applicable for classification
-            if self.config.model_training.problem_type != 'classification':
-                self.logger.warning("ROC curve only applicable for classification problems")
-                return False
-            
-            # Check if model has predict_proba method
-            if not hasattr(self.model, 'predict_proba'):
-                self.logger.warning("Model does not have predict_proba method, required for ROC curve")
-                return False
-            
-            # Make predictions
-            y_proba = self.model.predict_proba(X)
-            
-            plt.figure(figsize=(10, 8))
-            
-            # Binary classification
-            if len(np.unique(y_true)) <= 2:
-                if y_proba.ndim > 1 and y_proba.shape[1] == 2:
-                    y_proba = y_proba[:, 1]  # Get positive class probabilities
-                
-                # Compute ROC curve and ROC area
-                fpr, tpr, _ = roc_curve(y_true, y_proba)
-                roc_auc = auc(fpr, tpr)
-                
-                # Plot ROC curve
-                plt.plot(fpr, tpr, lw=2, label=f'ROC curve (area = {roc_auc:.2f})')
-                plt.plot([0, 1], [0, 1], 'k--', lw=2)
-                plt.xlim([0.0, 1.0])
-                plt.ylim([0.0, 1.05])
-                plt.xlabel('False Positive Rate')
-                plt.ylabel('True Positive Rate')
-                plt.title('Receiver Operating Characteristic')
-                plt.legend(loc="lower right")
-                
+            # Report progress
+            if total_rows > 0:
+                progress = processed_rows / total_rows * 100
+                self.logger.info(f"Processed {processed_rows}/{total_rows} rows ({progress:.1f}%)")
             else:
-                # Multi-class ROC curve
-                n_classes = len(np.unique(y_true))
+                self.logger.info(f"Processed {processed_rows} rows")
                 
-                # Binarize the labels for one-vs-rest ROC
-                lb = LabelBinarizer()
-                lb.fit(y_true)
-                y_true_bin = lb.transform(y_true)
-                
-                # Compute ROC curve and ROC area for each class
-                fpr = dict()
-                tpr = dict()
-                roc_auc = dict()
-                
-                for i in range(n_classes):
-                    fpr[i], tpr[i], _ = roc_curve(y_true_bin[:, i], y_proba[:, i])
-                    roc_auc[i] = auc(fpr[i], tpr[i])
-                    plt.plot(fpr[i], tpr[i], lw=2, 
-                            label=f'ROC curve of class {i} (area = {roc_auc[i]:.2f})')
-                
-                plt.plot([0, 1], [0, 1], 'k--', lw=2)
-                plt.xlim([0.0, 1.0])
-                plt.ylim([0.0, 1.05])
-                plt.xlabel('False Positive Rate')
-                plt.ylabel('True Positive Rate')
-                plt.title('Multi-class Receiver Operating Characteristic')
-                plt.legend(loc="lower right")
-            
-            # Save figure
-            artifact_path = os.path.join(self.artifacts_path, 'roc_curve.png')
-            plt.savefig(artifact_path)
-            plt.close()
-            
-            self.logger.info(f"ROC curve saved to {artifact_path}")
-            
-            # Add to artifacts registry
-            self.artifacts.register('roc_curve', artifact_path, 'image/png')
-            
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Error generating ROC curve: {str(e)}")
-            if self.config.debug_mode:
-                self.logger.error(traceback.format_exc())
-            return False
-
-    def _generate_precision_recall_curve(self, X, y_true) -> bool:
-        """
-        Generate and save a Precision-Recall curve visualization.
+        end_time = time.time()
+        duration = end_time - start_time
         
-        Args:
-            X: Features
-            y_true: True labels
-            
-        Returns:
-            Success flag
-        """
-        try:
-            self.logger.info("Generating Precision-Recall curve...")
-            
-            # Only applicable for classification
-            if self.config.model_training.problem_type != 'classification':
-                self.logger.warning("Precision-Recall curve only applicable for classification problems")
-                return False
-            
-            # Check if model has predict_proba method
-            if not hasattr(self.model, 'predict_proba'):
-                self.logger.warning("Model does not have predict_proba method, required for Precision-Recall curve")
-                return False
-            
-            # Make predictions
-            y_proba = self.model.predict_proba(X)
-            
-            plt.figure(figsize=(10, 8))
-            
-            # Binary classification
-            if len(np.unique(y_true)) <= 2:
-                if y_proba.ndim > 1 and y_proba.shape[1] == 2:
-                    y_proba = y_proba[:, 1]  # Get positive class probabilities
-                
-                # Compute Precision-Recall curve
-                precision, recall, _ = precision_recall_curve(y_true, y_proba)
-                pr_auc = auc(recall, precision)
-                
-                # Plot Precision-Recall curve
-                plt.plot(recall, precision, lw=2, label=f'PR curve (area = {pr_auc:.2f})')
-                plt.xlabel('Recall')
-                plt.ylabel('Precision')
-                plt.ylim([0.0, 1.05])
-                plt.xlim([0.0, 1.0])
-                plt.title('Precision-Recall curve')
-                plt.legend(loc="lower left")
-                
-            else:
-                # Multi-class Precision-Recall curve
-                n_classes = len(np.unique(y_true))
-                
-                # Binarize the labels for one-vs-rest PR curve
-                lb = LabelBinarizer()
-                lb.fit(y_true)
-                y_true_bin = lb.transform(y_true)
-                
-                # Compute PR curve for each class
-                for i in range(n_classes):
-                    precision, recall, _ = precision_recall_curve(y_true_bin[:, i], y_proba[:, i])
-                    pr_auc = auc(recall, precision)
-                    plt.plot(recall, precision, lw=2, 
-                            label=f'PR curve of class {i} (area = {pr_auc:.2f})')
-                
-                plt.xlabel('Recall')
-                plt.ylabel('Precision')
-                plt.ylim([0.0, 1.05])
-                plt.xlim([0.0, 1.0])
-                plt.title('Multi-class Precision-Recall curve')
-                plt.legend(loc="lower left")
-            
-            # Save figure
-            artifact_path = os.path.join(self.artifacts_path, 'precision_recall_curve.png')
-            plt.savefig(artifact_path)
-            plt.close()
-            
-            self.logger.info(f"Precision-Recall curve saved to {artifact_path}")
-            
-            # Add to artifacts registry
-            self.artifacts.register('precision_recall_curve', artifact_path, 'image/png')
-            
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Error generating Precision-Recall curve: {str(e)}")
-            if self.config.debug_mode:
-                self.logger.error(traceback.format_exc())
-            return False
-
-    def _compute_permutation_importance(self) -> bool:
-        """
-        Calculate and save permutation importance of features.
+        self.logger.info(
+            f"Batch prediction completed in {duration:.2f} seconds. "
+            f"Processed {processed_rows} rows ({processed_rows/duration:.1f} rows/sec)"
+        )
         
-        Returns:
-            Success flag
-        """
-        try:
-            self.logger.info("Computing permutation importance...")
+        return {
+            "success": True,
+            "input_path": data_path,
+            "output_path": output_path,
+            "rows_processed": processed_rows,
+            "processing_time_seconds": duration,
+            "rows_per_second": processed_rows / duration if duration > 0 else 0
+        }
+
+    # ------------------
+    # CONTEXT MANAGER
+    # ------------------
+    def __enter__(self):
+        """Allow using TrainingEngine as a context manager."""
+        return self
+        
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Cleanup when exiting context manager."""
+        self.cleanup()
+        
+        # Log any unhandled exceptions
+        if exc_type is not None:
+            self.logger.error(f"Exception during TrainingEngine execution: {exc_type.__name__}: {exc_val}")
+            self._set_state(TrainingState.FAILED)
+            return False  # Don't suppress the exception
             
-            # Get test data
-            X_test = self.X_test
-            y_test = self.y_test
-            
-            if X_test is None or y_test is None:
-                self.logger.warning("Test data not available for permutation importance")
-                return False
-            
-            # Get feature names
-            feature_names = self.feature_names
-            if feature_names is None and isinstance(X_test, pd.DataFrame):
-                feature_names = X_test.columns.tolist()
-            
-            # Define scoring metric
-            if self.config.model_training.problem_type == 'classification':
-                if len(np.unique(y_test)) <= 2:
-                    scorer = make_scorer(roc_auc_score, needs_proba=True)
-                else:
-                    scorer = make_scorer(accuracy_score)
-            else:
-                scorer = make_scorer(r2_score)
-            
-            # Calculate permutation importance
-            r = permutation_importance(
-                self.model, X_test, y_test, 
-                n_repeats=self.config.model_evaluation.permutation_importance_repeats,
-                random_state=self.config.random_seed,
-                scoring=scorer
-            )
-            
-            # Create DataFrame with importance results
-            importance_df = pd.DataFrame({
-                'Feature': feature_names if feature_names else [f'Feature_{i}' for i in range(X_test.shape[1])],
-                'Importance': r.importances_mean,
-                'StdDev': r.importances_std
-            })
-            
-            # Sort by importance
-            importance_df = importance_df.sort_values('Importance', ascending=False)
-            
-            # Save to CSV
-            csv_path = os.path.join(self.artifacts_path, 'feature_importance.csv')
-            importance_df.to_csv(csv_path, index=False)
-            
-            # Create visualization
-            plt.figure(figsize=(12, 10))
-            plt.barh(
-                importance_df['Feature'][:20],  # Show top 20 features for readability
-                importance_df['Importance'][:20], 
-                xerr=importance_df['StdDev'][:20],
-                alpha=0.8
-            )
-            plt.xlabel('Permutation Importance')
-            plt.title('Feature Importance (Permutation)')
-            plt.tight_layout()
-            
-            # Save figure
-            plot_path = os.path.join(self.artifacts_path, 'feature_importance.png')
-            plt.savefig(plot_path)
-            plt.close()
-            
-            self.logger.info(f"Feature importance data saved to {csv_path}")
-            self.logger.info(f"Feature importance plot saved to {plot_path}")
-            
-            # Add to artifacts registry
-            self.artifacts.register('feature_importance_data', csv_path, 'text/csv')
-            self.artifacts.register('feature_importance_plot', plot_path, 'image/png')
-            
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Error computing permutation importance: {str(e)}")
-            if self.config.debug_mode:
-                self.logger.error(traceback.format_exc())
-            return False
+        return True
