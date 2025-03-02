@@ -14,7 +14,6 @@ from contextlib import contextmanager
 from dataclasses import dataclass, asdict, field
 import time
 
-from .utils import log_operation
 from modules.configs import PreprocessorConfig, NormalizationType
 
 class PreprocessingError(Exception):

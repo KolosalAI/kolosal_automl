@@ -214,22 +214,8 @@ class PreprocessorConfig:
 
 
 # -----------------------------------------------------------------------------
-# Configuration for CPU-accelerated Models Inference
+# Configuration for Inference Engine
 # -----------------------------------------------------------------------------
-
-@dataclass(order=True)
-class PrioritizedItem:
-    """Wrapper for prioritized queue items."""
-    priority: int
-    timestamp: float = field(compare=False)
-    item: Any = field(compare=False)
-# Define enums
-class OptimizationLevel(Enum):
-    NONE = auto()
-    BASIC = auto()
-    ADVANCED = auto()
-    EXTREME = auto()
-
 class ModelType(Enum):
     SKLEARN = auto()
     XGBOOST = auto()
@@ -240,133 +226,104 @@ class ModelType(Enum):
 class EngineState(Enum):
     INITIALIZING = auto()
     READY = auto()
-    LOADING = auto()
     RUNNING = auto()
-    PAUSED = auto()
-    ERROR = auto()
+    LOADING = auto()
     STOPPING = auto()
     STOPPED = auto()
-
-# -----------------------------------------------------------------------------
-# Configuration for CPU-accelerated Models
-# -----------------------------------------------------------------------------
+    ERROR = auto()
 
 @dataclass
-class CPUAcceleratedModelConfig:
-    """
-    Enhanced configuration for CPU-accelerated model with advanced features.
-    
-    Configuration parameters are organized by functional category:
-    - Processing: Core processing settings
-    - Batching: Batch processing configuration
-    - Optimization: Performance optimization flags
-    - Caching: Result caching configuration
-    - Monitoring: Telemetry and observability
-    - Resource Management: System resource controls
-    - Advanced Features: Additional functionality
-    - Quantization: Model and input quantization settings
-    """
-    # Processing configuration
-    num_threads: int = field(default_factory=lambda: os.cpu_count() or 4)
-    optimization_level: OptimizationLevel = OptimizationLevel.ADVANCED
-    model_version: str = "1.0.0"
-    
-    # Batch processing settings
-    enable_batching: bool = True
-    initial_batch_size: int = 64
-    max_batch_size: int = 512
-    min_batch_size: int = 4
-    batch_timeout: float = 0.1
-    batch_processing_strategy: str = "adaptive"
-    enable_adaptive_batching: bool = True
-    target_latency_ms: float = 50.0  # Target latency for adaptive batching
-    
-    # Memory and performance optimizations
-    enable_memory_optimization: bool = True
-    enable_intel_optimization: bool = True
+class InferenceEngineConfig:
+    # General engine settings
+    model_version: str = "1.0"
+    debug_mode: bool = False
+    num_threads: int = 4
+    set_cpu_affinity: bool = False
+
+    # Intel optimizations flag
+    enable_intel_optimization: bool = False
+
+    # Quantization settings
     enable_quantization: bool = False
-    quantization_dtype: str = "int8"  # Options: int8, uint8, int16
-    enable_feature_scaling: bool = False  # Enable feature scaling in preprocessing
-    
+    enable_model_quantization: bool = False
+    enable_input_quantization: bool = False
+    quantization_dtype: str = "int8"  # e.g., "int8" or "float16"
+    quantization_config: Optional[QuantizationConfig] = None
+
     # Caching and deduplication
     enable_request_deduplication: bool = True
-    cache_ttl_seconds: int = 300  # Time-to-live for cache entries (5 minutes)
-    max_cache_entries: int = 1000  # Maximum number of cached entries
-    
-    # Monitoring and debugging
-    enable_monitoring: bool = True
-    debug_mode: bool = False
-    monitoring_window: int = 100
-    monitoring_interval: float = 5.0  # Monitor update interval in seconds
-    
-    # Resource management
-    memory_limit_gb: Optional[float] = None
-    memory_high_watermark_mb: float = 1024.0  # Trigger GC when memory exceeds this
-    enable_throttling: bool = False
-    max_concurrent_requests: int = 100
-    throttle_on_high_cpu: bool = False
-    cpu_threshold_percent: float = 80.0  # CPU threshold for throttling
-    set_cpu_affinity: bool = False  # Set CPU affinity for process
-    
-    # Advanced Features
-    enable_warmup: bool = True  # Perform model warmup to stabilize first-inference latency
-    enable_data_versioning: bool = False  # Track data version for cache invalidation
-    
-    # Quantization settings
-    quantization_config: Optional[QuantizationConfig] = None
-    enable_model_quantization: bool = False  # Quantize model weights
-    enable_input_quantization: bool = False  # Quantize input data
-    enable_quantization_aware_inference: bool = False  # Simulate quantization during inference
-    
-    # Extension points
-    custom_extensions: Dict[str, Any] = field(default_factory=dict)
-    
-    def __post_init__(self):
-        """Validate configuration parameters after initialization."""
-        # Ensure min_batch_size is not greater than initial_batch_size
-        if self.min_batch_size > self.initial_batch_size:
-            self.min_batch_size = self.initial_batch_size
-            
-        # Ensure initial_batch_size is not greater than max_batch_size
-        if self.initial_batch_size > self.max_batch_size:
-            self.initial_batch_size = self.max_batch_size
-            
-        # Set reasonable defaults for CPU thread count
-        if self.num_threads <= 0:
-            self.num_threads = os.cpu_count() or 4
-            
-        # Convert batch_processing_strategy to lowercase for case insensitivity
-        if isinstance(self.batch_processing_strategy, str):
-            self.batch_processing_strategy = self.batch_processing_strategy.lower()
-            
-        # Set default quantization config if not provided but quantization is enabled
-        if (self.enable_quantization or self.enable_model_quantization or 
-            self.enable_input_quantization) and self.quantization_config is None:
-            self.quantization_config = QuantizationConfig(
-                quantization_type=self.quantization_dtype,
-                quantization_mode=QuantizationMode.DYNAMIC_PER_BATCH.value
-            )
-                
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert config to a dictionary for serialization."""
-        config_dict = {k: v for k, v in self.__dict__.items() 
-                if not k.startswith('_') and not callable(v)}
-        
-        # Handle nested QuantizationConfig
-        if self.quantization_config is not None:
-            config_dict['quantization_config'] = asdict(self.quantization_config)
-        
-        return config_dict
-                
-    @classmethod
-    def from_dict(cls, config_dict: Dict[str, Any]) -> 'CPUAcceleratedModelConfig':
-        """Create config from a dictionary."""
-        # Handle nested QuantizationConfig if present
-        if 'quantization_config' in config_dict and isinstance(config_dict['quantization_config'], dict):
-            config_dict['quantization_config'] = QuantizationConfig(**config_dict['quantization_config'])
-        
-        return cls(**config_dict)
+    max_cache_entries: int = 1000
+    cache_ttl_seconds: int = 300  # 5 minutes
 
+    # Monitoring settings
+    monitoring_window: int = 100
+    enable_monitoring: bool = True
+    monitoring_interval: float = 10.0  # seconds between checks
+    throttle_on_high_cpu: bool = True
+    cpu_threshold_percent: float = 90.0  # CPU usage threshold in percent
+    memory_high_watermark_mb: float = 1024.0  # memory high watermark in MB
+    memory_limit_gb: Optional[float] = None  # optional absolute limit in GB
+
+    # Batch processing settings
+    enable_batching: bool = True
+    batch_processing_strategy: str = "adaptive"  # e.g., "adaptive", "fixed", etc.
+    batch_timeout: float = 0.1  # seconds to wait for additional requests
+    max_concurrent_requests: int = 8
+    initial_batch_size: int = 16
+    min_batch_size: int = 1
+    max_batch_size: int = 64
+    enable_adaptive_batching: bool = True
+    enable_memory_optimization: bool = True
+
+    # Preprocessing settings
+    enable_feature_scaling: bool = False
+
+    # Warmup settings
+    enable_warmup: bool = True
+
+    # Inference settings
+    enable_quantization_aware_inference: bool = False
+
+    # Throttling flag (dynamically updated based on CPU usage)
+    enable_throttling: bool = False
+
+    def to_dict(self) -> dict:
+        """Return configuration as a dictionary."""
+        return {
+            "model_version": self.model_version,
+            "debug_mode": self.debug_mode,
+            "num_threads": self.num_threads,
+            "set_cpu_affinity": self.set_cpu_affinity,
+            "enable_intel_optimization": self.enable_intel_optimization,
+            "enable_quantization": self.enable_quantization,
+            "enable_model_quantization": self.enable_model_quantization,
+            "enable_input_quantization": self.enable_input_quantization,
+            "quantization_dtype": self.quantization_dtype,
+            "quantization_config": self.quantization_config,
+            "enable_request_deduplication": self.enable_request_deduplication,
+            "max_cache_entries": self.max_cache_entries,
+            "cache_ttl_seconds": self.cache_ttl_seconds,
+            "monitoring_window": self.monitoring_window,
+            "enable_monitoring": self.enable_monitoring,
+            "monitoring_interval": self.monitoring_interval,
+            "throttle_on_high_cpu": self.throttle_on_high_cpu,
+            "cpu_threshold_percent": self.cpu_threshold_percent,
+            "memory_high_watermark_mb": self.memory_high_watermark_mb,
+            "memory_limit_gb": self.memory_limit_gb,
+            "enable_batching": self.enable_batching,
+            "batch_processing_strategy": self.batch_processing_strategy,
+            "batch_timeout": self.batch_timeout,
+            "max_concurrent_requests": self.max_concurrent_requests,
+            "initial_batch_size": self.initial_batch_size,
+            "min_batch_size": self.min_batch_size,
+            "max_batch_size": self.max_batch_size,
+            "enable_adaptive_batching": self.enable_adaptive_batching,
+            "enable_memory_optimization": self.enable_memory_optimization,
+            "enable_feature_scaling": self.enable_feature_scaling,
+            "enable_warmup": self.enable_warmup,
+            "enable_quantization_aware_inference": self.enable_quantization_aware_inference,
+            "enable_throttling": self.enable_throttling,
+        }
 
 # -----------------------------------------------------------------------------
 # Enums for Configuration Domains

@@ -11,11 +11,9 @@ import json
 import uuid
 import numpy as np
 from typing import Dict, List, Any, Optional, Union, Tuple, Callable, TypeVar, Generic
-
 from enum import Enum, auto
 from datetime import datetime, timedelta
 from functools import wraps, lru_cache
-
 import traceback
 import signal
 import psutil
@@ -32,7 +30,6 @@ except ImportError:
 try:
     import sklearn
     SKLEARN_AVAILABLE = True
-    # Try to enable Intel optimizations for scikit-learn
     try:
         from sklearnex import patch_sklearn
         patch_sklearn()
@@ -44,7 +41,6 @@ except ImportError:
     SKLEARN_OPTIMIZED = False
 
 try:
-    # Check for Intel's Python Distribution
     import intel
     INTEL_PYTHON = True
 except ImportError:
@@ -59,13 +55,13 @@ except ImportError:
 # Import local modules
 from modules.engine.batch_processor import BatchProcessor
 from modules.engine.data_preprocessor import DataPreprocessor
+from modules.engine.quantizer import Quantizer
+from modules.engine.lru_ttl_cache import LRUTTLCache
 from modules.configs import (
     QuantizationConfig, BatchProcessorConfig, BatchProcessingStrategy,
     BatchPriority, PreprocessorConfig, NormalizationType, 
-    QuantizationMode, ModelType, EngineState, CPUAcceleratedModelConfig
+    QuantizationMode, ModelType, EngineState, InferenceEngineConfig
 )
-from modules.engine.quantizer import Quantizer
-from modules.engine.lru_ttl_cache import LRUTTLCache
 
 # Define constants
 MODEL_REGISTRY_PATH = os.environ.get("MODEL_REGISTRY_PATH", "./models")
@@ -88,8 +84,8 @@ class ModelMetrics:
             self.inference_times = deque(maxlen=self.window_size)
             self.batch_sizes = deque(maxlen=self.window_size)
             self.queue_times = deque(maxlen=self.window_size)
-            self.quantize_times = deque(maxlen=self.window_size)  # New: track quantization time
-            self.dequantize_times = deque(maxlen=self.window_size)  # New: track dequantization time
+            self.quantize_times = deque(maxlen=self.window_size)
+            self.dequantize_times = deque(maxlen=self.window_size)
             self.total_requests = 0
             self.error_count = 0
             self.cache_hits = 0
@@ -148,7 +144,6 @@ class ModelMetrics:
             }
             
             if self.inference_times:
-                # Calculate latency metrics
                 metrics.update({
                     "avg_inference_time_ms": np.mean(self.inference_times) * 1000,
                     "p50_inference_time_ms": np.percentile(self.inference_times, 50) * 1000,
@@ -170,7 +165,6 @@ class ModelMetrics:
                     "p95_queue_time_ms": np.percentile(self.queue_times, 95) * 1000,
                 })
             
-            # Add quantization metrics if available
             if self.quantize_times:
                 metrics.update({
                     "avg_quantize_time_ms": np.mean(self.quantize_times) * 1000,
@@ -183,7 +177,6 @@ class ModelMetrics:
                     "p95_dequantize_time_ms": np.percentile(self.dequantize_times, 95) * 1000,
                 })
             
-            # Calculate throughput
             if self.inference_times:
                 total_processing_time = sum(self.inference_times)
                 if total_processing_time > 0:
@@ -198,14 +191,14 @@ class InferenceEngine:
     adaptive batching, quantization support, and comprehensive monitoring.
     """
     
-    def __init__(self, config: Optional[CPUAcceleratedModelConfig] = None):
+    def __init__(self, config: Optional[InferenceEngineConfig] = None):
         """
         Initialize the inference engine.
         
         Args:
             config: Configuration for the inference engine
         """
-        self.config = config or CPUAcceleratedModelConfig()
+        self.config = config or InferenceEngineConfig()
         
         # Set up logging
         self.logger = self._setup_logging()
@@ -246,6 +239,8 @@ class InferenceEngine:
         self.active_requests = 0
         self.active_requests_lock = threading.Lock()
         
+        # Initialize batch processor attribute to ensure it always exists
+        self.batch_processor = None
         # Set up threading
         self._setup_threading()
         
@@ -584,20 +579,22 @@ class InferenceEngine:
         try:
             metrics = self.metrics.get_metrics()
             
-            # Log main metrics
-            self.logger.debug(f"Performance metrics: "
-                             f"avg_inference={metrics.get('avg_inference_time_ms', 0):.2f}ms, "
-                             f"p95_inference={metrics.get('p95_inference_time_ms', 0):.2f}ms, "
-                             f"avg_batch_size={metrics.get('avg_batch_size', 0):.1f}, "
-                             f"throughput={metrics.get('throughput_requests_per_second', 0):.1f}req/s, "
-                             f"cache_hit_rate={metrics.get('cache_hit_rate_percent', 0):.1f}%")
+            # Log main metrics with cache hit rate converted to a percentage
+            self.logger.debug(
+                f"Performance metrics: avg_inference={metrics.get('avg_inference_time_ms', 0):.2f}ms, "
+                f"p95_inference={metrics.get('p95_inference_time_ms', 0):.2f}ms, "
+                f"avg_batch_size={metrics.get('avg_batch_size', 0):.1f}, "
+                f"throughput={metrics.get('throughput_requests_per_second', 0):.1f}req/s, "
+                f"cache_hit_rate={metrics.get('cache_hit_rate', 0)*100:.1f}%"
+            )
             
             # Additional debug metrics when quantization is enabled
             if (self.config.enable_quantization or self.config.enable_model_quantization or 
                 self.config.enable_input_quantization):
-                self.logger.debug(f"Quantization metrics: "
-                                 f"avg_quantize={metrics.get('avg_quantize_time_ms', 0):.2f}ms, "
-                                 f"avg_dequantize={metrics.get('avg_dequantize_time_ms', 0):.2f}ms")
+                self.logger.debug(
+                    f"Quantization metrics: avg_quantize={metrics.get('avg_quantize_time_ms', 0):.2f}ms, "
+                    f"avg_dequantize={metrics.get('avg_dequantize_time_ms', 0):.2f}ms"
+                )
                 
             # Log memory usage
             process = psutil.Process(os.getpid())
@@ -608,9 +605,10 @@ class InferenceEngine:
             # Log cache stats if enabled
             if self.result_cache is not None:
                 cache_stats = self.result_cache.get_stats()
-                self.logger.debug(f"Cache stats: "
-                                 f"size={cache_stats['size']}/{cache_stats['max_size']}, "
-                                 f"hit_rate={cache_stats['hit_rate_percent']:.1f}%")
+                self.logger.debug(
+                    f"Cache stats: size={cache_stats['size']}/{cache_stats['max_size']}, "
+                    f"hit_rate={cache_stats['hit_rate_percent']:.1f}%"
+                )
                 
         except Exception as e:
             self.logger.error(f"Failed to log metrics: {str(e)}")
@@ -1125,7 +1123,7 @@ class InferenceEngine:
             batch_priority = BatchPriority.LOW
         
         # Submit to batch processor
-        return self.batch_processor.submit(features_batch, priority=batch_priority)
+        return self.batch_processor.enqueue_predict(features_batch, priority=batch_priority)
     
     def _process_batch(self, batch: np.ndarray) -> np.ndarray:
         """
@@ -1240,8 +1238,8 @@ class InferenceEngine:
                 self.monitor_thread.join(timeout=5.0)
         
         # Shut down batch processor
-        if hasattr(self, 'batch_processor') and self.batch_processor is not None:
-            self.batch_processor.shutdown()
+        #if hasattr(self, 'batch_processor') and self.batch_processor is not None:
+        #    self.batch_processor.shutdown()
         
         # Shut down thread pool
         if hasattr(self, 'thread_pool'):
@@ -1474,7 +1472,7 @@ class InferenceEngine:
             self.quantizer.clear_cache()
             self.logger.info("Quantizer cache cleared")
     
-    def set_config(self, config: CPUAcceleratedModelConfig) -> None:
+    def set_config(self, config: InferenceEngineConfig) -> None:
         """
         Update configuration settings.
         
@@ -1576,3 +1574,148 @@ class InferenceEngine:
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Ensure engine is properly shutdown when exiting context."""
         self.shutdown()
+    
+    def __getstate__(self):
+        """
+        Customize serialization behavior to exclude unpicklable attributes.
+        
+        Returns:
+            Dictionary with picklable state
+        """
+        state = self.__dict__.copy()
+        
+        # Remove unpicklable thread and synchronization objects
+        unpicklable_attrs = [
+            'inference_lock', 'state_lock', 'active_requests_lock',
+            'monitor_thread', 'monitor_stop_event', 'thread_pool',
+            'logger', 'batch_processor'
+        ]
+        
+        for attr in unpicklable_attrs:
+            if attr in state:
+                state[attr] = None
+        
+        # Note that we're serializing but when deserialized,
+        # these resources will need to be reinitialized
+        
+        # Add a flag to indicate this is a restored state
+        state['_is_restored'] = True
+        
+        return state
+    def save(self, save_path: str, save_format: str = 'joblib', include_config: bool = True, 
+            include_metrics: bool = False, overwrite: bool = False) -> bool:
+        """
+        Save the inference engine state to disk.
+        
+        Args:
+            save_path: Directory path to save the model and configuration
+            save_format: Format to use for saving ('joblib', 'pickle', or 'json')
+            include_config: Whether to save configuration separately
+            include_metrics: Whether to include current metrics in the saved state
+            overwrite: Whether to overwrite existing files
+            
+        Returns:
+            Success status
+        """
+        self.logger.info(f"Saving inference engine to {save_path}")
+        
+        # Check if the model is loaded
+        if self.model is None:
+            self.logger.error("Cannot save: no model loaded")
+            return False
+        
+        # Create the directory if it doesn't exist
+        os.makedirs(save_path, exist_ok=True)
+        
+        # Determine file paths
+        model_filename = f"model.{save_format}"
+        config_filename = "config.json"
+        metrics_filename = "metrics.json"
+        info_filename = "model_info.json"
+        
+        model_path = os.path.join(save_path, model_filename)
+        config_path = os.path.join(save_path, config_filename)
+        metrics_path = os.path.join(save_path, metrics_filename)
+        info_path = os.path.join(save_path, info_filename)
+        
+        # Check if files exist and handle overwrite flag
+        if not overwrite:
+            for path in [model_path, config_path, metrics_path, info_path]:
+                if os.path.exists(path):
+                    self.logger.error(f"File {path} already exists and overwrite=False")
+                    return False
+        
+        try:
+            # Save the model using the specified format
+            if save_format == 'joblib':
+                if not JOBLIB_AVAILABLE:
+                    self.logger.warning("joblib not available, falling back to pickle")
+                    save_format = 'pickle'
+                else:
+                    joblib.dump(self.model, model_path)
+                    self.logger.info(f"Model saved to {model_path} using joblib")
+            
+            if save_format == 'pickle':
+                with open(model_path, 'wb') as f:
+                    pickle.dump(self.model, f, protocol=pickle.HIGHEST_PROTOCOL)
+                self.logger.info(f"Model saved to {model_path} using pickle")
+            
+            # Save configuration if requested
+            if include_config:
+                with open(config_path, 'w') as f:
+                    json.dump(self.config.to_dict(), f, indent=2)
+                self.logger.info(f"Configuration saved to {config_path}")
+            
+            # Save metrics if requested
+            if include_metrics:
+                with open(metrics_path, 'w') as f:
+                    # Get current metrics and convert any non-serializable values to strings
+                    metrics = self.metrics.get_metrics()
+                    serializable_metrics = {k: str(v) if not isinstance(v, (int, float, bool, str, list, dict, type(None))) 
+                                        else v for k, v in metrics.items()}
+                    json.dump(serializable_metrics, f, indent=2)
+                self.logger.info(f"Metrics saved to {metrics_path}")
+            
+            # Save model info
+            with open(info_path, 'w') as f:
+                # Make a copy of model_info and ensure it's JSON serializable
+                info_copy = copy.deepcopy(self.model_info)
+                # Convert non-serializable types to strings
+                for k, v in info_copy.items():
+                    if not isinstance(v, (int, float, bool, str, list, dict, type(None))):
+                        info_copy[k] = str(v)
+                
+                # Add feature names
+                info_copy['feature_names'] = self.feature_names
+                
+                # Add model type
+                info_copy['model_type'] = self.model_type.name if self.model_type else None
+                
+                # Add timestamp
+                info_copy['saved_at'] = datetime.now().isoformat()
+                
+                json.dump(info_copy, f, indent=2)
+            self.logger.info(f"Model info saved to {info_path}")
+            
+            # Create a README file with basic information
+            readme_path = os.path.join(save_path, "README.md")
+            with open(readme_path, 'w') as f:
+                f.write(f"# Inference Engine Model\n\n")
+                f.write(f"Saved on: {datetime.now().isoformat()}\n")
+                f.write(f"Model type: {self.model_type.name if self.model_type else 'Unknown'}\n")
+                f.write(f"Model version: {self.config.model_version}\n\n")
+                f.write(f"## Files\n\n")
+                f.write(f"- `{model_filename}`: The serialized model\n")
+                if include_config:
+                    f.write(f"- `{config_filename}`: Engine configuration\n")
+                if include_metrics:
+                    f.write(f"- `{metrics_filename}`: Performance metrics at time of saving\n")
+                f.write(f"- `{info_filename}`: Model metadata\n")
+            
+            return True
+        
+        except Exception as e:
+            self.logger.error(f"Error saving inference engine: {str(e)}")
+            if self.config.debug_mode:
+                self.logger.error(traceback.format_exc())
+            return False
