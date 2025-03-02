@@ -107,7 +107,6 @@ class PolarsPreprocessor:
         # If result is already a pandas DataFrame, convert to polars
         return pl.from_pandas(transformed)
 
-
 class TrainingEngine:
     """
     A production-ready engine for CPU-based training of ML models at scale.
