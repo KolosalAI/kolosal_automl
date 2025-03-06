@@ -15,7 +15,6 @@ The current unit test results are as follows:
 - **tests/test_quantizer.py**: FAILED
 - **tests/test_data_preprocessor.py**: FAILED
 - **tests/test_engine.py**: FAILED
-- **tests/test_train_engine.py**: FAILED
 
 ## Planned Improvements
 
@@ -39,4 +38,4 @@ Contributions are welcome! If you have suggestions or improvements, please open 
 
 ## License
 
-[Specify your license information here.]
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
