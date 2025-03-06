@@ -154,11 +154,11 @@ class DataPreprocessor:
         """Initialize preprocessing functions based on configuration."""
         self._processors = []
 
-        # Add data quality processors first
-        if self.config.handle_inf:
-            self._processors.append(self._handle_infinite_values)
+        # Add data quality processors FIRST (this is critical)
         if self.config.handle_nan:
             self._processors.append(self._handle_nan_values)
+        if self.config.handle_inf:
+            self._processors.append(self._handle_infinite_values)
 
         # Add outlier detection if enabled
         if self.config.detect_outliers:
@@ -193,18 +193,24 @@ class DataPreprocessor:
                 raise PreprocessingError(error_msg) from e
 
     @log_operation
-    def fit(self, X: Union[np.array, List], feature_names: Optional[List[str]] = None) -> 'DataPreprocessor':
-        """
-        Compute preprocessing statistics with optimized memory usage and validation.
-
-        Args:
-            X: Input data array or list
-            feature_names: Optional list of feature names for better logging and monitoring
-
-        Returns:
-            self for method chaining
-        """
+    def fit(self, X, y=None, **fit_params):
+        """Fit the preprocessor to the data"""
         with self._lock, self._error_context("fit operation"):
+            # Store the input shape
+            self.input_shape_ = X.shape
+            
+            # Extract feature names if available
+            # This is where the error is happening - need to fix the feature_names check
+            feature_names = None
+            if hasattr(X, 'columns'):
+                feature_names = X.columns.tolist()
+            
+            # Instead of directly evaluating feature_names as a boolean condition, check properly
+            if feature_names is not None and len(feature_names) > 0:
+                self._feature_names = feature_names
+            else:
+                # Create default feature names if none available
+                self._feature_names = [f"feature_{i}" for i in range(X.shape[1])]
             # Validate and convert input
             X = self._validate_and_convert_input(X, operation="fit")
             
@@ -842,13 +848,19 @@ class DataPreprocessor:
         normalization_type = self.config.normalization
         
         if normalization_type == NormalizationType.STANDARD:
-            return (X - self._stats['mean']) * self._stats['scale']
+            # Make a copy to avoid potential in-place issues
+            X_normalized = (X - self._stats['mean']) * self._stats['scale']
+            return X_normalized
             
         elif normalization_type == NormalizationType.MINMAX:
-            return (X - self._stats['min']) * self._stats['scale']
+            # Make a copy to avoid potential in-place issues
+            X_normalized = (X - self._stats['min']) * self._stats['scale']
+            return X_normalized
             
         elif normalization_type == NormalizationType.ROBUST:
-            return (X - self._stats['lower']) * self._stats['scale']
+            # Make a copy to avoid potential in-place issues
+            X_normalized = (X - self._stats['lower']) * self._stats['scale']
+            return X_normalized
             
         elif normalization_type == NormalizationType.CUSTOM:
             # This would call a custom normalization function
@@ -966,8 +978,11 @@ class DataPreprocessor:
             lower_bound = self._stats['outlier_lower']
             upper_bound = self._stats['outlier_upper']
             
+            # Create a copy to avoid modifying the input
+            X_copy = X.copy()
+            
             # Detect outliers
-            outliers_mask = (X < lower_bound) | (X > upper_bound)
+            outliers_mask = (X_copy < lower_bound) | (X_copy > upper_bound)
             
             if np.any(outliers_mask):
                 n_outliers = np.sum(outliers_mask)
@@ -975,19 +990,25 @@ class DataPreprocessor:
                 # Either clip or replace outliers based on config
                 if self.config.outlier_params.get("clip", True):
                     # Clip outliers to boundaries
-                    X = np.maximum(X, lower_bound)
-                    X = np.minimum(X, upper_bound)
+                    for i in range(X_copy.shape[1]):
+                        col_mask_lower = X_copy[:, i] < lower_bound[i]
+                        col_mask_upper = X_copy[:, i] > upper_bound[i]
+                        X_copy[col_mask_lower, i] = lower_bound[i]
+                        X_copy[col_mask_upper, i] = upper_bound[i]
                     action = "clipped"
                 else:
                     # Replace with boundary values
-                    for i in range(X.shape[1]):
-                        col_mask_lower = outliers_mask[:, i] & (X[:, i] < lower_bound[i])
-                        col_mask_upper = outliers_mask[:, i] & (X[:, i] > upper_bound[i])
-                        X[col_mask_lower, i] = lower_bound[i]
-                        X[col_mask_upper, i] = upper_bound[i]
+                    for i in range(X_copy.shape[1]):
+                        col_mask_lower = outliers_mask[:, i] & (X_copy[:, i] < lower_bound[i])
+                        col_mask_upper = outliers_mask[:, i] & (X_copy[:, i] > upper_bound[i])
+                        X_copy[col_mask_lower, i] = lower_bound[i]
+                        X_copy[col_mask_upper, i] = upper_bound[i]
                     action = "replaced"
                     
                 self.logger.info(f"Found {n_outliers} outliers, {action} to boundary values")
+            
+            return X_copy
+
                 
         elif outlier_method == "zscore":
             # Z-score based outlier detection
@@ -1362,6 +1383,7 @@ class DataPreprocessor:
             
             return preprocessor
 
+
     def inverse_transform(self, X: Union[np.array, List], copy: bool = True) -> np.array:
         """
         Reverse the transformation process to get original scale data.
@@ -1385,18 +1407,24 @@ class DataPreprocessor:
             
             if norm_type == NormalizationType.STANDARD:
                 if 'mean' in self._stats and 'scale' in self._stats:
+                    # Create a copy to avoid modifying the input
+                    X_inv = X.copy()
                     # Fixed implementation for standard normalization
-                    return (X / self._stats['scale']) + self._stats['mean']
+                    return (X_inv / self._stats['scale']) + self._stats['mean']
                     
             elif norm_type == NormalizationType.MINMAX:
                 if 'min' in self._stats and 'scale' in self._stats:
+                    # Create a copy to avoid modifying the input
+                    X_inv = X.copy()
                     # Fixed implementation for min-max scaling
-                    return (X / self._stats['scale']) + self._stats['min']
+                    return (X_inv / self._stats['scale']) + self._stats['min']
                     
             elif norm_type == NormalizationType.ROBUST:
                 if 'lower' in self._stats and 'scale' in self._stats:
+                    # Create a copy to avoid modifying the input
+                    X_inv = X.copy()
                     # Fixed implementation for robust scaling
-                    return (X / self._stats['scale']) + self._stats['lower']
+                    return (X_inv / self._stats['scale']) + self._stats['lower']
                     
             elif norm_type == NormalizationType.CUSTOM:
                 # Handle custom inverse transform
@@ -1411,11 +1439,11 @@ class DataPreprocessor:
                     
             # If we reach here with STANDARD normalization, use the stats we have
             if norm_type == NormalizationType.STANDARD and 'mean' in self._stats and 'std' in self._stats:
-                return X * self._stats['std'] + self._stats['mean']
+                X_inv = X.copy()
+                return X_inv * self._stats['std'] + self._stats['mean']
                 
             # If we still get here, we couldn't invert the transform
             raise NotImplementedError(f"Inverse transform not implemented for {norm_type}")
-
 
 
     def partial_fit(self, X: Union[np.array, List], feature_names: Optional[List[str]] = None) -> 'DataPreprocessor':
@@ -1723,34 +1751,7 @@ class DataPreprocessor:
         return memory_info
 
     def copy(self) -> 'DataPreprocessor':
-        import tempfile
-        import pickle
-
-        if not self._fitted:
-            return DataPreprocessor(self.config)
-
-        try:
-            with tempfile.NamedTemporaryFile(suffix='.pkl', delete=False) as temp_file:
-                temp_filepath = temp_file.name
-                with open(temp_filepath, 'wb') as f:
-                    # Pickle the state using our custom __getstate__
-                    pickle.dump(self, f)
-
-                # Now load it back
-                with open(temp_filepath, 'rb') as f:
-                    new_preprocessor = pickle.load(f)
-                return new_preprocessor
-        except Exception as e:
-            self.logger.error(f"Error copying preprocessor: {e}")
-            # Fallback approach if needed...
-            new_preprocessor = DataPreprocessor(self.config)
-            new_preprocessor._stats = {
-                k: (v.copy() if hasattr(v, 'copy') else v)
-                for k, v in self._stats.items()
-            }
-            new_preprocessor._feature_names = self._feature_names.copy()
-            new_preprocessor._fitted = self._fitted
-            new_preprocessor._n_features = self._n_features
-            new_preprocessor._n_samples_seen = self._n_samples_seen
-            new_preprocessor._version = self._version
-            return new_preprocessor
+        """Create a deep copy of the preprocessor."""
+        import copy
+        # Use Python's deepcopy to ensure all nested objects are properly copied
+        return copy.deepcopy(self)

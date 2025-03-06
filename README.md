@@ -1,19 +1,42 @@
-# kolosal-automl
- Genta Auto-ML, develop your own machine learning development progress
+# Kolosal-AutoML
 
-# Checklist
+Kolosal-AutoML is a streamlined Auto-ML tool designed to accelerate your machine learning development process. Develop, test, and optimize your machine learning pipelines effortlessly.
 
-tests/test_batch_processor.py PASSED
+## Overview
 
-tests\test_lru_ttl_cache.py PASSED
+Kolosal-AutoML provides a flexible framework for automating various stages of machine learning projects, from data preprocessing to model quantization and engine execution. This repository includes tests to ensure each component performs as expected.
 
-tests\test_quantizer.py FAILED
+## Test Status
 
-tests\test_data_preprocessor.py FAILED
+The current unit test results are as follows:
 
-tests\test_engine.py FAILED
+- **tests/test_batch_processor.py**: PASSED
+- **tests/test_lru_ttl_cache.py**: PASSED
+- **tests/test_quantizer.py**: FAILED
+- **tests/test_data_preprocessor.py**: FAILED
+- **tests/test_engine.py**: FAILED
+- **tests/test_train_engine.py**: FAILED
 
-# Planning
-1. Finish and pass all the test
-2. Improve and Upgrade UI
-3. Optimize the code
+## Planned Improvements
+
+The roadmap for Kolosal-AutoML includes:
+
+1. **Complete Testing**: Address and resolve failing tests to achieve comprehensive test coverage.
+2. **UI Enhancements**: Improve and upgrade the user interface for a smoother user experience.
+3. **Code Optimization**: Refactor and optimize the codebase to improve performance and maintainability.
+
+## Running the Tests
+
+To run the unit tests, use the following command:
+
+```bash
+python -m unittest discover -s tests
+```
+
+## Contributing
+
+Contributions are welcome! If you have suggestions or improvements, please open an issue or submit a pull request.
+
+## License
+
+[Specify your license information here.]
