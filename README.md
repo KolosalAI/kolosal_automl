@@ -35,7 +35,7 @@ Kolosal-AutoML is a powerful, user-friendly automated machine learning platform 
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/kolosal-automl.git
+git clone https://github.com/Genta-Technology/kolosal-automl
 cd kolosal-automl
 ```
 
