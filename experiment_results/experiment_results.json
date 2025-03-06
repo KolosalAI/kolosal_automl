@@ -1,0 +1,64 @@
+[
+  {
+    "timestamp": "2025-03-05 18:25:28",
+    "models_trained": [
+      "LogisticRegression",
+      "RandomForestClassifier",
+      "GradientBoostingClassifier"
+    ],
+    "results": {
+      "LogisticRegression": {
+        "metrics": {
+          "accuracy": 0.9736842105263158,
+          "precision": 0.9737105878629081,
+          "recall": 0.9736842105263158,
+          "f1": 0.9736164257756981,
+          "roc_auc": 0.9920634920634921
+        },
+        "model_name": "LogisticRegression"
+      },
+      "RandomForestClassifier": {
+        "metrics": {
+          "accuracy": 0.9473684210526315,
+          "precision": 0.9474395448079658,
+          "recall": 0.9473684210526315,
+          "f1": 0.947087062795646,
+          "roc_auc": 0.9907407407407407
+        },
+        "model_name": "RandomForestClassifier"
+      },
+      "GradientBoostingClassifier": {
+        "metrics": {
+          "accuracy": 0.9473684210526315,
+          "precision": 0.9474395448079658,
+          "recall": 0.9473684210526315,
+          "f1": 0.947087062795646,
+          "roc_auc": 0.9877645502645502
+        },
+        "model_name": "GradientBoostingClassifier"
+      }
+    },
+    "config": {
+      "task_type": "classification",
+      "random_state": 42,
+      "n_jobs": 4,
+      "verbose": 1,
+      "cv_folds": 5,
+      "test_size": 0.2,
+      "stratify": true,
+      "optimization_strategy": "grid_search",
+      "optimization_iterations": 30,
+      "early_stopping": true,
+      "feature_selection": true,
+      "feature_selection_method": "f_classif",
+      "feature_selection_k": 10,
+      "feature_importance_threshold": 0.05,
+      "model_path": "./models",
+      "experiment_tracking": true,
+      "use_intel_optimization": true,
+      "memory_optimization": true,
+      "enable_distributed": false,
+      "log_level": "INFO"
+    }
+  }
+]

@@ -333,413 +333,140 @@ class InferenceEngineConfig:
 # -----------------------------------------------------------------------------
 # Configuration for Training Engine
 # -----------------------------------------------------------------------------
+class TaskType(Enum):
+    CLASSIFICATION = "classification"
+    REGRESSION = "regression"
+    CLUSTERING = "clustering"
+    ANOMALY_DETECTION = "anomaly_detection"
 
-# Define enums
-class TrainingMode(Enum):
-    STANDARD = auto()
-    INCREMENTAL = auto()
-    TRANSFER = auto()
-    DISTRIBUTED = auto()
-    HYPERPARAMETER_SEARCH = auto()
-    AUTO_ML = auto()
-
-class TrainingState(Enum):
-    INITIALIZING = auto()
-    READY = auto()
-    PREPROCESSING = auto()
-    FEATURE_ENGINEERING = auto()
-    TRAINING = auto()
-    EVALUATING = auto()
-    OPTIMIZING = auto()
-    SAVING = auto()
-    PAUSED = auto()
-    ERROR = auto()
-    STOPPING = auto()
-    STOPPED = auto()
-    COMPLETED = auto()
 
 class OptimizationStrategy(Enum):
-    GRID_SEARCH = auto()
-    RANDOM_SEARCH = auto()
-    BAYESIAN = auto()
-    GENETIC = auto()
-    CUSTOM = auto()
+    GRID_SEARCH = "grid_search"
+    RANDOM_SEARCH = "random_search"
+    BAYESIAN_OPTIMIZATION = "bayesian_optimization"
+    EVOLUTIONARY = "evolutionary"
+    HYPERBAND = "hyperband"
 
-class DataSplitStrategy(Enum):
-    RANDOM = auto()
-    STRATIFIED = auto()
-    GROUP = auto()
-    TIME_SERIES = auto()
-    CUSTOM = auto()
 
-class ModelType(Enum):
-    SKLEARN = auto()
-    XGBOOST = auto()
-    LIGHTGBM = auto()
-    CUSTOM = auto()
-    ENSEMBLE = auto()
-
-@dataclass
-class DatasetConfig:
-    """Configuration for dataset handling"""
-    train_path: Optional[str] = None
-    validation_path: Optional[str] = None
-    test_path: Optional[str] = None
+class MLTrainingEngineConfig:
+    """Configuration for the ML Training Engine"""
     
-    # Dataset splitting parameters
-    test_size: float = 0.2
-    validation_size: float = 0.2
-    split_strategy: DataSplitStrategy = DataSplitStrategy.RANDOM
-    random_seed: int = 42
-    stratify_column: Optional[str] = None
-    group_column: Optional[str] = None
-    time_column: Optional[str] = None
-    
-    # Data processing options
-    handle_missing: bool = True
-    handle_outliers: bool = True
-    handle_categorical: bool = True
-    handle_imbalance: bool = False
-    imbalance_strategy: str = "oversample"  # oversample, undersample, smote, etc.
-    
-    # Data format 
-    csv_separator: str = ","
-    encoding: str = "utf-8"
-    has_header: bool = True
-    
-    # In-memory vs out-of-memory processing
-    enable_chunking: bool = False
-    chunk_size: int = 10000
-    
-    # Feature columns configuration
-    feature_columns: List[str] = field(default_factory=list)
-    target_column: Optional[str] = None
-    weight_column: Optional[str] = None
-    id_column: Optional[str] = None
-    categorical_columns: List[str] = field(default_factory=list)
-    numerical_columns: List[str] = field(default_factory=list)
-    datetime_columns: List[str] = field(default_factory=list)
-    text_columns: List[str] = field(default_factory=list)
-    
-    # Dataset versioning
-    enable_versioning: bool = False
-    version: str = "1.0.0"
-    compute_dataset_hash: bool = False
-
-@dataclass
-class FeatureEngineeringConfig:
-    """Configuration for feature engineering"""
-    enable_feature_selection: bool = False
-    feature_selection_method: str = "importance"  # importance, correlation, recursive
-    max_features: Optional[int] = None
-    min_feature_importance: float = 0.01
-    
-    enable_polynomial_features: bool = False
-    polynomial_degree: int = 2
-    interaction_only: bool = True
-    
-    enable_feature_encoding: bool = True
-    encoding_method: str = "auto"  # auto, onehot, label, target, frequency, etc.
-    max_onehot_cardinality: int = 10
-    
-    enable_dimensionality_reduction: bool = False
-    dimensionality_reduction_method: str = "pca"  # pca, t-sne, umap, etc.
-    target_dimensions: Optional[int] = None
-    variance_threshold: float = 0.95
-    
-    enable_feature_generation: bool = False
-    datetime_features: bool = True
-    text_features: bool = False
-    aggregation_features: bool = False
-    
-    enable_scaling: bool = True
-    scaling_method: str = "standard"  # standard, minmax, robust, etc.
-    
-    custom_transformers: Dict[str, Any] = field(default_factory=dict)
-
-@dataclass
-class ModelTrainingConfig:
-    """Configuration for model training"""
-    model_type: ModelType = ModelType.SKLEARN
-    model_class: Optional[str] = None  # e.g., "sklearn.ensemble.RandomForestClassifier"
-    problem_type: str = "classification"  # classification, regression, multi-label, etc.
-    
-    # Model hyperparameters
-    hyperparameters: Dict[str, Any] = field(default_factory=dict)
-    
-    # Training parameters
-    num_epochs: Optional[int] = None
-    batch_size: Optional[int] = None
-    learning_rate: Optional[float] = None
-    early_stopping: bool = True
-    early_stopping_patience: int = 10
-    early_stopping_metric: str = "auto"  # auto, accuracy, f1, mse, etc.
-    
-    # Cross-validation
-    enable_cross_validation: bool = False
-    cv_folds: int = 5
-    cv_strategy: str = "kfold"  # kfold, stratified, group, etc.
-    
-    # Multi-threading and parallelism
-    n_jobs: int = -1
-    enable_threading: bool = True
-    use_gpu: bool = False
-
-    # Checkpointing
-    enable_checkpointing: bool = False
-    checkpoint_interval: int = 1  # checkpoint every N epochs
-    keep_checkpoint_max: int = 3  # keep last N checkpoints
-    
-    # Class weights for imbalanced classification
-    class_weight: str = "balanced"  # balanced, balanced_subsample, None or custom dict
-    
-    # Objective function
-    objective: Optional[str] = None  # custom objective for XGBoost/LightGBM
-    
-    # Regularization
-    l1_regularization: Optional[float] = None
-    l2_regularization: Optional[float] = None
-    
-    # Custom metrics to monitor
-    metrics: List[str] = field(default_factory=list)
-    
-    # Advanced options
-    enable_calibration: bool = False
-    calibration_method: str = "isotonic"  # isotonic, sigmoid
-    
-    # Feature importance
-    compute_feature_importance: bool = True
-    importance_type: str = "auto"  # gain, split, permutation, etc.
-
-@dataclass
-class HyperparameterOptimizationConfig:
-    """Configuration for hyperparameter optimization"""
-    enabled: bool = False
-    strategy: OptimizationStrategy = OptimizationStrategy.RANDOM_SEARCH
-    
-    # Optimization parameters
-    max_trials: int = 10
-    max_time_minutes: Optional[int] = None
-    metric: str = "auto"  # auto, accuracy, f1, mse, etc.
-    direction: str = "maximize"  # maximize, minimize
-    
-    # Search space definition
-    param_grid: Dict[str, Any] = field(default_factory=dict)
-    
-    # Cross-validation settings during optimization
-    cv_folds: int = 3
-    
-    # Parallel optimization
-    n_parallel_trials: int = 1
-    
-    # Bayesian optimization settings (for optuna)
-    pruning: bool = True
-    pruner: str = "median"  # median, hyperband, etc.
-    sampler: str = "tpe"  # tpe, random, grid, etc.
-    
-    # Early stopping for hyperparameter search
-    early_stopping: bool = True
-    early_stopping_patience: int = 5
-
-@dataclass
-class ModelEvaluationConfig:
-    """Configuration for model evaluation"""
-    metrics: List[str] = field(default_factory=lambda: ["auto"])
-    
-    # Classification specific metrics
-    classification_threshold: float = 0.5
-    average_method: str = "weighted"  # weighted, macro, micro, etc.
-    
-    # Evaluation datasets
-    evaluate_on_train: bool = True
-    evaluate_on_validation: bool = True
-    evaluate_on_test: bool = True
-    
-    # Additional evaluation processes
-    confusion_matrix: bool = True
-    classification_report: bool = True
-    roc_curve: bool = True
-    precision_recall_curve: bool = True
-    calibration_curve: bool = False
-    
-    # Feature importance evaluation
-    compute_permutation_importance: bool = False
-    n_repeats: int = 10
-    
-    # Cross-validation evaluation
-    use_cross_validation: bool = False
-    cv_folds: int = 5
-    
-    # Saving evaluation results
-    save_predictions: bool = True
-    save_evaluation_report: bool = True
-    
-    # Model explainability
-    enable_explainability: bool = False
-    explainability_method: str = "shap"  # shap, lime, etc.
-    max_samples_to_explain: int = 100
-
-@dataclass
-class ModelRegistryConfig:
-    """Configuration for model registry and versioning"""
-    registry_path: str = MODEL_REGISTRY_PATH
-    
-    # Model metadata
-    model_name: str = "model"
-    model_version: str = "1.0.0"
-    description: str = ""
-    tags: List[str] = field(default_factory=list)
-    
-    # Versioning
-    auto_version: bool = True
-    version_strategy: str = "semver"  # semver, timestamp, incremental, etc.
-    
-    # Artifacts to save with the model
-    save_preprocessor: bool = True
-    save_feature_names: bool = True
-    save_metrics: bool = True
-    save_hyperparameters: bool = True
-    save_training_history: bool = True
-    save_feature_importance: bool = True
-    
-    # Model formats
-    save_formats: List[str] = field(default_factory=lambda: ["pickle"])
-    
-    # AWS S3/GCS/Azure Blob integration
-    enable_cloud_storage: bool = False
-    cloud_provider: str = "aws"  # aws, gcp, azure
-    cloud_bucket: str = ""
-    cloud_path: str = ""
-    
-    # Model deployment
-    auto_deploy: bool = False
-    deployment_target: str = "local"  # local, docker, kubernetes, etc.
-    
-    # Model lifecycle
-    enable_lifecycle_management: bool = False
-    archive_old_versions: bool = True
-    max_versions_to_keep: int = 5
-
-@dataclass
-class CPUTrainingConfig:
-    """
-    Complete configuration for CPU-optimized training with advanced features.
-    
-    Configuration parameters are organized by functional category:
-    - Training: Core training settings
-    - Dataset: Dataset handling and splitting
-    - Feature Engineering: Feature transformations and selection
-    - Model: Model-specific parameters
-    - Optimization: Hyperparameter optimization settings
-    - Evaluation: Model evaluation and metrics
-    - Registry: Model versioning and storage
-    - Resource Management: System resource controls
-    - Monitoring: Telemetry and observability
-    """
-    # Dataset configuration
-    dataset: DatasetConfig = field(default_factory=DatasetConfig)
-    
-    # Feature engineering configuration
-    feature_engineering: FeatureEngineeringConfig = field(default_factory=FeatureEngineeringConfig)
-    
-    # Model training configuration
-    model_training: ModelTrainingConfig = field(default_factory=ModelTrainingConfig)
-    
-    # Hyperparameter optimization configuration
-    hyperparameter_optimization: HyperparameterOptimizationConfig = field(default_factory=HyperparameterOptimizationConfig)
-    
-    # Model evaluation configuration
-    model_evaluation: ModelEvaluationConfig = field(default_factory=ModelEvaluationConfig)
-    
-    # Model registry configuration
-    model_registry: ModelRegistryConfig = field(default_factory=ModelRegistryConfig)
-    
-    # Core training settings
-    training_mode: TrainingMode = TrainingMode.STANDARD
-    random_seed: int = 42
-    
-    # Resource management
-    num_threads: int = field(default_factory=lambda: os.cpu_count() or 4)
-    memory_limit_gb: Optional[float] = None
-    enable_intel_optimization: bool = True
-    use_disk_offloading: bool = False
-    temp_directory: str = "./tmp"
-    
-    # Monitoring and debugging
-    enable_monitoring: bool = True
-    debug_mode: bool = False
-    log_level: str = "INFO"
-    monitoring_interval: float = 5.0  # seconds
-    
-    # Advanced options
-    enable_distributed_training: bool = False
-    distributed_backend: str = "multiprocessing"  # multiprocessing, dask, ray, etc.
-    num_workers: int = 1
-    
-    enable_auto_resume: bool = True
-    resume_from_checkpoint: Optional[str] = None
-    
-    # Callbacks and hooks
-    callbacks: Dict[str, Any] = field(default_factory=dict)
-    
-    # Development options
-    experimental_features: bool = False
-    
-    def __post_init__(self):
-        """Validate configuration parameters after initialization."""
-        # Set reasonable defaults for CPU thread count
-        if self.num_threads <= 0:
-            self.num_threads = os.cpu_count() or 4
+    def __init__(
+        self,
+        task_type: TaskType = TaskType.CLASSIFICATION,
+        random_state: int = 42,
+        n_jobs: int = -1,
+        verbose: int = 1,
+        cv_folds: int = 5,
+        test_size: float = 0.2,
+        stratify: bool = True,
+        optimization_strategy: OptimizationStrategy = OptimizationStrategy.RANDOM_SEARCH,
+        optimization_iterations: int = 50,
+        early_stopping: bool = True,
+        feature_selection: bool = True,
+        feature_selection_method: str = "mutual_info",
+        feature_selection_k: Optional[int] = None,
+        feature_importance_threshold: float = 0.01,
+        preprocessing_config: Optional[PreprocessorConfig] = None,
+        batch_processing_config: Optional[BatchProcessorConfig] = None,
+        inference_config: Optional[InferenceEngineConfig] = None,
+        quantization_config: Optional[QuantizationConfig] = None,
+        model_path: str = "./models",
+        experiment_tracking: bool = True,
+        use_intel_optimization: bool = True,
+        memory_optimization: bool = True,
+        enable_distributed: bool = False,
+        log_level: str = "INFO",
+    ):
+        self.task_type = task_type
+        self.random_state = random_state
+        self.n_jobs = n_jobs
+        self.verbose = verbose
+        self.cv_folds = cv_folds
+        self.test_size = test_size
+        self.stratify = stratify
+        self.optimization_strategy = optimization_strategy
+        self.optimization_iterations = optimization_iterations
+        self.early_stopping = early_stopping
+        self.feature_selection = feature_selection
+        self.feature_selection_method = feature_selection_method
+        self.feature_selection_k = feature_selection_k
+        self.feature_importance_threshold = feature_importance_threshold
+        
+        # Set default configurations if none provided
+        if preprocessing_config is None:
+            self.preprocessing_config = PreprocessorConfig(
+                normalization=NormalizationType.STANDARD,
+                handle_nan=True,
+                handle_inf=True,
+                detect_outliers=True,
+                parallel_processing=True
+            )
+        else:
+            self.preprocessing_config = preprocessing_config
             
-        # Configure model_training.n_jobs based on num_threads if not set
-        if self.model_training.n_jobs <= 0:
-            self.model_training.n_jobs = self.num_threads
+        if batch_processing_config is None:
+            self.batch_processing_config = BatchProcessorConfig(
+                initial_batch_size=100,
+                min_batch_size=50,
+                max_batch_size=200,
+                max_queue_size=1000,
+                batch_timeout=1.0,
+                enable_priority_queue=True,
+                enable_monitoring=True,
+                enable_memory_optimization=True
+            )
+        else:
+            self.batch_processing_config = batch_processing_config
             
-        # Create directories if they don't exist
-        os.makedirs(self.model_registry.registry_path, exist_ok=True)
-        os.makedirs(self.temp_directory, exist_ok=True)
-        os.makedirs(CHECKPOINT_PATH, exist_ok=True)
-        
-        # For distributed training, adjust worker count
-        if self.enable_distributed_training and self.num_workers <= 0:
-            self.num_workers = max(1, (os.cpu_count() or 4) - 1)
+        if inference_config is None:
+            self.inference_config = InferenceEngineConfig(
+                enable_intel_optimization=use_intel_optimization,
+                enable_batching=True,
+                enable_quantization=True,
+                debug_mode=False
+            )
+        else:
+            self.inference_config = inference_config
             
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert config to a dictionary for serialization."""
-        return asdict(self)
-    
-    @classmethod
-    def from_dict(cls, config_dict: Dict[str, Any]) -> 'CPUTrainingConfig':
-        """Create config from a dictionary."""
-        # Handle nested configurations
-        if 'dataset' in config_dict and isinstance(config_dict['dataset'], dict):
-            config_dict['dataset'] = DatasetConfig(**config_dict['dataset'])
+        if quantization_config is None:
+            self.quantization_config = QuantizationConfig(
+                quantization_type=QuantizationType.INT8.value,
+                quantization_mode=QuantizationMode.DYNAMIC_PER_BATCH.value,
+                enable_cache=True,
+                cache_size=256
+            )
+        else:
+            self.quantization_config = quantization_config
+            
+        self.model_path = model_path
+        self.experiment_tracking = experiment_tracking
+        self.use_intel_optimization = use_intel_optimization
+        self.memory_optimization = memory_optimization
+        self.enable_distributed = enable_distributed
+        self.log_level = log_level
         
-        if 'feature_engineering' in config_dict and isinstance(config_dict['feature_engineering'], dict):
-            config_dict['feature_engineering'] = FeatureEngineeringConfig(**config_dict['feature_engineering'])
-        
-        if 'model_training' in config_dict and isinstance(config_dict['model_training'], dict):
-            config_dict['model_training'] = ModelTrainingConfig(**config_dict['model_training'])
-        
-        if 'hyperparameter_optimization' in config_dict and isinstance(config_dict['hyperparameter_optimization'], dict):
-            config_dict['hyperparameter_optimization'] = HyperparameterOptimizationConfig(**config_dict['hyperparameter_optimization'])
-        
-        if 'model_evaluation' in config_dict and isinstance(config_dict['model_evaluation'], dict):
-            config_dict['model_evaluation'] = ModelEvaluationConfig(**config_dict['model_evaluation'])
-        
-        if 'model_registry' in config_dict and isinstance(config_dict['model_registry'], dict):
-            config_dict['model_registry'] = ModelRegistryConfig(**config_dict['model_registry'])
-        
-        return cls(**config_dict)
-    
-    @classmethod
-    def from_json(cls, json_path: str) -> 'CPUTrainingConfig':
-        """Load configuration from a JSON file."""
-        with open(json_path, 'r') as f:
-            config_dict = json.load(f)
-        return cls.from_dict(config_dict)
-    
-    def to_json(self, json_path: str) -> None:
-        """Save configuration to a JSON file."""
-        with open(json_path, 'w') as f:
-            json.dump(self.to_dict(), f, indent=2)
+    def to_dict(self) -> Dict:
+        """Convert config to dictionary for serialization"""
+        return {
+            "task_type": self.task_type.value,
+            "random_state": self.random_state,
+            "n_jobs": self.n_jobs,
+            "verbose": self.verbose,
+            "cv_folds": self.cv_folds,
+            "test_size": self.test_size,
+            "stratify": self.stratify,
+            "optimization_strategy": self.optimization_strategy.value,
+            "optimization_iterations": self.optimization_iterations,
+            "early_stopping": self.early_stopping,
+            "feature_selection": self.feature_selection,
+            "feature_selection_method": self.feature_selection_method,
+            "feature_selection_k": self.feature_selection_k,
+            "feature_importance_threshold": self.feature_importance_threshold,
+            "model_path": self.model_path,
+            "experiment_tracking": self.experiment_tracking,
+            "use_intel_optimization": self.use_intel_optimization,
+            "memory_optimization": self.memory_optimization,
+            "enable_distributed": self.enable_distributed,
+            "log_level": self.log_level
+        }

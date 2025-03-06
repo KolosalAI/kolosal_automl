@@ -28,152 +28,15 @@ import gc
 import json
 
 # Import custom components from the provided code snippets
-from modules.configs import InferenceEngineConfig, BatchProcessorConfig, PreprocessorConfig
-from modules.configs import NormalizationType, QuantizationConfig, QuantizationType, QuantizationMode
+from modules.configs import (
+    TaskType,
+    OptimizationStrategy,
+    MLTrainingEngineConfig
+)
 from modules.engine.inference_engine import InferenceEngine
 from modules.engine.batch_processor import BatchProcessor
 from modules.engine.data_preprocessor import DataPreprocessor
 from modules.engine.quantizer import Quantizer
-
-
-class TaskType(Enum):
-    CLASSIFICATION = "classification"
-    REGRESSION = "regression"
-    CLUSTERING = "clustering"
-    ANOMALY_DETECTION = "anomaly_detection"
-
-
-class OptimizationStrategy(Enum):
-    GRID_SEARCH = "grid_search"
-    RANDOM_SEARCH = "random_search"
-    BAYESIAN_OPTIMIZATION = "bayesian_optimization"
-    EVOLUTIONARY = "evolutionary"
-    HYPERBAND = "hyperband"
-
-
-class MLTrainingEngineConfig:
-    """Configuration for the ML Training Engine"""
-    
-    def __init__(
-        self,
-        task_type: TaskType = TaskType.CLASSIFICATION,
-        random_state: int = 42,
-        n_jobs: int = -1,
-        verbose: int = 1,
-        cv_folds: int = 5,
-        test_size: float = 0.2,
-        stratify: bool = True,
-        optimization_strategy: OptimizationStrategy = OptimizationStrategy.RANDOM_SEARCH,
-        optimization_iterations: int = 50,
-        early_stopping: bool = True,
-        feature_selection: bool = True,
-        feature_selection_method: str = "mutual_info",
-        feature_selection_k: Optional[int] = None,
-        feature_importance_threshold: float = 0.01,
-        preprocessing_config: Optional[PreprocessorConfig] = None,
-        batch_processing_config: Optional[BatchProcessorConfig] = None,
-        inference_config: Optional[InferenceEngineConfig] = None,
-        quantization_config: Optional[QuantizationConfig] = None,
-        model_path: str = "./models",
-        experiment_tracking: bool = True,
-        use_intel_optimization: bool = True,
-        memory_optimization: bool = True,
-        enable_distributed: bool = False,
-        log_level: str = "INFO",
-    ):
-        self.task_type = task_type
-        self.random_state = random_state
-        self.n_jobs = n_jobs
-        self.verbose = verbose
-        self.cv_folds = cv_folds
-        self.test_size = test_size
-        self.stratify = stratify
-        self.optimization_strategy = optimization_strategy
-        self.optimization_iterations = optimization_iterations
-        self.early_stopping = early_stopping
-        self.feature_selection = feature_selection
-        self.feature_selection_method = feature_selection_method
-        self.feature_selection_k = feature_selection_k
-        self.feature_importance_threshold = feature_importance_threshold
-        
-        # Set default configurations if none provided
-        if preprocessing_config is None:
-            self.preprocessing_config = PreprocessorConfig(
-                normalization=NormalizationType.STANDARD,
-                handle_nan=True,
-                handle_inf=True,
-                detect_outliers=True,
-                parallel_processing=True
-            )
-        else:
-            self.preprocessing_config = preprocessing_config
-            
-        if batch_processing_config is None:
-            self.batch_processing_config = BatchProcessorConfig(
-                initial_batch_size=100,
-                min_batch_size=50,
-                max_batch_size=200,
-                max_queue_size=1000,
-                batch_timeout=1.0,
-                enable_priority_queue=True,
-                enable_monitoring=True,
-                enable_memory_optimization=True
-            )
-        else:
-            self.batch_processing_config = batch_processing_config
-            
-        if inference_config is None:
-            self.inference_config = InferenceEngineConfig(
-                enable_intel_optimization=use_intel_optimization,
-                enable_batching=True,
-                enable_quantization=True,
-                debug_mode=False
-            )
-        else:
-            self.inference_config = inference_config
-            
-        if quantization_config is None:
-            self.quantization_config = QuantizationConfig(
-                quantization_type=QuantizationType.INT8.value,
-                quantization_mode=QuantizationMode.DYNAMIC_PER_BATCH.value,
-                enable_cache=True,
-                cache_size=256
-            )
-        else:
-            self.quantization_config = quantization_config
-            
-        self.model_path = model_path
-        self.experiment_tracking = experiment_tracking
-        self.use_intel_optimization = use_intel_optimization
-        self.memory_optimization = memory_optimization
-        self.enable_distributed = enable_distributed
-        self.log_level = log_level
-        
-    def to_dict(self) -> Dict:
-        """Convert config to dictionary for serialization"""
-        return {
-            "task_type": self.task_type.value,
-            "random_state": self.random_state,
-            "n_jobs": self.n_jobs,
-            "verbose": self.verbose,
-            "cv_folds": self.cv_folds,
-            "test_size": self.test_size,
-            "stratify": self.stratify,
-            "optimization_strategy": self.optimization_strategy.value,
-            "optimization_iterations": self.optimization_iterations,
-            "early_stopping": self.early_stopping,
-            "feature_selection": self.feature_selection,
-            "feature_selection_method": self.feature_selection_method,
-            "feature_selection_k": self.feature_selection_k,
-            "feature_importance_threshold": self.feature_importance_threshold,
-            "model_path": self.model_path,
-            "experiment_tracking": self.experiment_tracking,
-            "use_intel_optimization": self.use_intel_optimization,
-            "memory_optimization": self.memory_optimization,
-            "enable_distributed": self.enable_distributed,
-            "log_level": self.log_level
-        }
-
 
 class ExperimentTracker:
     """Track experiments and model performance metrics"""
