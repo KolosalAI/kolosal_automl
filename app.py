@@ -9,7 +9,7 @@ import time
 import joblib
 from io import StringIO
 from sklearn.model_selection import train_test_split
-
+from concurrent.futures import ThreadPoolExecutor
 # Import the correct configuration classes from your module
 from modules.configs import (
     TaskType,
@@ -516,14 +516,14 @@ def training_configuration_section():
 
             # Experiment tracking
             experiment_tracking = st.checkbox("Enable experiment tracking", value=True)
-
-            # Performance optimization
-            n_jobs = st.slider(
-                "Number of parallel jobs",
-                min_value=1,
-                max_value=8,
-                value=4,
-            )
+            with ThreadPoolExecutor() as executor:
+                max_workers = executor._max_workers
+                n_jobs = st.slider(
+                    "Number of parallel jobs",
+                    min_value=1,
+                    max_value=max_workers,
+                    value=max_workers//2,
+                )
 
             memory_optimization = st.checkbox("Enable memory optimization", value=True)
 
