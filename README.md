@@ -134,7 +134,7 @@ The roadmap for Kolosal-AutoML includes:
 To run the unit tests, use the following command:
 
 ```bash
-python -m unittest discover -s tests
+pytest -vv
 ```
 
 ## Contributing
