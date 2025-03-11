@@ -906,3 +906,73 @@ class MLTrainingEngine:
             gc.collect()
             
         self.logger.info("ML Training Engine shut down successfully")
+
+
+""" 
+!!! todo: implement this code to the training engine
+# Pseudo-code for Adaptive Surrogate-Assisted Hyperparameter Tuning (ASHT)
+
+def ASHTOptimize(objective_func, param_space, max_iter, R):
+    '''
+    objective_func(params, budget) -> returns validation score after training with given hyperparams and budget.
+    param_space: dict of hyperparameter ranges
+    max_iter: total number of configurations to fully evaluate (budget for search)
+    R: maximum resource (e.g. full number of training epochs or full dataset size)
+    '''
+    # Phase 1: Initial Exploration with low-fidelity evaluations
+    B = R * 0.1  # start with 10% of full resource (for example)
+    N = max_iter * 2  # number of initial configurations to try (e.g. twice the max_iter)
+    initial_configs = sample_random_configs(param_space, N)
+    results = []
+    for config in initial_configs:
+        score = objective_func(config, budget=B)      # evaluate on small budget (e.g. fewer epochs)
+        results.append((config, score))
+    # Keep top 50% configs based on score (early elimination of poor configs)
+    results.sort(key=lambda x: x[1], reverse=True)    # assuming higher score is better
+    promising_configs = [cfg for (cfg, s) in results[: len(results)//2 ]]
+    
+    # Train an interpretable surrogate model on the observed data
+    surrogate = train_surrogate_model(promising_configs, results[: len(results)//2])
+    # (The surrogate could be a decision tree or simple model predicting score from config)
+    
+    # Optionally, reduce search space based on surrogate insights (e.g., fix or narrow less important hyperparams)
+    param_space = refine_param_space(param_space, surrogate)
+    
+    # Phase 2: Iterative focused search with adaptive sampling and increased fidelity
+    remaining_iter = max_iter
+    best_config = None
+    best_score = -inf
+    while remaining_iter > 0:
+        # Propose new configurations guided by surrogate predictions
+        candidates = []
+        k = max(1, int(0.8 * remaining_iter))  # use 80% of this round for guided configs
+        for i in range(k):
+            cand = propose_using_surrogate(surrogate, param_space)
+            candidates.append(cand)
+        # Add some random exploratory candidates to avoid bias
+        m = remaining_iter - k
+        candidates += sample_random_configs(param_space, m)
+        
+        # Increase budget for this round (e.g. 50% of full training resource)
+        B = min(R, B * 2)   # double the budget, up to full R
+        new_results = []
+        for config in candidates:
+            score = objective_func(config, budget=B)
+            new_results.append((config, score))
+            remaining_iter -= 1
+            # Track best config so far
+            if score > best_score:
+                best_score = score
+                best_config = config
+        
+        # Update surrogate model with new data
+        all_data = results + new_results
+        surrogate = train_surrogate_model([cfg for (cfg, _) in all_data], all_data)
+        # (Optionally, re-refine param space or surrogate complexity if needed)
+        
+        results += new_results
+        # Loop continues until remaining_iter == 0 or other stopping criteria met
+    
+    return best_config, surrogate  # return best found config and final surrogate (explanation model)
+
+"""
