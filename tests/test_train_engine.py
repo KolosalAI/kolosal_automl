@@ -83,6 +83,23 @@ class TestMLTrainingEngine(unittest.TestCase):
             experiment_tracking=True
         )
         
+        # Create ASHT-specific config for testing
+        self.asht_config = MLTrainingEngineConfig(
+            task_type=TaskType.CLASSIFICATION,
+            random_state=42,
+            n_jobs=1,
+            verbose=0,
+            cv_folds=3,
+            test_size=0.2,
+            stratify=True,
+            optimization_strategy=OptimizationStrategy.ASHT,  # Use the new ASHT strategy
+            optimization_iterations=5,  # Slightly more iterations for ASHT
+            feature_selection=True,
+            feature_selection_method="mutual_info",
+            model_path=os.path.join(self.test_dir, "asht"),
+            experiment_tracking=True
+        )
+        
         # Create model definitions
         self.classification_models = {
             "random_forest": {
@@ -129,9 +146,15 @@ class TestMLTrainingEngine(unittest.TestCase):
         self.assertIsInstance(reg_engine, MLTrainingEngine)
         self.assertEqual(reg_engine.config.task_type, TaskType.REGRESSION)
         
+        # ASHT engine
+        asht_engine = MLTrainingEngine(self.asht_config)
+        self.assertIsInstance(asht_engine, MLTrainingEngine)
+        self.assertEqual(asht_engine.config.optimization_strategy, OptimizationStrategy.ASHT)
+        
         # Clean up
         cls_engine.shutdown()
         reg_engine.shutdown()
+        asht_engine.shutdown()
         
     def test_classification_training(self):
         """Test training a classification model"""
@@ -183,6 +206,84 @@ class TestMLTrainingEngine(unittest.TestCase):
         
         # Clean up
         engine.shutdown()
+        
+    def test_asht_optimization(self):
+        """Test the ASHT optimization strategy"""
+        # Initialize engine with ASHT config
+        engine = MLTrainingEngine(self.asht_config)
+        
+        # Train a model using ASHT
+        model_info = self.classification_models["random_forest"]
+        model, metrics = engine.train_model(
+            model=model_info["model"],
+            model_name="asht_rf",
+            param_grid=model_info["params"],
+            X=self.X_iris,
+            y=self.y_iris
+        )
+        
+        # Check if training was successful
+        self.assertIsNotNone(model)
+        self.assertIsNotNone(metrics)
+        self.assertIn("accuracy", metrics)
+        self.assertIn("asht_rf", engine.models)
+        
+        # Check if model was stored correctly
+        self.assertIsNotNone(engine.models["asht_rf"]["model"])
+        
+        # Check if the model performs reasonably well
+        self.assertGreater(metrics["accuracy"], 0.7)  # Basic sanity check
+        
+        # Clean up
+        engine.shutdown()
+        
+    def test_asht_vs_random_search(self):
+        """Compare ASHT with random search on the same problem"""
+        # Train with ASHT
+        asht_engine = MLTrainingEngine(self.asht_config)
+        model_info = self.classification_models["random_forest"]
+        _, asht_metrics = asht_engine.train_model(
+            model=model_info["model"],
+            model_name="asht_compare",
+            param_grid=model_info["params"],
+            X=self.X_iris,
+            y=self.y_iris
+        )
+        asht_engine.shutdown()
+        
+        # Train with Random Search (using same iterations for fair comparison)
+        random_config = MLTrainingEngineConfig(
+            task_type=TaskType.CLASSIFICATION,
+            random_state=42,
+            n_jobs=1,
+            verbose=0,
+            cv_folds=3,
+            test_size=0.2,
+            stratify=True,
+            optimization_strategy=OptimizationStrategy.RANDOM_SEARCH,
+            optimization_iterations=5,  # Same as ASHT
+            feature_selection=True,
+            feature_selection_method="mutual_info",
+            model_path=os.path.join(self.test_dir, "random"),
+            experiment_tracking=True
+        )
+        
+        random_engine = MLTrainingEngine(random_config)
+        _, random_metrics = random_engine.train_model(
+            model=model_info["model"],
+            model_name="random_compare",
+            param_grid=model_info["params"],
+            X=self.X_iris,
+            y=self.y_iris
+        )
+        random_engine.shutdown()
+        
+        # Both should produce valid results
+        self.assertIn("accuracy", asht_metrics)
+        self.assertIn("accuracy", random_metrics)
+        
+        # Note: We don't assert which is better since that's probabilistic
+        # and depends on the specific problem and random seed
         
     def test_multiple_models_training(self):
         """Test training multiple models and comparing them"""
@@ -400,26 +501,36 @@ class TestMLTrainingEngine(unittest.TestCase):
         pipeline = engine.models["feature_test"]["model"]
         
         # For logistic regression, check the coefficients shape
-        # If feature selection worked, we should only have 2 coefficients per class
         lr_model = pipeline.named_steps['model']
         
-        # The number of coefficients should match the number of selected features x number of classes
         n_classes = len(np.unique(self.y_iris))
         n_selected_features = 2
-        
-        # Check coefficient shape - if multiclass, shape is (n_classes, n_features)
         coef = lr_model.coef_
         
+        # If multiclass, shape is (n_classes, n_features)
         # Some sklearn versions flatten the coefficients for binary classification
         if n_classes == 2 and coef.ndim == 1:
-            expected_shape = (n_selected_features,)
-        else:
-            expected_shape = (n_classes, n_selected_features)
-            
-        if coef.ndim > 1:  # Check the number of features in multi-dimensional case
-            self.assertEqual(coef.shape[1], n_selected_features)
-        else:
             self.assertEqual(coef.shape[0], n_selected_features)
+        else:
+            self.assertEqual(coef.shape[1], n_selected_features)
+        
+        # Clean up
+        engine.shutdown()
+    
+    def test_asht_surrogate_model(self):
+        """Test that ASHT creates and uses a surrogate model"""
+        # Initialize engine with ASHT config
+        engine = MLTrainingEngine(self.asht_config)
+        
+        # Get the optimization search object
+        model_info = self.classification_models["random_forest"]
+        search = engine._get_optimization_search(model_info["model"], model_info["params"])
+        
+        # Verify it's an ASHTOptimizer
+        self.assertEqual(search.__class__.__name__, "ASHTOptimizer")
+        
+        # Verify it has a surrogate model
+        self.assertTrue(hasattr(search, 'surrogate_model'))
         
         # Clean up
         engine.shutdown()
@@ -438,8 +549,23 @@ class TestMLTrainingEngine(unittest.TestCase):
         loaded_model = engine.load_model(nonexistent_path)
         self.assertIsNone(loaded_model)
         
+        # Test ASHT with empty parameter grid
+        asht_engine = MLTrainingEngine(self.asht_config)
+        empty_params = {}
+        # Define model_info here before use
+        model_info = self.classification_models["random_forest"]
+        
+        # This should handle gracefully without errors, but we expect an exception
+        # because the optimizer won't have any parameters to vary.
+        with self.assertRaises(Exception):
+            asht_engine._get_optimization_search(
+                model_info["model"], 
+                empty_params
+            ).fit(self.X_iris, self.y_iris)
+        
         # Clean up
         engine.shutdown()
+        asht_engine.shutdown()
 
 
 if __name__ == '__main__':

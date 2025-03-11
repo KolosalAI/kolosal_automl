@@ -37,6 +37,7 @@ from modules.engine.inference_engine import InferenceEngine
 from modules.engine.batch_processor import BatchProcessor
 from modules.engine.data_preprocessor import DataPreprocessor
 from modules.engine.quantizer import Quantizer
+from modules.engine.optimizer import ASHTOptimizer
 
 class ExperimentTracker:
     """Track experiments and model performance metrics"""
@@ -324,6 +325,18 @@ class MLTrainingEngine:
                     random_state=self.config.random_state,
                     scoring=self._get_scoring_metric()
                 )
+        elif self.config.optimization_strategy == OptimizationStrategy.ASHT:
+            # Use our new ASHT optimizer
+            return ASHTOptimizer(
+                estimator=model,
+                param_space=param_grid,
+                max_iter=self.config.optimization_iterations,
+                cv=self.config.cv_folds,
+                scoring=self._get_scoring_metric(),
+                random_state=self.config.random_state,
+                n_jobs=self.config.n_jobs,
+                verbose=self.config.verbose
+            )
         else:
             self.logger.warning(f"Unsupported optimization strategy: {self.config.optimization_strategy}. Using RandomizedSearchCV.")
             return RandomizedSearchCV(
@@ -907,72 +920,196 @@ class MLTrainingEngine:
             
         self.logger.info("ML Training Engine shut down successfully")
 
-
-""" 
-!!! todo: implement this code to the training engine
-# Pseudo-code for Adaptive Surrogate-Assisted Hyperparameter Tuning (ASHT)
-
-def ASHTOptimize(objective_func, param_space, max_iter, R):
-    '''
-    objective_func(params, budget) -> returns validation score after training with given hyperparams and budget.
-    param_space: dict of hyperparameter ranges
-    max_iter: total number of configurations to fully evaluate (budget for search)
-    R: maximum resource (e.g. full number of training epochs or full dataset size)
-    '''
-    # Phase 1: Initial Exploration with low-fidelity evaluations
-    B = R * 0.1  # start with 10% of full resource (for example)
-    N = max_iter * 2  # number of initial configurations to try (e.g. twice the max_iter)
-    initial_configs = sample_random_configs(param_space, N)
-    results = []
-    for config in initial_configs:
-        score = objective_func(config, budget=B)      # evaluate on small budget (e.g. fewer epochs)
-        results.append((config, score))
-    # Keep top 50% configs based on score (early elimination of poor configs)
-    results.sort(key=lambda x: x[1], reverse=True)    # assuming higher score is better
-    promising_configs = [cfg for (cfg, s) in results[: len(results)//2 ]]
-    
-    # Train an interpretable surrogate model on the observed data
-    surrogate = train_surrogate_model(promising_configs, results[: len(results)//2])
-    # (The surrogate could be a decision tree or simple model predicting score from config)
-    
-    # Optionally, reduce search space based on surrogate insights (e.g., fix or narrow less important hyperparams)
-    param_space = refine_param_space(param_space, surrogate)
-    
-    # Phase 2: Iterative focused search with adaptive sampling and increased fidelity
-    remaining_iter = max_iter
-    best_config = None
-    best_score = -inf
-    while remaining_iter > 0:
-        # Propose new configurations guided by surrogate predictions
-        candidates = []
-        k = max(1, int(0.8 * remaining_iter))  # use 80% of this round for guided configs
-        for i in range(k):
-            cand = propose_using_surrogate(surrogate, param_space)
-            candidates.append(cand)
-        # Add some random exploratory candidates to avoid bias
-        m = remaining_iter - k
-        candidates += sample_random_configs(param_space, m)
+    def generate_reports(self, output_file=None, include_plots=True):
+        """Generate a comprehensive report of all models in Markdown format
         
-        # Increase budget for this round (e.g. 50% of full training resource)
-        B = min(R, B * 2)   # double the budget, up to full R
-        new_results = []
-        for config in candidates:
-            score = objective_func(config, budget=B)
-            new_results.append((config, score))
-            remaining_iter -= 1
-            # Track best config so far
-            if score > best_score:
-                best_score = score
-                best_config = config
+        Args:
+            output_file (str, optional): Path to save the report. Defaults to None.
+            include_plots (bool, optional): Whether to include plots in the report. Defaults to True.
+            
+        Returns:
+            str: Path to the generated report file
+        """
+        if not self.models:
+            self.logger.warning("No models to generate report")
+            return None
+                
+        if output_file is None:
+            output_file = os.path.join(self.config.model_path, "model_report.md")
+                
+        # Create basic report
+        report = f"# ML Training Engine Report\n\n"
+        report += f"Generated on: {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n"
         
-        # Update surrogate model with new data
-        all_data = results + new_results
-        surrogate = train_surrogate_model([cfg for (cfg, _) in all_data], all_data)
-        # (Optionally, re-refine param space or surrogate complexity if needed)
+        # Add configuration section
+        report += "## Configuration\n\n"
+        report += "| Parameter | Value |\n"
+        report += "| --- | --- |\n"
         
-        results += new_results
-        # Loop continues until remaining_iter == 0 or other stopping criteria met
-    
-    return best_config, surrogate  # return best found config and final surrogate (explanation model)
-
-"""
+        # Add configuration details
+        for key, value in self.config.to_dict().items():
+            report += f"| {key} | {value} |\n"
+        
+        report += "\n## Model Performance Summary\n\n"
+        
+        # Collect all metrics across models
+        all_metrics = set()
+        for model_data in self.models.values():
+            all_metrics.update(model_data["metrics"].keys())
+        
+        # Create table header
+        report += "| Model | " + " | ".join(sorted(all_metrics)) + " |\n"
+        report += "| --- | " + " | ".join(["---" for _ in all_metrics]) + " |\n"
+        
+        # Add model rows
+        for model_name, model_data in self.models.items():
+            is_best = self.best_model and self.best_model["name"] == model_name
+            model_label = f"{model_name} **[BEST]**" if is_best else model_name
+            
+            row = f"| {model_label} |"
+            for metric in sorted(all_metrics):
+                value = model_data["metrics"].get(metric, "N/A")
+                if isinstance(value, (int, float)):
+                    value = f"{value:.4f}"
+                row += f" {value} |"
+            
+            report += row + "\n"
+        
+        # Add hyperparameter section
+        report += "\n## Model Hyperparameters\n\n"
+        
+        for model_name, model_data in self.models.items():
+            report += f"### {model_name}\n\n"
+            
+            if "params" in model_data and model_data["params"]:
+                report += "| Parameter | Value |\n"
+                report += "| --- | --- |\n"
+                
+                # Extract parameters, handling nested dictionaries
+                flat_params = {}
+                for k, v in model_data["params"].items():
+                    if isinstance(v, dict):
+                        for sub_k, sub_v in v.items():
+                            flat_params[f"{k}__{sub_k}"] = sub_v
+                    else:
+                        flat_params[k] = v
+                
+                for param, value in flat_params.items():
+                    report += f"| {param} | {value} |\n"
+            else:
+                report += "No hyperparameter information available.\n"
+            
+            report += "\n"
+        
+        # Add feature importance section if available
+        if include_plots and any("feature_importance" in model_data for model_data in self.models.values()):
+            report += "\n## Feature Importance\n\n"
+            
+            for model_name, model_data in self.models.items():
+                if "feature_importance" in model_data and model_data["feature_importance"]:
+                    report += f"### {model_name}\n\n"
+                    
+                    # Get top 15 features
+                    feature_importance = model_data["feature_importance"]
+                    top_features = dict(sorted(feature_importance.items(), 
+                                            key=lambda x: x[1], 
+                                            reverse=True)[:15])
+                    
+                    report += "| Feature | Importance |\n"
+                    report += "| --- | --- |\n"
+                    
+                    for feature, importance in top_features.items():
+                        report += f"| {feature} | {importance:.4f} |\n"
+                    
+                    # Generate and include plot if requested
+                    if include_plots:
+                        plots_dir = os.path.join(self.config.model_path, "plots")
+                        if not os.path.exists(plots_dir):
+                            os.makedirs(plots_dir)
+                        
+                        plot_path = os.path.join(plots_dir, f"{model_name}_feature_importance.png")
+                        
+                        plt.figure(figsize=(10, 6))
+                        features = list(top_features.keys())
+                        importances = list(top_features.values())
+                        
+                        plt.barh(range(len(features)), importances, align='center')
+                        plt.yticks(range(len(features)), features)
+                        plt.xlabel('Importance')
+                        plt.title(f'Feature Importance - {model_name}')
+                        plt.tight_layout()
+                        plt.savefig(plot_path)
+                        plt.close()
+                        
+                        # Add plot to report
+                        report += f"\n![Feature Importance for {model_name}]({os.path.relpath(plot_path, os.path.dirname(output_file))})\n\n"
+                    
+                    report += "\n"
+        
+        # Add cross-validation results if available
+        if any("cv_results" in model_data for model_data in self.models.values()):
+            report += "\n## Cross-Validation Results\n\n"
+            
+            for model_name, model_data in self.models.items():
+                if "cv_results" in model_data and model_data["cv_results"]:
+                    report += f"### {model_name}\n\n"
+                    
+                    cv_results = model_data["cv_results"]
+                    report += "| Fold | Score |\n"
+                    report += "| --- | --- |\n"
+                    
+                    for fold, score in cv_results.items():
+                        report += f"| {fold} | {score:.4f} |\n"
+                    
+                    # Calculate summary statistics
+                    mean_score = np.mean(list(cv_results.values()))
+                    std_score = np.std(list(cv_results.values()))
+                    
+                    report += f"\n**Mean CV Score:** {mean_score:.4f} ± {std_score:.4f}\n\n"
+                    
+                    # Generate and include plot if requested
+                    if include_plots:
+                        plots_dir = os.path.join(self.config.model_path, "plots")
+                        if not os.path.exists(plots_dir):
+                            os.makedirs(plots_dir)
+                        
+                        plot_path = os.path.join(plots_dir, f"{model_name}_cv_scores.png")
+                        
+                        plt.figure(figsize=(10, 6))
+                        plt.bar(range(len(cv_results)), list(cv_results.values()))
+                        plt.xticks(range(len(cv_results)), list(cv_results.keys()), rotation=45)
+                        plt.axhline(y=mean_score, color='r', linestyle='-', label=f'Mean: {mean_score:.4f}')
+                        plt.xlabel('Fold')
+                        plt.ylabel('Score')
+                        plt.title(f'Cross-Validation Scores - {model_name}')
+                        plt.legend()
+                        plt.tight_layout()
+                        plt.savefig(plot_path)
+                        plt.close()
+                        
+                        # Add plot to report
+                        report += f"\n![CV Scores for {model_name}]({os.path.relpath(plot_path, os.path.dirname(output_file))})\n\n"
+        
+        # Add conclusion section
+        report += "\n## Conclusion\n\n"
+        
+        if self.best_model:
+            report += f"The best performing model is **{self.best_model['name']}** "
+            
+            if self.config.task_type == TaskType.CLASSIFICATION:
+                key_metric = "f1" if "f1" in self.best_model["metrics"] else "accuracy"
+                report += f"with {key_metric} of {self.best_model['metrics'].get(key_metric, 'N/A'):.4f}.\n\n"
+            elif self.config.task_type == TaskType.REGRESSION:
+                key_metric = "rmse" if "rmse" in self.best_model["metrics"] else "mse"
+                report += f"with {key_metric} of {self.best_model['metrics'].get(key_metric, 'N/A'):.4f}.\n\n"
+            else:
+                report += ".\n\n"
+        else:
+            report += "No models were evaluated.\n\n"
+        
+        # Write report to file
+        with open(output_file, 'w', encoding='utf-8') as f:
+            f.write(report)
+            
+        self.logger.info(f"Markdown report generated: {output_file}")
+        return output_file

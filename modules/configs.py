@@ -346,7 +346,7 @@ class OptimizationStrategy(Enum):
     BAYESIAN_OPTIMIZATION = "bayesian_optimization"
     EVOLUTIONARY = "evolutionary"
     HYPERBAND = "hyperband"
-
+    ASHT = "adaptive_surrogate_assisted_hyperparameter_tuning"  # New strategy
 
 class MLTrainingEngineConfig:
     """Configuration for the ML Training Engine"""
@@ -360,7 +360,7 @@ class MLTrainingEngineConfig:
         cv_folds: int = 5,
         test_size: float = 0.2,
         stratify: bool = True,
-        optimization_strategy: OptimizationStrategy = OptimizationStrategy.RANDOM_SEARCH,
+        optimization_strategy: OptimizationStrategy = OptimizationStrategy.ASHT,
         optimization_iterations: int = 50,
         early_stopping: bool = True,
         feature_selection: bool = True,
