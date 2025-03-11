@@ -160,3 +160,5 @@ cython_debug/
 #.idea/
 
 models/
+catboost_info
+experiment_results/
