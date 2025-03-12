@@ -77,7 +77,17 @@ class BenchmarkEngine:
                 self.memory_limit_mb = int(total_memory * 0.8)  # Use 80% of total memory
                 
             # Set joblib memory limit
-            joblib.memory.MemoryMapping.clear_temp_files()  # Clean up existing temp files
+            # Clean existing temp files with correct API
+            try:
+                # In newer joblib versions
+                if hasattr(joblib, 'disk'):
+                    joblib.disk.delete_temporary_files()
+                # Fallback for older versions
+                elif hasattr(joblib.pool, 'MemmappingPool'):
+                    joblib.pool.MemmappingPool.clear_temporary_files()
+            except Exception as e:
+                print(f"Warning: Could not clean temporary files: {e}")
+                
             # Configure to use a specific temp directory we can clean up later
             self.temp_folder = tempfile.mkdtemp(prefix="benchmark_joblib_")
             joblib.Memory(location=self.temp_folder, verbose=0)
@@ -374,9 +384,19 @@ class BenchmarkEngine:
             signal.signal(signal.SIGINT, original_sigint_handler)
             
             # Clean up joblib resources explicitly
-            joblib.pool.MemmappingPool.clear_temp_files()
+            try:
+                if hasattr(joblib, 'disk'):
+                    joblib.disk.delete_temporary_files()
+                elif hasattr(joblib.pool, 'MemmappingPool'):
+                    joblib.pool.MemmappingPool.clear_temporary_files()
+            except:
+                pass
+                
             if hasattr(joblib.parallel, "_mp_context"):
-                joblib.parallel._mp_context = None
+                try:
+                    joblib.parallel._mp_context = None
+                except:
+                    pass
             
             # Save results, whether complete or partial
             status = "completed" if len(benchmark_results) == len(datasets) else "interrupted"
@@ -399,8 +419,13 @@ class BenchmarkEngine:
     def _cleanup_resources(self):
         """Clean up any temporary resources created during benchmarking"""
         # Clean up joblib resources
-        joblib.memory.MemoryMapping.clear_temp_files()
-        joblib.pool.MemmappingPool.clear_temp_files()
+        try:
+            if hasattr(joblib, 'disk'):
+                joblib.disk.delete_temporary_files()
+            elif hasattr(joblib.pool, 'MemmappingPool'):
+                joblib.pool.MemmappingPool.clear_temporary_files()
+        except Exception as e:
+            print(f"Warning: Failed to clean joblib temporary files: {e}")
         
         # Remove temp directory if it exists
         if hasattr(self, 'temp_folder') and os.path.exists(self.temp_folder):
