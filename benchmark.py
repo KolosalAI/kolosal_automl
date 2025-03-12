@@ -8,11 +8,14 @@ import shutil
 import logging
 import signal
 import sys
+import psutil
+import atexit
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
 from pmlb import fetch_data, classification_dataset_names
 from concurrent.futures import ProcessPoolExecutor, as_completed, wait
+import joblib
 from functools import partial
 import argparse
 import warnings
@@ -38,7 +41,8 @@ class BenchmarkEngine:
     """Engine for benchmarking MLTrainingEngine performance across various datasets"""
     
     def __init__(self, output_dir="./benchmark_results", n_datasets=10, seed=42,
-                 optimization_iterations=20, n_jobs=-1, test_size=0.2):
+                 optimization_iterations=20, n_jobs=-1, test_size=0.2, 
+                 use_memory_limit=True, memory_limit_mb=None):
         """
         Initialize the benchmark engine
         
@@ -49,6 +53,8 @@ class BenchmarkEngine:
             optimization_iterations: Number of optimization iterations to use
             n_jobs: Number of parallel jobs
             test_size: Test set size for dataset splitting
+            use_memory_limit: Whether to limit memory usage for joblib
+            memory_limit_mb: Memory limit in MB for joblib (None = auto)
         """
         self.output_dir = output_dir
         self.n_datasets = n_datasets
@@ -56,9 +62,29 @@ class BenchmarkEngine:
         self.optimization_iterations = optimization_iterations
         self.n_jobs = n_jobs
         self.test_size = test_size
+        self.use_memory_limit = use_memory_limit
+        self.memory_limit_mb = memory_limit_mb
         
         # Create output directory if it doesn't exist
         os.makedirs(output_dir, exist_ok=True)
+        
+        # Configure joblib to use a memory limit if specified
+        if self.use_memory_limit:
+            # Auto-determine memory limit if not specified
+            if self.memory_limit_mb is None:
+                import psutil
+                total_memory = psutil.virtual_memory().total / (1024 * 1024)  # Convert to MB
+                self.memory_limit_mb = int(total_memory * 0.8)  # Use 80% of total memory
+                
+            # Set joblib memory limit
+            joblib.memory.MemoryMapping.clear_temp_files()  # Clean up existing temp files
+            # Configure to use a specific temp directory we can clean up later
+            self.temp_folder = tempfile.mkdtemp(prefix="benchmark_joblib_")
+            joblib.Memory(location=self.temp_folder, verbose=0)
+            
+            # Set joblib environment variables
+            os.environ["JOBLIB_TEMP_FOLDER"] = self.temp_folder
+            os.environ["JOBLIB_MULTIPROCESSING"] = "0"  # Force using loky backend with spawn
         
         # Set up default models and their parameter grids
         self.models = {
@@ -264,6 +290,8 @@ class BenchmarkEngine:
     
     def run_benchmark(self, n_processes=None):
         """Run the benchmark on multiple datasets using process parallelism with detailed timing metrics"""
+        # Register cleanup function to run at exit
+        atexit.register(self._cleanup_resources)
         # Define optimization strategies to compare
         strategies = {
             "grid_search": OptimizationStrategy.GRID_SEARCH,
@@ -288,6 +316,14 @@ class BenchmarkEngine:
         # Determine number of processes
         if n_processes is None:
             n_processes = min(os.cpu_count(), len(datasets))
+            
+        # Ensure we don't use more processes than is reasonable for available memory
+        if self.use_memory_limit:
+            mem_per_process_mb = self.memory_limit_mb / n_processes
+            if mem_per_process_mb < 512:  # If less than 512MB per process
+                n_processes_by_mem = max(1, int(self.memory_limit_mb / 512))
+                n_processes = min(n_processes, n_processes_by_mem)
+                print(f"Limiting to {n_processes} processes due to memory constraints")
         
         # Create a partial function with fixed strategies
         benchmark_fn = partial(self._benchmark_dataset, strategies=strategies)
@@ -337,6 +373,11 @@ class BenchmarkEngine:
             # Restore original signal handler
             signal.signal(signal.SIGINT, original_sigint_handler)
             
+            # Clean up joblib resources explicitly
+            joblib.pool.MemmappingPool.clear_temp_files()
+            if hasattr(joblib.parallel, "_mp_context"):
+                joblib.parallel._mp_context = None
+            
             # Save results, whether complete or partial
             status = "completed" if len(benchmark_results) == len(datasets) else "interrupted"
             results_file = os.path.join(self.output_dir, f"benchmark_results_{int(time.time())}.json")
@@ -354,6 +395,26 @@ class BenchmarkEngine:
             print(f"Benchmark {status}. Results saved to {results_file}")
         
         return self._analyze_results(benchmark_results)
+    
+    def _cleanup_resources(self):
+        """Clean up any temporary resources created during benchmarking"""
+        # Clean up joblib resources
+        joblib.memory.MemoryMapping.clear_temp_files()
+        joblib.pool.MemmappingPool.clear_temp_files()
+        
+        # Remove temp directory if it exists
+        if hasattr(self, 'temp_folder') and os.path.exists(self.temp_folder):
+            shutil.rmtree(self.temp_folder, ignore_errors=True)
+            
+        # Clean up any orphaned processes
+        current_process = psutil.Process()
+        for child in current_process.children(recursive=True):
+            try:
+                child.terminate()
+            except:
+                pass
+                
+        print("Cleanup complete.")
     
     def _analyze_results(self, results):
         """Analyze benchmark results and compute summary statistics"""
@@ -499,6 +560,10 @@ def main():
                         help='Maximum number of samples to use from each dataset')
     parser.add_argument('--inference-repeat', type=int, default=5,
                         help='Number of times to repeat inference for more accurate timing')
+    parser.add_argument('--memory-limit', type=int, default=None,
+                        help='Memory limit in MB for joblib (default: 80% of system memory)')
+    parser.add_argument('--no-memory-limit', action='store_true',
+                        help='Disable memory limiting (may cause more resource leaks)')
     
     args = parser.parse_args()
     
@@ -508,7 +573,9 @@ def main():
         n_datasets=args.n_datasets,
         seed=args.seed,
         optimization_iterations=args.optimization_iterations,
-        n_jobs=args.n_jobs
+        n_jobs=args.n_jobs,
+        use_memory_limit=not args.no_memory_limit,
+        memory_limit_mb=args.memory_limit
     )
     
     # Update the _benchmark_dataset method to include the max_samples parameter
