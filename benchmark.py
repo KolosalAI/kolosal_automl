@@ -1,92 +1,4 @@
-def parse_args():
-    """Parse command line arguments"""
-    parser = argparse.ArgumentParser(description='Benchmark Genta AutoML')
-    
-    # General options
-    parser.add_argument('--output-dir', type=str, default='./benchmark_results',
-                        help='Directory to save benchmark results')
-    parser.add_argument('--mode', type=str, choices=['training', 'inference', 'quantization', 'all'], default='all',
-                        help='Benchmark mode')
-    
-    # Model options
-    parser.add_argument('--models', type=str, nargs='+',
-                       default=['RandomForestClassifier', 'LogisticRegression', 'DecisionTreeClassifier'],
-                       help='Models to benchmark')
-    parser.add_argument('--task-types', type=str, nargs='+',
-                       default=['CLASSIFICATION', 'REGRESSION'],
-                       help='Task types to benchmark')
-    
-    # Training options
-    parser.add_argument('--iterations', type=int, default=1,
-                       help='Number of iterations for training benchmark')
-    
-    # Inference options
-    parser.add_argument('--batch-sizes', type=int, nargs='+', default=[1, 16, 64, 256],
-                       help='Batch sizes for inference benchmark')
-    
-    # Quantization options
-    parser.add_argument('--quantization-types', type=str, nargs='+', 
-                       default=['INT8', 'UINT8', 'INT16'],
-                       help='Quantization types for quantization benchmark')
-    parser.add_argument('--quantization-modes', type=str, nargs='+',
-                       default=['SYMMETRIC', 'ASYMMETRIC', 'DYNAMIC_PER_BATCH', 'DYNAMIC_PER_CHANNEL'],
-                       help='Quantization modes for quantization benchmark')
-    
-    return parser.parse_args()
-
-
-def main():
-    """Main function"""
-    # Parse command line arguments
-    args = parse_args()
-    
-    # Print banner
-    print("\n" + "="*80)
-    print("Genta AutoML Comprehensive Benchmark".center(80))
-    print("="*80 + "\n")
-    
-    # Create benchmark
-    benchmark = GentaBenchmark(output_dir=args.output_dir)
-    
-    # Run benchmarks based on mode
-    if args.mode in ['training', 'all']:
-        print("\n" + "-"*80)
-        print("Training Benchmark".center(80))
-        print("-"*80 + "\n")
-        benchmark.benchmark_training(
-            model_names=args.models,
-            task_types=args.task_types,
-            iterations=args.iterations
-        )
-    
-    if args.mode in ['inference', 'all']:
-        print("\n" + "-"*80)
-        print("Inference Benchmark".center(80))
-        print("-"*80 + "\n")
-        benchmark.benchmark_inference(
-            model_names=args.models,
-            task_types=args.task_types,
-            batch_sizes=args.batch_sizes
-        )
-    
-    if args.mode in ['quantization', 'all']:
-        print("\n" + "-"*80)
-        print("Quantization Benchmark".center(80))
-        print("-"*80 + "\n")
-        benchmark.benchmark_quantization(
-            quantization_types=args.quantization_types,
-            quantization_modes=args.quantization_modes,
-            iterations=args.iterations
-        )
-    
-    print("\n" + "="*80)
-    print("Benchmark completed!".center(80))
-    print(f"Results saved to: {args.output_dir}".center(80))
-    print("="*80 + "\n")
-
-
-if __name__ == "__main__":
-    main()#!/usr/bin/env python
+#!/usr/bin/env python
 # Genta AutoML Comprehensive Benchmark
 # This script benchmarks training and inference performance using the PLMB dataset
 
@@ -1292,3 +1204,93 @@ class GentaBenchmark:
         results_tracker.save()
         results_tracker.generate_report()
         return results_tracker
+    
+def parse_args():
+    """Parse command line arguments"""
+    parser = argparse.ArgumentParser(description='Benchmark Genta AutoML')
+    
+    # General options
+    parser.add_argument('--output-dir', type=str, default='./benchmark_results',
+                        help='Directory to save benchmark results')
+    parser.add_argument('--mode', type=str, choices=['training', 'inference', 'quantization', 'all'], default='all',
+                        help='Benchmark mode')
+    
+    # Model options
+    parser.add_argument('--models', type=str, nargs='+',
+                       default=['RandomForestClassifier', 'LogisticRegression', 'DecisionTreeClassifier'],
+                       help='Models to benchmark')
+    parser.add_argument('--task-types', type=str, nargs='+',
+                       default=['CLASSIFICATION', 'REGRESSION'],
+                       help='Task types to benchmark')
+    
+    # Training options
+    parser.add_argument('--iterations', type=int, default=1,
+                       help='Number of iterations for training benchmark')
+    
+    # Inference options
+    parser.add_argument('--batch-sizes', type=int, nargs='+', default=[1, 16, 64, 256],
+                       help='Batch sizes for inference benchmark')
+    
+    # Quantization options
+    parser.add_argument('--quantization-types', type=str, nargs='+', 
+                       default=['INT8', 'UINT8', 'INT16'],
+                       help='Quantization types for quantization benchmark')
+    parser.add_argument('--quantization-modes', type=str, nargs='+',
+                       default=['SYMMETRIC', 'ASYMMETRIC', 'DYNAMIC_PER_BATCH', 'DYNAMIC_PER_CHANNEL'],
+                       help='Quantization modes for quantization benchmark')
+    
+    return parser.parse_args()
+
+
+def main():
+    """Main function"""
+    # Parse command line arguments
+    args = parse_args()
+    
+    # Print banner
+    print("\n" + "="*80)
+    print("Genta AutoML Comprehensive Benchmark".center(80))
+    print("="*80 + "\n")
+    
+    # Create benchmark
+    benchmark = GentaBenchmark(output_dir=args.output_dir)
+    
+    # Run benchmarks based on mode
+    if args.mode in ['training', 'all']:
+        print("\n" + "-"*80)
+        print("Training Benchmark".center(80))
+        print("-"*80 + "\n")
+        benchmark.benchmark_training(
+            model_names=args.models,
+            task_types=args.task_types,
+            iterations=args.iterations
+        )
+    
+    if args.mode in ['inference', 'all']:
+        print("\n" + "-"*80)
+        print("Inference Benchmark".center(80))
+        print("-"*80 + "\n")
+        benchmark.benchmark_inference(
+            model_names=args.models,
+            task_types=args.task_types,
+            batch_sizes=args.batch_sizes
+        )
+    
+    if args.mode in ['quantization', 'all']:
+        print("\n" + "-"*80)
+        print("Quantization Benchmark".center(80))
+        print("-"*80 + "\n")
+        benchmark.benchmark_quantization(
+            quantization_types=args.quantization_types,
+            quantization_modes=args.quantization_modes,
+            iterations=args.iterations
+        )
+    
+    print("\n" + "="*80)
+    print("Benchmark completed!".center(80))
+    print(f"Results saved to: {args.output_dir}".center(80))
+    print("="*80 + "\n")
+
+
+if __name__ == "__main__":
+    main()
