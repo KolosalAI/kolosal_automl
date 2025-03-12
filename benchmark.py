@@ -89,17 +89,21 @@ class BenchmarkEngine:
                 print(f"Warning: Could not clean temporary files: {e}")
                 
             # Configure to use a specific temp directory we can clean up later
-            self.temp_folder = tempfile.mkdtemp(prefix="benchmark_joblib_")
-            joblib.Memory(location=self.temp_folder, verbose=0)
-            
-            # Set joblib environment variables
-            os.environ["JOBLIB_TEMP_FOLDER"] = self.temp_folder
-            os.environ["JOBLIB_MULTIPROCESSING"] = "0"  # Force using loky backend with spawn
+            try:
+                self.temp_folder = tempfile.mkdtemp(prefix="benchmark_joblib_")
+                print(f"Created temporary directory: {self.temp_folder}")
+                joblib.Memory(location=self.temp_folder, verbose=0)
+                
+                # Set joblib environment variables
+                os.environ["JOBLIB_TEMP_FOLDER"] = self.temp_folder
+                os.environ["JOBLIB_MULTIPROCESSING"] = "0"  # Force using loky backend with spawn
+            except Exception as e:
+                print(f"Warning: Could not set up joblib memory: {e}")
         
         # Set up default models and their parameter grids
         self.models = {
             "logistic_regression": {
-                "model": LogisticRegression(random_state=seed, max_iter=1000),
+                "model": LogisticRegression(random_state=seed, max_iter=3000),  # Increased max_iter
                 "param_grid": {
                     "model__C": [0.01, 0.1, 1.0, 10.0],
                     "model__solver": ["liblinear", "saga"]
@@ -186,17 +190,48 @@ class BenchmarkEngine:
         """Benchmark various optimization strategies on a single dataset with detailed timing measurements"""
         try:
             # Fetch the dataset
-            X, y = fetch_data(dataset_name, return_X_y=True, local_cache_dir=tempfile.gettempdir())
+            try:
+                X, y = fetch_data(dataset_name, return_X_y=True, local_cache_dir=tempfile.gettempdir())
+            except Exception as e:
+                print(f"Error fetching dataset {dataset_name}: {e}")
+                return {
+                    "dataset": dataset_name,
+                    "error": f"Data fetch error: {str(e)}"
+                }
             
             # Limit dataset size for speed if needed
             if X.shape[0] > max_samples:
-                indices = np.random.choice(X.shape[0], max_samples, replace=False)
-                X, y = X[indices], y[indices]
+                try:
+                    indices = np.random.choice(X.shape[0], max_samples, replace=False)
+                    X, y = X[indices], y[indices]
+                except Exception as e:
+                    print(f"Error sampling dataset {dataset_name}: {e}")
+                    # Continue with full dataset if sampling fails
+            
+            # Basic validation - make sure we have valid data
+            if X.shape[0] == 0 or len(np.unique(y)) < 2:
+                return {
+                    "dataset": dataset_name,
+                    "error": "Dataset has no samples or less than 2 classes"
+                }
             
             # Split data into train and test sets
-            X_train, X_test, y_train, y_test = train_test_split(
-                X, y, test_size=self.test_size, random_state=self.seed, stratify=y
-            )
+            try:
+                X_train, X_test, y_train, y_test = train_test_split(
+                    X, y, test_size=self.test_size, random_state=self.seed, stratify=y
+                )
+            except Exception as e:
+                print(f"Error splitting dataset {dataset_name}: {e}")
+                # Try without stratification if that fails
+                try:
+                    X_train, X_test, y_train, y_test = train_test_split(
+                        X, y, test_size=self.test_size, random_state=self.seed
+                    )
+                except Exception as e2:
+                    return {
+                        "dataset": dataset_name,
+                        "error": f"Data split error: {str(e2)}"
+                    }
             
             results = {}
             
@@ -329,11 +364,16 @@ class BenchmarkEngine:
             
         # Ensure we don't use more processes than is reasonable for available memory
         if self.use_memory_limit:
-            mem_per_process_mb = self.memory_limit_mb / n_processes
-            if mem_per_process_mb < 512:  # If less than 512MB per process
-                n_processes_by_mem = max(1, int(self.memory_limit_mb / 512))
-                n_processes = min(n_processes, n_processes_by_mem)
-                print(f"Limiting to {n_processes} processes due to memory constraints")
+            try:
+                mem_per_process_mb = self.memory_limit_mb / n_processes
+                if mem_per_process_mb < 512:  # If less than 512MB per process
+                    n_processes_by_mem = max(1, int(self.memory_limit_mb / 512))
+                    n_processes = min(n_processes, n_processes_by_mem)
+                    print(f"Limiting to {n_processes} processes due to memory constraints")
+            except Exception as e:
+                print(f"Warning: Could not calculate memory-based process limit: {e}")
+                # Fall back to a conservative default
+                n_processes = min(n_processes, 4)
         
         # Create a partial function with fixed strategies
         benchmark_fn = partial(self._benchmark_dataset, strategies=strategies)
@@ -399,20 +439,37 @@ class BenchmarkEngine:
                     pass
             
             # Save results, whether complete or partial
-            status = "completed" if len(benchmark_results) == len(datasets) else "interrupted"
-            results_file = os.path.join(self.output_dir, f"benchmark_results_{int(time.time())}.json")
-            with open(results_file, 'w') as f:
-                json.dump({
-                    "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-                    "n_datasets": len(datasets),
-                    "datasets_completed": len(benchmark_results),
-                    "status": status,
-                    "seed": self.seed,
-                    "optimization_iterations": self.optimization_iterations,
-                    "results": benchmark_results
-                }, f, indent=2, cls=NumpyEncoder)
-            
-            print(f"Benchmark {status}. Results saved to {results_file}")
+            try:
+                status = "completed" if len(benchmark_results) == len(datasets) else "interrupted"
+                results_file = os.path.join(self.output_dir, f"benchmark_results_{int(time.time())}.json")
+                with open(results_file, 'w') as f:
+                    json.dump({
+                        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                        "n_datasets": len(datasets),
+                        "datasets_completed": len(benchmark_results),
+                        "status": status,
+                        "seed": self.seed,
+                        "optimization_iterations": self.optimization_iterations,
+                        "results": benchmark_results
+                    }, f, indent=2, cls=NumpyEncoder)
+                
+                print(f"Benchmark {status}. Results saved to {results_file}")
+            except Exception as e:
+                print(f"Error saving benchmark results: {e}")
+                # Try to save in a simpler format if regular save fails
+                try:
+                    simple_results_file = os.path.join(self.output_dir, f"simple_results_{int(time.time())}.json")
+                    with open(simple_results_file, 'w') as f:
+                        simple_data = {
+                            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                            "status": "error_during_save",
+                            "datasets_completed": len(benchmark_results),
+                            "error": str(e)
+                        }
+                        json.dump(simple_data, f)
+                    print(f"Simplified results saved to {simple_results_file}")
+                except:
+                    print("Failed to save results in any format.")
         
         return self._analyze_results(benchmark_results)
     
@@ -443,22 +500,34 @@ class BenchmarkEngine:
     
     def _handle_numpy_types(self, obj):
         """Convert NumPy types to Python native types recursively"""
-        if isinstance(obj, np.integer):
-            return int(obj)
-        elif isinstance(obj, np.floating):
-            return float(obj)
-        elif isinstance(obj, np.ndarray):
-            return self._handle_numpy_types(obj.tolist())
-        elif isinstance(obj, np.bool_):
-            return bool(obj)
-        elif isinstance(obj, dict):
-            return {self._handle_numpy_types(k): self._handle_numpy_types(v) for k, v in obj.items()}
-        elif isinstance(obj, list):
-            return [self._handle_numpy_types(item) for item in obj]
-        elif isinstance(obj, tuple):
-            return tuple(self._handle_numpy_types(item) for item in obj)
-        else:
-            return obj
+        try:
+            if obj is None:
+                return None
+            elif isinstance(obj, (str, int, float, bool)):
+                return obj
+            elif isinstance(obj, np.integer):
+                return int(obj)
+            elif isinstance(obj, np.floating):
+                return float(obj)
+            elif isinstance(obj, np.ndarray):
+                return self._handle_numpy_types(obj.tolist())
+            elif isinstance(obj, np.bool_):
+                return bool(obj)
+            elif isinstance(obj, dict):
+                return {self._handle_numpy_types(k): self._handle_numpy_types(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [self._handle_numpy_types(item) for item in obj]
+            elif isinstance(obj, tuple):
+                return tuple(self._handle_numpy_types(item) for item in obj)
+            else:
+                # For unhandled types, try conversion to string or dict
+                try:
+                    return str(obj)
+                except:
+                    return f"<Unserializable object of type {type(obj).__name__}>"
+        except Exception as e:
+            print(f"Warning: Error handling type conversion: {e}")
+            return str(obj)
     
     def _analyze_results(self, results):
         """Analyze benchmark results and compute summary statistics"""
@@ -535,58 +604,65 @@ class BenchmarkEngine:
                 strategy_wins[best_strategy] += 1
         
         # Compute summary statistics
-        summary = {
-            "strategy_wins": strategy_wins,
-            "model_wins": model_wins,
-            "avg_times": {strategy: np.mean(times) if times else 0 for strategy, times in strategy_times.items()},
-            "avg_scores": {strategy: np.mean(scores) if scores else 0 for strategy, scores in strategy_scores.items()},
-            "avg_train_times": {strategy: np.mean(times) if times else 0 for strategy, times in strategy_train_times.items()},
-            "avg_inference_times": {strategy: np.mean(times) if times else 0 for strategy, times in strategy_inference_times.items()},
-            "avg_inference_speeds": {strategy: np.mean(speeds) if speeds else 0 for strategy, speeds in strategy_inference_speeds.items()},
-            "avg_inference_accuracies": {strategy: np.mean(accs) if accs else 0 for strategy, accs in strategy_inference_accuracies.items()},
-        }
-        
-        # Print summary
-        print("\n=== Benchmark Summary ===")
-        print("\nStrategy Wins:")
-        for strategy, wins in strategy_wins.items():
-            print(f"  {strategy}: {wins}")
+        try:
+            summary = {
+                "strategy_wins": strategy_wins,
+                "model_wins": model_wins,
+                "avg_times": {strategy: np.mean(times) if times else 0 for strategy, times in strategy_times.items()},
+                "avg_scores": {strategy: np.mean(scores) if scores else 0 for strategy, scores in strategy_scores.items()},
+                "avg_train_times": {strategy: np.mean(times) if times else 0 for strategy, times in strategy_train_times.items()},
+                "avg_inference_times": {strategy: np.mean(times) if times else 0 for strategy, times in strategy_inference_times.items()},
+                "avg_inference_speeds": {strategy: np.mean(speeds) if speeds else 0 for strategy, speeds in strategy_inference_speeds.items()},
+                "avg_inference_accuracies": {strategy: np.mean(accs) if accs else 0 for strategy, accs in strategy_inference_accuracies.items()},
+            }
             
-        print("\nModel Wins:")
-        for model, wins in model_wins.items():
-            print(f"  {model}: {wins}")
-            
-        print("\nAverage Times (seconds):")
-        for strategy, avg_time in summary["avg_times"].items():
-            print(f"  {strategy}: {avg_time:.2f}")
-            
-        print("\nAverage F1 Scores:")
-        for strategy, avg_score in summary["avg_scores"].items():
-            print(f"  {strategy}: {avg_score:.4f}")
-            
-        print("\nAverage Training Times (seconds):")
-        for strategy, avg_time in summary["avg_train_times"].items():
-            print(f"  {strategy}: {avg_time:.2f}")
-            
-        print("\nAverage Inference Times (seconds):")
-        for strategy, avg_time in summary["avg_inference_times"].items():
-            print(f"  {strategy}: {avg_time:.4f}")
-            
-        print("\nAverage Inference Speeds (samples/second):")
-        for strategy, avg_speed in summary["avg_inference_speeds"].items():
-            print(f"  {strategy}: {avg_speed:.2f}")
-            
-        print("\nAverage Inference Accuracies:")
-        for strategy, avg_accuracy in summary["avg_inference_accuracies"].items():
-            print(f"  {strategy}: {avg_accuracy:.4f}")
-        
-        # Save summary
-        summary_file = os.path.join(self.output_dir, f"benchmark_summary_{int(time.time())}.json")
-        with open(summary_file, 'w') as f:
-            json.dump(summary, f, indent=2, cls=NumpyEncoder)
-            
-        print(f"\nSummary saved to {summary_file}")
-        return summary
+            # Save summary to file
+            try:
+                summary_file = os.path.join(self.output_dir, f"benchmark_summary_{int(time.time())}.json")
+                with open(summary_file, 'w') as f:
+                    json.dump(summary, f, indent=2, cls=NumpyEncoder)
+                print(f"\nSummary saved to {summary_file}")
+            except Exception as e:
+                print(f"Error saving summary: {e}")
+                
+            # Print summary
+            print("\n=== Benchmark Summary ===")
+            print("\nStrategy Wins:")
+            for strategy, wins in strategy_wins.items():
+                print(f"  {strategy}: {wins}")
+                
+            print("\nModel Wins:")
+            for model, wins in model_wins.items():
+                print(f"  {model}: {wins}")
+                
+            print("\nAverage Times (seconds):")
+            for strategy, avg_time in summary["avg_times"].items():
+                print(f"  {strategy}: {avg_time:.2f}")
+                
+            print("\nAverage F1 Scores:")
+            for strategy, avg_score in summary["avg_scores"].items():
+                print(f"  {strategy}: {avg_score:.4f}")
+                
+            print("\nAverage Training Times (seconds):")
+            for strategy, avg_time in summary["avg_train_times"].items():
+                print(f"  {strategy}: {avg_time:.2f}")
+                
+            print("\nAverage Inference Times (seconds):")
+            for strategy, avg_time in summary["avg_inference_times"].items():
+                print(f"  {strategy}: {avg_time:.4f}")
+                
+            print("\nAverage Inference Speeds (samples/second):")
+            for strategy, avg_speed in summary["avg_inference_speeds"].items():
+                print(f"  {strategy}: {avg_speed:.2f}")
+                
+            print("\nAverage Inference Accuracies:")
+            for strategy, avg_accuracy in summary["avg_inference_accuracies"].items():
+                print(f"  {strategy}: {avg_accuracy:.4f}")
+                
+            return summary
+        except Exception as e:
+            print(f"Error generating summary statistics: {e}")
+            return {"error": str(e)}
 
 def main():
     parser = argparse.ArgumentParser(description='Benchmark MLTrainingEngine on PMLB datasets')
