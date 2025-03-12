@@ -6,11 +6,13 @@ import json
 import tempfile
 import shutil
 import logging
+import signal
+import sys
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
 from pmlb import fetch_data, classification_dataset_names
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, as_completed, wait
 from functools import partial
 import argparse
 import warnings
@@ -145,7 +147,7 @@ class BenchmarkEngine:
         return engine_config
     
     def _benchmark_dataset(self, dataset_name, strategies, max_samples=5000):
-        """Benchmark various optimization strategies on a single dataset"""
+        """Benchmark various optimization strategies on a single dataset with detailed timing measurements"""
         try:
             # Fetch the dataset
             X, y = fetch_data(dataset_name, return_X_y=True, local_cache_dir=tempfile.gettempdir())
@@ -182,7 +184,11 @@ class BenchmarkEngine:
                         model_start = time.time()
                         
                         try:
-                            # Train and evaluate model
+                            # Track detailed timings for each phase
+                            phase_times = {}
+                            
+                            # Training phase timer
+                            train_start = time.time()
                             best_model, metrics = engine.train_model(
                                 model=model_info["model"],
                                 model_name=model_name,
@@ -192,13 +198,37 @@ class BenchmarkEngine:
                                 X_test=X_test,
                                 y_test=y_test
                             )
+                            phase_times["train"] = time.time() - train_start
+                            
+                            # Inference speed evaluation with multiple runs for better accuracy
+                            inference_times = []
+                            num_repeats = 5  # Number of inference runs to average
+                            for _ in range(num_repeats):
+                                inference_start = time.time()
+                                y_pred = engine.predict(X_test, model_name=model_name)
+                                inference_times.append(time.time() - inference_start)
+                            
+                            # Calculate average inference time and speed
+                            inference_time = np.mean(inference_times)
+                            phase_times["inference"] = inference_time
+                            inference_speed = X_test.shape[0] / inference_time if inference_time > 0 else 0
+                            
+                            # Calculate prediction accuracy
+                            accuracy = np.mean(y_pred == y_test) if y_pred is not None else 0
+                            
+                            # Add inference metrics to the overall metrics
+                            metrics["inference_time"] = inference_time
+                            metrics["inference_speed_samples_per_sec"] = inference_speed
+                            metrics["inference_accuracy"] = accuracy
                             
                             model_time = time.time() - model_start
                             
                             # Store results
                             strategy_results[model_name] = {
                                 "metrics": metrics,
-                                "time": model_time
+                                "time": model_time,
+                                "phase_times": phase_times,
+                                "inference_speed": inference_speed
                             }
                             
                         except Exception as e:
@@ -233,7 +263,7 @@ class BenchmarkEngine:
             }
     
     def run_benchmark(self, n_processes=None):
-        """Run the benchmark on multiple datasets using process parallelism"""
+        """Run the benchmark on multiple datasets using process parallelism with detailed timing metrics"""
         # Define optimization strategies to compare
         strategies = {
             "grid_search": OptimizationStrategy.GRID_SEARCH,
@@ -251,7 +281,9 @@ class BenchmarkEngine:
         
         print(f"Starting benchmark on {len(datasets)} datasets with {len(strategies)} optimization strategies")
         
-        benchmark_results = []
+        # Initialize results storage and attach it to self for recovery during interruption
+        self.partial_results = []
+        benchmark_results = self.partial_results
         
         # Determine number of processes
         if n_processes is None:
@@ -260,31 +292,67 @@ class BenchmarkEngine:
         # Create a partial function with fixed strategies
         benchmark_fn = partial(self._benchmark_dataset, strategies=strategies)
         
-        # Run benchmark in parallel
-        with ProcessPoolExecutor(max_workers=n_processes) as executor:
-            futures = {executor.submit(benchmark_fn, dataset): dataset for dataset in datasets}
-            
-            for i, future in enumerate(as_completed(futures)):
-                dataset = futures[future]
+        # Set up signal handlers for the main process
+        original_sigint_handler = signal.signal(signal.SIGINT, signal.SIG_IGN)
+        
+        # Run benchmark in parallel with proper interrupt handling
+        try:
+            with ProcessPoolExecutor(max_workers=n_processes) as executor:
+                # Restore the signal handler
+                signal.signal(signal.SIGINT, original_sigint_handler)
+                
+                # Submit all tasks
+                futures = {executor.submit(benchmark_fn, dataset): dataset for dataset in datasets}
+                completed_count = 0
+                
                 try:
-                    result = future.result()
-                    benchmark_results.append(result)
-                    print(f"Completed {i+1}/{len(datasets)}: {dataset}")
-                except Exception as e:
-                    print(f"Error on dataset {dataset}: {str(e)}")
+                    for i, future in enumerate(as_completed(futures)):
+                        dataset = futures[future]
+                        try:
+                            result = future.result()
+                            benchmark_results.append(result)
+                            completed_count += 1
+                            print(f"Completed {completed_count}/{len(datasets)}: {dataset}")
+                        except Exception as e:
+                            print(f"Error on dataset {dataset}: {str(e)}")
+                except KeyboardInterrupt:
+                    print("\nReceived KeyboardInterrupt. Cancelling pending tasks...")
+                    # Cancel pending tasks
+                    for future in futures:
+                        if not future.done():
+                            future.cancel()
+                    # Wait briefly for cancellation to complete
+                    print("Waiting for running tasks to complete (max 5 seconds)...")
+                    try:
+                        # Use a short timeout to avoid hanging
+                        _, not_done = wait(futures, timeout=5)
+                        if not_done:
+                            print(f"{len(not_done)} tasks did not complete in time.")
+                    except:
+                        pass
+                    raise  # Re-raise to handle in outer try-block
+        except KeyboardInterrupt:
+            print("Benchmark interrupted. Saving partial results...")
+        finally:
+            # Restore original signal handler
+            signal.signal(signal.SIGINT, original_sigint_handler)
+            
+            # Save results, whether complete or partial
+            status = "completed" if len(benchmark_results) == len(datasets) else "interrupted"
+            results_file = os.path.join(self.output_dir, f"benchmark_results_{int(time.time())}.json")
+            with open(results_file, 'w') as f:
+                json.dump({
+                    "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                    "n_datasets": len(datasets),
+                    "datasets_completed": len(benchmark_results),
+                    "status": status,
+                    "seed": self.seed,
+                    "optimization_iterations": self.optimization_iterations,
+                    "results": benchmark_results
+                }, f, indent=2)
+            
+            print(f"Benchmark {status}. Results saved to {results_file}")
         
-        # Save results to file
-        results_file = os.path.join(self.output_dir, f"benchmark_results_{int(time.time())}.json")
-        with open(results_file, 'w') as f:
-            json.dump({
-                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-                "n_datasets": len(datasets),
-                "seed": self.seed,
-                "optimization_iterations": self.optimization_iterations,
-                "results": benchmark_results
-            }, f, indent=2)
-        
-        print(f"Benchmark completed. Results saved to {results_file}")
         return self._analyze_results(benchmark_results)
     
     def _analyze_results(self, results):
@@ -294,6 +362,10 @@ class BenchmarkEngine:
         model_wins = {model: 0 for model in self.models.keys()}
         strategy_times = {strategy: [] for strategy in ["grid_search", "random_search", "bayesian", "asht"]}
         strategy_scores = {strategy: [] for strategy in ["grid_search", "random_search", "bayesian", "asht"]}
+        strategy_train_times = {strategy: [] for strategy in ["grid_search", "random_search", "bayesian", "asht"]}
+        strategy_inference_times = {strategy: [] for strategy in ["grid_search", "random_search", "bayesian", "asht"]}
+        strategy_inference_speeds = {strategy: [] for strategy in ["grid_search", "random_search", "bayesian", "asht"]}
+        strategy_inference_accuracies = {strategy: [] for strategy in ["grid_search", "random_search", "bayesian", "asht"]}
         
         for result in results:
             if "error" in result:
@@ -323,9 +395,24 @@ class BenchmarkEngine:
                             best_model_score = score
                             best_model_name = model_name
                             
-                        # Track execution time
+                        # Track execution times
                         if "time" in model_result:
                             strategy_times[strategy].append(model_result["time"])
+                        
+                        # Track detailed timing metrics
+                        if "phase_times" in model_result:
+                            if "train" in model_result["phase_times"]:
+                                strategy_train_times[strategy].append(model_result["phase_times"]["train"])
+                            if "inference" in model_result["phase_times"]:
+                                strategy_inference_times[strategy].append(model_result["phase_times"]["inference"])
+                        
+                        # Track inference speed
+                        if "inference_speed" in model_result:
+                            strategy_inference_speeds[strategy].append(model_result["inference_speed"])
+                            
+                        # Track inference accuracy
+                        if "metrics" in model_result and "inference_accuracy" in model_result["metrics"]:
+                            strategy_inference_accuracies[strategy].append(model_result["metrics"]["inference_accuracy"])
                 
                 # Update best strategy if this one is better
                 if best_model_score > best_score:
@@ -345,7 +432,11 @@ class BenchmarkEngine:
             "strategy_wins": strategy_wins,
             "model_wins": model_wins,
             "avg_times": {strategy: np.mean(times) if times else 0 for strategy, times in strategy_times.items()},
-            "avg_scores": {strategy: np.mean(scores) if scores else 0 for strategy, scores in strategy_scores.items()}
+            "avg_scores": {strategy: np.mean(scores) if scores else 0 for strategy, scores in strategy_scores.items()},
+            "avg_train_times": {strategy: np.mean(times) if times else 0 for strategy, times in strategy_train_times.items()},
+            "avg_inference_times": {strategy: np.mean(times) if times else 0 for strategy, times in strategy_inference_times.items()},
+            "avg_inference_speeds": {strategy: np.mean(speeds) if speeds else 0 for strategy, speeds in strategy_inference_speeds.items()},
+            "avg_inference_accuracies": {strategy: np.mean(accs) if accs else 0 for strategy, accs in strategy_inference_accuracies.items()},
         }
         
         # Print summary
@@ -365,6 +456,22 @@ class BenchmarkEngine:
         print("\nAverage F1 Scores:")
         for strategy, avg_score in summary["avg_scores"].items():
             print(f"  {strategy}: {avg_score:.4f}")
+            
+        print("\nAverage Training Times (seconds):")
+        for strategy, avg_time in summary["avg_train_times"].items():
+            print(f"  {strategy}: {avg_time:.2f}")
+            
+        print("\nAverage Inference Times (seconds):")
+        for strategy, avg_time in summary["avg_inference_times"].items():
+            print(f"  {strategy}: {avg_time:.4f}")
+            
+        print("\nAverage Inference Speeds (samples/second):")
+        for strategy, avg_speed in summary["avg_inference_speeds"].items():
+            print(f"  {strategy}: {avg_speed:.2f}")
+            
+        print("\nAverage Inference Accuracies:")
+        for strategy, avg_accuracy in summary["avg_inference_accuracies"].items():
+            print(f"  {strategy}: {avg_accuracy:.4f}")
         
         # Save summary
         summary_file = os.path.join(self.output_dir, f"benchmark_summary_{int(time.time())}.json")
@@ -388,6 +495,10 @@ def main():
                         help='Number of parallel jobs for ML model training')
     parser.add_argument('--n-processes', type=int, default=None, 
                         help='Number of parallel processes for benchmark')
+    parser.add_argument('--max-samples', type=int, default=5000,
+                        help='Maximum number of samples to use from each dataset')
+    parser.add_argument('--inference-repeat', type=int, default=5,
+                        help='Number of times to repeat inference for more accurate timing')
     
     args = parser.parse_args()
     
@@ -400,7 +511,65 @@ def main():
         n_jobs=args.n_jobs
     )
     
-    benchmark.run_benchmark(n_processes=args.n_processes)
+    # Update the _benchmark_dataset method to include the max_samples parameter
+    benchmark._benchmark_dataset = partial(benchmark._benchmark_dataset, max_samples=args.max_samples)
+    
+    # Execute the benchmark with keyboard interrupt handling
+    start_time = time.time()
+    try:
+        benchmark.run_benchmark(n_processes=args.n_processes)
+        total_time = time.time() - start_time
+        print(f"\nTotal benchmark time: {total_time:.2f} seconds")
+    except KeyboardInterrupt:
+        print("\nBenchmark interrupted by user. Shutting down processes...")
+        # Save partial results if possible
+        if hasattr(benchmark, 'partial_results') and benchmark.partial_results:
+            try:
+                results_file = os.path.join(args.output_dir, f"partial_results_{int(time.time())}.json")
+                with open(results_file, 'w') as f:
+                    json.dump({
+                        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                        "status": "interrupted",
+                        "elapsed_time": time.time() - start_time,
+                        "results": benchmark.partial_results
+                    }, f, indent=2)
+                print(f"Partial results saved to {results_file}")
+            except Exception as e:
+                print(f"Error saving partial results: {str(e)}")
+        
+        # Kill any remaining processes
+        import signal
+        os.killpg(os.getpgid(0), signal.SIGTERM)  # Send SIGTERM to process group
+        print("All processes terminated.")
 
 if __name__ == "__main__":
-    main()
+    try:
+        # On Linux/Unix, ensure the process runs in its own process group
+        # This makes it possible to kill all child processes with a single signal
+        if hasattr(os, 'setpgrp'):
+            os.setpgrp()
+            
+        # Register signal handlers for graceful shutdown when running as main program
+        def signal_handler(sig, frame):
+            print(f"\nReceived signal {sig}. Initiating graceful shutdown...")
+            # We re-raise KeyboardInterrupt to trigger the exception handlers in the main function
+            if sig == signal.SIGINT:
+                raise KeyboardInterrupt
+            # For other signals, exit more directly
+            sys.exit(1)
+            
+        # Register handlers for common termination signals
+        signal.signal(signal.SIGINT, signal_handler)  # Ctrl+C
+        signal.signal(signal.SIGTERM, signal_handler)  # Termination request
+        
+        # Run the main function with proper exception handling
+        main()
+    except KeyboardInterrupt:
+        print("\nBenchmark terminated by user.")
+        # The keyboard interrupt is handled within main(), so we just need to exit gracefully here
+        sys.exit(0)
+    except Exception as e:
+        print(f"\nUnhandled exception: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
