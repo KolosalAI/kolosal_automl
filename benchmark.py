@@ -1,171 +1,4 @@
-# -----------------------------------------------------------------------------
-# Parallel Benchmarking Utilities
-# -----------------------------------------------------------------------------
-
-def run_parallel_benchmarks(benchmark_functions, max_workers=None, benchmark_dir=None, logger=None):
-    """
-    Run multiple benchmarks in parallel using a thread pool.
-    
-    Parameters:
-    -----------
-    benchmark_functions : list of callable
-        List of benchmark functions to run
-    max_workers : int, optional
-        Maximum number of parallel workers (default: number of CPU cores)
-    benchmark_dir : str
-        Directory to save benchmark results
-    logger : logging.Logger
-        Logger instance
-        
-    Returns:
-    --------
-    dict
-        Dictionary with benchmark results
-    """
-    if not benchmark_functions:
-        logger.warning("No benchmark functions provided")
-        return {}
-    
-    if max_workers is None:
-        max_workers = os.cpu_count() or 4
-    
-    logger.info(f"Running {len(benchmark_functions)} benchmarks in parallel with {max_workers} workers")
-    
-    # Import concurrent.futures if available
-    try:
-        from concurrent.futures import ThreadPoolExecutor, as_completed
-        
-        results = {}
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            # Submit benchmark jobs
-            future_to_benchmark = {
-                executor.submit(func): f"benchmark_{i}" 
-                for i, func in enumerate(benchmark_functions)
-            }
-            
-            # Process results as they complete
-            for future in as_completed(future_to_benchmark):
-                benchmark_name = future_to_benchmark[future]
-                try:
-                    result = future.result()
-                    results[benchmark_name] = result
-                    logger.info(f"Completed benchmark: {benchmark_name}")
-                except Exception as e:
-                    logger.error(f"Benchmark {benchmark_name} failed: {e}")
-                    results[benchmark_name] = {"error": str(e)}
-        
-        return results
-    
-    except ImportError:
-        # Fallback to sequential execution if concurrent.futures is not available
-        logger.warning("concurrent.futures not available, running benchmarks sequentially")
-        results = {}
-        for i, func in enumerate(benchmark_functions):
-            benchmark_name = f"benchmark_{i}"
-            try:
-                results[benchmark_name] = func()
-                logger.info(f"Completed benchmark: {benchmark_name}")
-            except Exception as e:
-                logger.error(f"Benchmark {benchmark_name} failed: {e}")
-                results[benchmark_name] = {"error": str(e)}
-        
-        return results
-
-def create_benchmark_schedule(config, benchmark_dir, logger):
-    """
-    Create a schedule of benchmark functions to run based on configuration.
-    
-    Parameters:
-    -----------
-    config : dict
-        Benchmark configuration dictionary
-    benchmark_dir : str
-        Directory to save benchmark results
-    logger : logging.Logger
-        Logger instance
-        
-    Returns:
-    --------
-    list
-        List of benchmark functions to run
-    """
-    benchmark_functions = []
-    
-    # Training speed benchmarks
-    if config.get("test_training_speed", True):
-        for dataset_name in config.get("training_speed", {}).get("datasets", []):
-            for strategy in config.get("training_speed", {}).get("optimization_strategies", []):
-                # Convert strategy string to OptimizationStrategy
-                strategy_obj = getattr(OptimizationStrategy, strategy)
-                
-                # Add benchmark function for this dataset and strategy
-                benchmark_functions.append(
-                    lambda d=dataset_name, s=strategy_obj: benchmark_training_speed(
-                        d, s, benchmark_dir=benchmark_dir, logger=logger
-                    )
-                )
-    
-    # Feature selection benchmarks
-    if config.get("test_feature_selection", True):
-        for dataset_name in config.get("feature_selection", {}).get("datasets", []):
-            benchmark_functions.append(
-                lambda d=dataset_name: benchmark_feature_selection(
-                    d, benchmark_dir=benchmark_dir, logger=logger
-                )
-            )
-    
-    # Batch processing benchmarks
-    if config.get("test_batch_processing", True):
-        batch_sizes = config.get("batch_processing", {}).get("batch_sizes", [10, 50, 100, 500])
-        benchmark_functions.append(
-            lambda: benchmark_batch_processing(
-                batch_sizes, benchmark_dir=benchmark_dir, logger=logger
-            )
-        )
-    
-    # Model comparison benchmarks
-    if config.get("test_model_comparison", True):
-        benchmark_functions.append(
-            lambda: benchmark_model_comparison(
-                benchmark_dir=benchmark_dir, logger=logger
-            )
-        )
-    
-    # Standard benchmarks
-    if config.get("test_standard_benchmarks", True):
-        # PLMB benchmarks
-        if config.get("standard_benchmarks", {}).get("plmb", {}).get("enabled", True):
-            benchmark_functions.append(
-                lambda: run_plmb_benchmarks(
-                    benchmark_dir, logger, config.get("standard_benchmarks", {}).get("plmb")
-                )
-            )
-        
-        # UCI benchmarks
-        if config.get("standard_benchmarks", {}).get("uci", {}).get("enabled", True):
-            benchmark_functions.append(
-                lambda: run_uci_benchmarks(
-                    benchmark_dir, logger, config.get("standard_benchmarks", {}).get("uci")
-                )
-            )
-        
-        # OpenML benchmarks
-        if config.get("standard_benchmarks", {}).get("openml", {}).get("enabled", True):
-            benchmark_functions.append(
-                lambda: run_openml_benchmarks(
-                    benchmark_dir, logger, config.get("standard_benchmarks", {}).get("openml")
-                )
-            )
-        
-        # AutoML benchmarks
-        if config.get("standard_benchmarks", {}).get("automl_benchmark", {}).get("enabled", True):
-            benchmark_functions.append(
-                lambda: run_automl_benchmarks(
-                    benchmark_dir, logger, config.get("standard_benchmarks", {}).get("automl_benchmark")
-                )
-            )
-    
-    return benchmark_functions#!/usr/bin/env python
+#!/usr/bin/env python
 """
 Enhanced ML Training Engine Benchmark Script
 
@@ -963,312 +796,147 @@ def download_automl_dataset(dataset_name, logger):
     logger.info(f"AutoML benchmark dataset {dataset_name} prepared: {X.shape[0]} samples, {X.shape[1]} features")
     return X, y, task_type
 
-def create_synthetic_dataset(n_samples=10000, n_features=50, classification=True, n_informative=None, n_redundant=None, n_classes=None, noise=0.1, random_state=42):
-    """
-    Create a synthetic dataset for benchmarking.
-    
-    Parameters:
-    -----------
-    n_samples : int
-        Number of samples to generate
-    n_features : int
-        Total number of features
-    classification : bool
-        If True, create a classification dataset, otherwise regression
-    n_informative : int, optional
-        Number of informative features (default: n_features // 5)
-    n_redundant : int, optional
-        Number of redundant features (default: n_features // 10)
-    n_classes : int, optional
-        Number of classes for classification (default: 2)
-    noise : float
-        Noise level to add to the data
-    random_state : int
-        Random seed for reproducibility
-        
-    Returns:
-    --------
-    X : pandas.DataFrame
-        Feature matrix
-    y : pandas.Series
-        Target vector
-    task_type : str
-        Type of task (classification or regression)
-    """
+def create_synthetic_dataset(n_samples=10000, n_features=50, classification=True):
+    """Create a synthetic dataset for large-scale benchmarking."""
     # Set random seed for reproducibility
-    np.random.seed(random_state)
+    np.random.seed(42)
     
-    # Set defaults for optional parameters
-    if n_informative is None:
-        n_informative = max(1, n_features // 5)
-    if n_redundant is None:
-        n_redundant = max(0, n_features // 10)
-    if n_classes is None:
-        n_classes = 2 if classification else None
+    # Generate random features
+    X = np.random.randn(n_samples, n_features)
     
-    # Generate data based on task type
+    # Add some structure to make the problem learnable
     if classification:
-        # Try to use scikit-learn's make_classification if available
-        try:
-            from sklearn.datasets import make_classification
-            X, y = make_classification(
-                n_samples=n_samples, 
-                n_features=n_features,
-                n_informative=n_informative,
-                n_redundant=n_redundant,
-                n_classes=n_classes,
-                n_clusters_per_class=max(1, n_classes // 2),
-                random_state=random_state,
-                shuffle=True
-            )
-            task_type = TaskType.CLASSIFICATION
-        except ImportError:
-            # Fallback to manual implementation if sklearn is not available
-            X = np.random.randn(n_samples, n_features)
-            
-            # Create informative features
-            w = np.random.randn(n_informative)
-            informative_part = np.dot(X[:, :n_informative], w)
-            
-            # Generate classes based on thresholds
-            if n_classes == 2:
-                y = (informative_part + np.random.randn(n_samples) * noise > 0).astype(int)
-            else:
-                # For multi-class, divide the range into n_classes segments
-                informative_part_scaled = (informative_part - np.min(informative_part)) / (np.max(informative_part) - np.min(informative_part))
-                y = (informative_part_scaled * n_classes).astype(int)
-                y = np.clip(y, 0, n_classes - 1)  # Ensure classes are in the valid range
-            
-            task_type = TaskType.CLASSIFICATION
+        # Binary classification
+        w = np.random.randn(n_features)
+        noise = np.random.randn(n_samples) * 0.1
+        y = (np.dot(X, w) + noise > 0).astype(int)
+        task_type = TaskType.CLASSIFICATION
     else:
-        # Try to use scikit-learn's make_regression if available
-        try:
-            from sklearn.datasets import make_regression
-            X, y = make_regression(
-                n_samples=n_samples, 
-                n_features=n_features,
-                n_informative=n_informative,
-                noise=noise,
-                random_state=random_state
-            )
-            task_type = TaskType.REGRESSION
-        except ImportError:
-            # Fallback to manual implementation if sklearn is not available
-            X = np.random.randn(n_samples, n_features)
-            
-            # Create target using informative features
-            w = np.random.randn(n_informative)
-            y = np.dot(X[:, :n_informative], w)
-            
-            # Add noise
-            y += np.random.randn(n_samples) * noise
-            
-            task_type = TaskType.REGRESSION
+        # Regression
+        w = np.random.randn(n_features)
+        noise = np.random.randn(n_samples) * 0.5
+        y = np.dot(X, w) + noise
+        task_type = TaskType.REGRESSION
     
-    # Convert to pandas DataFrame and Series
     X = pd.DataFrame(X, columns=[f"feature_{i}" for i in range(n_features)])
     y = pd.Series(y)
     
     return X, y, task_type
 
 def benchmark_training_speed(dataset_name, optimization_strategy, feature_selection=False, 
-                            benchmark_dir=None, logger=None, timeout=None, sample_limit=None):
-    """
-    Benchmark the training speed of the ML Training Engine.
-    
-    Parameters:
-    -----------
-    dataset_name : str
-        Name of the dataset to benchmark
-    optimization_strategy : str
-        Optimization strategy to use (e.g., "RANDOM_SEARCH", "GRID_SEARCH")
-    feature_selection : bool, optional
-        Whether to enable feature selection
-    benchmark_dir : str, optional
-        Directory to save benchmark results
-    logger : logging.Logger, optional
-        Logger instance
-    timeout : int, optional
-        Maximum time in seconds for the benchmark to run
-    sample_limit : int, optional
-        Maximum number of samples to use from the dataset
-        
-    Returns:
-    --------
-    dict
-        Dictionary with benchmark results
-    """
+                            benchmark_dir=None, logger=None):
+    """Benchmark the training speed of the ML Training Engine."""
     logger.info(f"Benchmarking training speed on {dataset_name} with {optimization_strategy}")
     
     # Load dataset
-    try:
-        if dataset_name == "synthetic_classification":
-            X, y, task_type = create_synthetic_dataset(n_samples=10000, n_features=30, classification=True)
-        elif dataset_name == "synthetic_regression":
-            X, y, task_type = create_synthetic_dataset(n_samples=10000, n_features=30, classification=False)
-        else:
-            X, y, task_type = load_dataset(dataset_name, logger, sample_limit=sample_limit)
-        
-        # Split dataset
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-        
-        # Create preprocessing config
-        preproc_config = PreprocessorConfig(
-            normalization=NormalizationType.STANDARD,
-            handle_nan=True,
-            handle_inf=True,
-            detect_outliers=False,
-            parallel_processing=True,
-            cache_enabled=True
-        )
-        
-        # Create configuration
-        config = MLTrainingEngineConfig(
-            task_type=task_type,
-            optimization_strategy=optimization_strategy,
-            feature_selection=feature_selection,
-            feature_selection_method="mutual_info" if feature_selection else None,
-            cv_folds=3,
-            optimization_iterations=10,
-            model_path=os.path.join(benchmark_dir, "models"),
-            experiment_tracking=True,
-            preprocessing_config=preproc_config,
-            log_level="INFO"
-        )
-        
-        # Initialize engine
-        engine = MLTrainingEngine(config)
-        
-        # Define model and params
-        if task_type == TaskType.CLASSIFICATION:
-            model = RandomForestClassifier(random_state=42)
-            param_grid = {
-                'n_estimators': [50, 100],
-                'max_depth': [None, 10, 20],
-                'min_samples_split': [2, 5]
-            }
-        else:
-            model = RandomForestRegressor(random_state=42)
-            param_grid = {
-                'n_estimators': [50, 100],
-                'max_depth': [None, 10, 20],
-                'min_samples_split': [2, 5]
-            }
-        
-        # Setup progress tracking with tqdm if available
-        try:
-            from tqdm import tqdm
-            with tqdm(total=100, desc=f"Training on {dataset_name}", unit="%") as pbar:
-                # Create a callback to update the progress bar
-                def progress_callback(progress):
-                    pbar.update(int(progress * 100) - pbar.n)
-                
-                # Store the callback for later use
-                engine.set_progress_callback = progress_callback
-        except ImportError:
-            # If tqdm is not available, just log progress
-            logger.info(f"Starting training on {dataset_name}...")
-        
-        # Measure training time and memory usage
-        start_time = time.time()
-        peak_memory_before = memory_usage(-1, interval=0.1, timeout=1)[0]
-        
-        try:
-            # Set a timeout if specified
-            if timeout:
-                import signal
-                
-                def timeout_handler(signum, frame):
-                    raise TimeoutError(f"Training timed out after {timeout} seconds")
-                
-                # Set the timeout
-                signal.signal(signal.SIGALRM, timeout_handler)
-                signal.alarm(timeout)
-            
-            # Train the model
-            best_model, metrics = engine.train_model(
-                model=model,
-                model_name=f"{dataset_name}_{optimization_strategy}",
-                param_grid=param_grid,
-                X=X_train,
-                y=y_train,
-                X_test=X_test,
-                y_test=y_test
-            )
-            
-            # Clear the timeout if it was set
-            if timeout:
-                signal.alarm(0)
-            
-            # Try to save the model
-            try:
-                engine.save_model()
-            except Exception as e:
-                logger.warning(f"Could not save model: {e}")
-        
-        except TimeoutError as e:
-            logger.warning(f"Training timeout: {e}")
-            metrics = {"error": "timeout", "error_details": str(e)}
-            best_model = None
-        
-        except Exception as e:
-            logger.error(f"Error during model training: {e}")
-            metrics = {"error": str(e)}
-            best_model = None
-        
-        end_time = time.time()
-        peak_memory_after = memory_usage(-1, interval=0.1, timeout=1)[0]
-        memory_used = peak_memory_after - peak_memory_before
-        
-        # Generate results
-        results = {
-            "dataset": dataset_name,
-            "optimization_strategy": str(optimization_strategy),
-            "feature_selection": feature_selection,
-            "training_time": end_time - start_time,
-            "memory_used_mb": memory_used if memory_used > 0 else None,
-            "metrics": metrics,
-            "dataset_size": len(X),
-            "feature_count": X.shape[1],
-            "timestamp": datetime.now().isoformat()
+    if dataset_name == "synthetic_classification":
+        X, y, task_type = create_synthetic_dataset(n_samples=10000, n_features=30, classification=True)
+    elif dataset_name == "synthetic_regression":
+        X, y, task_type = create_synthetic_dataset(n_samples=10000, n_features=30, classification=False)
+    else:
+        X, y, task_type = load_dataset(dataset_name, logger)
+    
+    # Split dataset
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    
+    # Create preprocessing config
+    preproc_config = PreprocessorConfig(
+        normalization=NormalizationType.STANDARD,
+        handle_nan=True,
+        handle_inf=True,
+        detect_outliers=False,
+        parallel_processing=True,
+        cache_enabled=True
+    )
+    
+    # Create configuration
+    config = MLTrainingEngineConfig(
+        task_type=task_type,
+        optimization_strategy=optimization_strategy,
+        feature_selection=feature_selection,
+        feature_selection_method="mutual_info" if feature_selection else None,
+        cv_folds=3,
+        optimization_iterations=10,
+        model_path=os.path.join(benchmark_dir, "models"),
+        experiment_tracking=True,
+        preprocessing_config=preproc_config,
+        log_level="INFO"
+    )
+    
+    # Initialize engine
+    engine = MLTrainingEngine(config)
+    
+    # Define model and params
+    if task_type == TaskType.CLASSIFICATION:
+        model = RandomForestClassifier(random_state=42)
+        param_grid = {
+            'n_estimators': [50, 100],
+            'max_depth': [None, 10, 20],
+            'min_samples_split': [2, 5]
         }
+    else:
+        model = RandomForestRegressor(random_state=42)
+        param_grid = {
+            'n_estimators': [50, 100],
+            'max_depth': [None, 10, 20],
+            'min_samples_split': [2, 5]
+        }
+    
+    # Measure training time and memory usage
+    start_time = time.time()
+    peak_memory_before = memory_usage(-1, interval=0.1, timeout=1)[0]
+    
+    try:
+        best_model, metrics = engine.train_model(
+            model=model,
+            model_name=f"{dataset_name}_{optimization_strategy}",
+            param_grid=param_grid,
+            X=X_train,
+            y=y_train,
+            X_test=X_test,
+            y_test=y_test
+        )
         
-        # Save results
-        os.makedirs(os.path.join(benchmark_dir, "training_speed"), exist_ok=True)
-        result_file = os.path.join(benchmark_dir, "training_speed", 
-                                  f"{dataset_name}_{optimization_strategy}_{feature_selection}.json")
-        with open(result_file, 'w') as f:
-            json.dump(results, f, indent=4, default=str)
+        # Try to save the model
+        try:
+            engine.save_model()
+        except Exception as e:
+            logger.warning(f"Could not save model: {e}")
     
     except Exception as e:
-        logger.error(f"Failed to benchmark {dataset_name}: {e}")
-        logger.error(traceback.format_exc())
-        
-        # Generate error results
-        results = {
-            "dataset": dataset_name,
-            "optimization_strategy": str(optimization_strategy),
-            "feature_selection": feature_selection,
-            "error": str(e),
-            "traceback": traceback.format_exc(),
-            "timestamp": datetime.now().isoformat()
-        }
-        
-        # Save error results
-        os.makedirs(os.path.join(benchmark_dir, "training_speed"), exist_ok=True)
-        result_file = os.path.join(benchmark_dir, "training_speed", 
-                                  f"{dataset_name}_{optimization_strategy}_{feature_selection}_error.json")
-        with open(result_file, 'w') as f:
-            json.dump(results, f, indent=4, default=str)
+        logger.error(f"Error during model training: {e}")
+        metrics = {"error": str(e)}
+        best_model = None
     
-    finally:
-        # Cleanup
-        try:
-            engine.shutdown()
-        except Exception as e:
-            logger.warning(f"Error during engine shutdown: {e}")
-        
-        gc.collect()
+    end_time = time.time()
+    peak_memory_after = memory_usage(-1, interval=0.1, timeout=1)[0]
+    memory_used = peak_memory_after - peak_memory_before
+    
+    # Generate results
+    results = {
+        "dataset": dataset_name,
+        "optimization_strategy": str(optimization_strategy),
+        "feature_selection": feature_selection,
+        "training_time": end_time - start_time,
+        "memory_used_mb": memory_used if memory_used > 0 else None,
+        "metrics": metrics,
+        "timestamp": datetime.now().isoformat()
+    }
+    
+    # Save results
+    os.makedirs(os.path.join(benchmark_dir, "training_speed"), exist_ok=True)
+    result_file = os.path.join(benchmark_dir, "training_speed", 
+                              f"{dataset_name}_{optimization_strategy}_{feature_selection}.json")
+    with open(result_file, 'w') as f:
+        json.dump(results, f, indent=4, default=str)
+    
+    # Cleanup
+    try:
+        engine.shutdown()
+    except Exception as e:
+        logger.warning(f"Error during engine shutdown: {e}")
+    
+    gc.collect()
     
     logger.info(f"Training benchmark completed for {dataset_name}")
     return results
@@ -3706,7 +3374,7 @@ def run_automl_benchmarks(benchmark_dir, logger, config=None):
 
 def parse_arguments():
     """Parse command-line arguments."""
-    parser = argparse.ArgumentParser(description='Enhanced ML Training Engine Benchmark Suite')
+    parser = argparse.ArgumentParser(description='ML Training Engine Benchmark Suite')
     parser.add_argument('--output_dir', type=str, default=None,
                         help='Output directory for benchmark results')
     parser.add_argument('--test_selection', type=str, default='all',
@@ -3717,16 +3385,6 @@ def parse_arguments():
                         help='Limit datasets to this number of samples')
     parser.add_argument('--config', type=str, default=None,
                         help='Path to custom configuration file (JSON)')
-    parser.add_argument('--parallel', action='store_true',
-                        help='Run benchmarks in parallel')
-    parser.add_argument('--max_workers', type=int, default=None,
-                        help='Maximum number of parallel workers')
-    parser.add_argument('--timeout', type=int, default=None,
-                        help='Maximum time in seconds for each benchmark')
-    parser.add_argument('--skip_report', action='store_true',
-                        help='Skip generating the HTML report')
-    parser.add_argument('--skip_visualizations', action='store_true',
-                        help='Skip generating visualizations')
     return parser.parse_args()
 
 def main():
@@ -3782,116 +3440,75 @@ def main():
     run_openml = run_all_benchmarks or 'openml' in benchmark_suite
     run_automl = run_all_benchmarks or 'automl' in benchmark_suite
     
-    # Update config based on command-line arguments
-    config["test_training_speed"] = run_training
-    config["test_feature_selection"] = run_feature
-    config["test_batch_processing"] = run_batch
-    config["test_model_comparison"] = run_model
-    config["standard_benchmarks"]["plmb"]["enabled"] = run_plmb
-    config["standard_benchmarks"]["uci"]["enabled"] = run_uci
-    config["standard_benchmarks"]["openml"]["enabled"] = run_openml
-    config["standard_benchmarks"]["automl_benchmark"]["enabled"] = run_automl
-    
     logger.info("Starting Enhanced ML Training Engine Benchmark Suite")
     logger.info(f"Benchmark results will be saved to: {benchmark_dir}")
     
     # Save the configuration used
     with open(os.path.join(benchmark_dir, 'benchmark_config.json'), 'w') as f:
-        json.dump(config, f, indent=4, default=str)
+        json.dump(config, f, indent=4)
     
     try:
-        # Check if the user wants to run benchmarks in parallel
-        run_parallel = config.get("run_parallel", False)
-        max_workers = config.get("max_workers", None)
+        # Benchmark 1: Training speed with different optimization strategies
+        if run_training:
+            logger.info("Running training speed benchmarks...")
+            
+            # Test on small datasets
+            benchmark_training_speed("iris", OptimizationStrategy.RANDOM_SEARCH, 
+                                    benchmark_dir=benchmark_dir, logger=logger)
+            benchmark_training_speed("breast_cancer", OptimizationStrategy.RANDOM_SEARCH, 
+                                    benchmark_dir=benchmark_dir, logger=logger)
+            benchmark_training_speed("wine", OptimizationStrategy.RANDOM_SEARCH, 
+                                    benchmark_dir=benchmark_dir, logger=logger)
+            
+            # Test different optimization strategies
+            benchmark_training_speed("breast_cancer", OptimizationStrategy.GRID_SEARCH, 
+                                    benchmark_dir=benchmark_dir, logger=logger)
+            benchmark_training_speed("breast_cancer", OptimizationStrategy.BAYESIAN_OPTIMIZATION, 
+                                    benchmark_dir=benchmark_dir, logger=logger)
+            
+            # Test on synthetic dataset
+            benchmark_training_speed("synthetic_classification", OptimizationStrategy.RANDOM_SEARCH, 
+                                    benchmark_dir=benchmark_dir, logger=logger)
+            benchmark_training_speed("synthetic_regression", OptimizationStrategy.RANDOM_SEARCH, 
+                                    benchmark_dir=benchmark_dir, logger=logger)
         
-        if run_parallel:
-            logger.info("Running benchmarks in parallel")
-            
-            # Create benchmark schedule
-            benchmark_functions = create_benchmark_schedule(config, benchmark_dir, logger)
-            
-            # Run benchmarks in parallel
-            results = run_parallel_benchmarks(
-                benchmark_functions, 
-                max_workers=max_workers,
-                benchmark_dir=benchmark_dir,
-                logger=logger
-            )
-            
-            logger.info(f"Completed {len(results)} parallel benchmarks")
-            
-            # Save parallel benchmark results
-            with open(os.path.join(benchmark_dir, 'parallel_results.json'), 'w') as f:
-                json.dump(results, f, indent=4, default=str)
-        else:
-            # Run benchmarks sequentially
-            # Benchmark 1: Training speed with different optimization strategies
-            if run_training:
-                logger.info("Running training speed benchmarks...")
-                
-                # Test on small datasets
-                benchmark_training_speed("iris", OptimizationStrategy.RANDOM_SEARCH, 
-                                        benchmark_dir=benchmark_dir, logger=logger,
-                                        sample_limit=args.sample_limit)
-                benchmark_training_speed("breast_cancer", OptimizationStrategy.RANDOM_SEARCH, 
-                                        benchmark_dir=benchmark_dir, logger=logger,
-                                        sample_limit=args.sample_limit)
-                benchmark_training_speed("wine", OptimizationStrategy.RANDOM_SEARCH, 
-                                        benchmark_dir=benchmark_dir, logger=logger,
-                                        sample_limit=args.sample_limit)
-                
-                # Test different optimization strategies
-                benchmark_training_speed("breast_cancer", OptimizationStrategy.GRID_SEARCH, 
-                                        benchmark_dir=benchmark_dir, logger=logger,
-                                        sample_limit=args.sample_limit)
-                benchmark_training_speed("breast_cancer", OptimizationStrategy.BAYESIAN_OPTIMIZATION, 
-                                        benchmark_dir=benchmark_dir, logger=logger,
-                                        sample_limit=args.sample_limit)
-                
-                # Test on synthetic dataset
-                benchmark_training_speed("synthetic_classification", OptimizationStrategy.RANDOM_SEARCH, 
-                                        benchmark_dir=benchmark_dir, logger=logger)
-                benchmark_training_speed("synthetic_regression", OptimizationStrategy.RANDOM_SEARCH, 
-                                        benchmark_dir=benchmark_dir, logger=logger)
-            
-            # Benchmark 2: Feature selection
-            if run_feature:
-                logger.info("Running feature selection benchmarks...")
-                benchmark_feature_selection("breast_cancer", benchmark_dir=benchmark_dir, logger=logger)
-                benchmark_feature_selection("synthetic_classification", benchmark_dir=benchmark_dir, logger=logger)
-                # Add a larger dataset if available
-                try:
-                    benchmark_feature_selection("mnist", benchmark_dir=benchmark_dir, logger=logger,
-                                             sample_limit=args.sample_limit)
-                except Exception as e:
-                    logger.error(f"Failed to run feature selection on mnist: {e}")
-            
-            # Benchmark 3: Batch processing
-            if run_batch:
-                logger.info("Running batch processing benchmarks...")
-                benchmark_batch_processing([10, 20, 50, 100, 200, 500], benchmark_dir=benchmark_dir, logger=logger)
-            
-            # Benchmark 4: Model comparison
-            if run_model:
-                logger.info("Running model comparison benchmarks...")
-                benchmark_model_comparison(benchmark_dir=benchmark_dir, logger=logger)
-            
-            # Standard ML Benchmarks
-            if run_plmb:
-                logger.info("Running PLMB benchmarks...")
-                run_plmb_benchmarks(benchmark_dir, logger, config.get("standard_benchmarks", {}).get("plmb"))
-            
-            if run_uci:
-                logger.info("Running UCI benchmarks...")
-                run_uci_benchmarks(benchmark_dir, logger, config.get("standard_benchmarks", {}).get("uci"))
-            
-            if run_openml:
-                logger.info("Running OpenML benchmarks...")
-                run_openml_benchmarks(benchmark_dir, logger, config.get("standard_benchmarks", {}).get("openml"))
-            
-            if run_automl:
-                logger.info("Running AutoML benchmarks...")
-                run_automl_benchmarks(benchmark_dir, logger, config.get("standard_benchmarks", {}).get("automl_benchmark"))
+        # Benchmark 2: Feature selection
+        if run_feature:
+            logger.info("Running feature selection benchmarks...")
+            benchmark_feature_selection("breast_cancer", benchmark_dir=benchmark_dir, logger=logger)
+            benchmark_feature_selection("synthetic_classification", benchmark_dir=benchmark_dir, logger=logger)
+            # Add a larger dataset if available
+            try:
+                benchmark_feature_selection("mnist", benchmark_dir=benchmark_dir, logger=logger)
+            except Exception as e:
+                logger.error(f"Failed to run feature selection on mnist: {e}")
+        
+        # Benchmark 3: Batch processing
+        if run_batch:
+            logger.info("Running batch processing benchmarks...")
+            benchmark_batch_processing([10, 20, 50, 100, 200, 500], benchmark_dir=benchmark_dir, logger=logger)
+        
+        # Benchmark 4: Model comparison
+        if run_model:
+            logger.info("Running model comparison benchmarks...")
+            benchmark_model_comparison(benchmark_dir=benchmark_dir, logger=logger)
+        
+        # Standard ML Benchmarks
+        if run_plmb:
+            logger.info("Running PLMB benchmarks...")
+            run_plmb_benchmarks(benchmark_dir, logger, config.get("standard_benchmarks", {}).get("plmb"))
+        
+        if run_uci:
+            logger.info("Running UCI benchmarks...")
+            run_uci_benchmarks(benchmark_dir, logger, config.get("standard_benchmarks", {}).get("uci"))
+        
+        if run_openml:
+            logger.info("Running OpenML benchmarks...")
+            run_openml_benchmarks(benchmark_dir, logger, config.get("standard_benchmarks", {}).get("openml"))
+        
+        if run_automl:
+            logger.info("Running AutoML benchmarks...")
+            run_automl_benchmarks(benchmark_dir, logger, config.get("standard_benchmarks", {}).get("automl_benchmark"))
         
         # Generate advanced visualizations
         logger.info("Generating advanced visualizations...")
