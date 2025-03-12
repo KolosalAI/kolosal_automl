@@ -276,8 +276,8 @@ class BenchmarkEngine:
                 "dataset": dataset_name,
                 "n_samples": X.shape[0],
                 "n_features": X.shape[1],
-                "n_classes": len(np.unique(y)),
-                "class_balance": dict(zip(*np.unique(y, return_counts=True))),
+                "n_classes": int(len(np.unique(y))),
+                "class_balance": {int(k): int(v) for k, v in dict(zip(*np.unique(y, return_counts=True))).items()},
                 "results": results
             }
             
@@ -390,7 +390,7 @@ class BenchmarkEngine:
                     "seed": self.seed,
                     "optimization_iterations": self.optimization_iterations,
                     "results": benchmark_results
-                }, f, indent=2)
+                }, f, indent=2, cls=NumpyEncoder)
             
             print(f"Benchmark {status}. Results saved to {results_file}")
         
@@ -416,8 +416,29 @@ class BenchmarkEngine:
                 
         print("Cleanup complete.")
     
+    def _handle_numpy_types(self, obj):
+        """Convert NumPy types to Python native types recursively"""
+        if isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, np.ndarray):
+            return self._handle_numpy_types(obj.tolist())
+        elif isinstance(obj, np.bool_):
+            return bool(obj)
+        elif isinstance(obj, dict):
+            return {self._handle_numpy_types(k): self._handle_numpy_types(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [self._handle_numpy_types(item) for item in obj]
+        elif isinstance(obj, tuple):
+            return tuple(self._handle_numpy_types(item) for item in obj)
+        else:
+            return obj
+    
     def _analyze_results(self, results):
         """Analyze benchmark results and compute summary statistics"""
+        # First convert any NumPy types to native Python types
+        results = self._handle_numpy_types(results)
         # Initialize counters and aggregators
         strategy_wins = {strategy: 0 for strategy in ["grid_search", "random_search", "bayesian", "asht"]}
         model_wins = {model: 0 for model in self.models.keys()}
@@ -537,7 +558,7 @@ class BenchmarkEngine:
         # Save summary
         summary_file = os.path.join(self.output_dir, f"benchmark_summary_{int(time.time())}.json")
         with open(summary_file, 'w') as f:
-            json.dump(summary, f, indent=2)
+            json.dump(summary, f, indent=2, cls=NumpyEncoder)
             
         print(f"\nSummary saved to {summary_file}")
         return summary
@@ -599,7 +620,7 @@ def main():
                         "status": "interrupted",
                         "elapsed_time": time.time() - start_time,
                         "results": benchmark.partial_results
-                    }, f, indent=2)
+                    }, f, indent=2, cls=NumpyEncoder)
                 print(f"Partial results saved to {results_file}")
             except Exception as e:
                 print(f"Error saving partial results: {str(e)}")
