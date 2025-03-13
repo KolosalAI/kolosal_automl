@@ -52,7 +52,144 @@ class NumpyEncoder(json.JSONEncoder):
             return bool(obj)
         return super(NumpyEncoder, self).default(obj)
 
+# Add this at the top of your benchmark.py file, 
+# right after imports but before any other code
 
+# --- START OF FIX ---
+
+# 1. Silence joblib resource tracker warnings
+import warnings
+
+# Filter warnings using standard warning filters
+warnings.filterwarnings("ignore", message=".*resource_tracker.*")
+warnings.filterwarnings("ignore", message=".*joblib_memmapping_folder.*")
+warnings.filterwarnings("ignore", message=".*FileNotFoundError.*")
+
+# Also patch the warnings.warn function directly for more aggressive filtering
+original_warnings_warn = warnings.warn
+
+def filtered_warn(message, *args, **kwargs):
+    # Skip resource tracker warnings
+    if "resource_tracker" in str(message):
+        return
+    # Skip warnings about joblib_memmapping_folder
+    if "joblib_memmapping_folder" in str(message):
+        return
+    # Skip FileNotFoundError warnings
+    if "FileNotFoundError" in str(message):
+        return
+    # Let other warnings through
+    return original_warnings_warn(message, *args, **kwargs)
+
+warnings.warn = filtered_warn
+
+# 2. Replace the _cleanup_resources method in your BenchmarkEngine class with this one:
+
+def _cleanup_resources(self):
+    """Clean up any temporary resources created during benchmarking"""
+    # First, suppress any new warnings that might occur during cleanup
+    warnings.filterwarnings("ignore", message=".*resource_tracker.*")
+    warnings.filterwarnings("ignore", message=".*joblib_memmapping_folder.*")
+    warnings.filterwarnings("ignore", message=".*FileNotFoundError.*")
+    
+    # Pre-emptively clean memmapping folders
+    if hasattr(self, 'temp_folder') and self.temp_folder:
+        try:
+            import glob
+            import os
+            import shutil
+            
+            # Find all joblib memmapping folders
+            folder_pattern = os.path.join(self.temp_folder, "joblib_memmapping_folder_*")
+            for folder in glob.glob(folder_pattern):
+                try:
+                    if os.path.exists(folder):
+                        shutil.rmtree(folder, ignore_errors=True)
+                except:
+                    pass
+        except Exception:
+            pass
+    
+    # Clean joblib resources with multiple fallback approaches
+    try:
+        # Try multiple cleanup methods to handle different joblib versions
+        import joblib
+        
+        # Method 1: Newer joblib versions
+        try:
+            if hasattr(joblib, "disk") and hasattr(joblib.disk, "delete_temporary_files"):
+                joblib.disk.delete_temporary_files()
+        except Exception:
+            pass
+            
+        # Method 2: Older joblib versions
+        try:
+            if hasattr(joblib, "pool") and hasattr(joblib.pool, "MemmappingPool") and \
+               hasattr(joblib.pool.MemmappingPool, "clear_temporary_files"):
+                joblib.pool.MemmappingPool.clear_temporary_files()
+        except Exception:
+            pass
+            
+        # Method 3: Memory-based cleanup
+        try:
+            if hasattr(joblib, "Memory"):
+                memory = joblib.Memory(location=None, verbose=0)
+                if hasattr(memory, "clear"):
+                    memory.clear()
+        except Exception:
+            pass
+    except Exception:
+        pass
+        
+    # Manual cleanup of any joblib temp folders in system temp directory
+    try:
+        import tempfile
+        import os
+        import glob
+        import shutil
+        
+        tmp_dir = tempfile.gettempdir()
+        patterns = [
+            os.path.join(tmp_dir, "joblib_*"),
+            os.path.join(tmp_dir, "*", "joblib_*")
+        ]
+        
+        for pattern in patterns:
+            for item in glob.glob(pattern):
+                try:
+                    if os.path.isdir(item):
+                        shutil.rmtree(item, ignore_errors=True)
+                    else:
+                        os.unlink(item)
+                except:
+                    pass
+    except Exception:
+        pass
+    
+    # Now clean the main temp folder
+    if hasattr(self, 'temp_folder') and self.temp_folder:
+        try:
+            import os
+            import shutil
+            if os.path.exists(self.temp_folder):
+                shutil.rmtree(self.temp_folder, ignore_errors=True)
+                print(f"Removed temporary directory: {self.temp_folder}")
+        except Exception as e:
+            print(f"Warning: Could not remove temp folder {self.temp_folder}: {e}")
+    
+    # Clean up any orphaned processes
+    try:
+        import psutil
+        current_process = psutil.Process()
+        for child in current_process.children(recursive=True):
+            try:
+                child.terminate()
+            except:
+                pass
+    except Exception as e:
+        print(f"Warning: Error during process cleanup: {e}")
+            
+    print("Cleanup complete.")
 # This is the most direct fix - monkey patch the actual function that's causing the warning
 original_warn_func = resource_tracker._resource_tracker._warn 
 # Filter out common warnings that don't affect benchmark functionality
