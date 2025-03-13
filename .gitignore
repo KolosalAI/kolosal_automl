@@ -163,3 +163,4 @@ models/
 catboost_info
 experiment_results/
 result/
+configs/
