@@ -8,7 +8,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
 # Import the ASHTOptimizer class
-from modules.engine.optimizer import ASHTOptimizer  # Assuming the class is in a file called asht_optimizer.py
+from modules.optimizer.asht import ASHTOptimizer  # Assuming the class is in a file called asht_optimizer.py
 
 class TestASHTOptimizer(unittest.TestCase):
     

@@ -37,7 +37,8 @@ from modules.engine.inference_engine import InferenceEngine
 from modules.engine.batch_processor import BatchProcessor
 from modules.engine.data_preprocessor import DataPreprocessor
 from modules.engine.quantizer import Quantizer
-from modules.engine.optimizer import ASHTOptimizer
+from modules.optimizer.asht import ASHTOptimizer
+from modules.optimizer.hyperoptx import HyperOptX
 
 class ExperimentTracker:
     """Track experiments and model performance metrics"""
@@ -328,6 +329,18 @@ class MLTrainingEngine:
         elif self.config.optimization_strategy == OptimizationStrategy.ASHT:
             # Use our new ASHT optimizer
             return ASHTOptimizer(
+                estimator=model,
+                param_space=param_grid,
+                max_iter=self.config.optimization_iterations,
+                cv=self.config.cv_folds,
+                scoring=self._get_scoring_metric(),
+                random_state=self.config.random_state,
+                n_jobs=self.config.n_jobs,
+                verbose=self.config.verbose
+            )
+        # !!! update after code finished
+        elif self.config.optimization_strategy == OptimizationStrategy.HYPERX:
+            return HyperOptX(
                 estimator=model,
                 param_space=param_grid,
                 max_iter=self.config.optimization_iterations,
