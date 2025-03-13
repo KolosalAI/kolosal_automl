@@ -1,19 +1,19 @@
-# Kolosal-AutoML
+# Advanced ML Training Engine 🤖
 
-Kolosal-AutoML is a powerful, user-friendly automated machine learning platform designed to streamline your ML workflow. With its intuitive interface, you can upload data, train models, evaluate performance, and deploy solutions without deep ML expertise.
+## Overview
 
-## Features
+The Advanced ML Training Engine is a sophisticated machine learning training and optimization framework designed to streamline the ML model development process. It provides a comprehensive suite of tools for data preprocessing, model training, hyperparameter optimization, and inference across various machine learning tasks.
 
-- **Data Upload & Exploration**: Import CSV or Excel files and gain immediate insights with automated visualizations and statistics
-- **Intelligent Configuration**: Configure preprocessing, model selection, and optimization strategies through a simple interface
-- **Automated Model Training**: Train multiple machine learning models simultaneously with optimized hyperparameters
-- **Comprehensive Evaluation**: Compare model performance with detailed metrics and visualizations
-- **Prediction Interface**: Make predictions using trained models with both batch upload and interactive input options
-- **Export Capabilities**: Export trained models in various formats with sample code for implementation
+## 🌟 Key Features
 
-## Supported Models
+### 1. Flexible Model Training
+- Support for multiple machine learning tasks (Classification, Regression, Clustering)
+- Compatible with various ML libraries (scikit-learn, XGBoost, LightGBM, CatBoost)
+- Automatic model selection and optimization
 
-### Classification
+### 2. Supported Models
+
+#### Classification
 - Logistic Regression
 - Random Forest Classifier
 - Gradient Boosting Classifier
@@ -22,7 +22,7 @@ Kolosal-AutoML is a powerful, user-friendly automated machine learning platform 
 - CatBoost Classifier
 - Support Vector Classification (SVC)
 
-### Regression
+#### Regression
 - Linear Regression
 - Random Forest Regressor
 - Gradient Boosting Regressor
@@ -31,12 +31,48 @@ Kolosal-AutoML is a powerful, user-friendly automated machine learning platform 
 - CatBoost Regressor
 - Support Vector Regression (SVR)
 
-## Installation
+### 3. Advanced Hyperparameter Optimization
+- Multiple optimization strategies:
+  - Grid Search
+  - Random Search
+  - Bayesian Optimization
+  - Adaptive Surrogate-Assisted Hyperparameter Tuning (ASHT)
+  - HyperX Advanced Optimization
 
+### 4. Intelligent Preprocessing
+- Automated feature scaling
+- Missing value handling
+- Outlier detection and management
+- Feature selection techniques
+
+### 5. Performance Optimization
+- Device-aware configuration
+- Adaptive batching
+- Quantization support
+- Parallel processing
+- Memory optimization
+
+### 6. Comprehensive Monitoring
+- Detailed performance metrics
+- Learning curve tracking
+- Model performance visualization
+- Experiment tracking and reporting
+
+## 🚀 Installation
+
+### Prerequisites
+- Python 3.8+
+- scikit-learn
+- numpy
+- pandas
+- matplotlib
+- Optional: XGBoost, LightGBM, CatBoost
+
+### Install 
 1. Clone the repository:
 ```bash
-git clone https://github.com/Genta-Technology/kolosal-automl
-cd kolosal-automl
+git clone https://github.com/Genta-Technology/ml-training-engine
+cd ml-training-engine
 ```
 
 2. Install dependencies:
@@ -44,54 +80,68 @@ cd kolosal-automl
 pip install -r requirements.txt
 ```
 
-3. Run the application:
-```bash
-streamlit run app.py
+## 💻 Quick Start Example
+
+```python
+from modules.engine.train_engine import MLTrainingEngine
+from modules.configs import MLTrainingEngineConfig, TaskType, OptimizationStrategy
+
+# Create configuration
+config = MLTrainingEngineConfig(
+    task_type=TaskType.CLASSIFICATION,
+    optimization_strategy=OptimizationStrategy.HYPERX,
+    cv_folds=5,
+    test_size=0.2
+)
+
+# Initialize training engine
+engine = MLTrainingEngine(config)
+
+# Train models
+best_model, metrics = engine.train_model(
+    model=RandomForestClassifier(),
+    model_name='RandomForest',
+    param_grid={
+        'n_estimators': [50, 100, 200],
+        'max_depth': [None, 5, 10]
+    },
+    X=X_train, 
+    y=y_train
+)
+
+# Evaluate and save
+engine.save_model(best_model)
+predictions = engine.predict(X_test)
 ```
 
-## Usage Guide
+## 🛠 Advanced Configuration
 
-### 1. Data Upload & Exploration
-- Upload your dataset (CSV or Excel)
-- Explore data statistics, correlations, and distributions
-- Select your target variable for prediction
+The framework offers extensive configuration options through `MLTrainingEngineConfig`:
+- Task Type Selection
+- Optimization Strategies
+- Preprocessing Settings
+- Quantization Options
+- Performance Tuning Parameters
 
-### 2. Training Configuration
-- Choose between classification and regression tasks
-- Configure preprocessing options including normalization and missing value handling
-- Select models to train and optimization strategies
-- Customize advanced settings for batch processing and quantization
+## 📊 Visualization and Reporting
 
-### 3. Model Training
-- View dataset information and configuration summary
-- Start the training process with a single click
-- Monitor training progress in real-time
+- Automatic generation of performance reports
+- Learning curve plots
+- Feature importance visualization
+- Model comparison metrics
 
-### 4. Model Evaluation
-- Compare performance metrics across all trained models
-- Visualize feature importance for better interpretability
-- Identify the best-performing model automatically
-
-### 5. Prediction
-- Upload new data for batch predictions
-- Use the interactive form for individual predictions
-- Download prediction results
-
-### 6. Export
-- Export your models in various formats (Joblib, Pickle, etc.)
-- Get sample code for implementing your model in production
-- Export experiment results for documentation
-
-## Project Structure
+## 🔍 Project Structure
 
 ```
-kolosal-automl/
-├── app.py                 # Main Streamlit application
+ml-training-engine/
+├── app.py                 # Main application entry point
 ├── modules/               # Core functionality modules
 │   ├── configs.py         # Configuration classes
 │   ├── engine/            # ML engine components
-│   │   └── train_engine.py # Training engine implementation
-│   ├── preprocessing/     # Data preprocessing components
+│   │   ├── train_engine.py   # Training engine
+│   │   ├── batch_processor.py # Batch processing
+│   │   └── inference_engine.py # Model inference
+│   ├── optimizer/         # Optimization strategies
 │   └── utils/             # Utility functions
 ├── models/                # Directory for saved models
 ├── exported_models/       # Directory for exported models
@@ -99,28 +149,25 @@ kolosal-automl/
 └── requirements.txt       # Project dependencies
 ```
 
-## Test Status
+## 🧪 Test Status
 
-The current unit test results are as follows:
-
+Current unit test results:
 - **tests/test_batch_processor.py**: PASSED
 - **tests/test_lru_ttl_cache.py**: PASSED
 - **tests/test_quantizer.py**: FAILED
 - **tests/test_data_preprocessor.py**: FAILED
 - **tests/test_engine.py**: FAILED
 
-## Planned Improvements
+## 🚧 Planned Improvements
 
-The roadmap for Kolosal-AutoML includes:
+1. **Complete Testing**: Address and resolve failing tests
+2. **UI Enhancements**: Improve user interface
+3. **Code Optimization**: Refactor and optimize codebase
+4. **Additional Export Formats**: Support ONNX and PMML model export
+5. **Advanced Visualization**: Enhanced model comparison tools
+6. **Time Series Support**: Extended time series forecasting functionality
 
-1. **Complete Testing**: Address and resolve failing tests to achieve comprehensive test coverage
-2. **UI Enhancements**: Improve and upgrade the user interface for a smoother user experience
-3. **Code Optimization**: Refactor and optimize the codebase to improve performance and maintainability
-4. **Additional Export Formats**: Support for ONNX and PMML model export
-5. **Advanced Visualization**: Enhanced visualization tools for model comparison and evaluation
-6. **Time Series Support**: Extended functionality for time series forecasting tasks
-
-## Technologies Used
+## 💻 Technologies Used
 
 - **Streamlit**: Frontend interface
 - **Pandas & NumPy**: Data processing
@@ -129,23 +176,21 @@ The roadmap for Kolosal-AutoML includes:
 - **Matplotlib & Seaborn**: Data visualization
 - **Joblib**: Model serialization
 
-## Running Tests
+## 🧪 Running Tests
 
-To run the all unit tests, use the following command:
-
+To run all unit tests:
 ```bash
 pytest -vv
 ```
 
-To run a specific test, use the following command:
-
+To run a specific test:
 ```bash
 python -m unittest tests\test_<filename>.py
 ```
 
-## Contributing
+## 🤝 Contributing
 
-Contributions are welcome! If you have suggestions or improvements, please follow these steps:
+Contributions are welcome! Please follow these steps:
 
 1. Fork the repository
 2. Create a new branch (`git checkout -b feature/your-feature`)
@@ -155,6 +200,6 @@ Contributions are welcome! If you have suggestions or improvements, please follo
 6. Push to the branch (`git push origin feature/your-feature`)
 7. Open a Pull Request
 
-## License
+## 📄 License
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
