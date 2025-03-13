@@ -10,8 +10,8 @@ from dataclasses import asdict
 import matplotlib.pyplot as plt
 from sklearn.datasets import (
     load_iris, load_wine, load_breast_cancer, load_digits, 
-    load_diabetes, load_boston, make_classification, make_regression,
-    fetch_openml
+    load_diabetes, make_classification, make_regression,
+    fetch_openml, fetch_california_housing
 )
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
@@ -99,16 +99,10 @@ class BenchmarkRunner:
             X, y = data.data, data.target
             task_type = TaskType.REGRESSION.value
             
-        elif dataset_name == "boston":
-            try:
-                data = load_boston()
-                X, y = data.data, data.target
-                task_type = TaskType.REGRESSION.value
-            except:
-                # Boston dataset may be removed in newer scikit-learn versions
-                # Generate a synthetic regression dataset as fallback
-                X, y = make_regression(n_samples=506, n_features=13, noise=0.1, random_state=42)
-                task_type = TaskType.REGRESSION.value
+        elif dataset_name == "california_housing":
+            data = fetch_california_housing()
+            X, y = data.data, data.target
+            task_type = TaskType.REGRESSION.value
                 
         # Synthetic datasets for scalability testing
         elif dataset_name == "synthetic_small_classification":
