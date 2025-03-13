@@ -1,0 +1,12 @@
+{
+  "config_id": "eaf67947",
+  "optimization_mode": "conservative",
+  "system_info": "configs\\eaf67947\\system_info.json",
+  "quantization_config": "configs\\eaf67947\\quantization_config.json",
+  "batch_processor_config": "configs\\eaf67947\\batch_processor_config.json",
+  "preprocessor_config": "configs\\eaf67947\\preprocessor_config.json",
+  "inference_engine_config": "configs\\eaf67947\\inference_engine_config.json",
+  "training_engine_config": "configs\\eaf67947\\training_engine_config.json",
+  "checkpoint_path": "C:\\Users\\Evint\\AppData\\Local\\Temp\\tmpddt3odz8\\checkpoints",
+  "model_registry_path": "C:\\Users\\Evint\\AppData\\Local\\Temp\\tmpddt3odz8\\model_registry"
+}

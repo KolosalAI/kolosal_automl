@@ -1,0 +1,13 @@
+{
+  "system": "Windows",
+  "machine": "AMD64",
+  "processor": "Intel64 Family 6 Model 154 Stepping 3, GenuineIntel",
+  "cpu_count": 20,
+  "total_memory_gb": 63.668304443359375,
+  "is_intel_cpu": true,
+  "has_avx": false,
+  "has_avx2": false,
+  "hostname": "Laptop-Evint",
+  "optimization_mode": "full_utilization",
+  "timestamp": "2025-03-13 13:41:07.724049"
+}

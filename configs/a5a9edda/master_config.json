@@ -1,0 +1,12 @@
+{
+  "config_id": "a5a9edda",
+  "optimization_mode": "memory_saving",
+  "system_info": "configs\\a5a9edda\\system_info.json",
+  "quantization_config": "configs\\a5a9edda\\quantization_config.json",
+  "batch_processor_config": "configs\\a5a9edda\\batch_processor_config.json",
+  "preprocessor_config": "configs\\a5a9edda\\preprocessor_config.json",
+  "inference_engine_config": "configs\\a5a9edda\\inference_engine_config.json",
+  "training_engine_config": "configs\\a5a9edda\\training_engine_config.json",
+  "checkpoint_path": "C:\\Users\\Evint\\AppData\\Local\\Temp\\tmpddt3odz8\\checkpoints",
+  "model_registry_path": "C:\\Users\\Evint\\AppData\\Local\\Temp\\tmpddt3odz8\\model_registry"
+}

@@ -471,3 +471,16 @@ class MLTrainingEngineConfig:
             "enable_distributed": self.enable_distributed,
             "log_level": self.log_level
         }
+
+# -----------------------------------------------------------------------------
+# Configuration for Device Optimization 
+# -----------------------------------------------------------------------------
+class OptimizationMode(str, Enum):
+    """
+    Defines the optimization mode for device configuration.
+    """
+    BALANCED = "balanced"      # Balance between performance and resource usage
+    CONSERVATIVE = "conservative"  # Prioritize stability and minimal resource usage
+    PERFORMANCE = "performance"    # Prioritize maximum performance
+    FULL_UTILIZATION = "full_utilization"  # Use all available resources
+    MEMORY_SAVING = "memory_saving"  # Prioritize memory efficiency

@@ -1,0 +1,37 @@
+{
+  "normalization": 2,
+  "robust_percentiles": [
+    25.0,
+    75.0
+  ],
+  "handle_nan": true,
+  "handle_inf": true,
+  "nan_strategy": "mean",
+  "inf_strategy": "mean",
+  "detect_outliers": true,
+  "outlier_method": "isolation_forest",
+  "outlier_params": {
+    "threshold": 1.5,
+    "clip": true,
+    "n_estimators": 100,
+    "contamination": "auto"
+  },
+  "clip_values": false,
+  "clip_range": [
+    -Infinity,
+    Infinity
+  ],
+  "enable_input_validation": true,
+  "input_size_limit": null,
+  "parallel_processing": true,
+  "n_jobs": 20,
+  "chunk_size": null,
+  "cache_enabled": true,
+  "cache_size": 1024,
+  "dtype": "{'__new__': <built-in method __new__ of type object at 0x00007FFCC22301F0>, '__repr__': <slot wrapper '__repr__' of 'numpy.float64' objects>, '__hash__': <slot wrapper '__hash__' of 'numpy.float64' objects>, '__str__': <slot wrapper '__str__' of 'numpy.float64' objects>, '__lt__': <slot wrapper '__lt__' of 'numpy.float64' objects>, '__le__': <slot wrapper '__le__' of 'numpy.float64' objects>, '__eq__': <slot wrapper '__eq__' of 'numpy.float64' objects>, '__ne__': <slot wrapper '__ne__' of 'numpy.float64' objects>, '__gt__': <slot wrapper '__gt__' of 'numpy.float64' objects>, '__ge__': <slot wrapper '__ge__' of 'numpy.float64' objects>, '__add__': <slot wrapper '__add__' of 'numpy.float64' objects>, '__radd__': <slot wrapper '__radd__' of 'numpy.float64' objects>, '__sub__': <slot wrapper '__sub__' of 'numpy.float64' objects>, '__rsub__': <slot wrapper '__rsub__' of 'numpy.float64' objects>, '__mul__': <slot wrapper '__mul__' of 'numpy.float64' objects>, '__rmul__': <slot wrapper '__rmul__' of 'numpy.float64' objects>, '__mod__': <slot wrapper '__mod__' of 'numpy.float64' objects>, '__rmod__': <slot wrapper '__rmod__' of 'numpy.float64' objects>, '__divmod__': <slot wrapper '__divmod__' of 'numpy.float64' objects>, '__rdivmod__': <slot wrapper '__rdivmod__' of 'numpy.float64' objects>, '__pow__': <slot wrapper '__pow__' of 'numpy.float64' objects>, '__rpow__': <slot wrapper '__rpow__' of 'numpy.float64' objects>, '__neg__': <slot wrapper '__neg__' of 'numpy.float64' objects>, '__pos__': <slot wrapper '__pos__' of 'numpy.float64' objects>, '__abs__': <slot wrapper '__abs__' of 'numpy.float64' objects>, '__bool__': <slot wrapper '__bool__' of 'numpy.float64' objects>, '__int__': <slot wrapper '__int__' of 'numpy.float64' objects>, '__float__': <slot wrapper '__float__' of 'numpy.float64' objects>, '__floordiv__': <slot wrapper '__floordiv__' of 'numpy.float64' objects>, '__rfloordiv__': <slot wrapper '__rfloordiv__' of 'numpy.float64' objects>, '__truediv__': <slot wrapper '__truediv__' of 'numpy.float64' objects>, '__rtruediv__': <slot wrapper '__rtruediv__' of 'numpy.float64' objects>, 'as_integer_ratio': <method 'as_integer_ratio' of 'numpy.float64' objects>, 'is_integer': <method 'is_integer' of 'numpy.float64' objects>, '__class_getitem__': <method '__class_getitem__' of 'numpy.float64' objects>, '__doc__': \"Double-precision floating-point number type, compatible with Python `float`\\n    and C ``double``.\\n\\n    :Character code: ``'d'``\\n    :Canonical name: `numpy.double`\\n    :Alias: `numpy.float_`\\n    :Alias on this platform (win32 AMD64): `numpy.float64`: 64-bit precision floating-point number type: sign bit, 11 bits exponent, 52 bits mantissa.\"}",
+  "epsilon": 1e-10,
+  "debug_mode": false,
+  "custom_normalization_fn": null,
+  "custom_transform_fn": null,
+  "version": "1.0.0"
+}

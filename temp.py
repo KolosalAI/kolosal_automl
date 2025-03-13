@@ -1,841 +1,398 @@
-# Fix 1: Completely rewrite the _update_surrogate_predictions method to handle each model type correctly
-def _update_surrogate_predictions(self, surrogate_models):
-    """Update surrogate predictions in cv_results_"""
-    if not surrogate_models:
-        return
-        
-    # Get configurations and convert to features
-    configs = self.cv_results_['params']
-    X_configs = self._configs_to_features(configs)
-    
-    if X_configs.shape[0] == 0 or X_configs.shape[1] == 0:
-        return
-        
-    X_scaled = self.scaler.transform(X_configs)
-    
-    # Get predictions from surrogate models
-    if self.ensemble_surrogate and len(self.active_surrogates) > 1:
-        # Use all models with weights
-        means = []
-        stds = []
-        
-        for i, model_name in enumerate(self.active_surrogates):
-            if model_name in surrogate_models:
-                model = surrogate_models[model_name]
-                
-                # Different prediction method based on model type
-                if model_name == 'gp':
-                    # Gaussian Process has return_std parameter
-                    try:
-                        mean, std = model.predict(X_scaled, return_std=True)
-                        means.append(mean)
-                        stds.append(std)
-                    except Exception as e:
-                        if self.verbose > 1:
-                            print(f"Error in GP prediction: {e}")
-                
-                elif model_name == 'rf':
-                    # Random Forest - manually calculate std from trees
-                    try:
-                        # First get the mean prediction
-                        mean = model.predict(X_scaled)
-                        
-                        # Then get predictions from individual trees
-                        tree_preds = np.array([tree.predict(X_scaled) for tree in model.estimators_])
-                        std = np.std(tree_preds, axis=0)
-                        
-                        means.append(mean)
-                        stds.append(std)
-                    except Exception as e:
-                        if self.verbose > 1:
-                            print(f"Error in RF prediction: {e}")
-                
-                elif model_name == 'nn':
-                    # Neural Network - use distance-based uncertainty
-                    try:
-                        mean = model.predict(X_scaled)
-                        
-                        # Simple uncertainty based on distance to training data
-                        if hasattr(self, 'X_valid') and self.X_valid is not None and self.X_valid.shape[0] > 0:
-                            dists = np.min(np.sum((X_scaled[:, np.newaxis, :] - self.X_valid[np.newaxis, :, :]) ** 2, axis=2), axis=1)
-                            std = np.sqrt(dists) * 0.1 + 0.05
-                        else:
-                            std = np.ones_like(mean) * 0.1
-                            
-                        means.append(mean)
-                        stds.append(std)
-                    except Exception as e:
-                        if self.verbose > 1:
-                            print(f"Error in NN prediction: {e}")
-                
-                elif model_name == 'dummy':
-                    # Dummy model
-                    try:
-                        mean = model.predict(X_scaled)
-                        std = np.ones_like(mean) * 0.1
-                        means.append(mean)
-                        stds.append(std)
-                    except Exception as e:
-                        if self.verbose > 1:
-                            print(f"Error in dummy prediction: {e}")
-        
-        # Skip ensemble calculation if no predictions available
-        if not means:
-            return
-                
-        # Calculate ensemble prediction
-        if self.surrogate_weights is not None:
-            # Make sure we have the right number of weights
-            if len(self.surrogate_weights) != len(means):
-                # If mismatch, just use equal weights
-                self.surrogate_weights = np.ones(len(means)) / len(means)
-                
-            # Weighted mean and variance
-            weights = self.surrogate_weights
-            mu = np.zeros_like(means[0])
-            
-            # Compute weighted mean
-            for i, mean in enumerate(means):
-                mu += weights[i] * mean
-                
-            # Compute weighted variance (including model disagreement)
-            total_var = np.zeros_like(stds[0])
-            
-            # Within-model variance
-            for i, std in enumerate(stds):
-                total_var += weights[i] * (std ** 2)
-                
-            # Between-model variance (disagreement)
-            for i, mean in enumerate(means):
-                total_var += weights[i] * ((mean - mu) ** 2)
-                
-            sigma = np.sqrt(total_var)
-        else:
-            # Equal weights if no weights provided
-            mu = np.mean(means, axis=0)
-            
-            # Combine within-model and between-model variance
-            within_var = np.mean([std**2 for std in stds], axis=0)
-            between_var = np.var(means, axis=0)
-            total_var = within_var + between_var
-            
-            sigma = np.sqrt(total_var)
-            
-        # Update cv_results_
-        for i in range(len(self.cv_results_['surrogate_prediction'])):
-            if i < len(mu):
-                self.cv_results_['surrogate_prediction'][i] = mu[i]
-                self.cv_results_['surrogate_uncertainty'][i] = sigma[i]
-    else:
-        # Use single best model
-        if not self.active_surrogates:
-            return
-            
-        model_name = self.active_surrogates[0]
-        if model_name not in surrogate_models:
-            return
-            
-        model = surrogate_models[model_name]
-        
-        # Different prediction method based on model type
-        if model_name == 'gp':
-            try:
-                means, stds = model.predict(X_scaled, return_std=True)
-            except Exception:
-                return
-        elif model_name == 'rf':
-            try:
-                means = model.predict(X_scaled)
-                
-                # Get std from individual trees
-                tree_preds = np.array([tree.predict(X_scaled) for tree in model.estimators_])
-                stds = np.std(tree_preds, axis=0)
-            except Exception:
-                return
-        elif model_name == 'nn':
-            try:
-                means = model.predict(X_scaled)
-                
-                # Simple uncertainty
-                if hasattr(self, 'X_valid') and self.X_valid is not None and self.X_valid.shape[0] > 0:
-                    dists = np.min(np.sum((X_scaled[:, np.newaxis, :] - self.X_valid[np.newaxis, :, :]) ** 2, axis=2), axis=1)
-                    stds = np.sqrt(dists) * 0.1 + 0.05
-                else:
-                    stds = np.ones_like(means) * 0.1
-            except Exception:
-                return
-        else:
-            # Dummy or unknown model
-            try:
-                means = model.predict(X_scaled)
-                stds = np.ones_like(means) * 0.1
-            except Exception:
-                return
-                
-        # Store predictions
-        for i in range(len(self.cv_results_['surrogate_prediction'])):
-            if i < len(means):
-                self.cv_results_['surrogate_prediction'][i] = means[i]
-                self.cv_results_['surrogate_uncertainty'][i] = stds[i]
+import os
+import platform
+import psutil
+import json
+import logging
+import numpy as np
+from pathlib import Path
+from typing import Dict, Any, Optional, Union, List, Type, TypeVar
+import multiprocessing
+import socket
+import uuid
+import datetime
+import types
 
-# Fix 2: Remove predict_with_std from _initialize_surrogate_models since we handle each model type directly in _update_surrogate_predictions
-def _initialize_surrogate_models(self):
-    """Initialize surrogate models based on meta-learning or ensemble strategy"""
-    self.surrogate_models = {}
-    
-    # Base GP model with Matern kernel (good for hyperparameter optimization)
-    kernel = Matern(nu=2.5) + WhiteKernel(noise_level=0.01)
-    base_gp = GaussianProcessRegressor(
-        kernel=kernel,
-        n_restarts_optimizer=3,
-        normalize_y=True,
-        random_state=self.random_state
-    )
-    
-    # Random Forest model (robust for mixed parameter types)
-    base_rf = RandomForestRegressor(
-        n_estimators=50,
-        max_depth=10,
-        min_samples_leaf=3,
-        random_state=self.random_state,
-        n_jobs=min(self.n_jobs, 4)  # Limit RF internal parallelism
-    )
-    
-    # Neural network model for complex landscapes
-    base_nn = MLPRegressor(
-        hidden_layer_sizes=(64, 32),
-        early_stopping=True,
-        random_state=self.random_state
-    )
-    
-    # Register surrogate models
-    self.surrogate_models['gp'] = base_gp
-    self.surrogate_models['rf'] = base_rf
-    self.surrogate_models['nn'] = base_nn
-    
-    # For ensembling we use a meta-model
-    if self.ensemble_surrogate:
-        self.meta_model = Ridge(alpha=1.0)
-        self.surrogate_weights = None
-        self.active_surrogates = ['gp', 'rf']  # Start with these two
-    else:
-        # Default to Gaussian Process
-        self.active_surrogates = ['gp']
-    
-    # Current surrogate model state
-    self.trained_surrogates = {}
-    
-    # Initialize meta-model selection tracking
-    self.surrogate_performances = {model: [] for model in self.surrogate_models}
-    
-    # Store training data for uncertainty estimation
-    self.X_valid = None
-    self.y_valid = None
+# Import the configuration classes from your module
+from dataclasses import asdict, is_dataclass
+from enum import Enum
 
-# Fix 3: Update _train_surrogate_models to store training data without adding predict_with_std
-def _train_surrogate_models(self, X: np.ndarray, y: np.ndarray) -> Dict[str, Any]:
-    """Train surrogate models on evaluated configurations"""
-    trained_models = {}
-    
-    if X.shape[0] < 2:  # Need at least 2 samples
-        return trained_models
-        
-    # Scale features
-    X_scaled = self.scaler.fit_transform(X)
-    
-    # Direction adjustment for minimization
-    y_adj = y.copy()
-    if not self.maximize:
-        y_adj = -y_adj
-        
-    # Filter out non-finite values
-    finite_mask = np.isfinite(y_adj)
-    if np.sum(finite_mask) < 2:  # Need at least 2 valid samples
-        return trained_models
-        
-    X_valid = X_scaled[finite_mask]
-    y_valid = y_adj[finite_mask]
-    
-    # Store for uncertainty estimation
-    self.X_valid = X_valid
-    self.y_valid = y_valid
-    
-    # Train each surrogate model in the active set
-    model_errors = {}
-    
-    for model_name in self.active_surrogates:
-        model = self.surrogate_models[model_name]
-        
-        try:
-            # Train the model
-            model.fit(X_valid, y_valid)
-            
-            # Calculate cross-validation error for model selection
-            if len(X_valid) >= 5:  # Need enough data for CV
-                from sklearn.model_selection import cross_val_predict
-                y_pred = cross_val_predict(model, X_valid, y_valid, cv=min(5, len(X_valid)))
-                mse = np.mean((y_valid - y_pred) ** 2)
-                model_errors[model_name] = mse
-                
-                # Store for meta-learning
-                self.surrogate_performances[model_name].append(mse)
-            
-            # Add to trained models
-            trained_models[model_name] = model
-            
-        except Exception as e:
-            if self.verbose > 1:
-                print(f"Error training {model_name} surrogate: {e}")
-    
-    # Meta-model selection based on performance
-    if model_errors and self.meta_learning:
-        # Check if we should switch models
-        current_best = min(model_errors, key=model_errors.get)
-        
-        # Record for meta-learning
-        if X.shape[1] > 0:  # Skip if no features
-            self.meta_learning_data['problem_features'].append({
-                'n_samples': X.shape[0],
-                'n_features': X.shape[1],
-                'y_mean': np.mean(y_valid),
-                'y_std': np.std(y_valid),
-                'iteration': self.iteration_count
-            })
-            self.meta_learning_data['best_surrogate'].append(current_best)
-            self.meta_learning_data['surrogate_performance'].append(model_errors)
-        
-        # Update active surrogates
-        if self.ensemble_surrogate:
-            # Keep all models, but update weights in acquisition
-            self.active_surrogates = list(trained_models.keys())
-            
-            # Compute weights inversely proportional to error
-            errors = np.array([model_errors.get(m, float('inf')) for m in self.active_surrogates])
-            if np.all(np.isfinite(errors)) and np.sum(errors) > 0:
-                weights = 1.0 / (errors + 1e-10)
-                self.surrogate_weights = weights / np.sum(weights)
-            else:
-                self.surrogate_weights = np.ones(len(self.active_surrogates)) / len(self.active_surrogates)
-        else:
-            # Use single best model
-            self.active_surrogates = [current_best]
-    
-    # If no models could be trained, create a dummy surrogate
-    if not trained_models:
-        trained_models['dummy'] = self._create_dummy_surrogate(y)
-        self.active_surrogates = ['dummy']
-    
-    return trained_models
+from modules.configs import *
 
-# Fix 4: Update the _acquisition_function to handle each model type correctly
-def _acquisition_function(self, x: np.ndarray, models: Dict[str, Any], best_f: float, xi: float = 0.01) -> float:
+# Setup logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger("config_optimizer")
+
+class DeviceOptimizer:
     """
-    Advanced acquisition function with ensemble support and adaptive exploration
-    
-    Parameters:
-    -----------
-    x : array-like
-        Point to evaluate
-    
-    models : dict
-        Dictionary of trained surrogate models
-    
-    best_f : float
-        Best function value observed so far
-    
-    xi : float
-        Exploration-exploitation parameter
-        
-    Returns:
-    --------
-    acquisition_value : float
-        Value of acquisition function
+    Automatically configures ML pipeline settings based on the device capabilities.
+    Optimizes configurations for:
+    - Quantization
+    - Batch processing
+    - Preprocessing
+    - Inference engine
+    - Training engine
     """
-    # Reshape x if needed
-    if x.ndim == 1:
-        x = x.reshape(1, -1)
+    
+    def __init__(self, 
+                 config_path: str = "./configs",
+                 checkpoint_path: str = "./checkpoints",
+                 model_registry_path: str = "./model_registry",
+                 optimization_mode: OptimizationMode = OptimizationMode.BALANCED):
+        """
+        Initialize the device optimizer.
         
-    # Scale features
-    x_scaled = self.scaler.transform(x)
-    
-    # Check which acquisition function to use based on iteration
-    acq_type = self._select_acquisition_function()
-    
-    # Compute predictions from all models
-    all_means = []
-    all_stds = []
-    
-    for i, model_name in enumerate(self.active_surrogates):
-        if model_name not in models:
-            continue
-            
-        model = models[model_name]
+        Args:
+            config_path: Path to save configuration files
+            checkpoint_path: Path for model checkpoints
+            model_registry_path: Path for model registry
+            optimization_mode: Mode for optimization strategy
+        """
+        self.config_path = Path(config_path)
+        self.checkpoint_path = Path(checkpoint_path)
+        self.model_registry_path = Path(model_registry_path)
+        self.optimization_mode = optimization_mode
         
-        # Different prediction method based on model type
-        if model_name == 'gp':
+        logger.info(f"Using optimization mode: {self.optimization_mode}")
+        
+        # Create directories if they don't exist
+        for path in [self.config_path, self.checkpoint_path, self.model_registry_path]:
+            path.mkdir(parents=True, exist_ok=True)
+        
+        # System information
+        self.cpu_count = multiprocessing.cpu_count()
+        self.total_memory_gb = psutil.virtual_memory().total / (1024 ** 3)
+        self.system = platform.system()
+        self.machine = platform.machine()
+        self.processor = platform.processor()
+        self.hostname = socket.gethostname()
+        
+        # Check for Intel CPU
+        self.is_intel_cpu = "Intel" in self.processor
+        
+        # Check for AVX/AVX2 support on x86 processors
+        self.has_avx = False
+        self.has_avx2 = False
+        
+        if self.system == "Linux" and (self.machine == "x86_64" or self.machine == "AMD64"):
             try:
-                mean, std = model.predict(x_scaled, return_std=True)
-                all_means.append(mean)
-                all_stds.append(std)
+                with open("/proc/cpuinfo", "r") as f:
+                    cpuinfo = f.read()
+                    self.has_avx = "avx" in cpuinfo.lower()
+                    self.has_avx2 = "avx2" in cpuinfo.lower()
             except Exception as e:
-                if self.verbose > 1:
-                    print(f"Error in GP acquisition prediction: {e}")
+                logger.warning(f"Failed to check AVX support: {e}")
         
-        elif model_name == 'rf':
-            try:
-                # Mean prediction
-                mean = model.predict(x_scaled)
-                
-                # Get std from individual trees
-                tree_preds = np.array([tree.predict(x_scaled) for tree in model.estimators_])
-                std = np.std(tree_preds, axis=0)
-                
-                all_means.append(mean)
-                all_stds.append(std)
-            except Exception as e:
-                if self.verbose > 1:
-                    print(f"Error in RF acquisition prediction: {e}")
-        
-        elif model_name == 'nn':
-            try:
-                mean = model.predict(x_scaled)
-                
-                # Simple uncertainty
-                if hasattr(self, 'X_valid') and self.X_valid is not None and self.X_valid.shape[0] > 0:
-                    dists = np.min(np.sum((x_scaled[:, np.newaxis, :] - self.X_valid[np.newaxis, :, :]) ** 2, axis=2), axis=1)
-                    std = np.sqrt(dists) * 0.1 + 0.05
-                else:
-                    std = np.ones_like(mean) * 0.1
-                    
-                all_means.append(mean)
-                all_stds.append(std)
-            except Exception as e:
-                if self.verbose > 1:
-                    print(f"Error in NN acquisition prediction: {e}")
-        
-        else:  # dummy or other
-            try:
-                mean = model.predict(x_scaled)
-                std = np.ones_like(mean) * 0.1
-                
-                all_means.append(mean)
-                all_stds.append(std)
-            except Exception as e:
-                if self.verbose > 1:
-                    print(f"Error in dummy acquisition prediction: {e}")
+        # Log system information
+        logger.info(f"System: {self.system} {self.machine}")
+        logger.info(f"Processor: {self.processor}")
+        logger.info(f"CPU Count: {self.cpu_count}")
+        logger.info(f"Total Memory: {self.total_memory_gb:.2f} GB")
+        logger.info(f"Intel CPU: {self.is_intel_cpu}")
+        logger.info(f"AVX Support: {self.has_avx}")
+        logger.info(f"AVX2 Support: {self.has_avx2}")
     
-    # If no models provided valid predictions, return a default value
-    if not all_means:
-        return 0.0
-        
-    # Compute ensemble prediction
-    if self.ensemble_surrogate and self.surrogate_weights is not None and len(all_means) > 1:
-        # Ensure we have correct number of weights
-        if len(self.surrogate_weights) != len(all_means):
-            # Equal weights as fallback
-            weights = np.ones(len(all_means)) / len(all_means)
-        else:
-            weights = self.surrogate_weights
-            
-        # Weighted mean
-        mu = np.zeros_like(all_means[0])
-        for i, mean in enumerate(all_means):
-            mu += weights[i] * mean
-            
-        # Weighted variance (including model disagreement)
-        total_var = np.zeros_like(all_stds[0])
-        
-        # Within-model variance
-        for i, std in enumerate(all_stds):
-            total_var += weights[i] * (std ** 2)
-            
-        # Between-model variance (disagreement)
-        for i, mean in enumerate(all_means):
-            total_var += weights[i] * ((mean - mu) ** 2)
-            
-        sigma = np.sqrt(total_var)
-    else:
-        # Single model or equal weights
-        mu = all_means[0]
-        sigma = all_stds[0]
-    
-    # Handle zero uncertainty
-    if np.all(sigma < 1e-6):
-        sigma = np.ones_like(sigma) * 1e-6
-    
-    # Compute acquisition value based on selected function
-    if acq_type == 'ei':  # Expected Improvement
-        # Adjust for maximization/minimization
-        if self.maximize:
-            imp = mu - best_f - xi
-        else:
-            # For minimization problems, we negate predictions
-            imp = best_f - mu - xi
-            
-        # Z-score
-        z = imp / sigma
-        
-        # EI formula: (imp * CDF(z) + sigma * pdf(z))
-        cdf = 0.5 * (1 + np.array([np.math.erf(val / np.sqrt(2)) for val in z]))
-        pdf = np.exp(-0.5 * z**2) / np.sqrt(2 * np.pi)
-        
-        ei = imp * cdf + sigma * pdf
-        acquisition = ei[0]  # Take first element for single point
-        
-    elif acq_type == 'ucb':  # Upper Confidence Bound
-        # Adaptive beta based on iteration count
-        beta = 0.5 + np.log(1 + self.iteration_count)
-        
-        if self.maximize:
-            acquisition = mu[0] + beta * sigma[0]
-        else:
-            acquisition = -(mu[0] - beta * sigma[0])
-            
-    elif acq_type == 'poi':  # Probability of Improvement
-        if self.maximize:
-            z = (mu - best_f - xi) / sigma
-        else:
-            z = (best_f - mu - xi) / sigma
-            
-        # POI is just the CDF
-        acquisition = 0.5 * (1 + np.math.erf(z[0] / np.sqrt(2)))
-        
-    elif acq_type == 'thompson':  # Thompson Sampling
-        # Sample from posterior
-        if self.maximize:
-            acquisition = mu[0] + sigma[0] * np.random.randn()
-        else:
-            acquisition = -(mu[0] + sigma[0] * np.random.randn())
-            
-    else:  # Default to EI
-        if self.maximize:
-            imp = mu - best_f - xi
-        else:
-            imp = best_f - mu - xi
-            
-        z = imp / sigma
-        cdf = 0.5 * (1 + np.array([np.math.erf(val / np.sqrt(2)) for val in z]))
-        pdf = np.exp(-0.5 * z**2) / np.sqrt(2 * np.pi)
-        
-        ei = imp * cdf + sigma * pdf
-        acquisition = ei[0]
-    
-    # Return negative for minimization with scipy optimize
-    return -acquisition
+    # Other methods remain the same...
 
-# Fix 5: Make sure fit strictly adheres to max_iter
-def fit(self, X, y):
-    """
-    Run the HyperOptX optimization process
-    
-    Parameters:
-    -----------
-    X : array-like, shape (n_samples, n_features)
-        Training data
+    def save_configs(self, config_id: Optional[str] = None) -> Dict[str, str]:
+        """
+        Generate and save all optimized configurations.
         
-    y : array-like, shape (n_samples,)
-        Target values
+        Args:
+            config_id: Optional identifier for the configuration set
+        
+        Returns:
+            Dictionary with paths to saved configuration files
+        """
+        if config_id is None:
+            config_id = str(uuid.uuid4())[:8]
+        
+        # Create configs directory if it doesn't exist
+        configs_dir = self.config_path / config_id
+        configs_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Generate all configs
+        quantization_config = self.get_optimal_quantization_config()
+        batch_config = self.get_optimal_batch_processor_config()
+        preprocessor_config = self.get_optimal_preprocessor_config()
+        inference_config = self.get_optimal_inference_engine_config()
+        training_config = self.get_optimal_training_engine_config()
+        
+        # Save system info
+        system_info = {
+            "system": self.system,
+            "machine": self.machine,
+            "processor": self.processor,
+            "cpu_count": self.cpu_count,
+            "total_memory_gb": self.total_memory_gb,
+            "is_intel_cpu": self.is_intel_cpu,
+            "has_avx": self.has_avx,
+            "has_avx2": self.has_avx2,
+            "hostname": self.hostname,
+            "optimization_mode": self.optimization_mode.value,
+            "timestamp": str(datetime.datetime.now())
+        }
+        
+        system_info_path = configs_dir / "system_info.json"
+        with open(system_info_path, "w") as f:
+            json.dump(system_info, f, indent=2)
+        
+        # Create a safe method for serializing configurations
+        def safe_serialize_config(config):
+            """Convert dataclass or object to JSON serializable dictionary."""
+            if hasattr(config, '__dict__'):
+                return safe_dict_serializer(config.__dict__)
+            elif is_dataclass(config):
+                return safe_dict_serializer(asdict(config))
+            return config
+        
+        # Save configurations using safe serialization
+        configs_to_save = [
+            ("quantization_config", quantization_config, quant_config_path := configs_dir / "quantization_config.json"),
+            ("batch_config", batch_config, batch_config_path := configs_dir / "batch_processor_config.json"),
+            ("preprocessor_config", preprocessor_config, preprocessor_config_path := configs_dir / "preprocessor_config.json"),
+            ("inference_config", inference_config, inference_config_path := configs_dir / "inference_engine_config.json"),
+            ("training_config", training_config, training_config_path := configs_dir / "training_engine_config.json")
+        ]
+        
+        for name, config, path in configs_to_save:
+            try:
+                serialized_config = safe_serialize_config(config)
+                with open(path, "w") as f:
+                    json.dump(serialized_config, f, indent=2)
+            except Exception as e:
+                logger.error(f"Failed to save {name}: {e}")
+        
+        # Create a master config file with paths to all configs
+        master_config = {
+            "config_id": config_id,
+            "optimization_mode": self.optimization_mode.value,
+            "system_info": str(system_info_path),
+            "quantization_config": str(quant_config_path),
+            "batch_processor_config": str(batch_config_path),
+            "preprocessor_config": str(preprocessor_config_path),
+            "inference_engine_config": str(inference_config_path),
+            "training_engine_config": str(training_config_path),
+            "checkpoint_path": str(self.checkpoint_path),
+            "model_registry_path": str(self.model_registry_path)
+        }
+        
+        master_config_path = configs_dir / "master_config.json"
+        with open(master_config_path, "w") as f:
+            json.dump(master_config, f, indent=2)
+        
+        logger.info(f"All configurations saved to {configs_dir}")
+        return master_config
+
+def create_optimized_configs(
+    config_path: str = "./configs", 
+    checkpoint_path: str = "./checkpoints", 
+    model_registry_path: str = "./model_registry",
+    optimization_mode: OptimizationMode = OptimizationMode.BALANCED,
+    **kwargs  # Added to handle additional arguments
+) -> Dict[str, str]:
+    """
+    Create and save optimized configurations for the ML pipeline.
+    
+    Args:
+        config_path: Path to save configuration files
+        checkpoint_path: Path for model checkpoints
+        model_registry_path: Path for model registry
+        optimization_mode: Mode for optimization strategy
+        **kwargs: Additional keyword arguments (for flexibility)
     
     Returns:
-    --------
-    self : object
-        Returns self
+        Dictionary with paths to saved configuration files
     """
-    self.X = X
-    self.y = y
+    # Extract config_id if present in kwargs
+    config_id = kwargs.get('config_id')
     
-    # Start timing
-    self.start_time = time.time()
+    optimizer = DeviceOptimizer(
+        config_path=config_path,
+        checkpoint_path=checkpoint_path,
+        model_registry_path=model_registry_path,
+        optimization_mode=optimization_mode
+    )
     
-    # Track current iteration number to enforce max_iter
-    current_iter = 0
-    
-    # Extract problem features for meta-learning
-    if self.meta_learning:
-        problem_features = self._extract_problem_features(X, y)
-        if self.verbose:
-            print(f"Problem features: {problem_features}")
-    
-    # Create multi-fidelity budget schedule
-    budget_schedule = self._multi_fidelity_schedule(self.max_iter)
-    
-    # Track scores and configs for early stopping
-    all_scores = []
-    all_configs = []
-    eval_times = []
-    
-    # Strategy determination
-    selected_strategy = self.optimization_strategy
-    if selected_strategy == 'auto':
-        # Choose strategy based on problem size
-        if X.shape[1] > 50 or len(self.param_space) > 10:
-            # High-dimensional problems: prefer evolutionary
-            selected_strategy = 'evolutionary'
-        elif len([p for p, t in self.param_types.items() if t == 'categorical']) > len(self.param_types) / 2:
-            # Many categorical parameters: prefer bayesian
-            selected_strategy = 'bayesian'
-        else:
-            # Default to hybrid
-            selected_strategy = 'hybrid'
-            
-    if self.verbose:
-        print(f"Selected optimization strategy: {selected_strategy}")
-        print(f"Initializing HyperOptX with {self.max_iter} maximum iterations")
-    
-    # Strict enforcement of max_iter
-    # Phase 1: Initial exploration with fewer samples to stay within max_iter
-    n_initial = max(1, min(self.max_iter // 4, 5))
-    
-    if self.verbose:
-        print(f"Phase 1: Initial exploration with {n_initial} configurations")
-    
-    # Generate initial configurations
-    initial_configs = self._sample_configurations(n_initial, 'mixed')
-    
-    # Evaluate initial configs
-    initial_results = []
-    for config in initial_configs:
-        if current_iter >= self.max_iter:
-            break
-            
-        score = self._objective_func(config, budget=0.5)  # 50% budget
-        initial_results.append((config, score))
-        all_scores.append(score)
-        all_configs.append(config)
-        
-        # Update counters
-        current_iter += 1
-        self.iteration_count += 1
-        
-        # Update evolutionary population
-        if selected_strategy in ['evolutionary', 'hybrid']:
-            self._update_population([config], [score])
-    
-    # Sort by score
-    if self.maximize:
-        initial_results.sort(key=lambda x: x[1], reverse=True)
-    else:
-        initial_results.sort(key=lambda x: x[1])
-    
-    # Initialize surrogate models with these results
-    X_init = self._configs_to_features([cfg for cfg, _ in initial_results])
-    y_init = np.array([score for _, score in initial_results])
-    
-    # Train initial surrogate models
-    surrogate_models = self._train_surrogate_models(X_init, y_init)
-    
-    # Iterative optimization phase
-    remaining_iter = self.max_iter - current_iter
-    
-    if remaining_iter > 0 and self.verbose:
-        print(f"Phase 2: Iterative optimization with {remaining_iter} iterations")
-    
-    while current_iter < self.max_iter:
-        # Current budget from schedule
-        current_budget = budget_schedule[min(current_iter, len(budget_schedule)-1)]
-        
-        # Different proposal strategies based on selected strategy
-        if selected_strategy == 'bayesian':
-            # Bayesian optimization: use acquisition function
-            current_best = max(all_scores) if self.maximize else min(all_scores)
-            next_config = self._optimize_acquisition(surrogate_models, current_best)
-            candidates = [next_config]
-            
-        elif selected_strategy == 'evolutionary':
-            # Evolutionary optimization: generate offspring
-            if len(self.population) >= 5:
-                candidates = self._evolutionary_search(n_offspring=1)  # Reduced to just 1
-            else:
-                # Not enough population yet, use mixed strategy
-                candidates = self._sample_configurations(1, 'mixed')  # Reduced to just 1
-                
-        elif selected_strategy == 'hybrid':
-            # Hybrid: mix of bayesian and evolutionary
-            candidates = []
-            
-            # Bayesian candidate
-            current_best = max(all_scores) if self.maximize else min(all_scores)
-            bayes_config = self._optimize_acquisition(surrogate_models, current_best)
-            candidates.append(bayes_config)
-            
-            # Don't add more candidates if we're near max_iter
-            if current_iter < self.max_iter - 1:
-                # Add just one more candidate
-                if len(self.population) >= 5:
-                    evo_config = self._evolutionary_search(n_offspring=1)[0]
-                    candidates.append(evo_config)
-                else:
-                    random_config = self._sample_configurations(1, 'random')[0]
-                    candidates.append(random_config)
-        
-        else:  # Default to mixed sampling
-            candidates = self._sample_configurations(1, 'mixed')  # Reduced to just 1
-        
-        # Limit candidates to respect remaining iterations
-        candidates = candidates[:max(1, self.max_iter - current_iter)]
-        
-        # Evaluate candidates
-        batch_scores = []
-        batch_times = []
-        
-        if self.verbose > 0 and (current_iter % 5 == 0 or self.verbose >= 2):
-            print(f"  Iteration {current_iter+1}/{self.max_iter}: " + 
-                  f"budget={current_budget:.2f}, evaluating {len(candidates)} candidates")
-        
-        for config in candidates:
-            # Check for early stopping
-            if self._needs_early_stopping(current_iter, all_scores, eval_times):
-                if self.verbose:
-                    print(f"Early stopping at iteration {current_iter+1}")
-                break
-            
-            # Check if we've reached max_iter
-            if current_iter >= self.max_iter:
-                break
-                
-            # Evaluate with current budget
-            eval_start = time.time()
-            score = self._objective_func(config, budget=current_budget)
-            eval_time = time.time() - eval_start
-            
-            batch_scores.append(score)
-            batch_times.append(eval_time)
-            
-            all_scores.append(score)
-            all_configs.append(config)
-            eval_times.append(eval_time)
-            
-            # Update evolutionary population
-            if selected_strategy in ['evolutionary', 'hybrid']:
-                self._update_population([config], [score])
-            
-            # Update iteration counter
-            current_iter += 1
-            self.iteration_count += 1
-        
-        # Retrain surrogate models with all data
-        X_all = self._configs_to_features(all_configs)
-        y_all = np.array(all_scores)
-        
-        # Only retrain if we haven't reached max_iter yet
-        if current_iter < self.max_iter and len(all_configs) >= 2:
-            surrogate_models = self._train_surrogate_models(X_all, y_all)
-            
-            # Update surrogate predictions in cv_results
-            self._update_surrogate_predictions(surrogate_models)
-        
-        # Check for early stopping
-        if self._needs_early_stopping(current_iter, all_scores, eval_times):
-            if self.verbose:
-                print(f"Early stopping at iteration {current_iter}")
-            break
-    
-    # Final evaluation of best configurations with full budget
-    if current_iter >= self.max_iter and self.verbose:
-        print("Phase 3: Final evaluation of top configurations with full budget")
-    
-        # Get top configurations
-        indices = np.argsort(all_scores)
-        if self.maximize:
-            indices = indices[::-1]  # Reverse for maximization
-            
-        # Take top 3 configurations
-        top_k = min(3, len(all_configs))
-        top_configs = [all_configs[i] for i in indices[:top_k]]
-        
-        # Re-evaluate with full budget if needed
-        for config in top_configs:
-            # Skip if already evaluated with full budget
-            param_key = frozenset(config.items())
-            if param_key in self.evaluated_configs and 1.0 in self.evaluated_configs[param_key]:
-                continue
-                
-            # We don't count this towards max_iter since it's a final evaluation
-            self._objective_func(config, budget=1.0)
-    
-    # Set the best estimator
-    if self.best_params_ is not None:
-        try:
-            self.best_estimator_ = clone(self.estimator)
-            self.best_estimator_.set_params(**self.best_params_)
-            self.best_estimator_.fit(X, y)
-        except Exception as e:
-            if self.verbose:
-                print(f"Error fitting best estimator: {e}")
-            # Fallback: fit with default parameters
-            self.best_estimator_ = clone(self.estimator)
-            self.best_estimator_.fit(X, y)
-    else:
-        # No good parameters found, use default
-        self.best_estimator_ = clone(self.estimator)
-        self.best_estimator_.fit(X, y)
-    
-    # Display final results
-    if self.verbose:
-        print("\nOptimization completed:")
-        print(f"Total iterations: {current_iter}")
-        print(f"Best score: {self.best_score_:.6f}")
-        print(f"Best parameters: {self.best_params_}")
-        print(f"Time elapsed: {time.time() - self.start_time:.2f} seconds")
-    
-    return self
+    # If config_id is provided, pass it to save_configs
+    return optimizer.save_configs(config_id)
 
-# Fix 6: Fix the early stopping method
-def _needs_early_stopping(self, iteration: int, scores: List[float], times: List[float]) -> bool:
-    """Determine if optimization should be stopped early"""
+def create_configs_for_all_modes(
+    config_path: str = "./configs", 
+    checkpoint_path: str = "./checkpoints", 
+    model_registry_path: str = "./model_registry",
+    **kwargs  # Added to handle additional arguments
+) -> Dict[OptimizationMode, Dict[str, str]]:
+    """
+    Create and save configurations for all optimization modes.
+    
+    Args:
+        config_path: Path to save configuration files
+        checkpoint_path: Path for model checkpoints
+        model_registry_path: Path for model registry
+        **kwargs: Additional keyword arguments (for flexibility)
+    
+    Returns:
+        Dictionary of configurations for each optimization mode
+    """
+    # Get all optimization modes
+    all_modes = list(OptimizationMode)
+    
+    # Create configurations for each mode
+    configs = {}
+    for mode in all_modes:
+        # Pass along any additional keyword arguments
+        configs[mode] = create_optimized_configs(
+            config_path=config_path,
+            checkpoint_path=checkpoint_path,
+            model_registry_path=model_registry_path,
+            optimization_mode=mode,
+            **kwargs
+        )
+    
+    return configs
+
+# Generic type for configuration classes
+ConfigT = TypeVar('ConfigT')
+
+def load_config(
+    config_path: Union[str, Path], 
+    config_class: Optional[Type[ConfigT]] = None
+) -> Union[Dict[str, Any], ConfigT]:
+    """
+    Load a configuration from a JSON file.
+    
+    Args:
+        config_path: Path to the configuration JSON file
+        config_class: Optional configuration class to convert the loaded dict to
+    
+    Returns:
+        Loaded configuration as a dictionary or an instance of the specified config class
+    """
+    # Ensure path is a Path object
+    config_path = Path(config_path)
+    
+    # Check if file exists
+    if not config_path.exists():
+        raise FileNotFoundError(f"Configuration file not found: {config_path}")
+    
+    # Read the JSON file
     try:
-        if not self.early_stopping:
-            return False
+        with open(config_path, 'r') as f:
+            config_dict = json.load(f)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Invalid JSON in configuration file: {e}")
+    
+    # If no specific config class is provided, return the dictionary
+    if config_class is None:
+        return config_dict
+    
+    # Convert dictionary to config class instance
+    try:
+        # Special handling for Enum values
+        def convert_enum_values(config_class, data):
+            # Get the class's field names
+            field_names = getattr(config_class, '__annotations__', {}).keys()
             
-        # Need at least 10 iterations to detect trends
-        if iteration < 10:
-            return False
-            
-        # Stop if time budget exceeded
-        if self.time_budget is not None and (time.time() - self.start_time) > self.time_budget:
-            return True
-            
-        # Check for score convergence
-        if len(scores) >= 10:
-            recent_scores = scores[-10:]
-            
-            # Extract valid scores
-            valid_scores = [s for s in recent_scores if np.isfinite(s)]
-            if len(valid_scores) < 5:  # Need enough valid scores
-                return False
-                
-            # Convert to numpy array for operations
-            valid_scores = np.array(valid_scores)
-            
-            # Use simple linear fit to detect trend
-            x = np.arange(len(valid_scores)).reshape(-1, 1)
-            
-            try:
-                # Reset and fit the model
-                self.learning_curve_model = Ridge(alpha=1.0)
-                self.learning_curve_model.fit(x, valid_scores)
-                slope = self.learning_curve_model.coef_[0]
-                
-                # Calculate improvement percentage
-                if len(valid_scores) > 1:
-                    score_range = np.max(valid_scores) - np.min(valid_scores)
-                    if score_range == 0:  # No variation in scores
-                        return True
-                        
-                    # Calculate relative slope
-                    norm_slope = slope / score_range
+            # Create a new dictionary to store converted values
+            converted_data = {}
+            for key, value in data.items():
+                if key in field_names:
+                    field_type = config_class.__annotations__.get(key)
                     
-                    # If maximizing, check if slope is very small positive or negative
-                    if self.maximize:
-                        return bool(norm_slope < 0.001)
-                    # If minimizing, check if slope is very small negative or positive
+                    # Convert Enum values
+                    if isinstance(field_type, type) and issubclass(field_type, Enum):
+                        converted_data[key] = field_type(value)
                     else:
-                        return bool(norm_slope > -0.001)
-            except Exception:
-                # If error in slope calculation, don't trigger early stopping
-                return False
-                
-        return False
-    except Exception:
-        # Safety catch-all to avoid halting optimization due to early stopping error
-        return False
+                        converted_data[key] = value
+                else:
+                    converted_data[key] = value
+            
+            return converted_data
+        
+        # Convert enum values
+        converted_data = convert_enum_values(config_class, config_dict)
+        
+        # Create an instance of the config class
+        return config_class(**converted_data)
+    except Exception as e:
+        raise ValueError(f"Failed to convert config to {config_class.__name__}: {e}")
+
+def safe_dict_serializer(
+    data: Any, 
+    max_depth: int = 10, 
+    current_depth: int = 0
+) -> Any:
+    """
+    Safely serialize complex objects into a JSON-compatible dictionary.
+    
+    Args:
+        data: The data to be serialized
+        max_depth: Maximum recursion depth to prevent infinite recursion
+        current_depth: Current recursion depth
+    
+    Returns:
+        JSON-compatible representation of the input data
+    """
+    # Check recursion depth
+    if current_depth > max_depth:
+        return str(data)
+    
+    # Handle None
+    if data is None:
+        return None
+    
+    # Handle primitive types
+    if isinstance(data, (str, int, float, bool)):
+        return data
+    
+    # Handle Enum
+    if isinstance(data, Enum):
+        return data.value
+    
+    # Handle datetime
+    if isinstance(data, (datetime.datetime, datetime.date)):
+        return data.isoformat()
+    
+    # Handle numpy types
+    if isinstance(data, (np.integer, np.floating, np.ndarray)):
+        # Convert numpy types to standard Python types
+        if isinstance(data, np.ndarray):
+            return data.tolist()
+        return data.item()
+    
+    # Handle dataclasses
+    if is_dataclass(data):
+        return safe_dict_serializer(asdict(data), max_depth, current_depth + 1)
+    
+    # Handle paths 
+    if isinstance(data, (Path, os.PathLike)):
+        # Normalize the path to use forward slashes for consistency
+        return str(data).replace('\\', '/')
+    
+    # Handle dictionaries
+    if isinstance(data, dict):
+        return {
+            str(k): safe_dict_serializer(v, max_depth, current_depth + 1) 
+            for k, v in data.items()
+        }
+    
+    # Handle lists, tuples, and other iterables
+    if isinstance(data, (list, tuple, set)):
+        return [
+            safe_dict_serializer(item, max_depth, current_depth + 1) 
+            for item in data
+        ]
+    
+    # Handle objects with __dict__ attribute
+    if hasattr(data, '__dict__'):
+        return safe_dict_serializer(data.__dict__, max_depth, current_depth + 1)
+    
+    # Handle type objects
+    if isinstance(data, type):
+        return data.__name__
+    
+    # Fallback to string representation
+    return str(data)

@@ -1,0 +1,12 @@
+{
+  "config_id": "f691e2db",
+  "optimization_mode": "full_utilization",
+  "system_info": "configs\\f691e2db\\system_info.json",
+  "quantization_config": "configs\\f691e2db\\quantization_config.json",
+  "batch_processor_config": "configs\\f691e2db\\batch_processor_config.json",
+  "preprocessor_config": "configs\\f691e2db\\preprocessor_config.json",
+  "inference_engine_config": "configs\\f691e2db\\inference_engine_config.json",
+  "training_engine_config": "configs\\f691e2db\\training_engine_config.json",
+  "checkpoint_path": "C:\\Users\\Evint\\AppData\\Local\\Temp\\tmp50g8e3qv\\checkpoints",
+  "model_registry_path": "C:\\Users\\Evint\\AppData\\Local\\Temp\\tmp50g8e3qv\\model_registry"
+}
