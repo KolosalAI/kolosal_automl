@@ -24,6 +24,7 @@ import joblib
 import re
 import gc
 # Import this at the top of your script
+from joblib.externals.loky.backend import resource_tracker
 import types
 import warnings
 
@@ -127,7 +128,7 @@ def patch_resource_tracker():
 
 # Call this at the beginning of the script
 patch_resource_tracker()
-from joblib.externals.loky.backend import resource_tracker
+
 
 def silent_warn(self, msg):
     # Don't warn about FileNotFoundError during resource cleanup
