@@ -14,13 +14,7 @@ import time
 import logging
 import gc
 from datetime import datetime
-
-# Try to import the benchmark runner
-try:
-    from training_engine_benchmark import BenchmarkRunner
-except ImportError:
-    print("ERROR: Cannot import BenchmarkRunner. Make sure training_engine_benchmark.py is in the current directory.")
-    sys.exit(1)
+from training_engine_benchmark import BenchmarkRunner
 
 # Set up logging
 logging.basicConfig(
