@@ -1,0 +1,157 @@
+{
+  "benchmark_name": "Genta AutoML Performance Evaluation",
+  "version": "1.0.0",
+  "output_dir": "./benchmark_results",
+  "enable_experiment_tracking": true,
+  "random_seed": 42,
+  "resources": {
+    "n_jobs": -1,
+    "memory_optimization": true,
+    "enable_intel_optimization": true
+  },
+  "benchmarks": [
+    {
+      "name": "classification_small_datasets",
+      "description": "Benchmarking performance on small classification datasets",
+      "configurations": [
+        {"dataset": "iris", "model": "random_forest", "optimization_strategy": "grid_search"},
+        {"dataset": "iris", "model": "random_forest", "optimization_strategy": "random_search"},
+        {"dataset": "iris", "model": "random_forest", "optimization_strategy": "asht"},
+        {"dataset": "iris", "model": "gradient_boosting", "optimization_strategy": "random_search"},
+        {"dataset": "iris", "model": "gradient_boosting", "optimization_strategy": "asht"},
+        {"dataset": "iris", "model": "logistic_regression", "optimization_strategy": "random_search"},
+        {"dataset": "wine", "model": "random_forest", "optimization_strategy": "asht"},
+        {"dataset": "wine", "model": "gradient_boosting", "optimization_strategy": "asht"}
+      ]
+    },
+    {
+      "name": "classification_medium_datasets",
+      "description": "Benchmarking performance on medium-sized classification datasets",
+      "configurations": [
+        {"dataset": "breast_cancer", "model": "random_forest", "optimization_strategy": "grid_search"},
+        {"dataset": "breast_cancer", "model": "random_forest", "optimization_strategy": "random_search"},
+        {"dataset": "breast_cancer", "model": "random_forest", "optimization_strategy": "bayesian_optimization"},
+        {"dataset": "breast_cancer", "model": "random_forest", "optimization_strategy": "asht"},
+        {"dataset": "breast_cancer", "model": "gradient_boosting", "optimization_strategy": "asht"},
+        {"dataset": "breast_cancer", "model": "logistic_regression", "optimization_strategy": "asht"},
+        {"dataset": "digits", "model": "random_forest", "optimization_strategy": "asht"},
+        {"dataset": "digits", "model": "gradient_boosting", "optimization_strategy": "asht"}
+      ]
+    },
+    {
+      "name": "regression_datasets",
+      "description": "Benchmarking performance on regression datasets",
+      "configurations": [
+        {"dataset": "diabetes", "model": "random_forest", "optimization_strategy": "grid_search"},
+        {"dataset": "diabetes", "model": "random_forest", "optimization_strategy": "random_search"},
+        {"dataset": "diabetes", "model": "random_forest", "optimization_strategy": "asht"},
+        {"dataset": "diabetes", "model": "gradient_boosting", "optimization_strategy": "asht"},
+        {"dataset": "diabetes", "model": "ridge", "optimization_strategy": "random_search"},
+        {"dataset": "diabetes", "model": "lasso", "optimization_strategy": "asht"},
+        {"dataset": "boston", "model": "random_forest", "optimization_strategy": "asht"},
+        {"dataset": "boston", "model": "gradient_boosting", "optimization_strategy": "asht"},
+        {"dataset": "boston", "model": "ridge", "optimization_strategy": "random_search"}
+      ]
+    },
+    {
+      "name": "synthetic_datasets",
+      "description": "Benchmarking performance on synthetic datasets of various sizes",
+      "configurations": [
+        {"dataset": "synthetic_small_classification", "model": "random_forest", "optimization_strategy": "asht"},
+        {"dataset": "synthetic_medium_classification", "model": "random_forest", "optimization_strategy": "asht"},
+        {"dataset": "synthetic_large_classification", "model": "random_forest", "optimization_strategy": "random_search"},
+        {"dataset": "synthetic_small_regression", "model": "random_forest", "optimization_strategy": "asht"},
+        {"dataset": "synthetic_medium_regression", "model": "random_forest", "optimization_strategy": "asht"}
+      ]
+    },
+    {
+      "name": "optimization_strategy_comparison",
+      "description": "Comparing different optimization strategies on the same dataset/model",
+      "configurations": [
+        {"dataset": "breast_cancer", "model": "random_forest", "optimization_strategy": "grid_search"},
+        {"dataset": "breast_cancer", "model": "random_forest", "optimization_strategy": "random_search"},
+        {"dataset": "breast_cancer", "model": "random_forest", "optimization_strategy": "bayesian_optimization"},
+        {"dataset": "breast_cancer", "model": "random_forest", "optimization_strategy": "asht"},
+        {"dataset": "wine", "model": "gradient_boosting", "optimization_strategy": "grid_search"},
+        {"dataset": "wine", "model": "gradient_boosting", "optimization_strategy": "random_search"},
+        {"dataset": "wine", "model": "gradient_boosting", "optimization_strategy": "bayesian_optimization"},
+        {"dataset": "wine", "model": "gradient_boosting", "optimization_strategy": "asht"}
+      ]
+    },
+    {
+      "name": "real_world_datasets",
+      "description": "Benchmarking on real-world datasets from OpenML",
+      "configurations": [
+        {"dataset": "adult", "model": "random_forest", "optimization_strategy": "random_search"},
+        {"dataset": "adult", "model": "random_forest", "optimization_strategy": "asht"},
+        {"dataset": "adult", "model": "gradient_boosting", "optimization_strategy": "asht"}
+      ]
+    }
+  ],
+  "model_configurations": {
+    "random_forest_classification": {
+      "param_grid": {
+        "model__n_estimators": [50, 100, 200],
+        "model__max_depth": [None, 10, 20, 30],
+        "model__min_samples_split": [2, 5, 10],
+        "model__min_samples_leaf": [1, 2, 4]
+      }
+    },
+    "random_forest_regression": {
+      "param_grid": {
+        "model__n_estimators": [50, 100, 200],
+        "model__max_depth": [None, 10, 20, 30],
+        "model__min_samples_split": [2, 5, 10]
+      }
+    },
+    "gradient_boosting_classification": {
+      "param_grid": {
+        "model__n_estimators": [50, 100, 200],
+        "model__learning_rate": [0.01, 0.05, 0.1],
+        "model__max_depth": [3, 5, 7]
+      }
+    },
+    "gradient_boosting_regression": {
+      "param_grid": {
+        "model__n_estimators": [50, 100, 200],
+        "model__learning_rate": [0.01, 0.05, 0.1],
+        "model__max_depth": [3, 5, 7]
+      }
+    },
+    "logistic_regression": {
+      "param_grid": {
+        "model__C": [0.01, 0.1, 1.0, 10.0],
+        "model__solver": ["liblinear", "saga"],
+        "model__penalty": ["l1", "l2"]
+      }
+    },
+    "ridge": {
+      "param_grid": {
+        "model__alpha": [0.1, 1.0, 10.0, 100.0],
+        "model__solver": ["auto", "svd", "cholesky"]
+      }
+    },
+    "lasso": {
+      "param_grid": {
+        "model__alpha": [0.001, 0.01, 0.1, 1.0],
+        "model__max_iter": [1000, 2000, 5000]
+      }
+    }
+  },
+  "metrics": {
+    "classification": ["accuracy", "precision", "recall", "f1", "roc_auc"],
+    "regression": ["mse", "rmse", "mae", "r2"]
+  },
+  "visualization": {
+    "enable_charts": true,
+    "include_feature_importance": true,
+    "generate_html": true,
+    "generate_markdown": true
+  },
+  "reporting": {
+    "output_format": ["json", "html", "csv"],
+    "include_system_info": true,
+    "include_memory_profiling": true,
+    "include_training_curves": true
+  }
+}
