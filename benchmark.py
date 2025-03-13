@@ -97,6 +97,28 @@ class BenchmarkEngine:
                 # Set joblib environment variables
                 os.environ["JOBLIB_TEMP_FOLDER"] = self.temp_folder
                 os.environ["JOBLIB_MULTIPROCESSING"] = "0"  # Force using loky backend with spawn
+                
+                # Attempt to monkey patch joblib's resource tracker to avoid warnings
+                try:
+                    from joblib.externals.loky.backend import resource_tracker
+                    if hasattr(resource_tracker, '_ResourceTracker'):
+                        # Create a subclass that overrides the warning method
+                        class SilentResourceTracker(resource_tracker._ResourceTracker):
+                            def _warn(self, *args, **kwargs):
+                                pass  # Do nothing instead of warning
+                        
+                        # Replace the resource tracker instance
+                        if hasattr(resource_tracker, '_resource_tracker'):
+                            original_tracker = resource_tracker._resource_tracker
+                            # Create new instance with same state but silent warnings
+                            silent_tracker = SilentResourceTracker()
+                            for attr in dir(original_tracker):
+                                if not attr.startswith('_') and not callable(getattr(original_tracker, attr)):
+                                    setattr(silent_tracker, attr, getattr(original_tracker, attr))
+                            resource_tracker._resource_tracker = silent_tracker
+                except:
+                    # If patching fails, just continue without it
+                    pass
             except Exception as e:
                 print(f"Warning: Could not set up joblib memory: {e}")
         
@@ -665,6 +687,17 @@ class BenchmarkEngine:
             return {"error": str(e)}
 
 def main():
+    # Monkey patch the warnings module to completely suppress specific joblib warnings
+    original_showwarning = warnings.showwarning
+    def custom_showwarning(message, *args, **kwargs):
+        # Skip resource tracker warnings about file not found
+        if "resource_tracker" in str(message) and "FileNotFoundError" in str(message):
+            return
+        if "joblib_memmapping_folder" in str(message):
+            return
+        # Show all other warnings normally
+        original_showwarning(message, *args, **kwargs)
+    warnings.showwarning = custom_showwarning
     parser = argparse.ArgumentParser(description='Benchmark MLTrainingEngine on PMLB datasets')
     parser.add_argument('--output-dir', type=str, default='./benchmark_results', 
                         help='Directory to save benchmark results')
