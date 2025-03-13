@@ -17,7 +17,7 @@ from datetime import datetime
 
 # Try to import the benchmark runner
 try:
-    from benchmark.benchmark_train_engine import BenchmarkRunner
+    from training_engine_benchmark import BenchmarkRunner
 except ImportError:
     print("ERROR: Cannot import BenchmarkRunner. Make sure training_engine_benchmark.py is in the current directory.")
     sys.exit(1)
