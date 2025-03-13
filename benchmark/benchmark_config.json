@@ -48,9 +48,9 @@
         {"dataset": "diabetes", "model": "gradient_boosting", "optimization_strategy": "asht"},
         {"dataset": "diabetes", "model": "ridge", "optimization_strategy": "random_search"},
         {"dataset": "diabetes", "model": "lasso", "optimization_strategy": "asht"},
-        {"dataset": "boston", "model": "random_forest", "optimization_strategy": "asht"},
-        {"dataset": "boston", "model": "gradient_boosting", "optimization_strategy": "asht"},
-        {"dataset": "boston", "model": "ridge", "optimization_strategy": "random_search"}
+        {"dataset": "california_housing", "model": "random_forest", "optimization_strategy": "asht"},
+        {"dataset": "california_housing", "model": "gradient_boosting", "optimization_strategy": "asht"},
+        {"dataset": "california_housing", "model": "ridge", "optimization_strategy": "random_search"}
       ]
     },
     {
