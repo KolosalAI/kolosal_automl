@@ -54,7 +54,73 @@ warnings.filterwarnings("ignore", message=".*resource_tracker.*FileNotFoundError
 warnings.filterwarnings("ignore", message=".*joblib_memmapping_folder.*", module="joblib.externals.loky.backend.resource_tracker")
 warnings.filterwarnings("ignore", message="resource_tracker", module="joblib.externals.loky.backend.resource_tracker")
 warnings.filterwarnings("ignore", message=".*Trying to unpickle estimator.*", module="sklearn")
+def patch_resource_tracker():
+    """
+    Create a comprehensive patch for joblib's resource tracker to prevent FileNotFoundError warnings
+    This needs to be called early in the program
+    """
+    try:
+        from joblib.externals.loky.backend import resource_tracker
+        
+        # Save original functions to avoid losing functionality
+        original_register = resource_tracker._resource_tracker.register
+        original_unregister = resource_tracker._resource_tracker.unregister
+        
+        # Create improved register function that handles failures gracefully
+        def safe_register(self, name, rtype):
+            try:
+                # Only register if the file/directory actually exists
+                if rtype == "folder" and os.path.isdir(name):
+                    return original_register(name, rtype)
+                elif rtype != "folder" and os.path.exists(name):
+                    return original_register(name, rtype)
+                # Otherwise silently ignore
+                return None
+            except Exception:
+                # Silently continue on any exception
+                return None
+        
+        # Create improved unregister function
+        def safe_unregister(self, name, rtype):
+            try:
+                # Only try to unregister if it exists
+                if rtype == "folder" and os.path.isdir(name):
+                    return original_unregister(name, rtype)
+                elif rtype != "folder" and os.path.exists(name):
+                    return original_unregister(name, rtype)
+                # Otherwise silently ignore
+                return None
+            except Exception:
+                # Silently continue on any exception
+                return None
+        
+        # Disable warning function completely
+        def silent_warn(self, msg):
+            pass
+        
+        # Apply the patches
+        resource_tracker._resource_tracker.register = lambda name, rtype: safe_register(
+            resource_tracker._resource_tracker, name, rtype
+        )
+        resource_tracker._resource_tracker.unregister = lambda name, rtype: safe_unregister(
+            resource_tracker._resource_tracker, name, rtype
+        )
+        
+        # Replace warning function
+        if hasattr(resource_tracker._resource_tracker, '_warn'):
+            resource_tracker._resource_tracker._warn = lambda *args, **kwargs: None
+        
+        # Disable warnings flag if it exists
+        if hasattr(resource_tracker._resource_tracker, '_warnings_enabled'):
+            resource_tracker._resource_tracker._warnings_enabled = False
+            
+        return True
+    except Exception as e:
+        print(f"Warning: Failed to patch resource tracker: {e}")
+        return False
 
+# Call this at the beginning of the script
+patch_resource_tracker()
 # Patch joblib to avoid resource tracker warnings
 try:
     from joblib.externals.loky.backend.resource_tracker import _resource_tracker
@@ -105,8 +171,7 @@ class BenchmarkEngine:
                 import psutil
                 total_memory = psutil.virtual_memory().total / (1024 * 1024)  # Convert to MB
                 self.memory_limit_mb = int(total_memory * 0.8)  # Use 80% of total memory
-                
-            # Set joblib memory limit
+            
             # Clean existing temp files with correct API
             try:
                 # In newer joblib versions
@@ -122,33 +187,39 @@ class BenchmarkEngine:
             try:
                 self.temp_folder = tempfile.mkdtemp(prefix="benchmark_joblib_")
                 print(f"Created temporary directory: {self.temp_folder}")
-                joblib.Memory(location=self.temp_folder, verbose=0)
+                
+                # Register this directory with joblib
+                memory = joblib.Memory(location=self.temp_folder, verbose=0)
                 
                 # Set joblib environment variables
                 os.environ["JOBLIB_TEMP_FOLDER"] = self.temp_folder
                 os.environ["JOBLIB_MULTIPROCESSING"] = "0"  # Force using loky backend with spawn
                 
-                # Attempt to monkey patch joblib's resource tracker to avoid warnings
+                # Disable resource tracker warnings
                 try:
                     from joblib.externals.loky.backend import resource_tracker
-                    if hasattr(resource_tracker, '_ResourceTracker'):
-                        # Create a subclass that overrides the warning method
+                    if hasattr(resource_tracker, '_resource_tracker'):
+                        # Make sure the warnings are disabled to prevent the FileNotFoundError messages
+                        if hasattr(resource_tracker._resource_tracker, '_warnings_enabled'):
+                            resource_tracker._resource_tracker._warnings_enabled = False
+                        
+                        # Also replace with a silent resource tracker
                         class SilentResourceTracker(resource_tracker._ResourceTracker):
                             def _warn(self, *args, **kwargs):
                                 pass  # Do nothing instead of warning
                         
                         # Replace the resource tracker instance
+                        silent_tracker = SilentResourceTracker()
                         if hasattr(resource_tracker, '_resource_tracker'):
-                            original_tracker = resource_tracker._resource_tracker
-                            # Create new instance with same state but silent warnings
-                            silent_tracker = SilentResourceTracker()
-                            for attr in dir(original_tracker):
-                                if not attr.startswith('_') and not callable(getattr(original_tracker, attr)):
-                                    setattr(silent_tracker, attr, getattr(original_tracker, attr))
+                            # Copy relevant attributes from original tracker
+                            for attr in dir(resource_tracker._resource_tracker):
+                                if not attr.startswith('_') and not callable(getattr(resource_tracker._resource_tracker, attr)):
+                                    setattr(silent_tracker, attr, getattr(resource_tracker._resource_tracker, attr))
+                            
+                            # Replace the tracker
                             resource_tracker._resource_tracker = silent_tracker
-                except:
-                    # If patching fails, just continue without it
-                    pass
+                except Exception as e:
+                    print(f"Warning: Could not disable resource tracker warnings: {e}")
             except Exception as e:
                 print(f"Warning: Could not set up joblib memory: {e}")
         
@@ -385,7 +456,6 @@ class BenchmarkEngine:
         )
         
         return engine_config
-    
     def run_benchmark(self, n_processes=None):
         """Run the benchmark on multiple datasets using process parallelism with detailed timing metrics"""
         # Register cleanup function to run at exit
@@ -435,9 +505,35 @@ class BenchmarkEngine:
         # Set up signal handlers for the main process
         original_sigint_handler = signal.signal(signal.SIGINT, signal.SIG_IGN)
         
+        # Before starting the process pool, ensure resource tracker warnings are disabled
+        try:
+            from joblib.externals.loky.backend import resource_tracker
+            if hasattr(resource_tracker, '_resource_tracker') and hasattr(resource_tracker._resource_tracker, '_warnings_enabled'):
+                resource_tracker._resource_tracker._warnings_enabled = False
+        except Exception:
+            pass
+        
         # Run benchmark in parallel with proper interrupt handling
         try:
-            with ProcessPoolExecutor(max_workers=n_processes) as executor:
+            # Use a custom initializer to suppress warnings in child processes
+            def init_worker():
+                # Suppress warnings in each worker process
+                warnings.filterwarnings("ignore", category=ConvergenceWarning)
+                warnings.filterwarnings("ignore", message=".*resource_tracker.*")
+                warnings.filterwarnings("ignore", message=".*joblib_memmapping_folder.*")
+                
+                # Also try to patch the resource tracker in each worker
+                try:
+                    from joblib.externals.loky.backend import resource_tracker
+                    if hasattr(resource_tracker, '_resource_tracker'):
+                        if hasattr(resource_tracker._resource_tracker, '_warnings_enabled'):
+                            resource_tracker._resource_tracker._warnings_enabled = False
+                        if hasattr(resource_tracker._resource_tracker, '_warn'):
+                            resource_tracker._resource_tracker._warn = lambda *args, **kwargs: None
+                except:
+                    pass
+                    
+            with ProcessPoolExecutor(max_workers=n_processes, initializer=init_worker) as executor:
                 # Restore the signal handler
                 signal.signal(signal.SIGINT, original_sigint_handler)
                 
@@ -453,6 +549,11 @@ class BenchmarkEngine:
                             benchmark_results.append(result)
                             completed_count += 1
                             print(f"Completed {completed_count}/{len(datasets)}: {dataset}")
+                            
+                            # Force garbage collection to reduce memory pressure
+                            if i % 5 == 0:  # Every 5 completed tasks
+                                gc.collect()
+                                
                         except Exception as e:
                             print(f"Error on dataset {dataset}: {str(e)}")
                 except KeyboardInterrupt:
@@ -529,6 +630,30 @@ class BenchmarkEngine:
     
     def _cleanup_resources(self):
         """Clean up any temporary resources created during benchmarking"""
+        # First, collect all temporary memmapping folders to delete
+        temp_folders_to_delete = []
+        
+        # Check if the primary temp folder exists
+        if hasattr(self, 'temp_folder') and self.temp_folder and os.path.exists(self.temp_folder):
+            temp_folders_to_delete.append(self.temp_folder)
+            
+            # Also find any memmapping folders that might be leaking
+            try:
+                import glob
+                folder_pattern = os.path.join(self.temp_folder, "joblib_memmapping_folder_*")
+                memmapping_folders = glob.glob(folder_pattern)
+                temp_folders_to_delete.extend(memmapping_folders)
+            except Exception as e:
+                print(f"Warning: Error identifying memmapping folders: {e}")
+        
+        # Disable resource tracker warning before attempting to clean up
+        try:
+            from joblib.externals.loky.backend import resource_tracker
+            if hasattr(resource_tracker, '_resource_tracker') and hasattr(resource_tracker._resource_tracker, '_warnings_enabled'):
+                resource_tracker._resource_tracker._warnings_enabled = False
+        except Exception as e:
+            print(f"Warning: Could not disable resource tracker warnings: {e}")
+        
         # Clean up joblib resources
         try:
             if hasattr(joblib, 'disk'):
@@ -537,27 +662,16 @@ class BenchmarkEngine:
                 joblib.pool.MemmappingPool.clear_temporary_files()
         except Exception as e:
             print(f"Warning: Failed to clean joblib temporary files: {e}")
-            
-        # Remove temp directory if it exists
-        if hasattr(self, 'temp_folder'):
+        
+        # Now actually delete the temp folders after joblib cleanup
+        for folder in temp_folders_to_delete:
             try:
-                # When cleaning up temp folders
-                if os.path.exists(self.temp_folder):
-                    shutil.rmtree(self.temp_folder, ignore_errors=True)
-                    print(f"Removed temporary directory: {self.temp_folder}")
-                    
-                    # Also remove any memmapping folders that might be leaking
-                    # This is where joblib's warnings are coming from
-                    folder_pattern = os.path.join(self.temp_folder, "joblib_memmapping_folder_*")
-                    import glob
-                    for folder in glob.glob(folder_pattern):
-                        try:
-                            shutil.rmtree(folder, ignore_errors=True)
-                        except:
-                            pass
+                if os.path.exists(folder):
+                    shutil.rmtree(folder, ignore_errors=True)
+                    print(f"Removed temporary directory: {folder}")
             except Exception as e:
-                print(f"Warning: Could not remove temp folder {self.temp_folder}: {e}")
-            
+                print(f"Warning: Could not remove temp folder {folder}: {e}")
+        
         # Clean up any orphaned processes
         try:
             current_process = psutil.Process()
@@ -830,17 +944,26 @@ class BenchmarkEngine:
         return output_file
 
 def main():
-    # Monkey patch the warnings module to completely suppress specific joblib warnings
+    # Explicitly monkey patch the warnings module to suppress resource_tracker warnings
     original_showwarning = warnings.showwarning
     def custom_showwarning(message, *args, **kwargs):
-        # Skip resource tracker warnings about file not found
-        if "resource_tracker" in str(message) and "FileNotFoundError" in str(message):
+        msg_str = str(message)
+        # Skip all resource tracker warnings
+        if "resource_tracker" in msg_str:
             return
-        if "joblib_memmapping_folder" in str(message):
+        if "joblib_memmapping_folder" in msg_str:
             return
         # Show all other warnings normally
         original_showwarning(message, *args, **kwargs)
     warnings.showwarning = custom_showwarning
+    
+    # Also disable warnings from resource_tracker module directly
+    try:
+        from joblib.externals.loky.backend import resource_tracker
+        if hasattr(resource_tracker, '_resource_tracker') and hasattr(resource_tracker._resource_tracker, '_warnings_enabled'):
+            resource_tracker._resource_tracker._warnings_enabled = False
+    except Exception as e:
+        print(f"Note: Could not disable resource tracker warnings directly: {e}")
     
     parser = argparse.ArgumentParser(description='Benchmark MLTrainingEngine on PMLB datasets')
     parser.add_argument('--output-dir', type=str, default='./benchmark_results', 
@@ -907,14 +1030,7 @@ def main():
         print("Cleaning up resources...")
         benchmark._cleanup_resources()
         
-        # Kill any remaining processes
-        try:
-            import signal
-            os.killpg(os.getpgid(0), signal.SIGTERM)  # Send SIGTERM to process group
-        except:
-            pass
-        
-        # Force cleanup any joblib resources
+        # Force cleanup any joblib resources again
         try:
             if hasattr(joblib, 'disk'):
                 joblib.disk.delete_temporary_files()
