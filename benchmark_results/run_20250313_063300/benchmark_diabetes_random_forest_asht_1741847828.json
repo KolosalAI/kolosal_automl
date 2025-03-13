@@ -1,0 +1,56 @@
+{
+  "benchmark_id": "diabetes_random_forest_asht_1741847828",
+  "dataset": "diabetes",
+  "model": "random_forest",
+  "optimization_strategy": "asht",
+  "dataset_shape": [
+    442,
+    10
+  ],
+  "system_info": {
+    "cpu_count": 64,
+    "initial_memory_mb": 306.95703125,
+    "platform": "posix"
+  },
+  "training_time_seconds": 1.4356775283813477,
+  "inference_time_seconds": 0.17447996139526367,
+  "peak_memory_mb": 315.390625,
+  "final_memory_mb": 330.84375,
+  "training_throughput_samples_per_second": 245.87694173773778,
+  "inference_throughput_samples_per_second": 510.0872288616631,
+  "metrics": {
+    "test_mse": 3063.1297438202246,
+    "test_rmse": 55.345548545661956
+  },
+  "train_metrics": {
+    "mse": 3063.1297438202246,
+    "rmse": 55.345548545661956,
+    "mae": 44.85404494382023,
+    "r2": 0.42184937517543697
+  },
+  "batch_stats": {
+    "avg_processing_time_ms": 0,
+    "p95_processing_time_ms": 0,
+    "avg_batch_size": 0,
+    "max_batch_size": 0,
+    "min_batch_size": 0,
+    "avg_queue_time_ms": 0,
+    "avg_latency_ms": 0,
+    "p95_latency_ms": 0,
+    "p99_latency_ms": 0,
+    "avg_queue_length": 0,
+    "max_queue_length": 0,
+    "error_rate": 0.0,
+    "throughput": 0,
+    "batch_count": 0,
+    "total_processed": 0,
+    "current_batch_size": 64,
+    "system_load": 0.5,
+    "active_batches": 0,
+    "queue_size": 0,
+    "is_paused": false,
+    "is_stopping": false
+  },
+  "success": true,
+  "timestamp": "2025-03-13 06:37:09"
+}

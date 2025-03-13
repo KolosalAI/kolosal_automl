@@ -1,0 +1,35 @@
+{
+  "results": {
+    "breast_cancer": {
+      "dataset_info": {
+        "name": "breast_cancer",
+        "id": "breast_cancer",
+        "task": "classification",
+        "n_samples": 569,
+        "n_features": 30
+      },
+      "linear_regression": {
+        "training_time_seconds": 0.016194581985473633,
+        "peak_memory_mb": 0.0004482269287109375,
+        "training_throughput_samples_per_second": 28095.816267942584,
+        "inference_time_seconds": 1.6689300537109375e-06,
+        "inference_throughput_samples_per_second": 68307236.57142857,
+        "engine_initialization_time_seconds": 2.384185791015625e-06,
+        "optimization_strategy": "random_search",
+        "metrics": {
+          "mse": -0.07014601156796575,
+          "r2": 0.727101612622356
+        }
+      }
+    }
+  },
+  "config": {
+    "task_type": "classification",
+    "optimization_strategy": "random_search",
+    "n_jobs": -1,
+    "memory_optimization": true,
+    "use_intel_optimization": true,
+    "random_state": 42,
+    "test_size": 0.2
+  }
+}

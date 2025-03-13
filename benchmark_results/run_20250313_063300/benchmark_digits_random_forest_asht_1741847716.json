@@ -1,0 +1,20 @@
+{
+  "benchmark_id": "digits_random_forest_asht_1741847716",
+  "dataset": "digits",
+  "model": "random_forest",
+  "optimization_strategy": "asht",
+  "dataset_shape": [
+    1797,
+    64
+  ],
+  "system_info": {
+    "cpu_count": 64,
+    "initial_memory_mb": 271.51953125,
+    "platform": "posix"
+  },
+  "training_time_seconds": 16.17049741744995,
+  "peak_memory_mb": 302.7265625,
+  "error": "Classification metrics can't handle a mix of multiclass and continuous-multioutput targets",
+  "success": false,
+  "timestamp": "2025-03-13 06:35:32"
+}

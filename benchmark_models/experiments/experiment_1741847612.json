@@ -1,0 +1,65 @@
+{
+  "experiment_id": 1741847612,
+  "timestamp": "2025-03-13 06:33:32",
+  "config": {
+    "task_type": "classification",
+    "random_state": 42,
+    "n_jobs": -1,
+    "verbose": 1,
+    "cv_folds": 5,
+    "test_size": 0.2,
+    "stratify": true,
+    "optimization_strategy": "adaptive_surrogate_assisted_hyperparameter_tuning",
+    "optimization_iterations": 20,
+    "early_stopping": true,
+    "feature_selection": true,
+    "feature_selection_method": "mutual_info",
+    "feature_selection_k": null,
+    "feature_importance_threshold": 0.01,
+    "model_path": "./benchmark_models",
+    "experiment_tracking": true,
+    "use_intel_optimization": true,
+    "memory_optimization": true,
+    "enable_distributed": false,
+    "log_level": "INFO"
+  },
+  "model_info": {
+    "name": "gradient_boosting_benchmark",
+    "type": "GradientBoostingClassifier"
+  },
+  "metrics": {
+    "accuracy": 0.9666666666666667,
+    "precision": 0.9696969696969696,
+    "recall": 0.9666666666666667,
+    "f1": 0.9665831244778613
+  },
+  "feature_importance": {
+    "feature_3": 0.749137647883258,
+    "feature_2": 0.24652888501521902,
+    "feature_0": 0.0043334671015228836
+  },
+  "duration": 4.10425066947937,
+  "steps": {
+    "cv": {
+      "fold_1": 0.9499687304565355,
+      "fold_2": 0.9499687304565355,
+      "fold_3": 0.9499687304565355,
+      "fold_4": 0.9499687304565355,
+      "fold_5": 0.9499687304565355,
+      "fold_6": 0.9499687304565355,
+      "fold_7": 0.9499687304565355,
+      "fold_8": 0.9499687304565355,
+      "fold_9": 0.9499687304565355,
+      "fold_10": 0.9499687304565355,
+      "fold_11": 0.9499687304565355,
+      "fold_12": 0.9499687304565355,
+      "fold_13": 0.9499687304565355,
+      "fold_14": 0.9499687304565355,
+      "fold_15": 0.9499687304565355,
+      "fold_16": 0.9499687304565355,
+      "fold_17": 0.9499687304565355,
+      "fold_18": 0.9499687304565355,
+      "fold_19": 0.9499687304565355
+    }
+  }
+}

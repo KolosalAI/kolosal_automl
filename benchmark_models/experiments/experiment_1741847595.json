@@ -1,0 +1,65 @@
+{
+  "experiment_id": 1741847595,
+  "timestamp": "2025-03-13 06:33:15",
+  "config": {
+    "task_type": "classification",
+    "random_state": 42,
+    "n_jobs": -1,
+    "verbose": 1,
+    "cv_folds": 5,
+    "test_size": 0.2,
+    "stratify": true,
+    "optimization_strategy": "adaptive_surrogate_assisted_hyperparameter_tuning",
+    "optimization_iterations": 20,
+    "early_stopping": true,
+    "feature_selection": true,
+    "feature_selection_method": "mutual_info",
+    "feature_selection_k": null,
+    "feature_importance_threshold": 0.01,
+    "model_path": "./benchmark_models",
+    "experiment_tracking": true,
+    "use_intel_optimization": true,
+    "memory_optimization": true,
+    "enable_distributed": false,
+    "log_level": "INFO"
+  },
+  "model_info": {
+    "name": "random_forest_benchmark",
+    "type": "RandomForestClassifier"
+  },
+  "metrics": {
+    "accuracy": 0.9,
+    "precision": 0.9023569023569024,
+    "recall": 0.9,
+    "f1": 0.8997493734335839
+  },
+  "feature_importance": {
+    "feature_2": 0.4084658959757215,
+    "feature_3": 0.37745691373471885,
+    "feature_0": 0.21407719028955968
+  },
+  "duration": 3.870732545852661,
+  "steps": {
+    "cv": {
+      "fold_1": 0.9499687304565355,
+      "fold_2": 0.9499687304565355,
+      "fold_3": 0.9499687304565355,
+      "fold_4": 0.9331662489557225,
+      "fold_5": 0.9331662489557225,
+      "fold_6": 0.9499687304565355,
+      "fold_7": 0.9499687304565355,
+      "fold_8": 0.9499687304565355,
+      "fold_9": 0.9331662489557225,
+      "fold_10": 0.9499687304565355,
+      "fold_11": 0.9499687304565355,
+      "fold_12": 0.9331662489557225,
+      "fold_13": 0.9499687304565355,
+      "fold_14": 0.9331662489557225,
+      "fold_15": 0.9499687304565355,
+      "fold_16": 0.9499687304565355,
+      "fold_17": 0.9331662489557225,
+      "fold_18": 0.9499687304565355,
+      "fold_19": 0.9331662489557225
+    }
+  }
+}

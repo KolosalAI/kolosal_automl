@@ -1,0 +1,56 @@
+{
+  "benchmark_id": "california_housing_ridge_random_search_1741847927",
+  "dataset": "california_housing",
+  "model": "ridge",
+  "optimization_strategy": "random_search",
+  "dataset_shape": [
+    20640,
+    8
+  ],
+  "system_info": {
+    "cpu_count": 64,
+    "initial_memory_mb": 1654.0859375,
+    "platform": "posix"
+  },
+  "training_time_seconds": 2.0308032035827637,
+  "inference_time_seconds": 0.005895853042602539,
+  "peak_memory_mb": 1654.0859375,
+  "final_memory_mb": 1654.0859375,
+  "training_throughput_samples_per_second": 8130.773070905818,
+  "inference_throughput_samples_per_second": 700153.1364794371,
+  "metrics": {
+    "test_mse": 0.4634654355915682,
+    "test_rmse": 0.6807829577711006
+  },
+  "train_metrics": {
+    "mse": 0.4634654355915682,
+    "rmse": 0.6807829577711006,
+    "mae": 0.5033011336817194,
+    "r2": 0.6463200090297558
+  },
+  "batch_stats": {
+    "avg_processing_time_ms": 0,
+    "p95_processing_time_ms": 0,
+    "avg_batch_size": 0,
+    "max_batch_size": 0,
+    "min_batch_size": 0,
+    "avg_queue_time_ms": 0,
+    "avg_latency_ms": 0,
+    "p95_latency_ms": 0,
+    "p99_latency_ms": 0,
+    "avg_queue_length": 0,
+    "max_queue_length": 0,
+    "error_rate": 0.0,
+    "throughput": 0,
+    "batch_count": 0,
+    "total_processed": 0,
+    "current_batch_size": 64,
+    "system_load": 0.5,
+    "active_batches": 0,
+    "queue_size": 0,
+    "is_paused": false,
+    "is_stopping": false
+  },
+  "success": true,
+  "timestamp": "2025-03-13 06:38:49"
+}

@@ -1,0 +1,20 @@
+{
+  "benchmark_id": "iris_random_forest_grid_search_1741847580",
+  "dataset": "iris",
+  "model": "random_forest",
+  "optimization_strategy": "grid_search",
+  "dataset_shape": [
+    150,
+    4
+  ],
+  "system_info": {
+    "cpu_count": 64,
+    "initial_memory_mb": 246.265625,
+    "platform": "posix"
+  },
+  "training_time_seconds": 2.4968388080596924,
+  "peak_memory_mb": 249.70703125,
+  "error": "Classification metrics can't handle a mix of multiclass and continuous-multioutput targets",
+  "success": false,
+  "timestamp": "2025-03-13 06:33:02"
+}

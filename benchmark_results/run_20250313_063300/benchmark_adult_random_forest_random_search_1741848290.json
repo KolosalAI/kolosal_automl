@@ -1,0 +1,20 @@
+{
+  "benchmark_id": "adult_random_forest_random_search_1741848290",
+  "dataset": "adult",
+  "model": "random_forest",
+  "optimization_strategy": "random_search",
+  "dataset_shape": [
+    48842,
+    97
+  ],
+  "system_info": {
+    "cpu_count": 64,
+    "initial_memory_mb": 1717.19140625,
+    "platform": "posix"
+  },
+  "training_time_seconds": 62.6363320350647,
+  "peak_memory_mb": 1786.9921875,
+  "error": "Classification metrics can't handle a mix of binary and continuous-multioutput targets",
+  "success": false,
+  "timestamp": "2025-03-13 06:45:56"
+}

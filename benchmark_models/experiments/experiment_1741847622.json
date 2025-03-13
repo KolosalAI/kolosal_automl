@@ -1,0 +1,58 @@
+{
+  "experiment_id": 1741847622,
+  "timestamp": "2025-03-13 06:33:42",
+  "config": {
+    "task_type": "classification",
+    "random_state": 42,
+    "n_jobs": -1,
+    "verbose": 1,
+    "cv_folds": 5,
+    "test_size": 0.2,
+    "stratify": true,
+    "optimization_strategy": "random_search",
+    "optimization_iterations": 20,
+    "early_stopping": true,
+    "feature_selection": true,
+    "feature_selection_method": "mutual_info",
+    "feature_selection_k": null,
+    "feature_importance_threshold": 0.01,
+    "model_path": "./benchmark_models",
+    "experiment_tracking": true,
+    "use_intel_optimization": true,
+    "memory_optimization": true,
+    "enable_distributed": false,
+    "log_level": "INFO"
+  },
+  "model_info": {
+    "name": "logistic_regression_benchmark",
+    "type": "LogisticRegression"
+  },
+  "metrics": {
+    "accuracy": 0.9333333333333333,
+    "precision": 0.9333333333333333,
+    "recall": 0.9333333333333333,
+    "f1": 0.9333333333333333
+  },
+  "feature_importance": {
+    "feature_2": 2.6161335810495725,
+    "feature_3": 1.7973600589459044,
+    "feature_0": 0.0
+  },
+  "duration": 0.11531877517700195,
+  "steps": {
+    "cv": {
+      "fold_1": 0.6542557932263815,
+      "fold_2": 0.9166666666666666,
+      "fold_3": 0.7161377708978328,
+      "fold_4": 0.9166666666666666,
+      "fold_5": 0.9166666666666666,
+      "fold_6": 0.9578272604588394,
+      "fold_7": 0.8333333333333334,
+      "fold_8": 0.9578272604588394,
+      "fold_9": 0.9166666666666666,
+      "fold_10": 0.9584967320261436,
+      "fold_11": 0.9578272604588394,
+      "fold_12": 0.9166666666666666
+    }
+  }
+}

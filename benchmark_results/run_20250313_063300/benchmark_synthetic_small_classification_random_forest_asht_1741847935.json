@@ -1,0 +1,20 @@
+{
+  "benchmark_id": "synthetic_small_classification_random_forest_asht_1741847935",
+  "dataset": "synthetic_small_classification",
+  "model": "random_forest",
+  "optimization_strategy": "asht",
+  "dataset_shape": [
+    1000,
+    20
+  ],
+  "system_info": {
+    "cpu_count": 64,
+    "initial_memory_mb": 1654.0859375,
+    "platform": "posix"
+  },
+  "training_time_seconds": 5.776296377182007,
+  "peak_memory_mb": 1654.125,
+  "error": "Classification metrics can't handle a mix of binary and continuous-multioutput targets",
+  "success": false,
+  "timestamp": "2025-03-13 06:39:01"
+}

@@ -1,0 +1,20 @@
+{
+  "benchmark_id": "adult_gradient_boosting_asht_1741848557",
+  "dataset": "adult",
+  "model": "gradient_boosting",
+  "optimization_strategy": "asht",
+  "dataset_shape": [
+    48842,
+    97
+  ],
+  "system_info": {
+    "cpu_count": 64,
+    "initial_memory_mb": 1739.65625,
+    "platform": "posix"
+  },
+  "training_time_seconds": 178.84419083595276,
+  "peak_memory_mb": 1791.59375,
+  "error": "Classification metrics can't handle a mix of binary and continuous-multioutput targets",
+  "success": false,
+  "timestamp": "2025-03-13 06:52:16"
+}

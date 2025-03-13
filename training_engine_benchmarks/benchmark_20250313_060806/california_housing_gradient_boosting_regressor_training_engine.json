@@ -1,0 +1,34 @@
+{
+  "results": {
+    "california_housing": {
+      "dataset_info": {
+        "name": "california_housing",
+        "id": "california_housing",
+        "task": "regression",
+        "n_samples": 20640,
+        "n_features": 8
+      },
+      "gradient_boosting_regressor": {
+        "training_time_seconds": 7.701289892196655,
+        "peak_memory_mb": 0.0004482269287109375,
+        "training_throughput_samples_per_second": 2144.0564153715095,
+        "inference_time_seconds": 2.6226043701171875e-06,
+        "inference_throughput_samples_per_second": 1574007901.090909,
+        "engine_initialization_time_seconds": 4.291534423828125e-06,
+        "optimization_strategy": "random_search",
+        "metrics": {
+          "accuracy": NaN
+        }
+      }
+    }
+  },
+  "config": {
+    "task_type": "regression",
+    "optimization_strategy": "random_search",
+    "n_jobs": -1,
+    "memory_optimization": true,
+    "use_intel_optimization": true,
+    "random_state": 42,
+    "test_size": 0.2
+  }
+}

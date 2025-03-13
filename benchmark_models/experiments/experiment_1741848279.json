@@ -1,0 +1,74 @@
+{
+  "experiment_id": 1741848279,
+  "timestamp": "2025-03-13 06:44:39",
+  "config": {
+    "task_type": "classification",
+    "random_state": 42,
+    "n_jobs": -1,
+    "verbose": 1,
+    "cv_folds": 5,
+    "test_size": 0.2,
+    "stratify": true,
+    "optimization_strategy": "adaptive_surrogate_assisted_hyperparameter_tuning",
+    "optimization_iterations": 20,
+    "early_stopping": true,
+    "feature_selection": true,
+    "feature_selection_method": "mutual_info",
+    "feature_selection_k": null,
+    "feature_importance_threshold": 0.01,
+    "model_path": "./benchmark_models",
+    "experiment_tracking": true,
+    "use_intel_optimization": true,
+    "memory_optimization": true,
+    "enable_distributed": false,
+    "log_level": "INFO"
+  },
+  "model_info": {
+    "name": "gradient_boosting_benchmark",
+    "type": "GradientBoostingClassifier"
+  },
+  "metrics": {
+    "accuracy": 0.8888888888888888,
+    "precision": 0.8993055555555556,
+    "recall": 0.8888888888888888,
+    "f1": 0.8895061728395063
+  },
+  "feature_importance": {
+    "feature_9": 0.30708108260848893,
+    "feature_7": 0.29302090440508577,
+    "feature_12": 0.24568565838161896,
+    "feature_10": 0.058087386420937165,
+    "feature_1": 0.032844190141517765,
+    "feature_3": 0.028709767233294062,
+    "feature_5": 0.018177300593574336,
+    "feature_11": 0.01086229595995373,
+    "feature_4": 0.004998068165920677,
+    "feature_8": 0.00036840369281208505,
+    "feature_6": 0.000164933721010599,
+    "feature_0": 8.67578597284505e-09
+  },
+  "duration": 5.098147630691528,
+  "steps": {
+    "cv": {
+      "fold_1": 0.8456998169901248,
+      "fold_2": 0.8044186688760011,
+      "fold_3": 0.8044186688760011,
+      "fold_4": 0.8044186688760011,
+      "fold_5": 0.8044186688760011,
+      "fold_6": 0.8044186688760011,
+      "fold_7": 0.8456998169901248,
+      "fold_8": 0.8044186688760011,
+      "fold_9": 0.8456998169901248,
+      "fold_10": 0.8456998169901248,
+      "fold_11": 0.8044186688760011,
+      "fold_12": 0.8044186688760011,
+      "fold_13": 0.8456998169901248,
+      "fold_14": 0.8044186688760011,
+      "fold_15": 0.8044186688760011,
+      "fold_16": 0.8456998169901248,
+      "fold_17": 0.8044186688760011,
+      "fold_18": 0.8456998169901248,
+      "fold_19": 0.8456998169901248
+    }
+  }
+}

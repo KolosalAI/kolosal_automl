@@ -1,0 +1,35 @@
+{
+  "results": {
+    "iris": {
+      "dataset_info": {
+        "name": "iris",
+        "id": "iris",
+        "task": "classification",
+        "n_samples": 150,
+        "n_features": 4
+      },
+      "linear_regression": {
+        "training_time_seconds": 0.01367330551147461,
+        "peak_memory_mb": 0.0004482269287109375,
+        "training_throughput_samples_per_second": 8776.224585876198,
+        "inference_time_seconds": 1.9073486328125e-06,
+        "inference_throughput_samples_per_second": 15728640.0,
+        "engine_initialization_time_seconds": 2.86102294921875e-06,
+        "optimization_strategy": "random_search",
+        "metrics": {
+          "mse": -0.05284579461793074,
+          "r2": 0.9468960016420044
+        }
+      }
+    }
+  },
+  "config": {
+    "task_type": "classification",
+    "optimization_strategy": "random_search",
+    "n_jobs": -1,
+    "memory_optimization": true,
+    "use_intel_optimization": true,
+    "random_state": 42,
+    "test_size": 0.2
+  }
+}

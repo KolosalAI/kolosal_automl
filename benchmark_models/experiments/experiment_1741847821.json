@@ -1,0 +1,69 @@
+{
+  "experiment_id": 1741847821,
+  "timestamp": "2025-03-13 06:37:01",
+  "config": {
+    "task_type": "regression",
+    "random_state": 42,
+    "n_jobs": -1,
+    "verbose": 1,
+    "cv_folds": 5,
+    "test_size": 0.2,
+    "stratify": false,
+    "optimization_strategy": "random_search",
+    "optimization_iterations": 20,
+    "early_stopping": true,
+    "feature_selection": true,
+    "feature_selection_method": "mutual_info",
+    "feature_selection_k": null,
+    "feature_importance_threshold": 0.01,
+    "model_path": "./benchmark_models",
+    "experiment_tracking": true,
+    "use_intel_optimization": true,
+    "memory_optimization": true,
+    "enable_distributed": false,
+    "log_level": "INFO"
+  },
+  "model_info": {
+    "name": "random_forest_benchmark",
+    "type": "RandomForestRegressor"
+  },
+  "metrics": {
+    "mse": 2988.0176472162234,
+    "rmse": 54.662762894096595,
+    "mae": 44.42496793990968,
+    "r2": 0.4360264127857755
+  },
+  "feature_importance": {
+    "feature_2": 0.3676316054096799,
+    "feature_8": 0.2630070568023941,
+    "feature_3": 0.10143440985928664,
+    "feature_5": 0.09250506327552438,
+    "feature_9": 0.07322687732140194,
+    "feature_6": 0.06266753032084163,
+    "feature_7": 0.02735549965727557,
+    "feature_1": 0.01217195735359583
+  },
+  "duration": 0.32553696632385254,
+  "steps": {
+    "cv": {
+      "fold_1": -3203.384445070424,
+      "fold_2": -3119.864219718311,
+      "fold_3": -3151.930226056338,
+      "fold_4": -3166.137430946793,
+      "fold_5": -3105.1784222515644,
+      "fold_6": -3211.233884617078,
+      "fold_7": -3111.104339571466,
+      "fold_8": -3070.477776610915,
+      "fold_9": -3130.1344575139688,
+      "fold_10": -3199.849201728817,
+      "fold_11": -3124.269733128202,
+      "fold_12": -3188.1299101197396,
+      "fold_13": -3200.863914140847,
+      "fold_14": -3140.364186704226,
+      "fold_15": -3149.8765232394367,
+      "fold_16": -3166.137430946793,
+      "fold_17": -3144.7430330481225,
+      "fold_18": -3141.8929444933497
+    }
+  }
+}

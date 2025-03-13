@@ -1,0 +1,34 @@
+{
+  "results": {
+    "digits": {
+      "dataset_info": {
+        "name": "digits",
+        "id": "digits",
+        "task": "classification",
+        "n_samples": 1797,
+        "n_features": 64
+      },
+      "random_forest": {
+        "training_time_seconds": 0.9001832008361816,
+        "peak_memory_mb": 0.0004482269287109375,
+        "training_throughput_samples_per_second": 1596.3417209576544,
+        "inference_time_seconds": 2.384185791015625e-06,
+        "inference_throughput_samples_per_second": 150994944.0,
+        "engine_initialization_time_seconds": 2.384185791015625e-06,
+        "optimization_strategy": "random_search",
+        "metrics": {
+          "accuracy": 0.9700765483646485
+        }
+      }
+    }
+  },
+  "config": {
+    "task_type": "classification",
+    "optimization_strategy": "random_search",
+    "n_jobs": -1,
+    "memory_optimization": true,
+    "use_intel_optimization": true,
+    "random_state": 42,
+    "test_size": 0.2
+  }
+}

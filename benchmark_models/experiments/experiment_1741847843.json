@@ -1,0 +1,60 @@
+{
+  "experiment_id": 1741847843,
+  "timestamp": "2025-03-13 06:37:23",
+  "config": {
+    "task_type": "regression",
+    "random_state": 42,
+    "n_jobs": -1,
+    "verbose": 1,
+    "cv_folds": 5,
+    "test_size": 0.2,
+    "stratify": false,
+    "optimization_strategy": "random_search",
+    "optimization_iterations": 20,
+    "early_stopping": true,
+    "feature_selection": true,
+    "feature_selection_method": "mutual_info",
+    "feature_selection_k": null,
+    "feature_importance_threshold": 0.01,
+    "model_path": "./benchmark_models",
+    "experiment_tracking": true,
+    "use_intel_optimization": true,
+    "memory_optimization": true,
+    "enable_distributed": false,
+    "log_level": "INFO"
+  },
+  "model_info": {
+    "name": "ridge_benchmark",
+    "type": "Ridge"
+  },
+  "metrics": {
+    "mse": 2847.294270009415,
+    "rmse": 53.36004375944059,
+    "mae": 42.686528278741086,
+    "r2": 0.4625872558658569
+  },
+  "feature_importance": {
+    "feature_2": 26.35446102127858,
+    "feature_8": 18.99110175235896,
+    "feature_3": 16.80616074947263,
+    "feature_7": 4.499259477544362,
+    "feature_9": 2.6678839145936397,
+    "feature_5": -8.111473784139038,
+    "feature_1": -11.277946306670732,
+    "feature_6": -14.037435915952896
+  },
+  "duration": 0.11846327781677246,
+  "steps": {
+    "cv": {
+      "fold_1": -2787.8019713760173,
+      "fold_2": -2787.801971376015,
+      "fold_3": -2787.8019713760173,
+      "fold_4": -2879.7099605360736,
+      "fold_5": -2792.358521564612,
+      "fold_6": -2792.358521564613,
+      "fold_7": -2820.1800358041733,
+      "fold_8": -2820.180035804174,
+      "fold_9": -2900.6274830615894
+    }
+  }
+}
