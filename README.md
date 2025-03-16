@@ -1,78 +1,70 @@
 # Advanced ML Training Engine 🤖
 
-## Overview
+[![MIT License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![Tests](https://img.shields.io/badge/tests-partial-yellow.svg)]()
 
-The Advanced ML Training Engine is a sophisticated machine learning training and optimization framework designed to streamline the ML model development process. It provides a comprehensive suite of tools for data preprocessing, model training, hyperparameter optimization, and inference across various machine learning tasks.
+## 📋 Overview
+
+The Advanced ML Training Engine is a sophisticated machine learning framework that streamlines the entire ML model development lifecycle. It provides an integrated suite of tools for data preprocessing, model training, hyperparameter optimization, and inference across various machine learning tasks.
 
 ## 🌟 Key Features
 
-### 1. Flexible Model Training
+### 🔄 Flexible Model Training
 - Support for multiple machine learning tasks (Classification, Regression, Clustering)
-- Compatible with various ML libraries (scikit-learn, XGBoost, LightGBM, CatBoost)
-- Automatic model selection and optimization
+- Seamless integration with popular ML libraries (scikit-learn, XGBoost, LightGBM, CatBoost)
+- Intelligent model selection and automated optimization
 
-### 2. Supported Models
+### 🛠️ Comprehensive Model Support
 
-#### Classification
-- Logistic Regression
-- Random Forest Classifier
-- Gradient Boosting Classifier
-- XGBoost Classifier
-- LightGBM Classifier
-- CatBoost Classifier
-- Support Vector Classification (SVC)
+| Classification | Regression |
+|----------------|------------|
+| Logistic Regression | Linear Regression |
+| Random Forest Classifier | Random Forest Regressor |
+| Gradient Boosting Classifier | Gradient Boosting Regressor |
+| XGBoost Classifier | XGBoost Regressor |
+| LightGBM Classifier | LightGBM Regressor |
+| CatBoost Classifier | CatBoost Regressor |
+| Support Vector Classification (SVC) | Support Vector Regression (SVR) |
 
-#### Regression
-- Linear Regression
-- Random Forest Regressor
-- Gradient Boosting Regressor
-- XGBoost Regressor
-- LightGBM Regressor
-- CatBoost Regressor
-- Support Vector Regression (SVR)
-
-### 3. Advanced Hyperparameter Optimization
-- Multiple optimization strategies:
+### 🔍 Advanced Hyperparameter Optimization
+- **Multiple optimization strategies:**
   - Grid Search
   - Random Search
   - Bayesian Optimization
   - Adaptive Surrogate-Assisted Hyperparameter Tuning (ASHT)
   - HyperX Advanced Optimization
 
-### 4. Intelligent Preprocessing
+### 🧠 Intelligent Preprocessing
 - Automated feature scaling
-- Missing value handling
-- Outlier detection and management
-- Feature selection techniques
+- Sophisticated missing value handling
+- Robust outlier detection and management
+- Advanced feature selection techniques
 
-### 5. Performance Optimization
+### ⚡ Performance Optimization
 - Device-aware configuration
 - Adaptive batching
 - Quantization support
-- Parallel processing
-- Memory optimization
+- Parallel processing capabilities
+- Memory-efficient operations
 
-### 6. Comprehensive Monitoring
+### 📊 Comprehensive Monitoring
 - Detailed performance metrics
-- Learning curve tracking
-- Model performance visualization
+- Real-time learning curve tracking
+- Interactive model performance visualization
 - Experiment tracking and reporting
 
 ## 🚀 Installation
 
 ### Prerequisites
 - Python 3.8+
-- scikit-learn
-- numpy
-- pandas
-- matplotlib
-- Optional: XGBoost, LightGBM, CatBoost
 
-### Install 
+### Option 1: Standard Installation
+
 1. Clone the repository:
 ```bash
-git clone https://github.com/Genta-Technology/ml-training-engine
-cd ml-training-engine
+git clone https://github.com/Genta-Technology/kolosal-automl
+cd kolosal-automl
 ```
 
 2. Install dependencies:
@@ -80,11 +72,59 @@ cd ml-training-engine
 pip install -r requirements.txt
 ```
 
+### Option 2: Virtual Environment Installation (Recommended)
+
+1. Clone the repository:
+```bash
+git clone https://github.com/Genta-Technology/kolosal-automl
+cd kolosal-automl
+```
+
+2. Create a virtual environment:
+```bash
+# On Windows
+python -m venv venv
+venv\Scripts\activate
+
+# On macOS/Linux
+python3 -m venv venv
+source venv/bin/activate
+```
+
+3. Install dependencies within the virtual environment:
+```bash
+pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+4. Optional: Install additional modules for enhanced functionality:
+```bash
+# For XGBoost support
+pip install xgboost
+
+# For LightGBM support
+pip install lightgbm
+
+# For CatBoost support
+pip install catboost
+```
+
+5. To deactivate the virtual environment when finished:
+```bash
+deactivate
+```
+
 ## 💻 Quick Start Example
 
 ```python
 from modules.engine.train_engine import MLTrainingEngine
 from modules.configs import MLTrainingEngineConfig, TaskType, OptimizationStrategy
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+
+# Prepare your data
+# X, y = load_your_data()
+# X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
 # Create configuration
 config = MLTrainingEngineConfig(
@@ -114,21 +154,30 @@ engine.save_model(best_model)
 predictions = engine.predict(X_test)
 ```
 
-## 🛠 Advanced Configuration
+## 🛠️ Advanced Configuration
 
 The framework offers extensive configuration options through `MLTrainingEngineConfig`:
-- Task Type Selection
-- Optimization Strategies
-- Preprocessing Settings
-- Quantization Options
-- Performance Tuning Parameters
+
+```python
+config = MLTrainingEngineConfig(
+    task_type=TaskType.CLASSIFICATION,                    # ML task type
+    optimization_strategy=OptimizationStrategy.BAYESIAN,  # Optimization method
+    cv_folds=5,                                           # Cross-validation folds
+    test_size=0.2,                                        # Test set proportion
+    random_state=42,                                      # Random seed
+    enable_quantization=True,                             # Enable model quantization
+    batch_size=64,                                        # Processing batch size
+    n_jobs=-1                                             # Parallel jobs (-1 = all cores)
+)
+```
 
 ## 📊 Visualization and Reporting
 
-- Automatic generation of performance reports
-- Learning curve plots
-- Feature importance visualization
-- Model comparison metrics
+The framework automatically generates:
+- Performance reports with key metrics
+- Learning curve visualizations
+- Feature importance charts
+- Model comparison dashboards
 
 ## 🔍 Project Structure
 
@@ -151,32 +200,13 @@ ml-training-engine/
 
 ## 🧪 Test Status
 
-Current unit test results:
-- **tests/test_batch_processor.py**: PASSED
-- **tests/test_lru_ttl_cache.py**: PASSED
-- **tests/test_quantizer.py**: FAILED
-- **tests/test_data_preprocessor.py**: FAILED
-- **tests/test_engine.py**: FAILED
-
-## 🚧 Planned Improvements
-
-1. **Complete Testing**: Address and resolve failing tests
-2. **UI Enhancements**: Improve user interface
-3. **Code Optimization**: Refactor and optimize codebase
-4. **Additional Export Formats**: Support ONNX and PMML model export
-5. **Advanced Visualization**: Enhanced model comparison tools
-6. **Time Series Support**: Extended time series forecasting functionality
-
-## 💻 Technologies Used
-
-- **Streamlit**: Frontend interface
-- **Pandas & NumPy**: Data processing
-- **Scikit-learn**: ML algorithms and pipelines
-- **XGBoost, LightGBM, CatBoost**: Advanced gradient boosting frameworks
-- **Matplotlib & Seaborn**: Data visualization
-- **Joblib**: Model serialization
-
-## 🧪 Running Tests
+| Test File | Status |
+|-----------|--------|
+| test_batch_processor.py | ✅ PASSED |
+| test_lru_ttl_cache.py | ✅ PASSED |
+| test_quantizer.py | ❌ FAILED |
+| test_data_preprocessor.py | ❌ FAILED |
+| test_engine.py | ❌ FAILED |
 
 To run all unit tests:
 ```bash
@@ -187,6 +217,25 @@ To run a specific test:
 ```bash
 python -m unittest tests\test_<filename>.py
 ```
+
+## 🚧 Roadmap
+
+1. **Test Suite Completion**: Address and resolve failing tests
+2. **UI Enhancements**: Improve user interface and experience
+3. **Code Optimization**: Refactor and optimize codebase
+4. **Export Format Support**: Add ONNX and PMML model export
+5. **Advanced Visualization**: Enhanced model comparison tools
+6. **Time Series Support**: Extended time series forecasting functionality
+7. **Cloud Integration**: Support for cloud-based deployment and scaling
+
+## 💻 Technologies Used
+
+- **Streamlit**: Interactive frontend interface
+- **Pandas & NumPy**: Efficient data processing
+- **Scikit-learn**: Core ML algorithms and pipelines
+- **XGBoost, LightGBM, CatBoost**: Advanced gradient boosting frameworks
+- **Matplotlib & Seaborn**: Data visualization
+- **Joblib**: Model serialization
 
 ## 🤝 Contributing
 
