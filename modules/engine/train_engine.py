@@ -113,40 +113,140 @@ class ExperimentTracker:
         
         return self.current_experiment
     
-    def generate_report(self, include_plots: bool = True):
-        """Generate a report for the experiment"""
-        if not self.current_experiment:
-            self.logger.warning("No experiment data to generate report")
-            return
-            
-        report = f"# Experiment Report {self.experiment_id}\n\n"
-        report += f"- **Date:** {self.current_experiment['timestamp']}\n"
-        report += f"- **Duration:** {self.current_experiment['duration']:.2f} seconds\n"
-        report += f"- **Model:** {self.current_experiment['model_info']['name']}\n\n"
+    def generate_report(self, output_file=None):
+        """Generate a comprehensive report of all models in Markdown format"""
+        if not self.models:
+            self.logger.warning("No models to generate report")
+            return None
+                
+        if output_file is None:
+            output_file = os.path.join(self.config.model_path, "model_report.md")
+                
+        # Create basic report
+        report = f"# ML Training Engine Report\n\n"
+        report += f"Generated on: {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n"
         
-        report += "## Metrics\n\n"
-        metrics_table = "| Metric | Value |\n| --- | --- |\n"
-        for metric, value in self.current_experiment["metrics"].items():
-            metrics_table += f"| {metric} | {value:.4f} |\n"
-        report += metrics_table + "\n\n"
+        # Add configuration section
+        report += "## Configuration\n\n"
+        report += "| Parameter | Value |\n"
+        report += "| --- | --- |\n"
         
-        if "feature_importance" in self.current_experiment and self.current_experiment["feature_importance"]:
-            report += "## Top 10 Features by Importance\n\n"
-            fi_table = "| Feature | Importance |\n| --- | --- |\n"
-            for i, (feature, importance) in enumerate(list(self.current_experiment["feature_importance"].items())[:10]):
-                fi_table += f"| {feature} | {importance:.4f} |\n"
-            report += fi_table + "\n\n"
+        # Add configuration
+        for key, value in self.config.to_dict().items():
+            report += f"| {key} | {value} |\n"
+        
+        report += "\n## Model Performance Summary\n\n"
+        
+        # Collect all metrics across models
+        all_metrics = set()
+        for model_data in self.models.values():
+            all_metrics.update(model_data["metrics"].keys())
+        
+        # Create metrics table header
+        report += "| Model | " + " | ".join(sorted(all_metrics)) + " |\n"
+        report += "| --- | " + " | ".join(["---" for _ in all_metrics]) + " |\n"
+        
+        # Add model rows
+        for model_name, model_data in self.models.items():
+            is_best = self.best_model and self.best_model == model_name
+            model_label = f"{model_name} **[BEST]**" if is_best else model_name
             
-        # Save report
-        report_file = f"{self.output_dir}/report_{self.experiment_id}.md"
-        with open(report_file, 'w') as f:
+            row = f"| {model_label} |"
+            for metric in sorted(all_metrics):
+                value = model_data["metrics"].get(metric, "N/A")
+                if isinstance(value, (int, float)):
+                    value = f"{value:.4f}"
+                row += f" {value} |"
+            
+            report += row + "\n"
+        
+        # Add model details section
+        report += "\n## Model Details\n\n"
+        
+        for model_name, model_data in self.models.items():
+            report += f"### {model_name}\n\n"
+            
+            # Add model type
+            report += f"- **Type**: {type(model_data.get('model', '')).__name__}\n"
+            
+            # Add if it's the best model
+            is_best = self.best_model and self.best_model == model_name
+            report += f"- **Best Model**: {'Yes' if is_best else 'No'}\n"
+            
+            # Add training time if available
+            if "training_time" in model_data:
+                report += f"- **Training Time**: {model_data['training_time']:.2f}s\n"
+            
+            # Add hyperparameters if available
+            if "params" in model_data and model_data["params"]:
+                report += "\n#### Hyperparameters\n\n"
+                report += "| Parameter | Value |\n"
+                report += "| --- | --- |\n"
+                
+                for param, value in model_data["params"].items():
+                    report += f"| {param} | {value} |\n"
+                
+                report += "\n"
+            
+            # Add feature importance if available
+            if "feature_importance" in model_data and model_data["feature_importance"] is not None:
+                feature_importance = model_data["feature_importance"]
+                if isinstance(feature_importance, dict):
+                    # Sort by importance and get top 10
+                    sorted_features = sorted(feature_importance.items(), key=lambda x: x[1], reverse=True)[:10]
+                    
+                    report += "\n#### Top 10 Features by Importance\n\n"
+                    report += "| Feature | Importance |\n"
+                    report += "| --- | --- |\n"
+                    
+                    for feature, importance in sorted_features:
+                        report += f"| {feature} | {importance:.4f} |\n"
+                    
+                    report += "\n"
+                elif isinstance(feature_importance, np.ndarray):
+                    # For numpy array, we need feature names
+                    feature_names = model_data.get("feature_names", [f"feature_{i}" for i in range(len(feature_importance))])
+                    
+                    # Sort by importance and get top 10
+                    indices = np.argsort(feature_importance)[::-1][:10]
+                    
+                    report += "\n#### Top 10 Features by Importance\n\n"
+                    report += "| Feature | Importance |\n"
+                    report += "| --- | --- |\n"
+                    
+                    for idx in indices:
+                        report += f"| {feature_names[idx]} | {feature_importance[idx]:.4f} |\n"
+                    
+                    report += "\n"
+        
+        # Add conclusion
+        report += "\n## Conclusion\n\n"
+        
+        if self.best_model:
+            best_model_name = self.best_model
+            best_metrics = self.models[best_model_name]["metrics"]
+            
+            report += f"The best performing model is **{best_model_name}** with metrics:\n\n"
+            
+            # List key metrics
+            key_metrics = []
+            if self.config.task_type == TaskType.CLASSIFICATION:
+                key_metrics = ["accuracy", "f1", "precision", "recall"]
+            elif self.config.task_type == TaskType.REGRESSION:
+                key_metrics = ["rmse", "mse", "r2", "mae"]
+                
+            for metric in key_metrics:
+                if metric in best_metrics:
+                    report += f"- **{metric}**: {best_metrics[metric]:.4f}\n"
+        else:
+            report += "No models have been trained or evaluated yet."
+        
+        # Write report to file
+        with open(output_file, 'w', encoding='utf-8') as f:
             f.write(report)
             
-        if include_plots and "metrics" in self.current_experiment:
-            self._generate_plots()
-            
-        self.logger.info(f"Report generated: {report_file}")
-        return report
+        self.logger.info(f"Report generated: {output_file}")
+        return output_file
         
     def _generate_plots(self):
         """Generate plots for the experiment"""
@@ -181,7 +281,7 @@ class ExperimentTracker:
 
 class MLTrainingEngine:
     """Advanced training engine for machine learning models with optimization"""
-    
+    VERSION = "0.1.0"  # Add this version attribute
     def __init__(self, config: MLTrainingEngineConfig):
         self.config = config
         self.models = {}
@@ -338,8 +438,8 @@ class MLTrainingEngine:
                 n_jobs=self.config.n_jobs,
                 verbose=self.config.verbose
             )
-        # !!! update after code finished
         elif self.config.optimization_strategy == OptimizationStrategy.HYPERX:
+            # Implementation for HyperOptX optimizer
             return HyperOptX(
                 estimator=model,
                 param_space=param_grid,
@@ -838,18 +938,19 @@ class MLTrainingEngine:
             self.models[model_name] = model_info
             
             # Update best model tracking with more informative logging
-            old_best = self.best_model["name"] if self.best_model else None
+            old_best = self.best_model if self.best_model else None
             self._update_best_model(model_name)
             
-            if self.best_model and self.best_model["name"] == model_name and old_best != model_name:
+            if self.best_model and self.best_model == model_name and old_best != model_name:
                 self.logger.info(f"New best model: {model_name} with score {self.best_score:.4f}")
                 if old_best:
                     improvement = ((self.best_score - self._get_model_score(self.models[old_best]["metrics"])) / 
-                                  self._get_model_score(self.models[old_best]["metrics"]) * 100)
+                                self._get_model_score(self.models[old_best]["metrics"]) * 100)
                     # For regression metrics that are minimized, we need to flip the sign
                     if self.config.task_type == TaskType.REGRESSION:
                         improvement = -improvement
                     self.logger.info(f"Improvement over previous best ({old_best}): {improvement:.2f}%")
+    
                     
             # Auto-save model if configured
             if getattr(self.config, 'auto_save', False):
@@ -1054,7 +1155,7 @@ class MLTrainingEngine:
         """
         # Get model data to save
         if model_name is None and self.best_model is not None:
-            model_name = self.best_model["name"]
+            model_name = self.best_model
             model_data = self.best_model
         elif model_name in self.models:
             model_data = self.models[model_name]
@@ -1295,7 +1396,7 @@ class MLTrainingEngine:
                 
                 # Re-check if this is the best model with updated metrics
                 self._update_best_model(model_name)
-                
+            
             # Return the model
             return model
             
@@ -1326,7 +1427,7 @@ class MLTrainingEngine:
         if is_better:
             old_best = None
             if self.best_model:
-                old_best = self.best_model["name"]
+                old_best = self.best_model
                 self.logger.info(f"New best model: {model_name} replacing {old_best}")
                 
                 # Calculate improvement percentage
@@ -1342,8 +1443,7 @@ class MLTrainingEngine:
                 self.logger.info(f"First model loaded, setting {model_name} as best model")
                 
             self.best_score = model_score
-            self.best_model = self.models[model_name].copy()
-            self.best_model["best_score"] = model_score
+            self.best_model = model_name  
 
     def predict(self, X, model_name=None, return_proba=False, batch_size=None):
         """
@@ -1360,8 +1460,8 @@ class MLTrainingEngine:
         """
         # Determine which model to use
         if model_name is None and self.best_model is not None:
-            model = self.best_model["model"]
-            model_name = self.best_model["name"]
+            model_name = self.best_model
+            model = self.models[model_name]["model"]
         elif model_name in self.models:
             model = self.models[model_name]["model"]
         else:
@@ -2240,6 +2340,9 @@ class MLTrainingEngine:
             if model_name in self.models:
                 self.models[model_name]["feature_importance"] = result.importances_mean
                 
+                # Also store in last_feature_importance for other functions to access
+                self._last_feature_importance = result.importances_mean
+                
             return result.importances_mean
             
         except Exception as e:
@@ -2263,8 +2366,8 @@ class MLTrainingEngine:
         """
         # Determine which model to use
         if model_name is None and self.best_model is not None:
-            model_data = self.best_model
-            model_name = self.best_model["name"]
+            model_name = self.best_model
+            model_data = self.models[model_name]
         elif model_name in self.models:
             model_data = self.models[model_name]
         else:
@@ -2605,7 +2708,7 @@ class MLTrainingEngine:
                 "model_type": type(model_data.get("model", "")).__name__,
                 "metrics": {m: model_metrics.get(m) for m in metrics if m in model_metrics},
                 "params": model_data.get("params", {}),
-                "is_best": (self.best_model is not None and self.best_model["name"] == name)
+                "is_best": (self.best_model is not None and self.best_model == name)
             }
             
             # If this is the best model, mark it
@@ -3268,11 +3371,11 @@ class MLTrainingEngine:
             
             # Summary section
             report += "## Summary\n\n"
-            report += f"- Dataset Size: {analysis['dataset_size']}\n"
+            report += f"- **Dataset Size**: {analysis['dataset_size']}\n"
             
             if 'error_count' in analysis:
-                report += f"- Total Errors: {analysis['error_count']}\n"
-                report += f"- Error Rate: {analysis['error_rate']:.2%}\n\n"
+                report += f"- **Total Errors**: {analysis['error_count']}\n"
+                report += f"- **Error Rate**: {analysis['error_rate']:.2%}\n\n"
             
             # Classification specific analysis
             if self.config.task_type == TaskType.CLASSIFICATION:
@@ -3377,7 +3480,7 @@ class MLTrainingEngine:
                         if 'class_probabilities' in sample:
                             report += "- **Class Probabilities**:\n"
                             for cls, prob in sorted(sample['class_probabilities'].items(), 
-                                                  key=lambda x: x[1], reverse=True):
+                                                key=lambda x: x[1], reverse=True):
                                 report += f"  - {cls}: {prob:.4f}\n"
                     
                     elif self.config.task_type == TaskType.REGRESSION:

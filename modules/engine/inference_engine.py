@@ -15,6 +15,7 @@ import signal
 import psutil
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor, Future
+import copy
 
 # Optional imports for specific optimizations
 try:
