@@ -1,790 +1,579 @@
 import unittest
-import tempfile
 import os
+import sys
+import tempfile
 import pandas as pd
 import numpy as np
-from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
-from sklearn.datasets import make_classification, make_regression
-from sklearn.model_selection import train_test_split
-import asyncio
-from io import BytesIO
+from fastapi.testclient import TestClient
+from fastapi import FastAPI
+import io
+import joblib
+from datetime import datetime
+import time
+import json
 
-# Import router from engine_api to access all endpoints
-from modules.engine_api import router
+# Import the router to test
+from modules.api.engine import router, get_ml_engine, MLTrainingEngine, MLTrainingEngineConfig, TaskType, OptimizationStrategy
 
-# Extract API functions from router endpoints for easier access
-# This creates a dictionary mapping function names to their handler functions
-api_functions = {route.name: route.endpoint for route in router.routes if hasattr(route, 'name')}
+# Create a FastAPI app and register the router for testing
+app = FastAPI()
+app.include_router(router)
 
-# Access functions by name
-get_ml_engine = api_functions.get('get_ml_engine', None)
-list_models = api_functions.get('list_models', None)
-get_model_details = api_functions.get('get_model_details', None)
-train_model = api_functions.get('train_model', None)
-predict = api_functions.get('predict', None)
-evaluate_model = api_functions.get('evaluate_model', None)
-feature_importance = api_functions.get('feature_importance', None)
-error_analysis = api_functions.get('error_analysis', None)
-data_drift = api_functions.get('data_drift', None)
-compare_models = api_functions.get('compare_models', None)
-save_model = api_functions.get('save_model', None)
-load_model = api_functions.get('load_model', None)
-delete_model = api_functions.get('delete_model', None)
-generate_report = api_functions.get('generate_report', None)
-batch_inference = api_functions.get('batch_inference', None)
-interpret_model = api_functions.get('interpret_model', None)
-explain_prediction = api_functions.get('explain_prediction', None)
-health_check = api_functions.get('health_check', None)
-create_ensemble = api_functions.get('create_ensemble', None)
-batch_process_pipeline = api_functions.get('batch_process_pipeline', None)
-calibrate_model = api_functions.get('calibrate_model', None)
-transfer_learning = api_functions.get('transfer_learning', None)
-model_quantization = api_functions.get('model_quantization', None)
-shutdown_engine = api_functions.get('shutdown_engine', None)
+# Create a test client
+client = TestClient(app)
 
-# Import config and engine
-from modules.configs import MLTrainingEngineConfig, TaskType
-from modules.engine.train_engine import MLTrainingEngine
-
-# Create a mock UploadFile class for testing
-class MockUploadFile:
-    def __init__(self, filename, content):
-        self.filename = filename
-        self.content = content
-        
-    async def read(self):
-        return self.content
-
-# Create a mock BackgroundTasks class for testing
-class MockBackgroundTasks:
-    def __init__(self):
-        pass
-        
-    def add_task(self, func, *args, **kwargs):
-        # Actually run the task immediately for testing
-        func(*args, **kwargs)
-
-class TestMLEngineAPI(unittest.TestCase):
+class TestMLEngineRouter(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        """Set up test data and models once for all tests"""
-        # Create a classification dataset
-        X_cls, y_cls = make_classification(
-            n_samples=500, 
-            n_features=10,
-            n_informative=5,
-            n_redundant=2,
+        """Set up test data and ML engine once for all tests."""
+        # Create ML engine instance for testing
+        config = MLTrainingEngineConfig(
+            task_type=TaskType.CLASSIFICATION,
+            optimization_strategy=OptimizationStrategy.ACCURACY,
             random_state=42
         )
+        cls.ml_engine = MLTrainingEngine(config)
         
-        # Create a regression dataset
-        X_reg, y_reg = make_regression(
-            n_samples=500,
-            n_features=10,
-            n_informative=5,
-            random_state=42
-        )
+        # Create test data for classification
+        cls.X_train, cls.y_train = cls._create_test_data()
+        cls.test_data_path = cls._create_test_csv(cls.X_train, cls.y_train)
         
-        # Split data
-        cls.X_train_cls, cls.X_test_cls, cls.y_train_cls, cls.y_test_cls = train_test_split(
-            X_cls, y_cls, test_size=0.2, random_state=42
-        )
+        # Training a simple model to use in tests
+        from sklearn.ensemble import RandomForestClassifier
+        model = RandomForestClassifier(n_estimators=10, random_state=42)
+        model.fit(cls.X_train, cls.y_train)
         
-        cls.X_train_reg, cls.X_test_reg, cls.y_train_reg, cls.y_test_reg = train_test_split(
-            X_reg, y_reg, test_size=0.2, random_state=42
-        )
+        # Add model to engine
+        cls.model_name = "test_model"
+        cls.ml_engine.models[cls.model_name] = {
+            "model": model,
+            "params": {"n_estimators": 10, "random_state": 42},
+            "metrics": {"accuracy": 0.95},
+            "timestamp": time.time(),
+            "training_time": 1.0,
+            "feature_names": [f"feature_{i}" for i in range(cls.X_train.shape[1])],
+            "dataset_shape": {"X_train": cls.X_train.shape}
+        }
+        cls.ml_engine.best_model = cls.model_name
+        cls.ml_engine.best_score = 0.95
         
-        # Save test data to temporary CSV files
-        cls.temp_dir = tempfile.TemporaryDirectory()
-        
-        # Classification data
-        cls.train_cls_file = os.path.join(cls.temp_dir.name, "train_cls.csv")
-        cls.test_cls_file = os.path.join(cls.temp_dir.name, "test_cls.csv")
-        
-        # Create DataFrames
-        train_cls_df = pd.DataFrame(cls.X_train_cls, columns=[f"feature_{i}" for i in range(10)])
-        train_cls_df["target"] = cls.y_train_cls
-        train_cls_df.to_csv(cls.train_cls_file, index=False)
-        
-        test_cls_df = pd.DataFrame(cls.X_test_cls, columns=[f"feature_{i}" for i in range(10)])
-        test_cls_df["target"] = cls.y_test_cls
-        test_cls_df.to_csv(cls.test_cls_file, index=False)
-        
-        # Regression data
-        cls.train_reg_file = os.path.join(cls.temp_dir.name, "train_reg.csv")
-        cls.test_reg_file = os.path.join(cls.temp_dir.name, "test_reg.csv")
-        
-        train_reg_df = pd.DataFrame(cls.X_train_reg, columns=[f"feature_{i}" for i in range(10)])
-        train_reg_df["target"] = cls.y_train_reg
-        train_reg_df.to_csv(cls.train_reg_file, index=False)
-        
-        test_reg_df = pd.DataFrame(cls.X_test_reg, columns=[f"feature_{i}" for i in range(10)])
-        test_reg_df["target"] = cls.y_test_reg
-        test_reg_df.to_csv(cls.test_reg_file, index=False)
-        
-        # Create engines with different task types
-        cls.engine_cls = MLTrainingEngine(
-            MLTrainingEngineConfig(
-                task_type=TaskType.CLASSIFICATION,
-                model_path=cls.temp_dir.name,
-                experiment_tracking=True
-            )
-        )
-        
-        cls.engine_reg = MLTrainingEngine(
-            MLTrainingEngineConfig(
-                task_type=TaskType.REGRESSION,
-                model_path=cls.temp_dir.name,
-                experiment_tracking=True
-            )
-        )
-        
-        # Train sample models directly on the engines
-        cls.cls_model = RandomForestClassifier(n_estimators=10, random_state=42)
-        cls.reg_model = RandomForestRegressor(n_estimators=10, random_state=42)
-        
-        # Train classification model
-        cls.engine_cls.train_model(
-            model=cls.cls_model, 
-            model_name="test_rf_classifier",
-            param_grid={"n_estimators": [10]},
-            X=cls.X_train_cls,
-            y=cls.y_train_cls,
-            X_test=cls.X_test_cls,
-            y_test=cls.y_test_cls
-        )
-        
-        # Train regression model
-        cls.engine_reg.train_model(
-            model=cls.reg_model,
-            model_name="test_rf_regressor",
-            param_grid={"n_estimators": [10]},
-            X=cls.X_train_reg,
-            y=cls.y_train_reg,
-            X_test=cls.X_test_reg,
-            y_test=cls.y_test_reg
-        )
-        
+        # Monkey patch the get_ml_engine dependency
+        app.dependency_overrides[get_ml_engine] = lambda: cls.ml_engine
+
     @classmethod
     def tearDownClass(cls):
-        """Clean up after all tests"""
-        cls.temp_dir.cleanup()
+        """Clean up after all tests."""
+        # Remove test files
+        if os.path.exists(cls.test_data_path):
+            os.remove(cls.test_data_path)
         
-    # Helper method to run async functions in tests
-    def run_async(self, coro):
-        return asyncio.get_event_loop().run_until_complete(coro)
+        # Remove dependency override
+        app.dependency_overrides = {}
+
+    @staticmethod
+    def _create_test_data(n_samples=100, n_features=5):
+        """Create synthetic data for testing."""
+        X = np.random.rand(n_samples, n_features)
+        y = np.random.randint(0, 2, size=n_samples)
+        return X, y
+
+    @classmethod
+    def _create_test_csv(cls, X, y):
+        """Create a CSV file with test data."""
+        df = pd.DataFrame(X, columns=[f"feature_{i}" for i in range(X.shape[1])])
+        df["target"] = y
         
+        # Save to temp file
+        fd, path = tempfile.mkstemp(suffix=".csv")
+        os.close(fd)
+        df.to_csv(path, index=False)
+        return path
+    
+    def _create_csv_file(self, df):
+        """Create a CSV file from a dataframe."""
+        csv_file = io.BytesIO()
+        df.to_csv(csv_file, index=False)
+        csv_file.seek(0)
+        return csv_file
+
     def test_list_models(self):
-        """Test listing all models"""
-        # Mock get_ml_engine
-        def mock_get_engine():
-            return self.engine_cls
-            
-        result = self.run_async(list_models(engine=mock_get_engine()))
+        """Test GET /ml-engine/models endpoint."""
+        response = client.get("/ml-engine/models")
         
-        self.assertIn("models", result)
-        self.assertIn("count", result)
-        self.assertIn("best_model", result)
-        self.assertGreaterEqual(result["count"], 1)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
         
+        self.assertIn("models", data)
+        self.assertIn("count", data)
+        self.assertIn("best_model", data)
+        self.assertEqual(data["count"], 1)
+        self.assertEqual(data["best_model"], self.model_name)
+        self.assertIn(self.model_name, data["models"])
+
     def test_get_model_details(self):
-        """Test getting details of a specific model"""
-        def mock_get_engine():
-            return self.engine_cls
-            
-        # Test classification model
-        result = self.run_async(get_model_details(model_name="test_rf_classifier", engine=mock_get_engine()))
+        """Test GET /ml-engine/models/{model_name} endpoint."""
+        response = client.get(f"/ml-engine/models/{self.model_name}")
         
-        self.assertEqual(result["name"], "test_rf_classifier")
-        self.assertIn("metrics", result)
-        self.assertIn("params", result)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
         
-        # Test for a non-existent model
-        with self.assertRaises(Exception):
-            self.run_async(get_model_details(model_name="nonexistent_model", engine=mock_get_engine()))
-        
+        self.assertEqual(data["name"], self.model_name)
+        self.assertEqual(data["type"], "RandomForestClassifier")
+        self.assertIn("metrics", data)
+        self.assertIn("params", data)
+        self.assertTrue(data["is_best"])
+
+    def test_get_nonexistent_model(self):
+        """Test GET for a model that doesn't exist."""
+        response = client.get("/ml-engine/models/nonexistent_model")
+        self.assertEqual(response.status_code, 404)
+
     def test_train_model(self):
-        """Test training a new model"""
-        def mock_get_engine():
-            return self.engine_cls
-            
-        # Create mock file
-        with open(self.train_cls_file, "rb") as f:
-            file_content = f.read()
-            
-        # Create TrainModelParams object
-        from pydantic import BaseModel
+        """Test POST /ml-engine/train-model endpoint."""
+        # Create test data file
+        df = pd.DataFrame(self.X_train)
+        df["target"] = self.y_train
+        csv_file = self._create_csv_file(df)
         
-        class TrainModelParams(BaseModel):
-            model_type: str
-            model_name: str
-            param_grid: dict
-            test_size: float = 0.2
-            stratify: bool = True
-            
-        params = TrainModelParams(
-            model_type="random_forest",
-            model_name="test_new_classifier",
-            param_grid={"n_estimators": [10], "max_depth": [5]}
+        # Set up request parameters
+        params = {
+            "model_type": "random_forest",
+            "model_name": "new_test_model",
+            "param_grid": {"n_estimators": 10, "max_depth": 5},
+            "test_size": 0.2
+        }
+        
+        # Make request
+        response = client.post(
+            "/ml-engine/train-model",
+            data={"params": json.dumps(params)},
+            files={"data_file": ("test.csv", csv_file, "text/csv")}
         )
         
-        mock_file = MockUploadFile("train_data.csv", file_content)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
         
-        result = self.run_async(
-            train_model(
-                background_tasks=MockBackgroundTasks(),
-                params=params,
-                data_file=mock_file,
-                engine=mock_get_engine()
-            )
-        )
-        
-        self.assertEqual(result["model_name"], "test_new_classifier")
-        self.assertEqual(result["status"], "training_started")
-        
-        # Verify the model exists in the engine
-        self.assertIn("test_new_classifier", self.engine_cls.models)
-        
+        self.assertEqual(data["status"], "training_started")
+        self.assertEqual(data["model_name"], "new_test_model")
+
     def test_predict(self):
-        """Test making predictions"""
-        def mock_get_engine():
-            return self.engine_cls
-            
-        # Create mock file
-        with open(self.test_cls_file, "rb") as f:
-            file_content = f.read()
-            
-        mock_file = MockUploadFile("test_data.csv", file_content)
+        """Test POST /ml-engine/predict endpoint."""
+        # Create test data file (without target)
+        df = pd.DataFrame(self.X_train)
+        csv_file = self._create_csv_file(df)
         
-        # Create BatchPredictionParams
-        from pydantic import BaseModel
-        
-        class BatchPredictionParams(BaseModel):
-            model_name: str = "test_rf_classifier"
-            batch_size: int = None
-            return_proba: bool = False
-            
-        params = BatchPredictionParams()
-        
-        result = self.run_async(
-            predict(
-                batch_data=mock_file,
-                params=params,
-                engine=mock_get_engine()
-            )
+        # Make request
+        response = client.post(
+            "/ml-engine/predict",
+            data={"params.model_name": self.model_name, "params.return_proba": "false"},
+            files={"batch_data": ("test.csv", csv_file, "text/csv")}
         )
         
-        self.assertIn("predictions", result)
-        self.assertIn("model_used", result)
-        self.assertIn("row_count", result)
-        self.assertEqual(result["model_used"], "test_rf_classifier")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
         
+        self.assertIn("predictions", data)
+        self.assertEqual(data["model_used"], self.model_name)
+        self.assertEqual(data["row_count"], len(self.X_train))
+
     def test_evaluate_model(self):
-        """Test evaluating a model with test data"""
-        def mock_get_engine():
-            return self.engine_cls
-            
-        with open(self.test_cls_file, "rb") as f:
-            file_content = f.read()
-            
-        mock_file = MockUploadFile("test_data.csv", file_content)
+        """Test POST /ml-engine/evaluate/{model_name} endpoint."""
+        # Create test data file
+        df = pd.DataFrame(self.X_train)
+        df["target"] = self.y_train
+        csv_file = self._create_csv_file(df)
         
-        result = self.run_async(
-            evaluate_model(
-                model_name="test_rf_classifier",
-                test_data=mock_file,
-                detailed=True,
-                engine=mock_get_engine()
-            )
+        # Make request
+        response = client.post(
+            f"/ml-engine/evaluate/{self.model_name}",
+            data={"detailed": "false"},
+            files={"test_data": ("test.csv", csv_file, "text/csv")}
         )
         
-        self.assertEqual(result["model_name"], "test_rf_classifier")
-        self.assertIn("metrics", result)
-        self.assertIn("accuracy", result["metrics"])
-        self.assertIn("precision", result["metrics"])
-        self.assertIn("recall", result["metrics"])
-        self.assertIn("f1", result["metrics"])
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
         
+        self.assertEqual(data["model_name"], self.model_name)
+        self.assertIn("metrics", data)
+        self.assertEqual(data["test_samples"], len(self.X_train))
+
     def test_feature_importance(self):
-        """Test generating feature importance"""
-        def mock_get_engine():
-            return self.engine_cls
-            
-        # Create FeatureImportanceParams
-        from pydantic import BaseModel
+        """Test POST /ml-engine/feature-importance endpoint."""
+        params = {
+            "model_name": self.model_name,
+            "top_n": 5,
+            "include_plot": False
+        }
         
-        class FeatureImportanceParams(BaseModel):
-            model_name: str = "test_rf_classifier"
-            top_n: int = 10
-            include_plot: bool = True
-            
-        params = FeatureImportanceParams()
+        response = client.post("/ml-engine/feature-importance", json=params)
         
-        result = self.run_async(
-            feature_importance(
-                params=params,
-                engine=mock_get_engine()
-            )
-        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
         
-        self.assertNotIn("error", result)
-        self.assertIn("feature_importance", result)
-        
+        self.assertIn("importances", data)
+        self.assertEqual(len(data["importances"]), min(5, self.X_train.shape[1]))
+
     def test_error_analysis(self):
-        """Test error analysis"""
-        def mock_get_engine():
-            return self.engine_cls
-            
-        with open(self.test_cls_file, "rb") as f:
-            file_content = f.read()
-            
-        mock_file = MockUploadFile("test_data.csv", file_content)
+        """Test POST /ml-engine/error-analysis endpoint."""
+        # Create test data file
+        df = pd.DataFrame(self.X_train)
+        df["target"] = self.y_train
+        csv_file = self._create_csv_file(df)
         
-        # Create ErrorAnalysisParams
-        from pydantic import BaseModel
-        
-        class ErrorAnalysisParams(BaseModel):
-            model_name: str = "test_rf_classifier"
-            n_samples: int = 10
-            include_plot: bool = True
-            
-        params = ErrorAnalysisParams()
-        
-        result = self.run_async(
-            error_analysis(
-                test_data=mock_file,
-                params=params,
-                engine=mock_get_engine()
-            )
+        # Make request
+        response = client.post(
+            "/ml-engine/error-analysis",
+            data={"params.model_name": self.model_name, "params.n_samples": "10", "params.include_plot": "false"},
+            files={"test_data": ("test.csv", csv_file, "text/csv")}
         )
         
-        self.assertNotIn("error", result)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
         
+        self.assertIn("error_samples", data)
+        self.assertIn("confusion_matrix", data)
+
     def test_data_drift(self):
-        """Test data drift detection"""
-        def mock_get_engine():
-            return self.engine_cls
-            
-        with open(self.test_cls_file, "rb") as f:
-            new_data_content = f.read()
-            
-        with open(self.train_cls_file, "rb") as f:
-            ref_data_content = f.read()
-            
-        new_data = MockUploadFile("new_data.csv", new_data_content)
-        ref_data = MockUploadFile("ref_data.csv", ref_data_content)
+        """Test POST /ml-engine/data-drift endpoint."""
+        # Create test data file with slight drift
+        X_drift = self.X_train * 1.1  # Add some drift
+        df = pd.DataFrame(X_drift)
+        df["target"] = self.y_train
+        csv_file = self._create_csv_file(df)
         
-        # Create DataDriftParams
-        from pydantic import BaseModel
-        
-        class DataDriftParams(BaseModel):
-            drift_threshold: float = 0.1
-            
-        params = DataDriftParams()
-        
-        result = self.run_async(
-            data_drift(
-                new_data=new_data,
-                reference_data=ref_data,
-                params=params,
-                engine=mock_get_engine()
-            )
+        # Make request with just new data
+        response = client.post(
+            "/ml-engine/data-drift",
+            data={"params.drift_threshold": "0.5"},
+            files={"new_data": ("test.csv", csv_file, "text/csv")}
         )
         
-        self.assertNotIn("error", result)
-        self.assertIn("drift_detected", result)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
         
+        self.assertIn("drift_detected", data)
+        self.assertIn("dataset_drift", data)
+        self.assertIn("drifted_features", data)
+
     def test_compare_models(self):
-        """Test comparing models"""
-        def mock_get_engine():
-            return self.engine_cls
-            
-        # Create ModelComparisonParams
-        from pydantic import BaseModel
+        """Test POST /ml-engine/compare-models endpoint."""
+        params = {
+            "model_names": [self.model_name],
+            "metrics": ["accuracy"],
+            "include_plot": False
+        }
         
-        class ModelComparisonParams(BaseModel):
-            model_names: list = ["test_rf_classifier"]
-            metrics: list = None
-            include_plot: bool = True
-            
-        params = ModelComparisonParams()
+        response = client.post("/ml-engine/compare-models", json=params)
         
-        result = self.run_async(
-            compare_models(
-                params=params,
-                engine=mock_get_engine()
-            )
-        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
         
-        self.assertNotIn("error", result)
-        self.assertIn("comparison_table", result)
+        self.assertIn("comparison_table", data)
+        self.assertIn(self.model_name, data["comparison_table"])
+
+    def test_export_model(self):
+        """Test POST /ml-engine/export-model/{model_name} endpoint."""
+        params = {
+            "format": "sklearn",
+            "include_pipeline": True
+        }
         
-    def test_save_model(self):
-        """Test saving a model"""
-        def mock_get_engine():
-            return self.engine_cls
-            
-        result = self.run_async(
-            save_model(
-                model_name="test_rf_classifier",
-                version_tag="v1",
-                include_preprocessor=True,
-                include_metadata=True,
-                compression_level=5,
-                engine=mock_get_engine()
-            )
-        )
+        response = client.post(f"/ml-engine/export-model/{self.model_name}", json=params)
         
-        self.assertEqual(result["model_name"], "test_rf_classifier")
-        self.assertIn("filepath", result)
-        self.assertIn("size_bytes", result)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
         
-    def test_load_model(self):
-        """Test loading a model"""
-        def mock_get_engine():
-            return self.engine_cls
-            
-        # First, save a model to get a file to load
-        save_result = self.run_async(
-            save_model(
-                model_name="test_rf_classifier",
-                engine=mock_get_engine()
-            )
-        )
-        
-        # Read the saved file
-        with open(save_result["filepath"], "rb") as f:
-            file_content = f.read()
-            
-        mock_file = MockUploadFile("model.pkl", file_content)
-        
-        result = self.run_async(
-            load_model(
-                model_file=mock_file,
-                validate_metrics=True,
-                engine=mock_get_engine()
-            )
-        )
-        
-        self.assertIn("model_name", result)
-        self.assertIn("model_type", result)
-        self.assertIn("is_best", result)
-        
+        self.assertEqual(data["model_name"], self.model_name)
+        self.assertEqual(data["format"], "sklearn")
+        self.assertIn("file_size_bytes", data)
+        self.assertIn("download_url", data)
+
     def test_delete_model(self):
-        """Test deleting a model"""
-        def mock_get_engine():
-            return self.engine_cls
-            
-        # First, ensure the model exists
-        self.assertIn("test_rf_classifier", self.engine_cls.models)
+        """Test DELETE /ml-engine/models/{model_name} endpoint."""
+        # First create a model to delete
+        model_to_delete = "model_to_delete"
+        from sklearn.ensemble import RandomForestClassifier
+        model = RandomForestClassifier(n_estimators=5, random_state=42)
+        model.fit(self.X_train, self.y_train)
         
-        # Create a new model for deletion to avoid affecting other tests
-        with open(self.train_cls_file, "rb") as f:
-            file_content = f.read()
-            
-        from pydantic import BaseModel
-        
-        class TrainModelParams(BaseModel):
-            model_type: str
-            model_name: str
-            param_grid: dict
-            test_size: float = 0.2
-            stratify: bool = True
-            
-        params = TrainModelParams(
-            model_type="random_forest",
-            model_name="model_to_delete",
-            param_grid={"n_estimators": [10]}
-        )
-        
-        mock_file = MockUploadFile("train_data.csv", file_content)
-        
-        # Train a model to delete
-        self.run_async(
-            train_model(
-                background_tasks=MockBackgroundTasks(),
-                params=params,
-                data_file=mock_file,
-                engine=mock_get_engine()
-            )
-        )
-        
-        # Verify the model exists
-        self.assertIn("model_to_delete", self.engine_cls.models)
+        self.ml_engine.models[model_to_delete] = {
+            "model": model,
+            "params": {"n_estimators": 5, "random_state": 42},
+            "metrics": {"accuracy": 0.9},
+            "timestamp": time.time(),
+            "training_time": 0.5
+        }
         
         # Delete the model
-        result = self.run_async(
-            delete_model(
-                model_name="model_to_delete",
-                engine=mock_get_engine()
-            )
-        )
+        response = client.delete(f"/ml-engine/models/{model_to_delete}")
         
-        self.assertIn("message", result)
-        self.assertNotIn("model_to_delete", self.engine_cls.models)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
         
+        self.assertIn("message", data)
+        self.assertNotIn(model_to_delete, self.ml_engine.models)
+
     def test_generate_report(self):
-        """Test generating a comprehensive report"""
-        def mock_get_engine():
-            return self.engine_cls
-            
-        result = self.run_async(
-            generate_report(
-                include_plots=True,
-                engine=mock_get_engine()
-            )
+        """Test POST /ml-engine/generate-report endpoint."""
+        response = client.post("/ml-engine/generate-report", params={"include_plots": False})
+        
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        
+        self.assertIn("report", data)
+        self.assertIn("model_count", data)
+        self.assertIn("best_model", data)
+
+    def test_save_and_load_model(self):
+        """Test save and load model endpoints."""
+        # Test save model
+        response_save = client.post(
+            f"/ml-engine/save-model/{self.model_name}",
+            params={"version_tag": "v1", "include_preprocessor": True}
         )
         
-        self.assertIn("report", result)
-        self.assertIn("model_count", result)
-        self.assertIn("best_model", result)
+        self.assertEqual(response_save.status_code, 200)
+        save_data = response_save.json()
+        self.assertIn("filepath", save_data)
         
-    def test_batch_inference(self):
-        """Test running batch inference"""
-        def mock_get_engine():
-            return self.engine_cls
-            
-        # Create multiple test files
-        files = []
-        for i in range(2):
-            with open(self.test_cls_file, "rb") as f:
-                file_content = f.read()
-                files.append(MockUploadFile(f"test_data_{i}.csv", file_content))
+        # Load the saved model
+        with open(save_data["filepath"], "rb") as f:
+            model_bytes = f.read()
         
-        result = self.run_async(
-            batch_inference(
-                batch_data=files,
-                model_name="test_rf_classifier",
-                batch_size=None,
-                return_proba=False,
-                parallel=True,
-                timeout=None,
-                engine=mock_get_engine()
-            )
+        # Test load model
+        response_load = client.post(
+            "/ml-engine/load-model",
+            files={"model_file": ("model.pkl", io.BytesIO(model_bytes), "application/octet-stream")},
+            params={"validate_metrics": True}
         )
         
-        self.assertEqual(result["model_used"], "test_rf_classifier")
-        self.assertEqual(result["batch_count"], 2)
-        self.assertIn("results", result)
+        self.assertEqual(response_load.status_code, 200)
+        load_data = response_load.json()
         
-    def test_interpret_model(self):
-        """Test model interpretation"""
-        def mock_get_engine():
-            return self.engine_cls
-            
-        with open(self.test_cls_file, "rb") as f:
-            file_content = f.read()
-            
-        mock_file = MockUploadFile("test_data.csv", file_content)
+        self.assertIn("model_name", load_data)
+        self.assertIn("model_type", load_data)
+        self.assertIn("metrics", load_data)
         
-        result = self.run_async(
-            interpret_model(
-                model_name="test_rf_classifier",
-                sample_data=mock_file,
-                method="built_in",  # Using built-in for simplicity in tests
-                background_samples=10,
-                engine=mock_get_engine()
-            )
-        )
+        # Clean up the saved model file
+        if os.path.exists(save_data["filepath"]):
+            os.remove(save_data["filepath"])
+
+    def test_ensemble_models(self):
+        """Test POST /ml-engine/ensemble-models endpoint."""
+        # First create another model for the ensemble
+        second_model_name = "second_test_model"
+        from sklearn.tree import DecisionTreeClassifier
+        model = DecisionTreeClassifier(random_state=42)
+        model.fit(self.X_train, self.y_train)
         
-        self.assertEqual(result["model_name"], "test_rf_classifier")
-        self.assertIn("method", result)
-        
-    def test_explain_prediction(self):
-        """Test prediction explanation"""
-        def mock_get_engine():
-            return self.engine_cls
-            
-        with open(self.test_cls_file, "rb") as f:
-            file_content = f.read()
-            
-        mock_file = MockUploadFile("test_data.csv", file_content)
-        
-        result = self.run_async(
-            explain_prediction(
-                sample_data=mock_file,
-                model_name="test_rf_classifier",
-                method="built_in",  # Using built-in for simplicity in tests
-                engine=mock_get_engine()
-            )
-        )
-        
-        self.assertEqual(result["model_name"], "test_rf_classifier")
-        self.assertIn("method", result)
-        
-    def test_health_check(self):
-        """Test model health check"""
-        def mock_get_engine():
-            return self.engine_cls
-            
-        with open(self.test_cls_file, "rb") as f:
-            file_content = f.read()
-            
-        mock_file = MockUploadFile("test_data.csv", file_content)
-        
-        result = self.run_async(
-            health_check(
-                test_data=mock_file,
-                model_name="test_rf_classifier",
-                engine=mock_get_engine()
-            )
-        )
-        
-        self.assertIn("status", result)
-        self.assertIn("checks", result)
-        self.assertIn("model_name", result)
-        
-    def test_transfer_learning(self):
-        """Test transfer learning"""
-        def mock_get_engine():
-            return self.engine_cls
-            
-        with open(self.train_cls_file, "rb") as f:
-            file_content = f.read()
-            
-        mock_file = MockUploadFile("train_data.csv", file_content)
-        
-        result = self.run_async(
-            transfer_learning(
-                model_name="test_rf_classifier",
-                new_data=mock_file,
-                learning_rate=0.01,
-                epochs=2,
-                engine=mock_get_engine()
-            )
-        )
-        
-        self.assertEqual(result["original_model"], "test_rf_classifier")
-        self.assertIn("new_model", result)
-        self.assertIn(result["new_model"], self.engine_cls.models)
-        
-    def test_create_ensemble(self):
-        """Test creating ensemble models"""
-        def mock_get_engine():
-            return self.engine_cls
-            
-        # Create a second model to ensemble with
-        with open(self.train_cls_file, "rb") as f:
-            file_content = f.read()
-            
-        from pydantic import BaseModel
-        
-        class TrainModelParams(BaseModel):
-            model_type: str
-            model_name: str
-            param_grid: dict
-            test_size: float = 0.2
-            stratify: bool = True
-            
-        params = TrainModelParams(
-            model_type="decision_tree",
-            model_name="test_dt_classifier",
-            param_grid={"max_depth": [3]}
-        )
-        
-        mock_file = MockUploadFile("train_data.csv", file_content)
-        
-        # Train a second model
-        self.run_async(
-            train_model(
-                background_tasks=MockBackgroundTasks(),
-                params=params,
-                data_file=mock_file,
-                engine=mock_get_engine()
-            )
-        )
+        self.ml_engine.models[second_model_name] = {
+            "model": model,
+            "params": {"random_state": 42},
+            "metrics": {"accuracy": 0.88},
+            "timestamp": time.time(),
+            "training_time": 0.2
+        }
         
         # Create ensemble
-        result = self.run_async(
-            create_ensemble(
-                model_names=["test_rf_classifier", "test_dt_classifier"],
-                ensemble_name="test_ensemble",
-                voting_type="soft",
-                weights=None,
-                engine=mock_get_engine()
-            )
-        )
+        params = {
+            "model_names": [self.model_name, second_model_name],
+            "ensemble_name": "test_ensemble",
+            "voting_type": "soft"
+        }
         
-        self.assertEqual(result["ensemble_name"], "test_ensemble")
-        self.assertIn("test_ensemble", self.engine_cls.models)
+        response = client.post("/ml-engine/ensemble-models", json=params)
         
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        
+        self.assertEqual(data["ensemble_name"], "test_ensemble")
+        self.assertEqual(len(data["base_models"]), 2)
+        self.assertIn("test_ensemble", self.ml_engine.models)
+
     def test_calibrate_model(self):
-        """Test model calibration"""
-        def mock_get_engine():
-            return self.engine_cls
-            
-        with open(self.train_cls_file, "rb") as f:
-            file_content = f.read()
-            
-        mock_file = MockUploadFile("train_data.csv", file_content)
+        """Test POST /ml-engine/models/{model_name}/calibrate endpoint."""
+        # Create test data file
+        df = pd.DataFrame(self.X_train)
+        df["target"] = self.y_train
+        csv_file = self._create_csv_file(df)
         
-        result = self.run_async(
-            calibrate_model(
-                model_name="test_rf_classifier",
-                calibration_data=mock_file,
-                method="isotonic",
-                cv=2,
-                engine=mock_get_engine()
-            )
+        # Make request
+        response = client.post(
+            f"/ml-engine/models/{self.model_name}/calibrate",
+            data={"method": "isotonic", "cv": "3"},
+            files={"calibration_data": ("test.csv", csv_file, "text/csv")}
         )
         
-        self.assertEqual(result["original_model"], "test_rf_classifier")
-        self.assertIn("calibrated_model", result)
-        self.assertIn(result["calibrated_model"], self.engine_cls.models)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
         
-    def test_model_quantization(self):
-        """Test model quantization"""
-        def mock_get_engine():
-            return self.engine_cls
-            
-        result = self.run_async(
-            model_quantization(
-                model_name="test_rf_classifier",
-                engine=mock_get_engine()
-            )
+        self.assertEqual(data["original_model"], self.model_name)
+        self.assertIn("calibrated_model", data)
+        self.assertEqual(data["calibration_method"], "isotonic")
+
+    def test_interpret_model(self):
+        """Test POST /ml-engine/interpret-model endpoint."""
+        # Create test data file
+        df = pd.DataFrame(self.X_train[:5])  # Just use a few samples for efficiency
+        csv_file = self._create_csv_file(df)
+        
+        # Make request
+        response = client.post(
+            "/ml-engine/interpret-model",
+            data={"model_name": self.model_name, "method": "eli5"},
+            files={"sample_data": ("test.csv", csv_file, "text/csv")}
         )
         
-        self.assertEqual(result["model_name"], "test_rf_classifier")
-        self.assertIn("original_size_bytes", result)
-        self.assertIn("quantized_size_bytes", result)
-        self.assertIn("compression_ratio", result)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
         
+        self.assertEqual(data["model_name"], self.model_name)
+        self.assertEqual(data["method"], "eli5")
+        self.assertIn("feature_weights", data)
+
+    def test_explain_prediction(self):
+        """Test POST /ml-engine/explain-prediction endpoint."""
+        # Create test data file with just one sample
+        df = pd.DataFrame(self.X_train[:1])
+        csv_file = self._create_csv_file(df)
+        
+        # Make request
+        response = client.post(
+            "/ml-engine/explain-prediction",
+            data={"model_name": self.model_name, "method": "eli5"},
+            files={"sample_data": ("test.csv", csv_file, "text/csv")}
+        )
+        
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        
+        self.assertEqual(data["model_name"], self.model_name)
+        self.assertIn("feature_weights", data)
+
+    def test_model_health_check(self):
+        """Test POST /ml-engine/health-check endpoint."""
+        # Create test data file
+        df = pd.DataFrame(self.X_train)
+        df["target"] = self.y_train
+        csv_file = self._create_csv_file(df)
+        
+        # Make request with test data
+        response = client.post(
+            "/ml-engine/health-check",
+            data={"model_name": self.model_name},
+            files={"test_data": ("test.csv", csv_file, "text/csv")}
+        )
+        
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        
+        self.assertEqual(data["model_name"], self.model_name)
+        self.assertIn("status", data)
+        self.assertIn("checks", data)
+        self.assertTrue(len(data["checks"]) > 0)
+
     def test_batch_process_pipeline(self):
-        """Test batch processing pipeline"""
-        def mock_get_engine():
-            return self.engine_cls
-            
-        with open(self.test_cls_file, "rb") as f:
-            file_content = f.read()
-            
-        mock_file = MockUploadFile("test_data.csv", file_content)
+        """Test POST /ml-engine/batch-process-pipeline endpoint."""
+        # Create test data file
+        df = pd.DataFrame(self.X_train)
+        csv_file = self._create_csv_file(df)
         
-        result = self.run_async(
-            batch_process_pipeline(
-                input_data=mock_file,
-                model_name="test_rf_classifier",
-                steps=["preprocess", "predict", "postprocess"],
-                batch_size=None,
-                engine=mock_get_engine()
-            )
+        # Make request
+        response = client.post(
+            "/ml-engine/batch-process-pipeline",
+            data={"model_name": self.model_name, "steps": '["preprocess", "predict", "postprocess"]'},
+            files={"input_data": ("test.csv", csv_file, "text/csv")}
         )
         
-        self.assertEqual(result["model_name"], "test_rf_classifier")
-        self.assertIn("steps", result)
-        self.assertIn("execution_time", result)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
         
-    def test_shutdown_engine(self):
-        """Test shutting down the engine"""
-        def mock_get_engine():
-            return self.engine_cls
-            
-        result = self.run_async(
-            shutdown_engine(
-                engine=mock_get_engine()
-            )
+        self.assertEqual(data["model_name"], self.model_name)
+        self.assertEqual(data["input_rows"], len(self.X_train))
+        self.assertIn("steps", data)
+        self.assertIn("execution_time", data)
+
+    def test_batch_inference(self):
+        """Test POST /ml-engine/batch-inference endpoint."""
+        # Create two test data files
+        df1 = pd.DataFrame(self.X_train[:50])
+        df2 = pd.DataFrame(self.X_train[50:])
+        
+        csv_file1 = self._create_csv_file(df1)
+        csv_file2 = self._create_csv_file(df2)
+        
+        # Make request
+        response = client.post(
+            "/ml-engine/batch-inference",
+            data={
+                "model_name": self.model_name,
+                "batch_size": "10",
+                "return_proba": "false",
+                "parallel": "true"
+            },
+            files=[
+                ("batch_data", ("test1.csv", csv_file1, "text/csv")),
+                ("batch_data", ("test2.csv", csv_file2, "text/csv"))
+            ]
         )
         
-        self.assertIn("message", result)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        
+        self.assertEqual(data["model_used"], self.model_name)
+        self.assertEqual(data["batch_count"], 2)
+        self.assertEqual(data["total_samples"], len(self.X_train))
+        self.assertEqual(len(data["results"]), 2)
+
+    def test_quantize_model(self):
+        """Test POST /ml-engine/models/{model_name}/quantize endpoint."""
+        response = client.post(f"/ml-engine/models/{self.model_name}/quantize")
+        
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        
+        self.assertEqual(data["model_name"], self.model_name)
+        self.assertIn("original_size_bytes", data)
+        self.assertIn("quantized_size_bytes", data)
+        self.assertIn("compression_ratio", data)
+        
+        # Clean up quantized model file
+        if os.path.exists(data["quantized_filepath"]):
+            os.remove(data["quantized_filepath"])
+
+    def test_transfer_learning(self):
+        """Test POST /ml-engine/models/{model_name}/transfer-learning endpoint."""
+        # Create test data file
+        df = pd.DataFrame(self.X_train)
+        df["target"] = self.y_train
+        csv_file = self._create_csv_file(df)
+        
+        # Make request
+        response = client.post(
+            f"/ml-engine/models/{self.model_name}/transfer-learning",
+            data={"learning_rate": "0.01", "epochs": "5"},
+            files={"new_data": ("test.csv", csv_file, "text/csv")}
+        )
+        
+        # This test might fail if the original model doesn't support warm_start
+        # But RandomForestClassifier does support it
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        
+        self.assertEqual(data["original_model"], self.model_name)
+        self.assertIn("new_model", data)
+        self.assertIn(data["new_model"], self.ml_engine.models)
+
+    def test_shutdown(self):
+        """Test POST /ml-engine/shutdown endpoint."""
+        response = client.post("/ml-engine/shutdown")
+        
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        
+        self.assertIn("message", data)
+        self.assertIn("shut down successfully", data["message"])
+
 
 if __name__ == "__main__":
     unittest.main()
