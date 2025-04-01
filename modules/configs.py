@@ -1,13 +1,8 @@
-from dataclasses import dataclass, field
-from enum import Enum
+from dataclasses import dataclass, field, asdict
+from enum import Enum, auto
 import os
 import numpy as np
-from typing import Optional, List, Dict, Tuple, NamedTuple, Callable, Any
-from dataclasses import dataclass, field, asdict
-from typing import Optional, Dict, Any, List
-from enum import Enum, auto
-import json
-import os
+from typing import Optional, List, Dict, Tuple, NamedTuple, Callable, Any, Union
 
 # Constants definitions
 CHECKPOINT_PATH = "./checkpoints"
@@ -31,23 +26,97 @@ class QuantizationMode(Enum):
     CALIBRATED = "calibrated"
 
 @dataclass
-class QuantizationConfigBase:
-    """Configuration for the quantizer."""
-    quantization_type: str = QuantizationType.INT8.value
-    quantization_mode: str = QuantizationMode.DYNAMIC_PER_BATCH.value
+class QuantizationConfig:
+    """Configuration for model quantization"""
+    quantization_type: Union[str, QuantizationType] = QuantizationType.INT8.value
+    quantization_mode: Union[str, QuantizationMode] = QuantizationMode.DYNAMIC_PER_BATCH.value
+    per_channel: bool = False
+    symmetric: bool = True
     enable_cache: bool = True
-    cache_size: int = 1024
-    buffer_size: int = 0  # 0 means no buffer
+    cache_size: int = 256
+    calibration_samples: int = 100
+    calibration_method: str = "percentile"
+    percentile: float = 99.99
+    skip_layers: List[str] = None
+    quantize_weights_only: bool = False
+    quantize_activations: bool = True
+    weight_bits: int = 8
+    activation_bits: int = 8
+    quantize_bias: bool = True
+    bias_bits: int = 32
+    enable_mixed_precision: bool = False
+    mixed_precision_layers: List[str] = None
+    optimize_for: str = "performance"  # "performance", "memory", "balanced"
+    custom_quantization_config: Dict = None
+    enable_requantization: bool = False
+    requantization_threshold: float = 0.1
     use_percentile: bool = False
     min_percentile: float = 0.1
     max_percentile: float = 99.9
     error_on_nan: bool = False
     error_on_inf: bool = False
-    # New options for better control
     outlier_threshold: Optional[float] = None  # For handling outliers
     num_bits: int = 8  # Allow custom bit widths
     optimize_memory: bool = True  # Enable memory optimization
-
+    buffer_size: int = 0  # 0 means no buffer
+    
+    def __post_init__(self):
+        # Handle quantization_type as string or enum
+        if isinstance(self.quantization_type, str):
+            try:
+                self.quantization_type = QuantizationType[self.quantization_type.upper()].value
+            except KeyError:
+                self.quantization_type = QuantizationType.INT8.value
+                
+        # Handle quantization_mode as string or enum
+        if isinstance(self.quantization_mode, str):
+            try:
+                self.quantization_mode = QuantizationMode[self.quantization_mode.upper()].value
+            except KeyError:
+                self.quantization_mode = QuantizationMode.DYNAMIC_PER_BATCH.value
+        
+        # Initialize lists
+        if self.skip_layers is None:
+            self.skip_layers = []
+        if self.mixed_precision_layers is None:
+            self.mixed_precision_layers = []
+        if self.custom_quantization_config is None:
+            self.custom_quantization_config = {}
+    
+    def to_dict(self) -> Dict:
+        """Convert config to dictionary for serialization"""
+        return {
+            "quantization_type": self.quantization_type,
+            "quantization_mode": self.quantization_mode,
+            "per_channel": self.per_channel,
+            "symmetric": self.symmetric,
+            "enable_cache": self.enable_cache,
+            "cache_size": self.cache_size,
+            "calibration_samples": self.calibration_samples,
+            "calibration_method": self.calibration_method,
+            "percentile": self.percentile,
+            "skip_layers": self.skip_layers,
+            "quantize_weights_only": self.quantize_weights_only,
+            "quantize_activations": self.quantize_activations,
+            "weight_bits": self.weight_bits,
+            "activation_bits": self.activation_bits,
+            "quantize_bias": self.quantize_bias,
+            "bias_bits": self.bias_bits,
+            "enable_mixed_precision": self.enable_mixed_precision,
+            "mixed_precision_layers": self.mixed_precision_layers,
+            "optimize_for": self.optimize_for,
+            "enable_requantization": self.enable_requantization,
+            "requantization_threshold": self.requantization_threshold,
+            "use_percentile": self.use_percentile,
+            "min_percentile": self.min_percentile,
+            "max_percentile": self.max_percentile,
+            "error_on_nan": self.error_on_nan,
+            "error_on_inf": self.error_on_inf,
+            "outlier_threshold": self.outlier_threshold,
+            "num_bits": self.num_bits,
+            "optimize_memory": self.optimize_memory,
+            "buffer_size": self.buffer_size
+        }
 
 # -----------------------------------------------------------------------------
 # Configuration for Batch Processing
@@ -80,459 +149,50 @@ class PrioritizedItem(NamedTuple):
         return self.timestamp < other.timestamp
 
 @dataclass
-class BatchProcessorConfigBase:
-    """Configuration for BatchProcessor."""
-    
-    # Batch sizing parameters
-    min_batch_size: int = 1
-    max_batch_size: int = 64
-    initial_batch_size: int = 16
-    
-    # Queue parameters
+class BatchProcessorConfig:
+    """Configuration for batch processing"""
+    initial_batch_size: int = 100
+    min_batch_size: int = 50
+    max_batch_size: int = 200
     max_queue_size: int = 1000
-    enable_priority_queue: bool = False
-    
-    # Processing parameters
-    batch_timeout: float = 0.1  # Max time to wait for batch formation (seconds)
+    batch_timeout: float = 1.0
+    num_workers: int = 4
+    adaptive_batching: bool = True
+    batch_allocation_strategy: str = "dynamic"
+    enable_priority_queue: bool = True
+    priority_levels: int = 3
+    enable_monitoring: bool = True
+    monitoring_interval: float = 2.0
+    enable_memory_optimization: bool = True
+    enable_prefetching: bool = True
+    prefetch_batches: int = 2
+    checkpoint_batches: bool = False
+    checkpoint_interval: int = 100
+    error_handling: str = "retry"
+    max_retries: int = 3
+    retry_delay: float = 0.5
+    distributed_processing: bool = False
+    resource_allocation: Dict = None
     item_timeout: float = 10.0  # Max time to wait for single item processing (seconds)
     min_batch_interval: float = 0.0  # Min time between batch processing (seconds)
-    
-    # Processing strategy
     processing_strategy: BatchProcessingStrategy = BatchProcessingStrategy.ADAPTIVE
     enable_adaptive_batching: bool = True
-    
-    # Retry parameters
-    max_retries: int = 2
-    retry_delay: float = 0.1  # Seconds between retries
     reduce_batch_on_failure: bool = True
-    
-    # Memory management
     max_batch_memory_mb: Optional[float] = None  # Max memory per batch in MB
-    enable_memory_optimization: bool = True
     gc_batch_threshold: int = 32  # Run GC after processing batches larger than this
-    
-    # Monitoring and statistics
-    enable_monitoring: bool = True
     monitoring_window: int = 100  # Number of batches to keep statistics for
-    
-    # Thread pool configuration
     max_workers: int = 4
-    
-    # Health monitoring
     enable_health_monitoring: bool = True
     health_check_interval: float = 5.0  # Seconds between health checks
     memory_warning_threshold: float = 70.0  # Memory usage percentage to trigger warning
     memory_critical_threshold: float = 85.0  # Memory usage percentage to trigger critical actions
     queue_warning_threshold: int = 100  # Queue size to trigger warning
     queue_critical_threshold: int = 500  # Queue size to trigger critical actions
-    
-    # Debug mode
-    debug_mode: bool = False
-
-# -----------------------------------------------------------------------------
-# Configuration for Data Preprocessor
-# -----------------------------------------------------------------------------
-
-class NormalizationType(Enum):
-    NONE = "none"
-    STANDARD = "standard"
-    MINMAX = "minmax"
-    ROBUST = "robust"
-    QUANTILE = "quantile"
-    LOG = "log"
-    POWER = "power"
-
-@dataclass
-class PreprocessorConfigBase:
-    """Configuration for the data preprocessor."""
-    # Normalization settings
-    normalization: NormalizationType = NormalizationType.STANDARD
-    robust_percentiles: Tuple[float, float] = (25.0, 75.0)
-    
-    # Data handling settings
-    handle_nan: bool = True
-    handle_inf: bool = True
-    nan_strategy: str = "mean"  # Options: "mean", "median", "most_frequent", "zero"
-    inf_strategy: str = "mean"  # Options: "mean", "median", "zero"
-    
-    # Outlier handling
-    detect_outliers: bool = False
-    outlier_method: str = "iqr"  # Options: "iqr", "zscore", "isolation_forest"
-    outlier_params: Dict[str, Any] = field(default_factory=lambda: {
-        "threshold": 1.5,  # For IQR: threshold * IQR, for zscore: threshold * std
-        "clip": True,      # Whether to clip or replace outliers
-        "n_estimators": 100,  # For isolation_forest
-        "contamination": "auto"  # For isolation_forest
-    })
-    
-    # Data clipping
-    clip_values: bool = False
-    clip_range: Tuple[float, float] = (-np.inf, np.inf)
-    
-    # Data validation
-    enable_input_validation: bool = True
-    input_size_limit: Optional[int] = None  # Max number of samples
-    
-    # Performance settings
-    parallel_processing: bool = False
-    n_jobs: int = -1  # -1 for all cores
-    chunk_size: Optional[int] = None  # Process large data in chunks of this size
-    cache_enabled: bool = True
-    cache_size: int = 128  # LRU cache size
-    
-    # Numeric precision
-    dtype: np.dtype = np.float64
-    epsilon: float = 1e-10  # Small value to avoid division by zero
-    
-    # Debugging and logging
     debug_mode: bool = False
     
-    # Custom functions
-    custom_normalization_fn: Optional[Callable] = None
-    custom_transform_fn: Optional[Callable] = None
-    
-    # Version info
-    version: str = "1.0.0"
-
-    def to_dict(self) -> Dict[str, Any]:
-        """
-        Convert the configuration to a dictionary for serialization.
-        
-        Returns:
-            Dictionary representation of the configuration
-        """
-        # Convert the configuration to a dictionary
-        config_dict = asdict(self)
-        
-        # Handle special types that need custom serialization
-        if 'normalization' in config_dict:
-            # Convert enum to string for JSON serialization
-            config_dict['normalization'] = self.normalization.name if self.normalization else 'NONE'
-        
-        # Remove non-serializable callable objects
-        if 'custom_normalization_fn' in config_dict:
-            config_dict['custom_normalization_fn'] = None
-        if 'custom_transform_fn' in config_dict:
-            config_dict['custom_transform_fn'] = None
-        
-        # Convert numpy dtypes to strings
-        if 'dtype' in config_dict and isinstance(config_dict['dtype'], np.dtype):
-            config_dict['dtype'] = str(config_dict['dtype'])
-        
-        return config_dict
-
-
-# -----------------------------------------------------------------------------
-# Configuration for Inference Engine
-# -----------------------------------------------------------------------------
-class ModelType(Enum):
-    SKLEARN = auto()
-    XGBOOST = auto()
-    LIGHTGBM = auto()
-    CUSTOM = auto()
-    ENSEMBLE = auto()
-
-class EngineState(Enum):
-    INITIALIZING = auto()
-    READY = auto()
-    RUNNING = auto()
-    LOADING = auto()
-    STOPPING = auto()
-    STOPPED = auto()
-    ERROR = auto()
-
-@dataclass
-class InferenceEngineConfigBase:
-    # General engine settings
-    model_version: str = "1.0"
-    debug_mode: bool = False
-    num_threads: int = 4
-    set_cpu_affinity: bool = False
-
-    # Intel optimizations flag
-    enable_intel_optimization: bool = False
-
-    # Quantization settings
-    enable_quantization: bool = False
-    enable_model_quantization: bool = False
-    enable_input_quantization: bool = False
-    quantization_dtype: str = "int8"  # e.g., "int8" or "float16"
-    quantization_config: Optional[QuantizationConfigBase] = None
-
-    # Caching and deduplication
-    enable_request_deduplication: bool = True
-    max_cache_entries: int = 1000
-    cache_ttl_seconds: int = 300  # 5 minutes
-
-    # Monitoring settings
-    monitoring_window: int = 100
-    enable_monitoring: bool = True
-    monitoring_interval: float = 10.0  # seconds between checks
-    throttle_on_high_cpu: bool = True
-    cpu_threshold_percent: float = 90.0  # CPU usage threshold in percent
-    memory_high_watermark_mb: float = 1024.0  # memory high watermark in MB
-    memory_limit_gb: Optional[float] = None  # optional absolute limit in GB
-
-    # Batch processing settings
-    enable_batching: bool = True
-    batch_processing_strategy: str = "adaptive"  # e.g., "adaptive", "fixed", etc.
-    batch_timeout: float = 0.1  # seconds to wait for additional requests
-    max_concurrent_requests: int = 8
-    initial_batch_size: int = 16
-    min_batch_size: int = 1
-    max_batch_size: int = 64
-    enable_adaptive_batching: bool = True
-    enable_memory_optimization: bool = True
-
-    # Preprocessing settings
-    enable_feature_scaling: bool = False
-
-    # Warmup settings
-    enable_warmup: bool = True
-
-    # Inference settings
-    enable_quantization_aware_inference: bool = False
-
-    # Throttling flag (dynamically updated based on CPU usage)
-    enable_throttling: bool = False
-
-    def to_dict(self) -> dict:
-        """Return configuration as a dictionary."""
-        return {
-            "model_version": self.model_version,
-            "debug_mode": self.debug_mode,
-            "num_threads": self.num_threads,
-            "set_cpu_affinity": self.set_cpu_affinity,
-            "enable_intel_optimization": self.enable_intel_optimization,
-            "enable_quantization": self.enable_quantization,
-            "enable_model_quantization": self.enable_model_quantization,
-            "enable_input_quantization": self.enable_input_quantization,
-            "quantization_dtype": self.quantization_dtype,
-            "quantization_config": self.quantization_config,
-            "enable_request_deduplication": self.enable_request_deduplication,
-            "max_cache_entries": self.max_cache_entries,
-            "cache_ttl_seconds": self.cache_ttl_seconds,
-            "monitoring_window": self.monitoring_window,
-            "enable_monitoring": self.enable_monitoring,
-            "monitoring_interval": self.monitoring_interval,
-            "throttle_on_high_cpu": self.throttle_on_high_cpu,
-            "cpu_threshold_percent": self.cpu_threshold_percent,
-            "memory_high_watermark_mb": self.memory_high_watermark_mb,
-            "memory_limit_gb": self.memory_limit_gb,
-            "enable_batching": self.enable_batching,
-            "batch_processing_strategy": self.batch_processing_strategy,
-            "batch_timeout": self.batch_timeout,
-            "max_concurrent_requests": self.max_concurrent_requests,
-            "initial_batch_size": self.initial_batch_size,
-            "min_batch_size": self.min_batch_size,
-            "max_batch_size": self.max_batch_size,
-            "enable_adaptive_batching": self.enable_adaptive_batching,
-            "enable_memory_optimization": self.enable_memory_optimization,
-            "enable_feature_scaling": self.enable_feature_scaling,
-            "enable_warmup": self.enable_warmup,
-            "enable_quantization_aware_inference": self.enable_quantization_aware_inference,
-            "enable_throttling": self.enable_throttling,
-        }
-
-# -----------------------------------------------------------------------------
-# Configuration for Training Engine
-# -----------------------------------------------------------------------------
-from enum import Enum
-from typing import Dict, List, Tuple, Union, Optional, Any, Callable
-
-class TaskType(Enum):
-    CLASSIFICATION = "classification"
-    REGRESSION = "regression"
-    CLUSTERING = "clustering"
-    ANOMALY_DETECTION = "anomaly_detection"
-    TIME_SERIES = "time_series"  # Added time series task type
-    MULTI_LABEL = "multi_label"  # Added multi-label classification
-    RANKING = "ranking"          # Added ranking task type
-
-
-class OptimizationStrategy(Enum):
-    GRID_SEARCH = "grid_search"
-    RANDOM_SEARCH = "random_search"
-    BAYESIAN_OPTIMIZATION = "bayesian_optimization"
-    EVOLUTIONARY = "evolutionary"
-    HYPERBAND = "hyperband"
-    ASHT = "adaptive_surrogate_assisted_hyperparameter_tuning"
-    HYPERX = "hyper_optimization_x"
-    OPTUNA = "optuna"  # Added popular Optuna framework
-    SUCCESSIVE_HALVING = "successive_halving"  # Added ASHA variant
-    BOHB = "bayesian_optimization_hyperband"  # Added BOHB combination
-
-
-
-
-class ModelSelectionCriteria(Enum):
-    ACCURACY = "accuracy"
-    F1 = "f1"
-    PRECISION = "precision"
-    RECALL = "recall"
-    ROC_AUC = "roc_auc"
-    Matthews_CORRELATION = "matthews_correlation"
-    ROOT_MEAN_SQUARED_ERROR = "rmse"
-    MEAN_ABSOLUTE_ERROR = "mae"
-    R2 = "r2"
-    SILHOUETTE = "silhouette"
-    EXPLAINED_VARIANCE = "explained_variance"
-    BIC = "bic"
-    AIC = "aic"
-    CUSTOM = "custom"
-
-
-class AutoMLMode(Enum):
-    DISABLED = "disabled"
-    BASIC = "basic"
-    COMPREHENSIVE = "comprehensive"
-    EXPERIMENTAL = "experimental"
-
-
-class PreprocessorConfig(PreprocessorConfigBase):
-    """Configuration for data preprocessing"""
-    
-    def __init__(
-        self,
-        normalization: Union[NormalizationType, str] = NormalizationType.STANDARD,
-        handle_nan: bool = True,
-        handle_inf: bool = True,
-        detect_outliers: bool = True,
-        outlier_method: str = "isolation_forest",
-        outlier_contamination: float = 0.05,
-        categorical_encoding: str = "one_hot",
-        categorical_max_categories: int = 20,
-        auto_feature_selection: bool = True,
-        numeric_transformations: List[str] = None,
-        text_vectorization: Optional[str] = "tfidf",
-        text_max_features: int = 5000,
-        dimension_reduction: Optional[str] = None,
-        dimension_reduction_target: Optional[int] = None,
-        datetime_features: bool = True,
-        image_preprocessing: Optional[Dict] = None,
-        handle_imbalance: bool = False,
-        imbalance_strategy: str = "smote",
-        feature_interaction: bool = False,
-        feature_interaction_max: int = 10,
-        custom_transformers: List = None,
-        transformation_pipeline: List = None,
-        parallel_processing: bool = True,
-        cache_preprocessing: bool = True,
-        verbosity: int = 1
-    ):
-        # Handle enum as string
-        if isinstance(normalization, str):
-            try:
-                self.normalization = NormalizationType[normalization.upper()]
-            except KeyError:
-                self.normalization = NormalizationType.STANDARD
-        else:
-            self.normalization = normalization
-            
-        self.handle_nan = handle_nan
-        self.handle_inf = handle_inf
-        self.detect_outliers = detect_outliers
-        self.outlier_method = outlier_method
-        self.outlier_contamination = outlier_contamination
-        self.categorical_encoding = categorical_encoding
-        self.categorical_max_categories = categorical_max_categories
-        self.auto_feature_selection = auto_feature_selection
-        self.numeric_transformations = numeric_transformations or []
-        self.text_vectorization = text_vectorization
-        self.text_max_features = text_max_features
-        self.dimension_reduction = dimension_reduction
-        self.dimension_reduction_target = dimension_reduction_target
-        self.datetime_features = datetime_features
-        self.image_preprocessing = image_preprocessing or {}
-        self.handle_imbalance = handle_imbalance
-        self.imbalance_strategy = imbalance_strategy
-        self.feature_interaction = feature_interaction
-        self.feature_interaction_max = feature_interaction_max
-        self.custom_transformers = custom_transformers or []
-        self.transformation_pipeline = transformation_pipeline or []
-        self.parallel_processing = parallel_processing
-        self.cache_preprocessing = cache_preprocessing
-        self.verbosity = verbosity
-    
-    def to_dict(self) -> Dict:
-        """Convert config to dictionary for serialization"""
-        return {
-            "normalization": self.normalization.value,
-            "handle_nan": self.handle_nan,
-            "handle_inf": self.handle_inf,
-            "detect_outliers": self.detect_outliers,
-            "outlier_method": self.outlier_method,
-            "outlier_contamination": self.outlier_contamination,
-            "categorical_encoding": self.categorical_encoding,
-            "categorical_max_categories": self.categorical_max_categories,
-            "auto_feature_selection": self.auto_feature_selection,
-            "numeric_transformations": self.numeric_transformations,
-            "text_vectorization": self.text_vectorization,
-            "text_max_features": self.text_max_features,
-            "dimension_reduction": self.dimension_reduction,
-            "dimension_reduction_target": self.dimension_reduction_target,
-            "datetime_features": self.datetime_features,
-            "image_preprocessing": self.image_preprocessing,
-            "handle_imbalance": self.handle_imbalance,
-            "imbalance_strategy": self.imbalance_strategy,
-            "feature_interaction": self.feature_interaction,
-            "feature_interaction_max": self.feature_interaction_max,
-            "parallel_processing": self.parallel_processing,
-            "cache_preprocessing": self.cache_preprocessing,
-            "verbosity": self.verbosity
-        }
-
-
-class BatchProcessorConfig(BatchProcessorConfigBase):
-    """Configuration for batch processing"""
-    
-    def __init__(
-        self,
-        initial_batch_size: int = 100,
-        min_batch_size: int = 50,
-        max_batch_size: int = 200,
-        max_queue_size: int = 1000,
-        batch_timeout: float = 1.0,
-        num_workers: int = 4,
-        adaptive_batching: bool = True,
-        batch_allocation_strategy: str = "dynamic",
-        enable_priority_queue: bool = True,
-        priority_levels: int = 3,
-        enable_monitoring: bool = True,
-        monitoring_interval: float = 2.0,
-        enable_memory_optimization: bool = True,
-        enable_prefetching: bool = True,
-        prefetch_batches: int = 2,
-        checkpoint_batches: bool = False,
-        checkpoint_interval: int = 100,
-        error_handling: str = "retry",
-        max_retries: int = 3,
-        retry_delay: float = 0.5,
-        distributed_processing: bool = False,
-        resource_allocation: Dict = None
-    ):
-        self.initial_batch_size = initial_batch_size
-        self.min_batch_size = min_batch_size
-        self.max_batch_size = max_batch_size
-        self.max_queue_size = max_queue_size
-        self.batch_timeout = batch_timeout
-        self.num_workers = num_workers
-        self.adaptive_batching = adaptive_batching
-        self.batch_allocation_strategy = batch_allocation_strategy
-        self.enable_priority_queue = enable_priority_queue
-        self.priority_levels = priority_levels
-        self.enable_monitoring = enable_monitoring
-        self.monitoring_interval = monitoring_interval
-        self.enable_memory_optimization = enable_memory_optimization
-        self.enable_prefetching = enable_prefetching
-        self.prefetch_batches = prefetch_batches
-        self.checkpoint_batches = checkpoint_batches
-        self.checkpoint_interval = checkpoint_interval
-        self.error_handling = error_handling
-        self.max_retries = max_retries
-        self.retry_delay = retry_delay
-        self.distributed_processing = distributed_processing
-        self.resource_allocation = resource_allocation or {}
+    def __post_init__(self):
+        if self.resource_allocation is None:
+            self.resource_allocation = {}
     
     def to_dict(self) -> Dict:
         """Convert config to dictionary for serialization"""
@@ -558,68 +218,259 @@ class BatchProcessorConfig(BatchProcessorConfigBase):
             "max_retries": self.max_retries,
             "retry_delay": self.retry_delay,
             "distributed_processing": self.distributed_processing,
-            "resource_allocation": self.resource_allocation
+            "resource_allocation": self.resource_allocation,
+            "item_timeout": self.item_timeout,
+            "min_batch_interval": self.min_batch_interval,
+            "processing_strategy": self.processing_strategy.name,
+            "enable_adaptive_batching": self.enable_adaptive_batching,
+            "reduce_batch_on_failure": self.reduce_batch_on_failure,
+            "max_batch_memory_mb": self.max_batch_memory_mb,
+            "gc_batch_threshold": self.gc_batch_threshold,
+            "monitoring_window": self.monitoring_window,
+            "max_workers": self.max_workers,
+            "enable_health_monitoring": self.enable_health_monitoring,
+            "health_check_interval": self.health_check_interval,
+            "memory_warning_threshold": self.memory_warning_threshold,
+            "memory_critical_threshold": self.memory_critical_threshold,
+            "queue_warning_threshold": self.queue_warning_threshold,
+            "queue_critical_threshold": self.queue_critical_threshold,
+            "debug_mode": self.debug_mode
         }
 
+# -----------------------------------------------------------------------------
+# Configuration for Data Preprocessor
+# -----------------------------------------------------------------------------
 
-class InferenceEngineConfig (InferenceEngineConfigBase):
-    """Configuration for the inference engine"""
+class NormalizationType(Enum):
+    NONE = "none"
+    STANDARD = "standard"
+    MINMAX = "minmax"
+    ROBUST = "robust"
+    QUANTILE = "quantile"
+    LOG = "log"
+    POWER = "power"
+
+@dataclass
+class PreprocessorConfig:
+    """Configuration for data preprocessing"""
+    normalization: Union[NormalizationType, str] = NormalizationType.STANDARD
+    handle_nan: bool = True
+    handle_inf: bool = True
+    detect_outliers: bool = True
+    outlier_method: str = "isolation_forest"
+    outlier_contamination: float = 0.05
+    categorical_encoding: str = "one_hot"
+    categorical_max_categories: int = 20
+    auto_feature_selection: bool = True
+    numeric_transformations: List[str] = None
+    text_vectorization: Optional[str] = "tfidf"
+    text_max_features: int = 5000
+    dimension_reduction: Optional[str] = None
+    dimension_reduction_target: Optional[int] = None
+    datetime_features: bool = True
+    image_preprocessing: Optional[Dict] = None
+    handle_imbalance: bool = False
+    imbalance_strategy: str = "smote"
+    feature_interaction: bool = False
+    feature_interaction_max: int = 10
+    custom_transformers: List = None
+    transformation_pipeline: List = None
+    parallel_processing: bool = True
+    cache_preprocessing: bool = True
+    verbosity: int = 1
+    robust_percentiles: Tuple[float, float] = (25.0, 75.0)
+    nan_strategy: str = "mean"  # Options: "mean", "median", "most_frequent", "zero"
+    inf_strategy: str = "mean"  # Options: "mean", "median", "zero"
+    outlier_params: Dict[str, Any] = None
+    clip_values: bool = False
+    clip_range: Tuple[float, float] = (-np.inf, np.inf)
+    enable_input_validation: bool = True
+    input_size_limit: Optional[int] = None  # Max number of samples
+    n_jobs: int = -1  # -1 for all cores
+    chunk_size: Optional[int] = None  # Process large data in chunks of this size
+    cache_enabled: bool = True
+    cache_size: int = 128  # LRU cache size
+    dtype: np.dtype = np.float64
+    epsilon: float = 1e-10  # Small value to avoid division by zero
+    debug_mode: bool = False
+    custom_normalization_fn: Optional[Callable] = None
+    custom_transform_fn: Optional[Callable] = None
+    version: str = "1.0.0"
     
-    def __init__(
-        self,
-        enable_intel_optimization: bool = True,
-        enable_batching: bool = True,
-        enable_quantization: bool = True,
-        model_cache_size: int = 5,
-        model_precision: str = "fp32",
-        max_batch_size: int = 64,
-        timeout_ms: int = 100,
-        enable_jit: bool = True,
-        enable_onnx: bool = False,
-        onnx_opset: int = 13,
-        enable_tensorrt: bool = False,
-        runtime_optimization: bool = True,
-        fallback_to_cpu: bool = True,
-        thread_count: int = 0,
-        warmup: bool = True,
-        warmup_iterations: int = 10,
-        profiling: bool = False,
-        batching_strategy: str = "dynamic",
-        output_streaming: bool = False,
-        debug_mode: bool = False,
-        memory_growth: bool = True,
-        custom_ops: List = None,
-        use_platform_accelerator: bool = True,
-        platform_accelerator_config: Dict = None
-    ):
-        self.enable_intel_optimization = enable_intel_optimization
-        self.enable_batching = enable_batching
-        self.enable_quantization = enable_quantization
-        self.model_cache_size = model_cache_size
-        self.model_precision = model_precision
-        self.max_batch_size = max_batch_size
-        self.timeout_ms = timeout_ms
-        self.enable_jit = enable_jit
-        self.enable_onnx = enable_onnx
-        self.onnx_opset = onnx_opset
-        self.enable_tensorrt = enable_tensorrt
-        self.runtime_optimization = runtime_optimization
-        self.fallback_to_cpu = fallback_to_cpu
-        self.thread_count = thread_count
-        self.warmup = warmup
-        self.warmup_iterations = warmup_iterations
-        self.profiling = profiling
-        self.batching_strategy = batching_strategy
-        self.output_streaming = output_streaming
-        self.debug_mode = debug_mode
-        self.memory_growth = memory_growth
-        self.custom_ops = custom_ops or []
-        self.use_platform_accelerator = use_platform_accelerator
-        self.platform_accelerator_config = platform_accelerator_config or {}
+    def __post_init__(self):
+        # Handle normalization as string or enum
+        if isinstance(self.normalization, str):
+            try:
+                self.normalization = NormalizationType[self.normalization.upper()]
+            except KeyError:
+                self.normalization = NormalizationType.STANDARD
+                
+        # Initialize empty lists
+        if self.numeric_transformations is None:
+            self.numeric_transformations = []
+        if self.image_preprocessing is None:
+            self.image_preprocessing = {}
+        if self.custom_transformers is None:
+            self.custom_transformers = []
+        if self.transformation_pipeline is None:
+            self.transformation_pipeline = []
+        if self.outlier_params is None:
+            self.outlier_params = {
+                "threshold": 1.5,
+                "clip": True,
+                "n_estimators": 100,
+                "contamination": "auto"
+            }
     
     def to_dict(self) -> Dict:
         """Convert config to dictionary for serialization"""
-        return {
+        config_dict = {
+            "normalization": self.normalization.value,
+            "handle_nan": self.handle_nan,
+            "handle_inf": self.handle_inf,
+            "detect_outliers": self.detect_outliers,
+            "outlier_method": self.outlier_method,
+            "outlier_contamination": self.outlier_contamination,
+            "categorical_encoding": self.categorical_encoding,
+            "categorical_max_categories": self.categorical_max_categories,
+            "auto_feature_selection": self.auto_feature_selection,
+            "numeric_transformations": self.numeric_transformations,
+            "text_vectorization": self.text_vectorization,
+            "text_max_features": self.text_max_features,
+            "dimension_reduction": self.dimension_reduction,
+            "dimension_reduction_target": self.dimension_reduction_target,
+            "datetime_features": self.datetime_features,
+            "image_preprocessing": self.image_preprocessing,
+            "handle_imbalance": self.handle_imbalance,
+            "imbalance_strategy": self.imbalance_strategy,
+            "feature_interaction": self.feature_interaction,
+            "feature_interaction_max": self.feature_interaction_max,
+            "parallel_processing": self.parallel_processing,
+            "cache_preprocessing": self.cache_preprocessing,
+            "verbosity": self.verbosity,
+            "robust_percentiles": self.robust_percentiles,
+            "nan_strategy": self.nan_strategy,
+            "inf_strategy": self.inf_strategy,
+            "outlier_params": self.outlier_params,
+            "clip_values": self.clip_values,
+            "clip_range": self.clip_range,
+            "enable_input_validation": self.enable_input_validation,
+            "input_size_limit": self.input_size_limit,
+            "n_jobs": self.n_jobs,
+            "chunk_size": self.chunk_size,
+            "cache_enabled": self.cache_enabled,
+            "cache_size": self.cache_size,
+            "epsilon": self.epsilon,
+            "debug_mode": self.debug_mode,
+            "version": self.version
+        }
+        
+        # Handle special types
+        if isinstance(self.dtype, np.dtype):
+            config_dict['dtype'] = str(self.dtype)
+        else:
+            config_dict['dtype'] = self.dtype
+            
+        # Remove non-serializable callables
+        config_dict['custom_normalization_fn'] = None
+        config_dict['custom_transform_fn'] = None
+        
+        return config_dict
+
+# -----------------------------------------------------------------------------
+# Configuration for Inference Engine
+# -----------------------------------------------------------------------------
+class ModelType(Enum):
+    SKLEARN = auto()
+    XGBOOST = auto()
+    LIGHTGBM = auto()
+    CUSTOM = auto()
+    ENSEMBLE = auto()
+
+class EngineState(Enum):
+    INITIALIZING = auto()
+    READY = auto()
+    RUNNING = auto()
+    LOADING = auto()
+    STOPPING = auto()
+    STOPPED = auto()
+    ERROR = auto()
+
+class OptimizationMode(str, Enum):
+    """
+    Defines the optimization mode for device configuration.
+    """
+    BALANCED = "balanced"      # Balance between performance and resource usage
+    CONSERVATIVE = "conservative"  # Prioritize stability and minimal resource usage
+    PERFORMANCE = "performance"    # Prioritize maximum performance
+    FULL_UTILIZATION = "full_utilization"  # Use all available resources
+    MEMORY_SAVING = "memory_saving"  # Prioritize memory efficiency
+
+@dataclass
+class InferenceEngineConfig:
+    """Configuration for the inference engine"""
+    enable_intel_optimization: bool = True
+    enable_batching: bool = True
+    enable_quantization: bool = True
+    model_cache_size: int = 5
+    model_precision: str = "fp32"
+    max_batch_size: int = 64
+    timeout_ms: int = 100
+    enable_jit: bool = True
+    enable_onnx: bool = False
+    onnx_opset: int = 13
+    enable_tensorrt: bool = False
+    runtime_optimization: bool = True
+    fallback_to_cpu: bool = True
+    thread_count: int = 0
+    warmup: bool = True
+    warmup_iterations: int = 10
+    profiling: bool = False
+    batching_strategy: str = "dynamic"
+    output_streaming: bool = False
+    debug_mode: bool = False
+    memory_growth: bool = True
+    custom_ops: List = None
+    use_platform_accelerator: bool = True
+    platform_accelerator_config: Dict = None
+    # From base class
+    model_version: str = "1.0"
+    num_threads: int = 4
+    set_cpu_affinity: bool = False
+    enable_model_quantization: bool = False
+    enable_input_quantization: bool = False
+    quantization_dtype: str = "int8"  # e.g., "int8" or "float16"
+    quantization_config: Optional[QuantizationConfig] = None
+    enable_request_deduplication: bool = True
+    max_cache_entries: int = 1000
+    cache_ttl_seconds: int = 300  # 5 minutes
+    monitoring_window: int = 100
+    enable_monitoring: bool = True
+    monitoring_interval: float = 10.0  # seconds between checks
+    throttle_on_high_cpu: bool = True
+    cpu_threshold_percent: float = 90.0  # CPU usage threshold in percent
+    memory_high_watermark_mb: float = 1024.0  # memory high watermark in MB
+    memory_limit_gb: Optional[float] = None  # optional absolute limit in GB
+    batch_timeout: float = 0.1  # seconds to wait for additional requests
+    max_concurrent_requests: int = 8
+    initial_batch_size: int = 16
+    min_batch_size: int = 1
+    enable_adaptive_batching: bool = True
+    enable_memory_optimization: bool = True
+    enable_feature_scaling: bool = False
+    enable_warmup: bool = True
+    enable_quantization_aware_inference: bool = False
+    enable_throttling: bool = False
+    
+    def __post_init__(self):
+        if self.custom_ops is None:
+            self.custom_ops = []
+        if self.platform_accelerator_config is None:
+            self.platform_accelerator_config = {}
+    
+    def to_dict(self) -> Dict:
+        """Convert config to dictionary for serialization"""
+        config_dict = {
             "enable_intel_optimization": self.enable_intel_optimization,
             "enable_batching": self.enable_batching,
             "enable_quantization": self.enable_quantization,
@@ -641,104 +492,88 @@ class InferenceEngineConfig (InferenceEngineConfigBase):
             "output_streaming": self.output_streaming,
             "debug_mode": self.debug_mode,
             "memory_growth": self.memory_growth,
+            "custom_ops": self.custom_ops,
             "use_platform_accelerator": self.use_platform_accelerator,
-            "platform_accelerator_config": self.platform_accelerator_config
+            "platform_accelerator_config": self.platform_accelerator_config,
+            "model_version": self.model_version,
+            "num_threads": self.num_threads,
+            "set_cpu_affinity": self.set_cpu_affinity,
+            "enable_model_quantization": self.enable_model_quantization,
+            "enable_input_quantization": self.enable_input_quantization,
+            "quantization_dtype": self.quantization_dtype,
+            "enable_request_deduplication": self.enable_request_deduplication,
+            "max_cache_entries": self.max_cache_entries,
+            "cache_ttl_seconds": self.cache_ttl_seconds,
+            "monitoring_window": self.monitoring_window,
+            "enable_monitoring": self.enable_monitoring,
+            "monitoring_interval": self.monitoring_interval,
+            "throttle_on_high_cpu": self.throttle_on_high_cpu,
+            "cpu_threshold_percent": self.cpu_threshold_percent,
+            "memory_high_watermark_mb": self.memory_high_watermark_mb,
+            "memory_limit_gb": self.memory_limit_gb,
+            "batch_timeout": self.batch_timeout,
+            "max_concurrent_requests": self.max_concurrent_requests,
+            "initial_batch_size": self.initial_batch_size,
+            "min_batch_size": self.min_batch_size,
+            "enable_adaptive_batching": self.enable_adaptive_batching,
+            "enable_memory_optimization": self.enable_memory_optimization,
+            "enable_feature_scaling": self.enable_feature_scaling,
+            "enable_warmup": self.enable_warmup,
+            "enable_quantization_aware_inference": self.enable_quantization_aware_inference,
+            "enable_throttling": self.enable_throttling
         }
+        
+        # Add quantization config if present
+        if self.quantization_config:
+            config_dict["quantization_config"] = self.quantization_config.to_dict()
+        
+        return config_dict
 
+# -----------------------------------------------------------------------------
+# Configuration for Training Engine
+# -----------------------------------------------------------------------------
+class TaskType(Enum):
+    CLASSIFICATION = "classification"
+    REGRESSION = "regression"
+    CLUSTERING = "clustering"
+    ANOMALY_DETECTION = "anomaly_detection"
+    TIME_SERIES = "time_series"  # Added time series task type
+    MULTI_LABEL = "multi_label"  # Added multi-label classification
+    RANKING = "ranking"          # Added ranking task type
 
-class QuantizationConfig(QuantizationConfigBase):
-    """Configuration for model quantization"""
-    
-    def __init__(
-        self,
-        quantization_type: Union[str, QuantizationType] = QuantizationType.INT8.value,
-        quantization_mode: Union[str, QuantizationMode] = QuantizationMode.DYNAMIC_PER_BATCH.value,
-        per_channel: bool = False,
-        symmetric: bool = True,
-        enable_cache: bool = True,
-        cache_size: int = 256,
-        calibration_samples: int = 100,
-        calibration_method: str = "percentile",
-        percentile: float = 99.99,
-        skip_layers: List[str] = None,
-        quantize_weights_only: bool = False,
-        quantize_activations: bool = True,
-        weight_bits: int = 8,
-        activation_bits: int = 8,
-        quantize_bias: bool = True,
-        bias_bits: int = 32,
-        enable_mixed_precision: bool = False,
-        mixed_precision_layers: List[str] = None,
-        optimize_for: str = "performance",  # "performance", "memory", "balanced"
-        custom_quantization_config: Dict = None,
-        enable_requantization: bool = False,
-        requantization_threshold: float = 0.1
-    ):
-        # Handle quantization_type as string or enum
-        if isinstance(quantization_type, str):
-            try:
-                self.quantization_type = QuantizationType[quantization_type.upper()].value
-            except KeyError:
-                self.quantization_type = QuantizationType.INT8.value
-        else:
-            self.quantization_type = quantization_type
-            
-        # Handle quantization_mode as string or enum
-        if isinstance(quantization_mode, str):
-            try:
-                self.quantization_mode = QuantizationMode[quantization_mode.upper()].value
-            except KeyError:
-                self.quantization_mode = QuantizationMode.DYNAMIC_PER_BATCH.value
-        else:
-            self.quantization_mode = quantization_mode
-            
-        self.per_channel = per_channel
-        self.symmetric = symmetric
-        self.enable_cache = enable_cache
-        self.cache_size = cache_size
-        self.calibration_samples = calibration_samples
-        self.calibration_method = calibration_method
-        self.percentile = percentile
-        self.skip_layers = skip_layers or []
-        self.quantize_weights_only = quantize_weights_only
-        self.quantize_activations = quantize_activations
-        self.weight_bits = weight_bits
-        self.activation_bits = activation_bits
-        self.quantize_bias = quantize_bias
-        self.bias_bits = bias_bits
-        self.enable_mixed_precision = enable_mixed_precision
-        self.mixed_precision_layers = mixed_precision_layers or []
-        self.optimize_for = optimize_for
-        self.custom_quantization_config = custom_quantization_config or {}
-        self.enable_requantization = enable_requantization
-        self.requantization_threshold = requantization_threshold
-    
-    def to_dict(self) -> Dict:
-        """Convert config to dictionary for serialization"""
-        return {
-            "quantization_type": self.quantization_type,
-            "quantization_mode": self.quantization_mode,
-            "per_channel": self.per_channel,
-            "symmetric": self.symmetric,
-            "enable_cache": self.enable_cache,
-            "cache_size": self.cache_size,
-            "calibration_samples": self.calibration_samples,
-            "calibration_method": self.calibration_method,
-            "percentile": self.percentile,
-            "skip_layers": self.skip_layers,
-            "quantize_weights_only": self.quantize_weights_only,
-            "quantize_activations": self.quantize_activations,
-            "weight_bits": self.weight_bits,
-            "activation_bits": self.activation_bits,
-            "quantize_bias": self.quantize_bias,
-            "bias_bits": self.bias_bits,
-            "enable_mixed_precision": self.enable_mixed_precision,
-            "mixed_precision_layers": self.mixed_precision_layers,
-            "optimize_for": self.optimize_for,
-            "enable_requantization": self.enable_requantization,
-            "requantization_threshold": self.requantization_threshold
-        }
+class OptimizationStrategy(Enum):
+    GRID_SEARCH = "grid_search"
+    RANDOM_SEARCH = "random_search"
+    BAYESIAN_OPTIMIZATION = "bayesian_optimization"
+    EVOLUTIONARY = "evolutionary"
+    HYPERBAND = "hyperband"
+    ASHT = "adaptive_surrogate_assisted_hyperparameter_tuning"
+    HYPERX = "hyper_optimization_x"
+    OPTUNA = "optuna"  # Added popular Optuna framework
+    SUCCESSIVE_HALVING = "successive_halving"  # Added ASHA variant
+    BOHB = "bayesian_optimization_hyperband"  # Added BOHB combination
 
+class ModelSelectionCriteria(Enum):
+    ACCURACY = "accuracy"
+    F1 = "f1"
+    PRECISION = "precision"
+    RECALL = "recall"
+    ROC_AUC = "roc_auc"
+    Matthews_CORRELATION = "matthews_correlation"
+    ROOT_MEAN_SQUARED_ERROR = "rmse"
+    MEAN_ABSOLUTE_ERROR = "mae"
+    R2 = "r2"
+    SILHOUETTE = "silhouette"
+    EXPLAINED_VARIANCE = "explained_variance"
+    BIC = "bic"
+    AIC = "aic"
+    CUSTOM = "custom"
+
+class AutoMLMode(Enum):
+    DISABLED = "disabled"
+    BASIC = "basic"
+    COMPREHENSIVE = "comprehensive"
+    EXPERIMENTAL = "experimental"
 
 class ExplainabilityConfig:
     """Configuration for model explainability"""
@@ -802,9 +637,9 @@ class ExplainabilityConfig:
             "store_explanations": self.store_explanations,
             "explanation_cache_size": self.explanation_cache_size,
             "enable_counterfactuals": self.enable_counterfactuals,
-            "counterfactual_method": self.counterfactual_method
+            "counterfactual_method": self.counterfactual_method,
+            "custom_explainers": self.custom_explainers
         }
-
 
 class MonitoringConfig:
     """Configuration for model monitoring in production"""
@@ -874,9 +709,9 @@ class MonitoringConfig:
             "retraining_trigger_drift_threshold": self.retraining_trigger_drift_threshold,
             "retraining_trigger_performance_drop": self.retraining_trigger_performance_drop,
             "export_metrics": self.export_metrics,
-            "metrics_export_format": self.metrics_export_format
+            "metrics_export_format": self.metrics_export_format,
+            "custom_monitors": self.custom_monitors
         }
-
 
 class MLTrainingEngineConfig:
     """Enhanced configuration for the ML Training Engine"""
@@ -1008,68 +843,50 @@ class MLTrainingEngineConfig:
         self.feature_importance_threshold = feature_importance_threshold
         
         # Set default configurations if none provided
-        if preprocessing_config is None:
-            self.preprocessing_config = PreprocessorConfig(
-                normalization=NormalizationType.STANDARD,
-                handle_nan=True,
-                handle_inf=True,
-                detect_outliers=True,
-                parallel_processing=True
-            )
-        else:
-            self.preprocessing_config = preprocessing_config
+        self.preprocessing_config = preprocessing_config or PreprocessorConfig(
+            normalization=NormalizationType.STANDARD,
+            handle_nan=True,
+            handle_inf=True,
+            detect_outliers=True,
+            parallel_processing=True
+        )
             
-        if batch_processing_config is None:
-            self.batch_processing_config = BatchProcessorConfig(
-                initial_batch_size=100,
-                min_batch_size=50,
-                max_batch_size=200,
-                max_queue_size=1000,
-                batch_timeout=1.0,
-                enable_priority_queue=True,
-                enable_monitoring=True,
-                enable_memory_optimization=True
-            )
-        else:
-            self.batch_processing_config = batch_processing_config
+        self.batch_processing_config = batch_processing_config or BatchProcessorConfig(
+            initial_batch_size=100,
+            min_batch_size=50,
+            max_batch_size=200,
+            max_queue_size=1000,
+            batch_timeout=1.0,
+            enable_priority_queue=True,
+            enable_monitoring=True,
+            enable_memory_optimization=True
+        )
             
-        if inference_config is None:
-            self.inference_config = InferenceEngineConfig(
-                enable_intel_optimization=use_intel_optimization,
-                enable_batching=True,
-                enable_quantization=True,
-                debug_mode=debug_mode
-            )
-        else:
-            self.inference_config = inference_config
+        self.inference_config = inference_config or InferenceEngineConfig(
+            enable_intel_optimization=use_intel_optimization,
+            enable_batching=True,
+            enable_quantization=True,
+            debug_mode=debug_mode
+        )
             
-        if quantization_config is None:
-            self.quantization_config = QuantizationConfig(
-                quantization_type=QuantizationType.INT8.value,
-                quantization_mode=QuantizationMode.DYNAMIC_PER_BATCH.value,
-                enable_cache=True,
-                cache_size=256
-            )
-        else:
-            self.quantization_config = quantization_config
+        self.quantization_config = quantization_config or QuantizationConfig(
+            quantization_type=QuantizationType.INT8.value,
+            quantization_mode=QuantizationMode.DYNAMIC_PER_BATCH.value,
+            enable_cache=True,
+            cache_size=256
+        )
             
-        if explainability_config is None:
-            self.explainability_config = ExplainabilityConfig(
-                enable_explainability=generate_prediction_explanations,
-                methods=["shap", "feature_importance"],
-                default_method="shap"
-            )
-        else:
-            self.explainability_config = explainability_config
+        self.explainability_config = explainability_config or ExplainabilityConfig(
+            enable_explainability=generate_prediction_explanations,
+            methods=["shap", "feature_importance"],
+            default_method="shap"
+        )
             
-        if monitoring_config is None:
-            self.monitoring_config = MonitoringConfig(
-                enable_monitoring=True,
-                drift_detection=True,
-                performance_tracking=True
-            )
-        else:
-            self.monitoring_config = monitoring_config
+        self.monitoring_config = monitoring_config or MonitoringConfig(
+            enable_monitoring=True,
+            drift_detection=True,
+            performance_tracking=True
+        )
         
         # Other configuration parameters
         self.model_path = model_path
@@ -1089,7 +906,6 @@ class MLTrainingEngineConfig:
         self.checkpoint_interval = checkpoint_interval
         self.checkpoint_path = checkpoint_path or os.path.join(model_path, "checkpoints")
         self.enable_pruning = enable_pruning
-        self.auto_ml = auto_ml
         self.auto_ml_time_budget = auto_ml_time_budget
         self.ensemble_models = ensemble_models
         self.ensemble_method = ensemble_method
@@ -1120,15 +936,90 @@ class MLTrainingEngineConfig:
         self.enable_security = enable_security
         self.security_config = security_config or {}
         self.metadata = metadata or {}
-# -----------------------------------------------------------------------------
-# Configuration for Device Optimization 
-# -----------------------------------------------------------------------------
-class OptimizationMode(str, Enum):
-    """
-    Defines the optimization mode for device configuration.
-    """
-    BALANCED = "balanced"      # Balance between performance and resource usage
-    CONSERVATIVE = "conservative"  # Prioritize stability and minimal resource usage
-    PERFORMANCE = "performance"    # Prioritize maximum performance
-    FULL_UTILIZATION = "full_utilization"  # Use all available resources
-    MEMORY_SAVING = "memory_saving"  # Prioritize memory efficiency
+        
+    def to_dict(self) -> Dict:
+        """Convert the full configuration to a dictionary for serialization"""
+        config_dict = {
+            "task_type": self.task_type.value,
+            "random_state": self.random_state,
+            "n_jobs": self.n_jobs,
+            "verbose": self.verbose,
+            "cv_folds": self.cv_folds,
+            "test_size": self.test_size,
+            "stratify": self.stratify,
+            "optimization_strategy": self.optimization_strategy.value,
+            "optimization_iterations": self.optimization_iterations,
+            "optimization_timeout": self.optimization_timeout,
+            "early_stopping": self.early_stopping,
+            "early_stopping_rounds": self.early_stopping_rounds,
+            "early_stopping_metric": self.early_stopping_metric,
+            "feature_selection": self.feature_selection,
+            "feature_selection_method": self.feature_selection_method,
+            "feature_selection_k": self.feature_selection_k,
+            "feature_importance_threshold": self.feature_importance_threshold,
+            "model_path": self.model_path,
+            "model_registry_url": self.model_registry_url,
+            "auto_version_models": self.auto_version_models,
+            "experiment_tracking": self.experiment_tracking,
+            "experiment_tracking_platform": self.experiment_tracking_platform,
+            "experiment_tracking_config": self.experiment_tracking_config,
+            "use_intel_optimization": self.use_intel_optimization,
+            "use_gpu": self.use_gpu,
+            "gpu_memory_fraction": self.gpu_memory_fraction,
+            "memory_optimization": self.memory_optimization,
+            "enable_distributed": self.enable_distributed,
+            "distributed_strategy": self.distributed_strategy,
+            "distributed_config": self.distributed_config,
+            "checkpointing": self.checkpointing,
+            "checkpoint_interval": self.checkpoint_interval,
+            "checkpoint_path": self.checkpoint_path,
+            "enable_pruning": self.enable_pruning,
+            "auto_ml": self.auto_ml.value,
+            "auto_ml_time_budget": self.auto_ml_time_budget,
+            "ensemble_models": self.ensemble_models,
+            "ensemble_method": self.ensemble_method,
+            "ensemble_size": self.ensemble_size,
+            "hyperparameter_tuning_cv": self.hyperparameter_tuning_cv,
+            "model_selection_criteria": self.model_selection_criteria.value,
+            "auto_save": self.auto_save,
+            "auto_save_on_shutdown": self.auto_save_on_shutdown,
+            "save_state_on_shutdown": self.save_state_on_shutdown,
+            "load_best_model_after_train": self.load_best_model_after_train,
+            "enable_quantization": self.enable_quantization,
+            "enable_model_compression": self.enable_model_compression,
+            "compression_method": self.compression_method,
+            "compute_permutation_importance": self.compute_permutation_importance,
+            "generate_feature_importance_report": self.generate_feature_importance_report,
+            "generate_model_summary": self.generate_model_summary,
+            "generate_prediction_explanations": self.generate_prediction_explanations,
+            "enable_model_export": self.enable_model_export,
+            "export_formats": self.export_formats,
+            "auto_deploy": self.auto_deploy,
+            "deployment_platform": self.deployment_platform,
+            "deployment_config": self.deployment_config,
+            "log_level": self.log_level,
+            "debug_mode": self.debug_mode,
+            "enable_telemetry": self.enable_telemetry,
+            "backend": self.backend,
+            "enable_data_validation": self.enable_data_validation,
+            "enable_security": self.enable_security,
+            "security_config": self.security_config,
+            "metadata": self.metadata,
+        }
+        
+        # Add nested configurations
+        if self.optimization_metric:
+            if isinstance(self.optimization_metric, ModelSelectionCriteria):
+                config_dict["optimization_metric"] = self.optimization_metric.value
+            else:
+                config_dict["optimization_metric"] = self.optimization_metric
+                
+        # Convert nested config objects
+        config_dict["preprocessing_config"] = self.preprocessing_config.to_dict()
+        config_dict["batch_processing_config"] = self.batch_processing_config.to_dict()
+        config_dict["inference_config"] = self.inference_config.to_dict()
+        config_dict["quantization_config"] = self.quantization_config.to_dict()
+        config_dict["explainability_config"] = self.explainability_config.to_dict()
+        config_dict["monitoring_config"] = self.monitoring_config.to_dict()
+        
+        return config_dict

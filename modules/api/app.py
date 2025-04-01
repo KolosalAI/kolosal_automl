@@ -6,7 +6,7 @@ import os
 import sys
 
 # Import routers
-from modules.api.engine import router as engine_router
+from modules.api.train import router as engine_router
 from modules.api.preprocessor import router as preprocessor_router
 from modules.api.inference import router as inference_router
 from modules.api.monitoring import router as monitoring_router

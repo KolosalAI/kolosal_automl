@@ -67,7 +67,7 @@ class GPUInfo:
         }
 
 
-class EnhancedDeviceOptimizer:
+class DeviceOptimizer:
     """
     Enhanced device optimizer that automatically configures ML pipeline settings 
     based on device capabilities with sophisticated optimization strategies.
@@ -1664,7 +1664,7 @@ def create_optimized_configs(
         Dictionary with paths to saved configuration files
     """
     # Create optimizer
-    optimizer = EnhancedDeviceOptimizer(
+    optimizer = DeviceOptimizer(
         config_path=config_path,
         checkpoint_path=checkpoint_path,
         model_registry_path=model_registry_path,
@@ -1716,7 +1716,7 @@ def create_configs_for_all_modes(
         Dictionary of configurations for each optimization mode
     """
     # Create optimizer with default mode (will be changed for each mode)
-    optimizer = EnhancedDeviceOptimizer(
+    optimizer = DeviceOptimizer(
         config_path=config_path,
         checkpoint_path=checkpoint_path,
         model_registry_path=model_registry_path,
@@ -1749,7 +1749,7 @@ def load_saved_configs(
         Dictionary with loaded configurations
     """
     # Create optimizer just to use its loading functionality
-    optimizer = EnhancedDeviceOptimizer(config_path=config_path)
+    optimizer = DeviceOptimizer(config_path=config_path)
     
     # Load the configs
     return optimizer.load_configs(config_id)
@@ -1769,7 +1769,7 @@ def get_system_information(
         Dictionary with detailed system information
     """
     # Create optimizer just to use its detection capabilities
-    optimizer = EnhancedDeviceOptimizer(
+    optimizer = DeviceOptimizer(
         enable_gpu=enable_gpu,
         enable_specialized_accelerators=enable_specialized_accelerators
     )
