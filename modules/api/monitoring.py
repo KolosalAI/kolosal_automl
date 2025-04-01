@@ -37,6 +37,11 @@ class ModelHealthCheckParams(BaseModel):
     check_performance: bool = True
     check_resources: bool = True
 
+class CompareModelsParams(BaseModel):
+    model_names: List[str] = None
+    metrics: List[str] = None
+    include_plots: bool = True
+
 # Dependency to get ML training engine instance
 def get_ml_engine():
     config = MLTrainingEngineConfig()
@@ -46,7 +51,8 @@ def get_ml_engine():
 async def detect_data_drift(
     new_data: UploadFile = File(...),
     reference_data: Optional[UploadFile] = File(None),
-    params: DataDriftParams = Depends(),
+    drift_threshold: float = Form(0.1),
+    reference_model: Optional[str] = Form(None),
     engine: MLTrainingEngine = Depends(get_ml_engine)
 ):
     """Detect data drift between new data and reference data or training data"""
@@ -75,7 +81,8 @@ async def detect_data_drift(
         drift_results = engine.detect_data_drift(
             new_data=new_df,
             reference_data=ref_df,
-            drift_threshold=params.drift_threshold
+            drift_threshold=drift_threshold,
+            reference_model=reference_model
         )
         
         # If there was an error
@@ -360,9 +367,7 @@ async def generate_comprehensive_report(
 
 @router.post("/compare-models")
 async def compare_models(
-    model_names: List[str] = None,
-    metrics: List[str] = None,
-    include_plots: bool = True,
+    params: CompareModelsParams,
     engine: MLTrainingEngine = Depends(get_ml_engine)
 ):
     """Compare multiple trained models"""
@@ -373,9 +378,9 @@ async def compare_models(
     
     # Compare models
     comparison = engine.compare_models(
-        model_names=model_names,
-        metrics=metrics,
-        include_plot=include_plots,
+        model_names=params.model_names,
+        metrics=params.metrics,
+        include_plot=params.include_plots,
         output_file=output_file
     )
     

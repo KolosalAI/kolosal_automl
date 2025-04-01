@@ -35,6 +35,18 @@ MODEL_REGISTRY = os.environ.get("MODEL_REGISTRY", "./models")
 
 # Ensure results directory exists
 os.makedirs(RESULTS_DIR, exist_ok=True)
+# Global engine instance for dependency injection
+_inference_engine = None
+
+# Dependency to get inference engine instance
+def get_inference_engine():
+    """Dependency to get or create inference engine instance"""
+    global _inference_engine
+    if _inference_engine is None:
+        # Initialize the engine with default configuration
+        config = InferenceEngineConfig()
+        _inference_engine = InferenceEngine(config)
+    return _inference_engine
 
 # Data models
 class InferenceRequest(BaseModel):
@@ -146,7 +158,13 @@ async def predict(
     """
     # Parse request parameters
     if params:
-        req_params = InferenceRequest.parse_raw(params)
+        try:
+            req_params = InferenceRequest.parse_raw(params)
+        except Exception as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid request parameters: {str(e)}"
+            )
     else:
         req_params = InferenceRequest(
             model_id=model_id,
@@ -160,87 +178,154 @@ async def predict(
     # Save uploaded file temporarily
     temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.csv')
     try:
-        contents = await data_file.read()
-        temp_file.write(contents)
-        temp_file.close()
-        
-        # Read data
-        df = pd.read_csv(temp_file.name)
-        
-        # Extract features (assuming target isn't in input)
-        features = df.values
-        
-        # Load model if necessary
-        if req_params.model_id:
-            model_path = os.path.join(MODEL_REGISTRY, req_params.model_id)
-            if req_params.model_version:
-                model_path = os.path.join(model_path, req_params.model_version)
-                
-            model_loaded = inference_engine.load_model(model_path)
-            if not model_loaded:
+        try:
+            contents = await data_file.read()
+            if not contents:
                 raise HTTPException(
-                    status_code=404, 
-                    detail=f"Model {req_params.model_id} (version {req_params.model_version}) not found"
+                    status_code=400,
+                    detail="Uploaded file is empty"
                 )
-        
-        # Ensure engine is in valid state
-        if inference_engine.get_state() not in (EngineState.READY, EngineState.RUNNING):
-            raise HTTPException(
-                status_code=503,
-                detail=f"Inference engine not ready, current state: {inference_engine.get_state().name}"
-            )
-        
-        # Make prediction
-        start_time = time.time()
-        success, predictions, metadata = inference_engine.predict(features, request_id=request_id)
-        
-        if not success:
-            raise HTTPException(
-                status_code=500, 
-                detail=metadata.get("error", "Prediction failed")
-            )
-        
-        # Format predictions for response
-        if isinstance(predictions, np.ndarray):
-            if predictions.ndim > 1:
-                # For probability predictions (2D array)
-                predictions_list = [list(map(float, row)) for row in predictions]
-            else:
-                # For regular predictions (1D array)
-                predictions_list = list(map(float, predictions))
-        else:
-            predictions_list = predictions
-        
-        # Prepare response
-        response = {
-            "request_id": request_id,
-            "model_id": req_params.model_id or metadata.get("model_id", "unknown"),
-            "model_version": req_params.model_version or metadata.get("model_version", "unknown"),
-            "predictions": predictions_list,
-            "sample_count": len(df),
-            "execution_time_ms": int((time.time() - start_time) * 1000),
-            "metadata": metadata
-        }
-        
-        # Generate explanations if requested
-        if req_params.include_explanations:
+            
+            temp_file.write(contents)
+            temp_file.close()
+            
+            # Read data
             try:
-                method = req_params.explanation_method or "shap"
-                # In a real implementation, this would call an explanation method
-                # For now, we'll just add a placeholder
-                response["explanations"] = {
-                    "method": method,
-                    "note": "Explanations would be generated here"
-                }
+                df = pd.read_csv(temp_file.name)
+                
+                # Check if the dataframe is empty
+                if df.empty:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="CSV file contains no data"
+                    )
+                
+                # Check if there are any non-numeric columns that would cause issues
+                non_numeric_cols = df.select_dtypes(exclude=['number']).columns
+                if len(non_numeric_cols) > 0:
+                    logger.warning(f"Request {request_id}: Non-numeric columns found: {list(non_numeric_cols)}")
+                    # Try to convert to numeric, replacing errors with NaN
+                    for col in non_numeric_cols:
+                        df[col] = pd.to_numeric(df[col], errors='coerce')
+                    
+                    # Check if we have NaN values after conversion
+                    if df.isna().any().any():
+                        logger.warning(f"Request {request_id}: Some values couldn't be converted to numeric")
             except Exception as e:
-                response["explanations"] = {"error": str(e)}
-        
-        return response
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Error reading CSV data: {str(e)}"
+                )
+            
+            # Extract features (assuming target isn't in input)
+            try:
+                features = df.values
+            except Exception as e:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Error extracting features from data: {str(e)}"
+                )
+            
+            # Load model if necessary
+            if req_params.model_id:
+                model_path = os.path.join(MODEL_REGISTRY, req_params.model_id)
+                if req_params.model_version:
+                    model_path = os.path.join(model_path, req_params.model_version)
+                    
+                model_loaded = inference_engine.load_model(model_path)
+                if not model_loaded:
+                    raise HTTPException(
+                        status_code=404, 
+                        detail=f"Model {req_params.model_id} (version {req_params.model_version}) not found"
+                    )
+            
+            # Ensure engine is in valid state
+            if inference_engine.get_state() not in (EngineState.READY, EngineState.RUNNING):
+                raise HTTPException(
+                    status_code=503,
+                    detail=f"Inference engine not ready, current state: {inference_engine.get_state().name}"
+                )
+            
+            # Check if a model is loaded
+            if inference_engine.model is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail="No model currently loaded. Specify model_id or load a model first."
+                )
+            
+            # Make prediction
+            start_time = time.time()
+            success, predictions, metadata = inference_engine.predict(features, request_id=request_id)
+            
+            if not success:
+                raise HTTPException(
+                    status_code=500, 
+                    detail=metadata.get("error", "Prediction failed")
+                )
+            
+            # Format predictions for response
+            if isinstance(predictions, np.ndarray):
+                if predictions.ndim > 1:
+                    # For probability predictions (2D array)
+                    predictions_list = [list(map(float, row)) for row in predictions]
+                else:
+                    # For regular predictions (1D array)
+                    predictions_list = list(map(float, predictions))
+            else:
+                predictions_list = predictions
+            
+            # Prepare response
+            response = {
+                "request_id": request_id,
+                "model_id": req_params.model_id or metadata.get("model_id", "unknown"),
+                "model_version": req_params.model_version or metadata.get("model_version", "unknown"),
+                "predictions": predictions_list,
+                "sample_count": len(df),
+                "execution_time_ms": int((time.time() - start_time) * 1000),
+                "metadata": metadata
+            }
+            
+            # Add feature names if available
+            feature_names = inference_engine.get_feature_names()
+            if feature_names and len(feature_names) > 0:
+                response["feature_names"] = feature_names
+            
+            # Generate explanations if requested
+            if req_params.include_explanations:
+                try:
+                    method = req_params.explanation_method or "shap"
+                    # In a real implementation, this would call an explanation method
+                    # For now, we'll just add a placeholder
+                    response["explanations"] = {
+                        "method": method,
+                        "note": "Explanations would be generated here"
+                    }
+                except Exception as e:
+                    response["explanations"] = {"error": str(e)}
+            
+            return response
+            
+        except HTTPException:
+            # Re-raise HTTP exceptions to preserve status codes
+            raise
+        except Exception as e:
+            # Log unexpected errors
+            logger.error(f"Error processing prediction request {request_id}: {str(e)}")
+            if isinstance(inference_engine.config, InferenceEngineConfig) and inference_engine.config.debug_mode:
+                logger.error(traceback.format_exc())
+            
+            raise HTTPException(
+                status_code=500,
+                detail=f"Internal server error: {str(e)}"
+            )
     
     finally:
         # Clean up temporary file
-        if os.path.exists(temp_file.name):
-            os.unlink(temp_file.name)
+        try:
+            if os.path.exists(temp_file.name):
+                os.unlink(temp_file.name)
+        except Exception as e:
+            logger.error(f"Failed to remove temp file: {str(e)}")
 
 @router.post("/batch-inference")
 async def batch_inference(
@@ -256,9 +341,22 @@ async def batch_inference(
     """
     # Parse request parameters
     if params:
-        req_params = BatchInferenceRequest.parse_raw(params)
+        try:
+            req_params = BatchInferenceRequest.parse_raw(params)
+        except Exception as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid request parameters: {str(e)}"
+            )
     else:
         req_params = BatchInferenceRequest()
+    
+    # Check if files were provided
+    if not files:
+        raise HTTPException(
+            status_code=400,
+            detail="No files were provided for processing"
+        )
     
     # Save uploaded files temporarily
     temp_files = []
@@ -268,16 +366,22 @@ async def batch_inference(
         file_names = []
         
         for data_file in files:
-            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.csv')
-            contents = await data_file.read()
-            temp_file.write(contents)
-            temp_file.close()
-            temp_files.append(temp_file.name)
-            
-            # Read as dataframe
-            df = pd.read_csv(temp_file.name)
-            batch_dataframes.append(df)
-            file_names.append(data_file.filename)
+            try:
+                temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.csv')
+                contents = await data_file.read()
+                temp_file.write(contents)
+                temp_file.close()
+                temp_files.append(temp_file.name)
+                
+                # Read as dataframe
+                df = pd.read_csv(temp_file.name)
+                batch_dataframes.append(df)
+                file_names.append(data_file.filename)
+            except Exception as e:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Error processing file {data_file.filename}: {str(e)}"
+                )
         
         # Load model if necessary
         if req_params.model_id:
@@ -292,6 +396,13 @@ async def batch_inference(
                     detail=f"Model {req_params.model_id} (version {req_params.model_version}) not found"
                 )
         
+        # Check if engine is in valid state
+        if inference_engine.get_state() not in (EngineState.READY, EngineState.RUNNING):
+            raise HTTPException(
+                status_code=503,
+                detail=f"Inference engine not ready, current state: {inference_engine.get_state().name}"
+            )
+        
         # Process batch using predict_batch
         start_time = time.time()
         
@@ -301,33 +412,39 @@ async def batch_inference(
         # Process each batch and collect results
         results = []
         for i, features in enumerate(batch_features):
-            # Use predict_batch to get Future
-            future = inference_engine.predict_batch(features, priority=i)
-            
             try:
-                # Get result with timeout if specified
-                timeout = req_params.timeout if req_params.timeout else None
-                predictions, batch_metadata = future.result(timeout=timeout)
+                # Use predict_batch to get Future
+                future = inference_engine.predict_batch(features, priority=i)
                 
-                # Format predictions
-                if isinstance(predictions, np.ndarray):
-                    if predictions.ndim > 1:
-                        result_list = [list(map(float, row)) for row in predictions]
+                try:
+                    # Get result with timeout if specified
+                    timeout = req_params.timeout if req_params.timeout else None
+                    predictions, batch_metadata = future.result(timeout=timeout)
+                    
+                    # Format predictions
+                    if isinstance(predictions, np.ndarray):
+                        if predictions.ndim > 1:
+                            result_list = [list(map(float, row)) for row in predictions]
+                        else:
+                            result_list = list(map(float, predictions))
                     else:
-                        result_list = list(map(float, predictions))
-                else:
-                    result_list = predictions
-                
-                results.append({
-                    "success": True,
-                    "predictions": result_list,
-                    "metadata": batch_metadata
-                })
-                
+                        result_list = predictions
+                    
+                    results.append({
+                        "success": True,
+                        "predictions": result_list,
+                        "metadata": batch_metadata
+                    })
+                    
+                except Exception as e:
+                    results.append({
+                        "success": False,
+                        "error": str(e)
+                    })
             except Exception as e:
                 results.append({
                     "success": False,
-                    "error": str(e)
+                    "error": f"Failed to submit batch {i}: {str(e)}"
                 })
         
         # Format results for response
@@ -359,19 +476,29 @@ async def batch_inference(
         
         # Save results to file if requested
         if req_params.save_results:
-            timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-            result_file = os.path.join(RESULTS_DIR, f"batch_results_{timestamp}.json")
-            with open(result_file, 'w') as f:
-                json.dump(response, f, indent=2)
-            response["results_file"] = result_file
+            try:
+                # Ensure directory exists
+                os.makedirs(RESULTS_DIR, exist_ok=True)
+                
+                timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+                result_file = os.path.join(RESULTS_DIR, f"batch_results_{timestamp}.json")
+                with open(result_file, 'w') as f:
+                    json.dump(response, f, indent=2)
+                response["results_file"] = result_file
+            except Exception as e:
+                logger.error(f"Failed to save results: {str(e)}")
+                response["save_error"] = str(e)
         
         return response
         
     finally:
         # Clean up temp files
         for temp_file in temp_files:
-            if os.path.exists(temp_file):
-                os.unlink(temp_file)
+            try:
+                if os.path.exists(temp_file):
+                    os.unlink(temp_file)
+            except Exception as e:
+                logger.error(f"Failed to remove temp file {temp_file}: {str(e)}")
 
 @router.post("/streaming-inference")
 async def start_streaming_inference(
@@ -401,12 +528,19 @@ async def start_streaming_inference(
     # Create a job ID for tracking
     job_id = f"streaming_{params.model_id}_{params.batch_identifier}_{int(time.time())}"
     
+    # Ensure results directory exists
+    os.makedirs(RESULTS_DIR, exist_ok=True)
+    
     # Set up output path if not provided
     output_path = params.output_path
     if not output_path:
         output_format = params.output_format.lower()
         filename = f"{job_id}_results.{output_format}"
         output_path = os.path.join(RESULTS_DIR, filename)
+    
+    # Make sure the output directory exists
+    output_dir = os.path.dirname(output_path)
+    os.makedirs(output_dir, exist_ok=True)
     
     # Initialize job status
     job_status = {
@@ -509,8 +643,8 @@ async def start_streaming_inference(
                 
                 with open(status_path, 'w') as f:
                     json.dump(status, f)
-            except:
-                logger.exception("Failed to update job status on error")
+            except Exception as inner_error:
+                logger.exception(f"Failed to update job status on error: {str(inner_error)}")
     
     # Start background task for streaming inference
     background_tasks.add_task(
@@ -542,26 +676,42 @@ async def get_streaming_status(
     status_path = os.path.join(RESULTS_DIR, f"{job_id}_status.json")
     
     if not os.path.exists(status_path):
-        raise HTTPException(status_code=404, detail=f"Streaming job {job_id} not found")
+        raise HTTPException(
+            status_code=404, 
+            detail=f"Streaming job {job_id} not found"
+        )
     
     try:
         with open(status_path, 'r') as f:
             status = json.load(f)
         
         # Check if output file exists and add its size if job is completed
-        if status["status"] == StreamingJobStatus.COMPLETED and os.path.exists(status["output_path"]):
-            status["output_file_size_bytes"] = os.path.getsize(status["output_path"])
+        if status["status"] == StreamingJobStatus.COMPLETED and "output_path" in status:
+            if os.path.exists(status["output_path"]):
+                status["output_file_size_bytes"] = os.path.getsize(status["output_path"])
+            else:
+                status["output_file_warning"] = "Output file not found"
         
         # Update elapsed time
         if "end_time" in status:
             status["elapsed_time_seconds"] = status["end_time"] - status["start_time"]
-        else:
+        elif "start_time" in status:
             status["elapsed_time_seconds"] = time.time() - status["start_time"]
+        else:
+            status["elapsed_time_seconds"] = 0
         
         return status
     
+    except json.JSONDecodeError:
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Invalid status file format for job {job_id}"
+        )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error retrieving job status: {str(e)}")
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Error retrieving job status: {str(e)}"
+        )
 
 @router.post("/explain")
 async def explain_prediction(
@@ -720,6 +870,9 @@ async def list_available_models(
                             "description": "Model information unavailable",
                             "error": str(e)
                         })
+    
+    # Return the list of models
+    return {"models": models, "current_model": current_model_info}
 
 @router.post("/load-model/{model_id}")
 async def load_model(
