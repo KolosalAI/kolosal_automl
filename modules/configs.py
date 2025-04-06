@@ -11,25 +11,35 @@ MODEL_REGISTRY_PATH = "./model_registry"
 # -----------------------------------------------------------------------------
 # Quantization Configuration
 # -----------------------------------------------------------------------------
+from enum import Enum
+from typing import List, Dict, Union, Optional
+from dataclasses import dataclass, field, asdict
+import copy
+
 
 class QuantizationType(Enum):
     NONE = "none"
     INT8 = "int8"
+    UINT8 = "uint8"  # Added the missing UINT8 type
     INT16 = "int16"
     FLOAT16 = "float16"
     MIXED = "mixed"
+
 
 class QuantizationMode(Enum):
     STATIC = "static"
     DYNAMIC = "dynamic"
     DYNAMIC_PER_BATCH = "dynamic_per_batch"
+    DYNAMIC_PER_CHANNEL = "dynamic_per_channel"  # Added the missing mode
+    SYMMETRIC = "symmetric"  # Added symmetric mode
     CALIBRATED = "calibrated"
+
 
 @dataclass
 class QuantizationConfig:
     """Configuration for model quantization"""
-    quantization_type: Union[str, QuantizationType] = QuantizationType.INT8.value
-    quantization_mode: Union[str, QuantizationMode] = QuantizationMode.DYNAMIC_PER_BATCH.value
+    quantization_type: Union[str, QuantizationType] = QuantizationType.INT8
+    quantization_mode: Union[str, QuantizationMode] = QuantizationMode.DYNAMIC_PER_BATCH
     per_channel: bool = False
     symmetric: bool = True
     enable_cache: bool = True
@@ -37,7 +47,7 @@ class QuantizationConfig:
     calibration_samples: int = 100
     calibration_method: str = "percentile"
     percentile: float = 99.99
-    skip_layers: List[str] = None
+    skip_layers: List[str] = field(default_factory=list)
     quantize_weights_only: bool = False
     quantize_activations: bool = True
     weight_bits: int = 8
@@ -45,9 +55,9 @@ class QuantizationConfig:
     quantize_bias: bool = True
     bias_bits: int = 32
     enable_mixed_precision: bool = False
-    mixed_precision_layers: List[str] = None
+    mixed_precision_layers: List[str] = field(default_factory=list)
     optimize_for: str = "performance"  # "performance", "memory", "balanced"
-    custom_quantization_config: Dict = None
+    custom_quantization_config: Dict = field(default_factory=dict)
     enable_requantization: bool = False
     requantization_threshold: float = 0.1
     use_percentile: bool = False
@@ -64,59 +74,67 @@ class QuantizationConfig:
         # Handle quantization_type as string or enum
         if isinstance(self.quantization_type, str):
             try:
-                self.quantization_type = QuantizationType[self.quantization_type.upper()].value
+                self.quantization_type = QuantizationType[self.quantization_type.upper()]
             except KeyError:
-                self.quantization_type = QuantizationType.INT8.value
+                self.quantization_type = QuantizationType.INT8
                 
         # Handle quantization_mode as string or enum
         if isinstance(self.quantization_mode, str):
             try:
-                self.quantization_mode = QuantizationMode[self.quantization_mode.upper()].value
+                self.quantization_mode = QuantizationMode[self.quantization_mode.upper()]
             except KeyError:
-                self.quantization_mode = QuantizationMode.DYNAMIC_PER_BATCH.value
-        
-        # Initialize lists
-        if self.skip_layers is None:
-            self.skip_layers = []
-        if self.mixed_precision_layers is None:
-            self.mixed_precision_layers = []
-        if self.custom_quantization_config is None:
-            self.custom_quantization_config = {}
+                self.quantization_mode = QuantizationMode.DYNAMIC_PER_BATCH
     
     def to_dict(self) -> Dict:
         """Convert config to dictionary for serialization"""
-        return {
-            "quantization_type": self.quantization_type,
-            "quantization_mode": self.quantization_mode,
-            "per_channel": self.per_channel,
-            "symmetric": self.symmetric,
-            "enable_cache": self.enable_cache,
-            "cache_size": self.cache_size,
-            "calibration_samples": self.calibration_samples,
-            "calibration_method": self.calibration_method,
-            "percentile": self.percentile,
-            "skip_layers": self.skip_layers,
-            "quantize_weights_only": self.quantize_weights_only,
-            "quantize_activations": self.quantize_activations,
-            "weight_bits": self.weight_bits,
-            "activation_bits": self.activation_bits,
-            "quantize_bias": self.quantize_bias,
-            "bias_bits": self.bias_bits,
-            "enable_mixed_precision": self.enable_mixed_precision,
-            "mixed_precision_layers": self.mixed_precision_layers,
-            "optimize_for": self.optimize_for,
-            "enable_requantization": self.enable_requantization,
-            "requantization_threshold": self.requantization_threshold,
-            "use_percentile": self.use_percentile,
-            "min_percentile": self.min_percentile,
-            "max_percentile": self.max_percentile,
-            "error_on_nan": self.error_on_nan,
-            "error_on_inf": self.error_on_inf,
-            "outlier_threshold": self.outlier_threshold,
-            "num_bits": self.num_bits,
-            "optimize_memory": self.optimize_memory,
-            "buffer_size": self.buffer_size
-        }
+        config_dict = asdict(self)
+        
+        # Convert enum values to their string representation for serialization
+        if isinstance(config_dict["quantization_type"], QuantizationType):
+            config_dict["quantization_type"] = config_dict["quantization_type"].value
+            
+        if isinstance(config_dict["quantization_mode"], QuantizationMode):
+            config_dict["quantization_mode"] = config_dict["quantization_mode"].value
+            
+        # Ensure custom_quantization_config is properly serialized
+        if config_dict["custom_quantization_config"] is None:
+            config_dict["custom_quantization_config"] = {}
+            
+        # Make a deep copy to avoid modifying the original
+        return copy.deepcopy(config_dict)
+        
+    @classmethod
+    def from_dict(cls, config_dict: Dict) -> 'QuantizationConfig':
+        """Create a QuantizationConfig instance from a dictionary"""
+        # Make a copy to avoid modifying the input
+        config_copy = copy.deepcopy(config_dict)
+        
+        # Convert string values to enum instances if needed
+        if "quantization_type" in config_copy and isinstance(config_copy["quantization_type"], str):
+            try:
+                config_copy["quantization_type"] = QuantizationType[config_copy["quantization_type"].upper()]
+            except KeyError:
+                # Try to match by value
+                for qt in QuantizationType:
+                    if qt.value == config_copy["quantization_type"]:
+                        config_copy["quantization_type"] = qt
+                        break
+        
+        if "quantization_mode" in config_copy and isinstance(config_copy["quantization_mode"], str):
+            try:
+                config_copy["quantization_mode"] = QuantizationMode[config_copy["quantization_mode"].upper()]
+            except KeyError:
+                # Try to match by value
+                for qm in QuantizationMode:
+                    if qm.value == config_copy["quantization_mode"]:
+                        config_copy["quantization_mode"] = qm
+                        break
+                        
+        # Filter out any keys that aren't in the dataclass
+        valid_keys = {f.name for f in field(cls)}
+        filtered_dict = {k: v for k, v in config_copy.items() if k in valid_keys}
+        
+        return cls(**filtered_dict)
 
 # -----------------------------------------------------------------------------
 # Configuration for Batch Processing
@@ -651,8 +669,10 @@ class MonitoringConfig:
         drift_detection_method: str = "ks_test",
         drift_threshold: float = 0.05,
         drift_check_interval: str = "1h",
+        monitoring_interval: str = "1h",
         performance_tracking: bool = True,
         performance_metrics: List[str] = None,
+        performance_threshold: float = 0.1,  # Added this parameter
         alert_on_drift: bool = True,
         alert_on_performance_drop: bool = True,
         alert_channels: List[str] = None,
@@ -672,8 +692,10 @@ class MonitoringConfig:
         self.drift_detection_method = drift_detection_method
         self.drift_threshold = drift_threshold
         self.drift_check_interval = drift_check_interval
+        self.monitoring_interval = monitoring_interval
         self.performance_tracking = performance_tracking
         self.performance_metrics = performance_metrics or ["accuracy", "latency"]
+        self.performance_threshold = performance_threshold  # Initialize the new parameter
         self.alert_on_drift = alert_on_drift
         self.alert_on_performance_drop = alert_on_performance_drop
         self.alert_channels = alert_channels or ["log"]
@@ -696,8 +718,10 @@ class MonitoringConfig:
             "drift_detection_method": self.drift_detection_method,
             "drift_threshold": self.drift_threshold,
             "drift_check_interval": self.drift_check_interval,
+            "monitoring_interval": self.monitoring_interval,
             "performance_tracking": self.performance_tracking,
             "performance_metrics": self.performance_metrics,
+            "performance_threshold": self.performance_threshold,  # Add to dictionary
             "alert_on_drift": self.alert_on_drift,
             "alert_on_performance_drop": self.alert_on_performance_drop,
             "alert_channels": self.alert_channels,

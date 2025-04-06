@@ -215,7 +215,7 @@ pytest -vv
 
 To run a specific test:
 ```bash
-python -m unittest tests\test_<filename>.py
+python -m unittest <file_path>.py
 ```
 
 ## 🚧 Roadmap
