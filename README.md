@@ -200,13 +200,27 @@ ml-training-engine/
 
 ## 🧪 Test Status
 
-| Test File | Status |
-|-----------|--------|
-| test_batch_processor.py | ✅ PASSED |
-| test_lru_ttl_cache.py | ✅ PASSED |
-| test_quantizer.py | ❌ FAILED |
-| test_data_preprocessor.py | ❌ FAILED |
-| test_engine.py | ❌ FAILED |
+| Test File                      | Status     |
+|-------------------------------|------------|
+| test_app.py                   | ⬜ NOT RUN |
+| test_engine_api.py            | ⬜ NOT RUN |
+| test_inference_api.py         | ⬜ NOT RUN |
+| test_monitoring_api.py        | ⬜ NOT RUN |
+| test_optimizer_api.py         | ⬜ NOT RUN |
+| test_batch_processor.py       | ✅ PASSED |
+| test_data_preprocessor.py     | ⬜ NOT RUN |
+| test_device_optimizer.py      | ⬜ NOT RUN |
+| test_inference_engine.py      | ⬜ NOT RUN |
+| test_lru_ttl_cache.py         | ⬜ NOT RUN |
+| test_model_manager.py         | ⬜ NOT RUN |
+| test_optimizer_asht.py        | ⬜ NOT RUN |
+| test_optimizer_hyperx.py      | ⬜ NOT RUN |
+| test_preprocessor.py          | ⬜ NOT RUN |
+| test_quantizer.py             | ⬜ NOT RUN |
+| test_train_engine.py          | ⬜ NOT RUN |
+
+Status: 
+| ✅ PASSED | ❌ FAILED |⬜ NOT RUN |
 
 To run all unit tests:
 ```bash
