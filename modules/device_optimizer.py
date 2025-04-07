@@ -1,4 +1,3 @@
-
 import os
 import platform
 import psutil
@@ -6,7 +5,7 @@ import json
 import logging
 import numpy as np
 from pathlib import Path
-from typing import Dict, Any, Optional, Union, List, Type, TypeVar, Tuple
+from typing import Dict, Any, Optional, Union, List, TypeVar, Tuple
 import multiprocessing
 import socket
 import uuid
@@ -35,47 +34,26 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
-logger = logging.getLogger("enhanced_device_optimizer")
+logger = logging.getLogger("cpu_device_optimizer")
 
 
 class HardwareAccelerator(Enum):
     """Types of hardware accelerators that might be available"""
     NONE = auto()
-    GPU_CUDA = auto()
-    GPU_ROCM = auto()
-    TPU = auto()
     INTEL_IPEX = auto()
     INTEL_MKL = auto()
     ARM_NEON = auto()
 
 
-class GPUInfo:
-    """Information about available GPUs"""
-    def __init__(self, gpu_id: int, name: str, memory_mb: int, compute_capability: Optional[str] = None):
-        self.gpu_id = gpu_id
-        self.name = name
-        self.memory_mb = memory_mb
-        self.compute_capability = compute_capability
-    
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "gpu_id": self.gpu_id,
-            "name": self.name,
-            "memory_mb": self.memory_mb,
-            "compute_capability": self.compute_capability
-        }
-
-
 class DeviceOptimizer:
     """
-    Enhanced device optimizer that automatically configures ML pipeline settings 
+    CPU-only device optimizer that automatically configures ML pipeline settings 
     based on device capabilities with sophisticated optimization strategies.
     
     Features:
-    - Comprehensive hardware detection (CPU, GPU, TPU, specialized accelerators)
+    - Comprehensive hardware detection (CPU, specialized accelerators)
     - Advanced configuration optimization for different pipeline components
     - Power and thermal management awareness
-    - Multi-device support for distributed training
     - Dynamic scaling based on workload characteristics
     - Environment-aware configuration (cloud vs. edge vs. desktop)
     """
@@ -87,14 +65,13 @@ class DeviceOptimizer:
                  optimization_mode: OptimizationMode = OptimizationMode.BALANCED,
                  workload_type: str = "mixed",
                  environment: str = "auto",
-                 enable_gpu: bool = True,
                  enable_specialized_accelerators: bool = True,
                  memory_reservation_percent: float = 10.0,
                  power_efficiency: bool = False,
                  resilience_level: int = 1,
                  auto_tune: bool = True):
         """
-        Initialize the enhanced device optimizer.
+        Initialize the CPU-only device optimizer.
         
         Args:
             config_path: Path to save configuration files
@@ -103,7 +80,6 @@ class DeviceOptimizer:
             optimization_mode: Mode for optimization strategy
             workload_type: Type of workload ("inference", "training", "mixed")
             environment: Computing environment ("cloud", "desktop", "edge", "auto")
-            enable_gpu: Whether to enable GPU detection and optimization
             enable_specialized_accelerators: Whether to enable detection of specialized hardware
             memory_reservation_percent: Percentage of memory to reserve for the system
             power_efficiency: Whether to optimize for power efficiency
@@ -135,11 +111,6 @@ class DeviceOptimizer:
         
         # Disk information
         self._detect_disk_info()
-        
-        # GPU information (if enabled)
-        self.gpus = []
-        if enable_gpu:
-            self._detect_gpu_capabilities()
         
         # Detect specialized hardware accelerators
         self.accelerators = []
@@ -313,215 +284,6 @@ class DeviceOptimizer:
             pass
         return None
 
-    def _detect_gpu_capabilities(self):
-        """Detect GPU capabilities"""
-        # Reset GPU list
-        self.gpus = []
-        self.has_cuda = False
-        self.has_rocm = False
-        
-        # Try detecting NVIDIA GPUs using CUDA
-        try:
-            import torch
-            if torch.cuda.is_available():
-                self.has_cuda = True
-                for i in range(torch.cuda.device_count()):
-                    gpu_name = torch.cuda.get_device_name(i)
-                    gpu_memory = torch.cuda.get_device_properties(i).total_memory // (1024 * 1024)  # Convert to MB
-                    compute_capability = f"{torch.cuda.get_device_capability(i)[0]}.{torch.cuda.get_device_capability(i)[1]}"
-                    
-                    self.gpus.append(GPUInfo(
-                        gpu_id=i,
-                        name=gpu_name,
-                        memory_mb=gpu_memory,
-                        compute_capability=compute_capability
-                    ))
-                logger.info(f"Detected {len(self.gpus)} NVIDIA GPUs with CUDA support")
-        except ImportError:
-            logger.debug("PyTorch not available, skipping CUDA GPU detection via PyTorch")
-        except Exception as e:
-            logger.debug(f"Error detecting NVIDIA GPUs: {e}")
-        
-        # If no GPUs detected with PyTorch, try a different approach
-        if not self.gpus:
-            if self.system == "Linux":
-                self._detect_gpus_linux()
-            elif self.system == "Windows":
-                self._detect_gpus_windows()
-            elif self.system == "Darwin":  # macOS
-                self._detect_gpus_macos()
-
-    def _detect_gpus_linux(self):
-        """Detect GPUs on Linux"""
-        # Try NVIDIA GPUs with nvidia-smi
-        try:
-            import subprocess
-            result = subprocess.check_output("nvidia-smi --query-gpu=index,name,memory.total,compute_cap --format=csv,noheader", shell=True)
-            lines = result.decode().strip().split('\n')
-            
-            self.has_cuda = True
-            for line in lines:
-                if not line.strip():
-                    continue
-                parts = line.split(', ')
-                if len(parts) >= 3:
-                    gpu_id = int(parts[0])
-                    gpu_name = parts[1]
-                    # Convert memory from MiB to MB
-                    memory_mb = int(parts[2].split(' ')[0])
-                    compute_capability = parts[3] if len(parts) > 3 else None
-                    
-                    self.gpus.append(GPUInfo(
-                        gpu_id=gpu_id,
-                        name=gpu_name,
-                        memory_mb=memory_mb,
-                        compute_capability=compute_capability
-                    ))
-            logger.info(f"Detected {len(self.gpus)} NVIDIA GPUs with nvidia-smi")
-        except Exception as e:
-            logger.debug(f"nvidia-smi detection failed: {e}")
-        
-        # Try AMD GPUs with rocm-smi
-        if not self.gpus:
-            try:
-                import subprocess
-                result = subprocess.check_output("rocm-smi --showproductname --showmeminfo vram", shell=True)
-                lines = result.decode().strip().split('\n')
-                
-                gpu_id = 0
-                gpu_data = {}
-                
-                for line in lines:
-                    if "GPU[" in line and "]: " in line:
-                        match = re.search(r'GPU\[(\d+)\].*: (.*)', line)
-                        if match:
-                            current_id = int(match.group(1))
-                            value = match.group(2).strip()
-                            
-                            if "Product Name" in line:
-                                if current_id not in gpu_data:
-                                    gpu_data[current_id] = {"name": value}
-                            elif "VRAM Total" in line:
-                                if current_id in gpu_data:
-                                    # Extract just the numeric part of memory value
-                                    memory_value = re.search(r'(\d+)', value)
-                                    if memory_value:
-                                        gpu_data[current_id]["memory_mb"] = int(memory_value.group(1))
-                
-                # Create GPUInfo objects from gathered data
-                for gpu_id, data in gpu_data.items():
-                    if "name" in data and "memory_mb" in data:
-                        self.gpus.append(GPUInfo(
-                            gpu_id=gpu_id,
-                            name=data["name"],
-                            memory_mb=data["memory_mb"],
-                            compute_capability=None  # ROCm doesn't have an equivalent concept
-                        ))
-                
-                if self.gpus:
-                    self.has_rocm = True
-                    logger.info(f"Detected {len(self.gpus)} AMD GPUs with rocm-smi")
-            except Exception as e:
-                logger.debug(f"rocm-smi detection failed: {e}")
-
-    def _detect_gpus_windows(self):
-        """Detect GPUs on Windows"""
-        # Try using Windows Management Instrumentation Command-line (WMIC)
-        try:
-            import subprocess
-            result = subprocess.check_output("wmic path win32_VideoController get Name,AdapterRAM", shell=True)
-            lines = result.decode().strip().split('\n')
-            
-            # Skip header
-            if len(lines) > 1:
-                lines = lines[1:]
-            
-            for idx, line in enumerate(lines):
-                if line.strip():
-                    parts = line.strip().split('  ')
-                    parts = [p for p in parts if p.strip()]
-                    
-                    if len(parts) >= 2:
-                        # Last element is RAM, everything before is name
-                        ram = parts[-1]
-                        name = ' '.join(parts[:-1]).strip()
-                        
-                        # Convert RAM from bytes to MB
-                        try:
-                            memory_mb = int(ram) // (1024 * 1024)
-                        except ValueError:
-                            memory_mb = 0
-                        
-                        is_nvidia = "nvidia" in name.lower()
-                        is_amd = "amd" in name.lower() or "radeon" in name.lower()
-                        
-                        if is_nvidia:
-                            self.has_cuda = True
-                        elif is_amd:
-                            self.has_rocm = True
-                        
-                        self.gpus.append(GPUInfo(
-                            gpu_id=idx,
-                            name=name,
-                            memory_mb=memory_mb,
-                            compute_capability=None
-                        ))
-            
-            if self.gpus:
-                logger.info(f"Detected {len(self.gpus)} GPUs using Windows WMI")
-        except Exception as e:
-            logger.debug(f"Windows GPU detection failed: {e}")
-
-    def _detect_gpus_macos(self):
-        """Detect GPUs on macOS"""
-        try:
-            import subprocess
-            result = subprocess.check_output("system_profiler SPDisplaysDataType", shell=True)
-            output = result.decode()
-            
-            # Parse the output to extract GPU information
-            current_gpu = None
-            gpu_id = 0
-            
-            for line in output.split('\n'):
-                line = line.strip()
-                
-                if "Chipset Model:" in line:
-                    if current_gpu:
-                        # Add the previous GPU to the list
-                        self.gpus.append(current_gpu)
-                    
-                    gpu_name = line.split('Chipset Model:')[1].strip()
-                    current_gpu = GPUInfo(
-                        gpu_id=gpu_id,
-                        name=gpu_name,
-                        memory_mb=0,  # Will try to set this below
-                        compute_capability=None
-                    )
-                    gpu_id += 1
-                elif current_gpu and "VRAM" in line:
-                    try:
-                        # Try to extract memory information
-                        memory_str = line.split(':')[1].strip()
-                        memory_value = int(re.search(r'(\d+)', memory_str).group(1))
-                        
-                        # Check if memory is in GB and convert to MB
-                        if "GB" in memory_str:
-                            memory_value *= 1024
-                        
-                        current_gpu.memory_mb = memory_value
-                    except Exception:
-                        pass
-            
-            # Add the last GPU
-            if current_gpu:
-                self.gpus.append(current_gpu)
-            
-            if self.gpus:
-                logger.info(f"Detected {len(self.gpus)} GPUs on macOS")
-        except Exception as e:
-            logger.debug(f"macOS GPU detection failed: {e}")
-
     def _detect_specialized_accelerators(self):
         """Detect specialized hardware accelerators"""
         self.accelerators = []
@@ -547,16 +309,6 @@ class DeviceOptimizer:
         except ImportError:
             pass
         
-        # Check for TPU support
-        try:
-            import tensorflow as tf
-            tpu_devices = tf.config.list_logical_devices('TPU')
-            if tpu_devices:
-                self.accelerators.append(HardwareAccelerator.TPU)
-                logger.info(f"Detected {len(tpu_devices)} TPU devices")
-        except (ImportError, AttributeError, ValueError):
-            pass
-        
         # Check for ARM NEON support on ARM architectures
         if self.is_arm_cpu and self.has_neon:
             self.accelerators.append(HardwareAccelerator.ARM_NEON)
@@ -569,7 +321,7 @@ class DeviceOptimizer:
             return "cloud"
         
         # Check for low-resource environment that could indicate edge device
-        if self.total_memory_gb < 4 or self.cpu_count_physical <= 2:
+        if self.total_memory_gb < 2 or self.cpu_count_physical <= 1:  # Modified thresholds
             return "edge"
         
         # Check for high-resource environment that could indicate cloud/server
@@ -591,12 +343,6 @@ class DeviceOptimizer:
         logger.info(f"CPU Features: AVX={self.has_avx}, AVX2={self.has_avx2}, AVX512={self.has_avx512}")
         logger.info(f"Memory: {self.total_memory_gb:.2f} GB total, {self.usable_memory_gb:.2f} GB usable")
         logger.info(f"Disk: {self.disk_total_gb:.2f} GB total, {self.disk_free_gb:.2f} GB free, SSD={self.is_ssd}")
-        
-        if self.gpus:
-            logger.info("-" * 50)
-            logger.info(f"GPUs detected: {len(self.gpus)}")
-            for i, gpu in enumerate(self.gpus):
-                logger.info(f"  GPU {i}: {gpu.name}, {gpu.memory_mb} MB memory")
         
         if self.accelerators:
             logger.info("-" * 50)
@@ -632,375 +378,6 @@ class DeviceOptimizer:
             else:
                 result[key] = value
         return result
-
-    def _get_optimal_quantization_type(self) -> str:
-        """Determine the optimal quantization type based on hardware"""
-        # Use more aggressive quantization on memory-constrained devices
-        if self.total_memory_gb < 4 or self.optimization_mode == OptimizationMode.MEMORY_SAVING:
-            return QuantizationType.INT8.value
-        
-        # Use fp16 if GPUs are available and support it
-        if self.gpus and any("compute capability" in getattr(gpu, "compute_capability", "") for gpu in self.gpus):
-            return QuantizationType.FLOAT16.value
-        
-        # Default based on optimization mode
-        if self.optimization_mode == OptimizationMode.PERFORMANCE:
-            return QuantizationType.FLOAT16.value
-        elif self.optimization_mode == OptimizationMode.FULL_UTILIZATION:
-            return QuantizationType.MIXED.value
-        
-        return QuantizationType.INT8.value
-
-    def _apply_optimization_mode_factors(self) -> Dict[str, float]:
-        """
-        Get scaling factors for different resource parameters based on the optimization mode.
-        
-        Returns:
-            Dictionary of scaling factors for CPU, memory, and other resources
-        """
-        # Base factors for different modes
-        mode_factors = {
-            OptimizationMode.BALANCED: {
-                "cpu": 0.75,       # Use 75% of CPU cores
-                "memory": 0.7,     # Use 70% of memory
-                "batch_size": 0.8,  # 80% of max batch size
-                "cache": 0.7,      # 70% of max cache size
-                "workers": 0.75    # 75% of max workers
-            },
-            OptimizationMode.CONSERVATIVE: {
-                "cpu": 0.5,        # Use 50% of CPU cores
-                "memory": 0.5,     # Use 50% of memory
-                "batch_size": 0.5,  # 50% of max batch size
-                "cache": 0.5,      # 50% of max cache size
-                "workers": 0.5     # 50% of max workers
-            },
-            OptimizationMode.PERFORMANCE: {
-                "cpu": 0.9,        # Use 90% of CPU cores
-                "memory": 0.8,     # Use 80% of memory
-                "batch_size": 1.0,  # 100% of max batch size
-                "cache": 0.9,      # 90% of max cache size
-                "workers": 0.9     # 90% of max workers
-            },
-            OptimizationMode.FULL_UTILIZATION: {
-                "cpu": 1.0,        # Use 100% of CPU cores
-                "memory": 0.95,    # Use 95% of memory
-                "batch_size": 1.2,  # 120% of max batch size
-                "cache": 1.0,      # 100% of max cache size
-                "workers": 1.0     # 100% of max workers
-            },
-            OptimizationMode.MEMORY_SAVING: {
-                "cpu": 0.7,        # Use 70% of CPU cores
-                "memory": 0.4,     # Use 40% of memory
-                "batch_size": 0.6,  # 60% of max batch size
-                "cache": 0.4,      # 40% of max cache size
-                "workers": 0.7     # 70% of max workers
-            }
-        }
-        
-        # Start with the base factors for the selected optimization mode
-        factors = mode_factors.get(self.optimization_mode, mode_factors[OptimizationMode.BALANCED]).copy()
-        
-        # Environment-specific adjustments
-        if self.environment == "edge":
-            # For edge devices, be more conservative
-            factors["memory"] *= 0.8  # Use less memory
-            factors["batch_size"] *= 0.8  # Use smaller batch sizes
-        elif self.environment == "cloud":
-            # For cloud environments, can be more aggressive
-            factors["memory"] *= 1.1  # Use more memory
-            factors["batch_size"] *= 1.1  # Use larger batch sizes
-        
-        # Workload-specific adjustments
-        if self.workload_type == "inference":
-            # Inference workloads typically need larger batch sizes
-            factors["batch_size"] *= 1.2
-            # But can use less cache
-            factors["cache"] *= 0.9
-        elif self.workload_type == "training":
-            # Training needs more memory
-            factors["memory"] *= 1.1
-            factors["cache"] *= 1.1
-        
-        # Power efficiency adjustments
-        if self.power_efficiency:
-            # Reduce resource usage for power efficiency
-            factors["cpu"] *= 0.8
-            factors["memory"] *= 0.9
-        
-        # Ensure factors stay in reasonable ranges
-        for key in factors:
-            factors[key] = min(max(factors[key], 0.1), 1.2)  # Clamp between 0.1 and 1.2
-        
-        return factors
-
-    def get_optimal_training_engine_config(self) -> MLTrainingEngineConfig:
-        """
-        Create an optimized training engine configuration based on device capabilities.
-        
-        Returns:
-            Optimized MLTrainingEngineConfig
-        """
-        # Get scaling factors based on optimization mode
-        factors = self._apply_optimization_mode_factors()
-        
-        # CPU utilization for jobs
-        cpu_factor = factors["cpu"]
-        n_jobs = max(int(self.cpu_count_logical * cpu_factor), 1)
-        
-        # Choose optimization strategy based on hardware and mode
-        if self.total_memory_gb > 16 and self.cpu_count_logical > 8 and self.optimization_mode in [OptimizationMode.PERFORMANCE, OptimizationMode.FULL_UTILIZATION]:
-            optimization_strategy = OptimizationStrategy.ASHT
-            optimization_iterations = 100 if self.optimization_mode == OptimizationMode.FULL_UTILIZATION else 50
-        elif self.total_memory_gb > 8 and self.cpu_count_logical > 4 and self.optimization_mode not in [OptimizationMode.CONSERVATIVE, OptimizationMode.MEMORY_SAVING]:
-            optimization_strategy = OptimizationStrategy.BAYESIAN_OPTIMIZATION
-            optimization_iterations = 50 if self.optimization_mode == OptimizationMode.PERFORMANCE else 30
-        else:
-            optimization_strategy = OptimizationStrategy.RANDOM_SEARCH
-            optimization_iterations = 30 if self.optimization_mode == OptimizationMode.PERFORMANCE else 20
-        
-        # For cloud environments with many cores, use more advanced strategies
-        if self.environment == "cloud" and self.cpu_count_logical > 16 and self.optimization_mode == OptimizationMode.FULL_UTILIZATION:
-            optimization_strategy = OptimizationStrategy.BOHB
-            optimization_iterations = 150
-        
-        # Time budget for optimization
-        optimization_timeout = (
-            None if self.optimization_mode == OptimizationMode.FULL_UTILIZATION else
-            3600 if self.optimization_mode == OptimizationMode.PERFORMANCE else
-            1800  # 30 minutes for other modes
-        )
-        
-        # Cross-validation settings
-        cv_folds = (
-            10 if (self.optimization_mode == OptimizationMode.FULL_UTILIZATION and self.environment != "edge") else
-            5 if self.environment != "edge" else
-            3  # Fewer folds for edge devices
-        )
-        
-        # Test size - larger for more conservative modes
-        test_size = (
-            0.15 if self.optimization_mode == OptimizationMode.FULL_UTILIZATION else
-            0.2 if self.optimization_mode == OptimizationMode.PERFORMANCE else
-            0.25
-        )
-        
-        # Early stopping settings
-        early_stopping = self.optimization_mode != OptimizationMode.FULL_UTILIZATION
-        early_stopping_rounds = (
-            20 if self.optimization_mode == OptimizationMode.CONSERVATIVE else
-            10 if self.optimization_mode == OptimizationMode.BALANCED else
-            5  # Fewer rounds for performance mode
-        )
-        
-        # Feature selection settings
-        feature_selection = self.optimization_mode != OptimizationMode.PERFORMANCE
-        feature_selection_method = (
-            "mutual_info" if self.cpu_count_logical > 4 else
-            "chi2"  # Simpler method for fewer cores
-        )
-        
-        # Feature importance threshold
-        feature_importance_threshold = (
-            0.005 if self.optimization_mode == OptimizationMode.FULL_UTILIZATION else
-            0.01 if self.optimization_mode == OptimizationMode.BALANCED else
-            0.02  # Higher threshold for conservative modes
-        )
-        
-        # Get other configurations
-        preprocessing_config = self.get_optimal_preprocessor_config()
-        batch_processing_config = self.get_optimal_batch_processor_config()
-        inference_config = self.get_optimal_inference_engine_config()
-        
-        # Fix: Add batch_processing_strategy attribute if it's missing
-        if not hasattr(inference_config, 'batch_processing_strategy'):
-            inference_config.batch_processing_strategy = batch_processing_config.strategy if hasattr(batch_processing_config, 'strategy') else "auto"
-            
-        quantization_config = self.get_optimal_quantization_config()
-        
-        # Explainability configuration
-        explainability_config = ExplainabilityConfig(
-            enable_explainability=self.optimization_mode != OptimizationMode.MEMORY_SAVING,
-            methods=["shap", "feature_importance"] if self.environment != "edge" else ["feature_importance"],
-            default_method="shap" if self.total_memory_gb > 8 else "feature_importance",
-            shap_algorithm="auto",
-            shap_samples=100 if self.optimization_mode != OptimizationMode.FULL_UTILIZATION else 200,
-            generate_summary=True,
-            generate_plots=self.environment != "edge",
-            store_explanations=self.environment == "cloud" or self.optimization_mode == OptimizationMode.FULL_UTILIZATION
-        )
-        
-        # Monitoring configuration
-        monitoring_config = MonitoringConfig(
-            enable_monitoring=True,
-            drift_detection=self.environment != "edge",
-            drift_detection_method="ks_test",
-            drift_threshold=0.05,
-            performance_tracking=True,
-            alert_on_drift=self.resilience_level > 1,
-            alert_channels=["log"] if self.environment == "edge" else ["log", "metrics"],
-            data_sampling_rate=1.0 if self.environment == "cloud" else 0.5,
-            store_predictions=self.environment == "cloud" or self.optimization_mode == OptimizationMode.FULL_UTILIZATION,
-            enable_auto_retraining=self.resilience_level > 2 and self.environment == "cloud",
-            export_metrics=self.environment == "cloud"
-        )
-        
-        # AutoML settings
-        auto_ml = (
-            AutoMLMode.COMPREHENSIVE if (self.optimization_mode == OptimizationMode.FULL_UTILIZATION and self.environment == "cloud") else
-            AutoMLMode.BASIC if (self.optimization_mode not in [OptimizationMode.CONSERVATIVE, OptimizationMode.MEMORY_SAVING]) else
-            AutoMLMode.DISABLED
-        )
-        
-        # Time budget for AutoML
-        auto_ml_time_budget = (
-            7200 if self.optimization_mode == OptimizationMode.FULL_UTILIZATION else
-            3600 if self.optimization_mode == OptimizationMode.PERFORMANCE else
-            1800  # 30 minutes for other modes
-        ) if auto_ml != AutoMLMode.DISABLED else None
-        
-        # Ensemble settings
-        ensemble_models = (
-            self.environment == "cloud" and
-            self.optimization_mode not in [OptimizationMode.CONSERVATIVE, OptimizationMode.MEMORY_SAVING]
-        )
-        
-        # Ensemble method
-        ensemble_method = (
-            "stacking" if (self.optimization_mode == OptimizationMode.FULL_UTILIZATION and self.total_memory_gb > 16) else
-            "voting"  # Simpler method for other modes
-        )
-        
-        # Check for hardware acceleration features - CPU agnostic approach
-        use_acceleration = False
-        if hasattr(self, 'has_avx') and self.has_avx:
-            use_acceleration = True
-        elif hasattr(self, 'has_avx2') and self.has_avx2:
-            use_acceleration = True
-        elif hasattr(self, 'has_neon') and self.has_neon:
-            use_acceleration = True
-        
-        # Create the configuration
-        return MLTrainingEngineConfig(
-            task_type=TaskType.CLASSIFICATION,  # Default, should be set based on actual task
-            random_state=42,
-            n_jobs=n_jobs,
-            verbose=2 if self.optimization_mode == OptimizationMode.FULL_UTILIZATION else 1,
-            cv_folds=cv_folds,
-            test_size=test_size,
-            stratify=True,
-            optimization_strategy=optimization_strategy,
-            optimization_iterations=optimization_iterations,
-            optimization_timeout=optimization_timeout,
-            early_stopping=early_stopping,
-            early_stopping_rounds=early_stopping_rounds,
-            feature_selection=feature_selection,
-            feature_selection_method=feature_selection_method,
-            feature_importance_threshold=feature_importance_threshold,
-            preprocessing_config=preprocessing_config,
-            batch_processing_config=batch_processing_config,
-            inference_config=inference_config,
-            quantization_config=quantization_config,
-            explainability_config=explainability_config,
-            monitoring_config=monitoring_config,
-            model_path=str(self.model_registry_path),
-            auto_version_models=True,
-            experiment_tracking=self.environment != "edge",
-            experiment_tracking_platform="mlflow",
-            use_hardware_acceleration=use_acceleration,  # Changed from Intel-specific to generic hardware acceleration
-            use_gpu=self.gpus and len(self.gpus) > 0,
-            gpu_memory_fraction=0.95 if self.optimization_mode == OptimizationMode.FULL_UTILIZATION else 0.8,
-            memory_optimization=self.optimization_mode != OptimizationMode.FULL_UTILIZATION,
-            enable_distributed=len(self.gpus) > 1 or (self.cpu_count_physical > 8 and self.environment == "cloud"),
-            distributed_strategy="mirrored" if len(self.gpus) > 1 else "multiworker",
-            checkpointing=self.resilience_level > 0,
-            checkpoint_interval=5 if self.resilience_level > 2 else 10,
-            checkpoint_path=str(self.checkpoint_path),
-            enable_pruning=self.optimization_mode in [OptimizationMode.MEMORY_SAVING, OptimizationMode.CONSERVATIVE],
-            auto_ml=auto_ml,
-            auto_ml_time_budget=auto_ml_time_budget,
-            ensemble_models=ensemble_models,
-            ensemble_method=ensemble_method,
-            ensemble_size=5 if self.optimization_mode == OptimizationMode.FULL_UTILIZATION else 3,
-            model_selection_criteria=ModelSelectionCriteria.ACCURACY,  # Default, should be set based on task
-            auto_save=True,
-            enable_quantization=self.optimization_mode in [OptimizationMode.MEMORY_SAVING, OptimizationMode.BALANCED],
-            enable_model_compression=self.optimization_mode == OptimizationMode.MEMORY_SAVING,
-            compression_method="pruning",
-            log_level="DEBUG" if self.optimization_mode == OptimizationMode.FULL_UTILIZATION else "INFO",
-            debug_mode=False,
-            enable_data_validation=True,
-            enable_security=self.resilience_level > 1
-        )
-        
-    def get_system_info(self) -> Dict[str, Any]:
-        """
-        Get comprehensive system information as a dictionary.
-        
-        Returns:
-            Dictionary with system information
-        """
-        # Create a dictionary with system information
-        system_info = {
-            "system": {
-                "name": self.system,
-                "release": self.release,
-                "machine": self.machine,
-                "processor": self.processor,
-                "hostname": self.hostname,
-                "python_version": self.python_version,
-                "environment": self.environment
-            },
-            "cpu": {
-                "physical_cores": self.cpu_count_physical,
-                "logical_cores": self.cpu_count_logical,
-                "frequency": self.cpu_freq,
-                "is_intel": self.is_intel_cpu,
-                "is_amd": self.is_amd_cpu,
-                "is_arm": self.is_arm_cpu,
-                "features": {
-                    "avx": self.has_avx,
-                    "avx2": self.has_avx2,
-                    "avx512": self.has_avx512,
-                    "sse4": self.has_sse4,
-                    "fma": self.has_fma,
-                    "neon": self.has_neon
-                }
-            },
-            "memory": {
-                "total_gb": self.total_memory_gb,
-                "available_gb": self.available_memory_gb,
-                "usable_gb": self.usable_memory_gb,
-                "swap_gb": self.swap_memory_gb,
-                "reservation_percent": self.memory_reservation_percent
-            },
-            "disk": {
-                "total_gb": self.disk_total_gb,
-                "free_gb": self.disk_free_gb,
-                "is_ssd": self.is_ssd
-            },
-            "gpu": {
-                "count": len(self.gpus),
-                "has_cuda": self.has_cuda,
-                "has_rocm": self.has_rocm,
-                "gpus": [gpu.to_dict() for gpu in self.gpus]
-            },
-            "accelerators": [acc.name for acc in self.accelerators],
-            "optimization": {
-                "mode": self.optimization_mode.value,
-                "workload_type": self.workload_type,
-                "power_efficiency": self.power_efficiency,
-                "resilience_level": self.resilience_level,
-                "auto_tune": self.auto_tune
-            },
-            "paths": {
-                "config_path": str(self.config_path),
-                "checkpoint_path": str(self.checkpoint_path),
-                "model_registry_path": str(self.model_registry_path)
-            },
-            "timestamp": datetime.datetime.now().isoformat()
-        }
-        
-        return system_info
         
     def save_configs(self, config_id: Optional[str] = None) -> Dict[str, str]:
         """
@@ -1236,6 +613,828 @@ class DeviceOptimizer:
         
         logger.info("Auto-tuning complete")
         return tuned_configs
+
+    def _get_optimal_quantization_type(self) -> str:
+        """Determine the optimal quantization type based on hardware"""
+        # Use more aggressive quantization on memory-constrained devices
+        if self.total_memory_gb < 4 or self.optimization_mode == OptimizationMode.MEMORY_SAVING:
+            return QuantizationType.INT8.value
+        
+        # Default based on optimization mode
+        if self.optimization_mode == OptimizationMode.PERFORMANCE:
+            return QuantizationType.FLOAT16.value
+        elif self.optimization_mode == OptimizationMode.FULL_UTILIZATION:
+            return QuantizationType.MIXED.value
+        
+        return QuantizationType.INT8.value
+
+    def _apply_optimization_mode_factors(self) -> Dict[str, float]:
+        """
+        Get scaling factors for different resource parameters based on the optimization mode.
+        
+        Returns:
+            Dictionary of scaling factors for CPU, memory, and other resources
+        """
+        # Base factors for different modes
+        mode_factors = {
+            OptimizationMode.BALANCED: {
+                "cpu": 0.75,       # Use 75% of CPU cores
+                "memory": 0.7,     # Use 70% of memory
+                "batch_size": 0.8,  # 80% of max batch size
+                "cache": 0.7,      # 70% of max cache size
+                "workers": 0.75    # 75% of max workers
+            },
+            OptimizationMode.CONSERVATIVE: {
+                "cpu": 0.5,        # Use 50% of CPU cores
+                "memory": 0.5,     # Use 50% of memory
+                "batch_size": 0.5,  # 50% of max batch size
+                "cache": 0.5,      # 50% of max cache size
+                "workers": 0.5     # 50% of max workers
+            },
+            OptimizationMode.PERFORMANCE: {
+                "cpu": 0.9,        # Use 90% of CPU cores
+                "memory": 0.8,     # Use 80% of memory
+                "batch_size": 1.0,  # 100% of max batch size
+                "cache": 0.9,      # 90% of max cache size
+                "workers": 0.9     # 90% of max workers
+            },
+            OptimizationMode.FULL_UTILIZATION: {
+                "cpu": 1.0,        # Use 100% of CPU cores
+                "memory": 0.95,    # Use 95% of memory
+                "batch_size": 1.2,  # 120% of max batch size
+                "cache": 1.0,      # 100% of max cache size
+                "workers": 1.0     # 100% of max workers
+            },
+            OptimizationMode.MEMORY_SAVING: {
+                "cpu": 0.7,        # Use 70% of CPU cores
+                "memory": 0.4,     # Use 40% of memory
+                "batch_size": 0.6,  # 60% of max batch size
+                "cache": 0.4,      # 40% of max cache size
+                "workers": 0.7     # 70% of max workers
+            }
+        }
+        
+        # Start with the base factors for the selected optimization mode
+        factors = mode_factors.get(self.optimization_mode, mode_factors[OptimizationMode.BALANCED]).copy()
+        
+        # Environment-specific adjustments
+        if self.environment == "edge":
+            # For edge devices, be more conservative
+            factors["memory"] *= 0.8  # Use less memory
+            factors["batch_size"] *= 0.8  # Use smaller batch sizes
+        elif self.environment == "cloud":
+            # For cloud environments, can be more aggressive
+            factors["memory"] *= 1.1  # Use more memory
+            factors["batch_size"] *= 1.1  # Use larger batch sizes
+        
+        # Workload-specific adjustments
+        if self.workload_type == "inference":
+            # Inference workloads typically need larger batch sizes
+            factors["batch_size"] *= 1.2
+            # But can use less cache
+            factors["cache"] *= 0.9
+        elif self.workload_type == "training":
+            # Training needs more memory
+            factors["memory"] *= 1.1
+            factors["cache"] *= 1.1
+        
+        # Power efficiency adjustments
+        if self.power_efficiency:
+            # Reduce resource usage for power efficiency
+            factors["cpu"] *= 0.8
+            factors["memory"] *= 0.9
+        
+        # Ensure factors stay in reasonable ranges
+        for key in factors:
+            factors[key] = min(max(factors[key], 0.1), 1.2)  # Clamp between 0.1 and 1.2
+        
+        return factors
+        
+    def get_optimal_quantization_config(self) -> QuantizationConfig:
+        """
+        Generate an optimized quantization configuration based on device capabilities.
+        
+        Returns:
+            Optimized QuantizationConfig
+        """
+        # Get optimal quantization type
+        quant_type = self._get_optimal_quantization_type()
+        
+        # Determine quantization mode based on optimization mode
+        if self.optimization_mode == OptimizationMode.PERFORMANCE:
+            quant_mode = QuantizationMode.STATIC.value
+        elif self.optimization_mode == OptimizationMode.MEMORY_SAVING:
+            quant_mode = QuantizationMode.DYNAMIC.value
+        else:
+            quant_mode = QuantizationMode.DYNAMIC_PER_BATCH.value
+        
+        # Enable per-channel quantization for better accuracy
+        per_channel = (
+            self.optimization_mode == OptimizationMode.PERFORMANCE or 
+            self.optimization_mode == OptimizationMode.FULL_UTILIZATION
+        )
+        
+        # Symmetric quantization is typically more performant but less accurate
+        symmetric = self.optimization_mode != OptimizationMode.PERFORMANCE
+        
+        # Determine appropriate cache size based on memory
+        cache_size = (
+            512 if self.total_memory_gb > 16 else
+            256 if self.total_memory_gb > 8 else
+            128 if self.total_memory_gb > 4 else
+            64
+        )
+        
+        # Reduce cache size for memory-saving mode
+        if self.optimization_mode == OptimizationMode.MEMORY_SAVING:
+            cache_size //= 2
+        
+        # Determine calibration samples
+        calibration_samples = (
+            200 if self.optimization_mode == OptimizationMode.FULL_UTILIZATION else
+            100 if self.optimization_mode == OptimizationMode.BALANCED else
+            50  # For memory-saving or conservative modes
+        )
+        
+        # Set appropriate bit precision based on hardware and mode
+        if quant_type == QuantizationType.MIXED.value:
+            weight_bits = 8
+            activation_bits = 16
+            bias_bits = 32
+        elif quant_type == QuantizationType.FLOAT16.value:
+            weight_bits = 16
+            activation_bits = 16
+            bias_bits = 32
+        else:  # INT8 and others
+            weight_bits = 8
+            activation_bits = 8
+            bias_bits = 32 if self.optimization_mode != OptimizationMode.MEMORY_SAVING else 16
+        
+        # Create the configuration
+        config = QuantizationConfig(
+            quantization_type=quant_type,
+            quantization_mode=quant_mode,
+            per_channel=per_channel,
+            symmetric=symmetric,
+            enable_cache=self.optimization_mode != OptimizationMode.MEMORY_SAVING,
+            cache_size=cache_size,
+            calibration_samples=calibration_samples,
+            calibration_method="percentile" if self.optimization_mode == OptimizationMode.PERFORMANCE else "minmax",
+            percentile=99.99 if self.optimization_mode == OptimizationMode.PERFORMANCE else 99.9,
+            skip_layers=[],  # No specific layers to skip in default config
+            quantize_weights_only=self.optimization_mode == OptimizationMode.CONSERVATIVE,
+            quantize_activations=self.optimization_mode != OptimizationMode.CONSERVATIVE,
+            weight_bits=weight_bits,
+            activation_bits=activation_bits,
+            quantize_bias=self.optimization_mode != OptimizationMode.PERFORMANCE,
+            bias_bits=bias_bits,
+            enable_mixed_precision=quant_type == QuantizationType.MIXED.value,
+            optimize_for="performance" if self.optimization_mode in [OptimizationMode.PERFORMANCE, OptimizationMode.FULL_UTILIZATION] else
+                       "memory" if self.optimization_mode == OptimizationMode.MEMORY_SAVING else
+                       "balanced",
+            enable_requantization=self.optimization_mode == OptimizationMode.FULL_UTILIZATION,
+            requantization_threshold=0.1,
+            use_percentile=self.optimization_mode == OptimizationMode.PERFORMANCE,
+            min_percentile=0.1,
+            max_percentile=99.9,
+            error_on_nan=self.optimization_mode not in [OptimizationMode.CONSERVATIVE, OptimizationMode.MEMORY_SAVING],
+            error_on_inf=self.optimization_mode not in [OptimizationMode.CONSERVATIVE, OptimizationMode.MEMORY_SAVING],
+            outlier_threshold=3.0 if self.optimization_mode == OptimizationMode.PERFORMANCE else None,
+            num_bits=8,
+            optimize_memory=self.optimization_mode != OptimizationMode.PERFORMANCE,
+            buffer_size=64 if self.optimization_mode == OptimizationMode.MEMORY_SAVING else 0
+        )
+        
+        return config
+
+    def get_optimal_preprocessor_config(self) -> PreprocessorConfig:
+        """
+        Generate an optimized preprocessor configuration based on device capabilities.
+        
+        Returns:
+            Optimized PreprocessorConfig
+        """
+        # Get scaling factors
+        factors = self._apply_optimization_mode_factors()
+        
+        # Determine appropriate normalization type based on optimization mode
+        if self.optimization_mode == OptimizationMode.PERFORMANCE:
+            normalization = NormalizationType.STANDARD
+        elif self.optimization_mode == OptimizationMode.MEMORY_SAVING:
+            normalization = NormalizationType.MINMAX  # Less memory intensive
+        elif self.optimization_mode == OptimizationMode.FULL_UTILIZATION:
+            normalization = NormalizationType.ROBUST  # Better quality but more compute
+        else:
+            normalization = NormalizationType.STANDARD  # Default
+        
+        # Feature selection settings
+        auto_feature_selection = self.optimization_mode != OptimizationMode.PERFORMANCE
+        
+        # Text vectorization settings
+        text_max_features = (
+            10000 if self.optimization_mode == OptimizationMode.FULL_UTILIZATION and self.total_memory_gb > 16 else
+            5000 if self.optimization_mode == OptimizationMode.PERFORMANCE or self.total_memory_gb > 8 else
+            2000 if self.optimization_mode == OptimizationMode.BALANCED else
+            1000  # For memory-saving or conservative modes
+        )
+        
+        # Dimension reduction
+        if self.optimization_mode == OptimizationMode.MEMORY_SAVING or self.total_memory_gb < 4:
+            dimension_reduction = "pca"
+            dimension_reduction_target = 50
+        elif self.optimization_mode == OptimizationMode.CONSERVATIVE:
+            dimension_reduction = "pca"
+            dimension_reduction_target = 100
+        else:
+            dimension_reduction = None
+            dimension_reduction_target = None
+        
+        # Outlier detection
+        detect_outliers = (
+            self.optimization_mode not in [OptimizationMode.CONSERVATIVE, OptimizationMode.MEMORY_SAVING] and
+            self.environment != "edge"
+        )
+        
+        # Feature interaction generation
+        feature_interaction = (
+            self.optimization_mode == OptimizationMode.FULL_UTILIZATION and
+            self.environment == "cloud" and
+            self.total_memory_gb > 16
+        )
+        
+        # Number of parallel jobs for preprocessing
+        n_jobs = (
+            self.cpu_count_logical if self.optimization_mode == OptimizationMode.FULL_UTILIZATION else
+            max(int(self.cpu_count_logical * factors["cpu"]), 1)
+        )
+        
+        # Chunk size for large datasets
+        if self.total_memory_gb < 4:
+            chunk_size = 1000
+        elif self.total_memory_gb < 8:
+            chunk_size = 5000
+        elif self.total_memory_gb < 16:
+            chunk_size = 10000
+        else:
+            chunk_size = None  # No chunking needed
+        
+        # Cache size
+        cache_size = int(128 * factors["cache"])
+        
+        # Numeric dtype - use float32 to save memory if needed
+        dtype = np.float32 if self.optimization_mode == OptimizationMode.MEMORY_SAVING else np.float64
+        
+        # Create the configuration
+        return PreprocessorConfig(
+            normalization=normalization,
+            handle_nan=True,
+            handle_inf=True,
+            detect_outliers=detect_outliers,
+            outlier_method="isolation_forest" if self.cpu_count_logical > 2 else "iqr",
+            outlier_contamination=0.05,
+            categorical_encoding="one_hot" if self.total_memory_gb > 4 else "label",
+            categorical_max_categories=20 if self.total_memory_gb > 8 else 10,
+            auto_feature_selection=auto_feature_selection,
+            numeric_transformations=["standard", "log", "sqrt"] if self.optimization_mode == OptimizationMode.FULL_UTILIZATION else [],
+            text_vectorization="tfidf" if self.optimization_mode != OptimizationMode.MEMORY_SAVING else "count",
+            text_max_features=text_max_features,
+            dimension_reduction=dimension_reduction,
+            dimension_reduction_target=dimension_reduction_target,
+            datetime_features=self.optimization_mode != OptimizationMode.MEMORY_SAVING,
+            image_preprocessing={},  # No default image preprocessing
+            handle_imbalance=self.optimization_mode == OptimizationMode.FULL_UTILIZATION,
+            imbalance_strategy="smote" if self.total_memory_gb > 8 else "random_under",
+            feature_interaction=feature_interaction,
+            feature_interaction_max=10 if self.total_memory_gb > 16 else 5,
+            custom_transformers=[],
+            transformation_pipeline=[],
+            parallel_processing=self.cpu_count_logical > 1,
+            cache_preprocessing=self.optimization_mode != OptimizationMode.MEMORY_SAVING,
+            verbosity=2 if self.optimization_mode == OptimizationMode.FULL_UTILIZATION else 1,
+            robust_percentiles=(25.0, 75.0),
+            nan_strategy="mean" if self.optimization_mode != OptimizationMode.PERFORMANCE else "median",
+            inf_strategy="mean" if self.optimization_mode != OptimizationMode.PERFORMANCE else "median",
+            outlier_params={
+                "threshold": 1.5,
+                "clip": True,
+                "n_estimators": 100 if self.cpu_count_logical > 4 else 50,
+                "contamination": "auto"
+            },
+            clip_values=self.optimization_mode in [OptimizationMode.MEMORY_SAVING, OptimizationMode.CONSERVATIVE],
+            clip_range=(-np.inf, np.inf),  # Default to no clipping
+            enable_input_validation=True,
+            input_size_limit=None if self.environment == "cloud" else 100000,
+            n_jobs=n_jobs,
+            chunk_size=chunk_size,
+            cache_enabled=self.optimization_mode != OptimizationMode.MEMORY_SAVING,
+            cache_size=cache_size,
+            dtype=dtype,
+            epsilon=1e-10,
+            debug_mode=False,
+            custom_normalization_fn=None,
+            custom_transform_fn=None,
+            version="1.0.0"
+        )
+        
+    def get_optimal_inference_engine_config(self) -> InferenceEngineConfig:
+        """
+        Generate an optimized inference engine configuration based on device capabilities.
+        
+        Returns:
+            Optimized InferenceEngineConfig
+        """
+        # Get scaling factors
+        factors = self._apply_optimization_mode_factors()
+        
+        # Determine model precision based on optimization mode
+        if self.optimization_mode == OptimizationMode.MEMORY_SAVING:
+            model_precision = "fp16"  # Use half precision to save memory
+        elif self.optimization_mode == OptimizationMode.PERFORMANCE:
+            model_precision = "fp32"  # Use full precision for performance
+        else:
+            model_precision = "fp32"  # Default
+        
+        # Number of threads for inference
+        thread_count = max(int(self.cpu_count_logical * factors["cpu"]), 1)
+        
+        # Batch size settings
+        max_batch_size = (
+            128 if self.optimization_mode == OptimizationMode.FULL_UTILIZATION and self.total_memory_gb > 16 else
+            64 if self.optimization_mode == OptimizationMode.PERFORMANCE else
+            32 if self.optimization_mode == OptimizationMode.BALANCED else
+            16  # For memory-saving or conservative modes
+        )
+        
+        # Initial batch size
+        initial_batch_size = max(max_batch_size // 2, 1)
+        
+        # Model cache size
+        model_cache_size = (
+            10 if self.optimization_mode == OptimizationMode.FULL_UTILIZATION and self.total_memory_gb > 16 else
+            5 if self.optimization_mode == OptimizationMode.PERFORMANCE or self.optimization_mode == OptimizationMode.BALANCED else
+            2 if self.optimization_mode == OptimizationMode.CONSERVATIVE else
+            1  # Minimal caching for memory saving
+        )
+        
+        # Memory limits based on system memory
+        memory_limit = (
+            None if self.optimization_mode == OptimizationMode.FULL_UTILIZATION else
+            self.total_memory_gb * 0.8 if self.optimization_mode == OptimizationMode.PERFORMANCE else
+            self.total_memory_gb * 0.6 if self.optimization_mode == OptimizationMode.BALANCED else
+            self.total_memory_gb * 0.4  # Conservative memory limit
+        )
+        
+        # Monitoring interval
+        monitoring_interval = (
+            5.0 if self.environment == "edge" or self.optimization_mode == OptimizationMode.MEMORY_SAVING else
+            10.0  # Default
+        )
+        
+        # Cache TTL
+        cache_ttl = (
+            600 if self.optimization_mode == OptimizationMode.PERFORMANCE else
+            300 if self.optimization_mode == OptimizationMode.BALANCED else
+            120  # Shorter TTL for memory saving
+        )
+        
+        # Determine if Intel optimizations should be enabled
+        enable_intel = self.is_intel_cpu and (self.has_avx or self.has_avx2 or self.has_avx512)
+        
+        # Create quantization config if needed
+        quantization_config = self.get_optimal_quantization_config() if self.optimization_mode == OptimizationMode.MEMORY_SAVING else None
+        
+        # Create optimized inference engine config
+        return InferenceEngineConfig(
+            # CPU optimization settings
+            enable_intel_optimization=enable_intel,
+            thread_count=thread_count,
+            num_threads=thread_count,
+            set_cpu_affinity=self.optimization_mode == OptimizationMode.PERFORMANCE,
+            
+            # Batching settings
+            enable_batching=True,
+            max_batch_size=max_batch_size,
+            initial_batch_size=initial_batch_size,
+            min_batch_size=1,
+            batch_timeout=0.05 if self.optimization_mode == OptimizationMode.PERFORMANCE else 0.1,
+            batching_strategy="dynamic" if self.optimization_mode != OptimizationMode.CONSERVATIVE else "static",
+            enable_adaptive_batching=self.optimization_mode != OptimizationMode.CONSERVATIVE,
+            
+            # Model settings
+            model_cache_size=model_cache_size,
+            model_precision=model_precision,
+            model_version="1.0",
+            
+            # Performance settings
+            timeout_ms=50 if self.optimization_mode == OptimizationMode.PERFORMANCE else 100,
+            enable_jit=True,
+            runtime_optimization=True,
+            warmup=True,
+            warmup_iterations=5 if self.environment == "edge" else 10,
+            profiling=self.optimization_mode == OptimizationMode.FULL_UTILIZATION,
+            
+            # Memory settings
+            memory_growth=self.optimization_mode != OptimizationMode.MEMORY_SAVING,
+            enable_memory_optimization=self.optimization_mode != OptimizationMode.PERFORMANCE,
+            memory_high_watermark_mb=1024 if self.total_memory_gb > 4 else 512,
+            memory_limit_gb=memory_limit,
+            
+            # Export formats
+            enable_onnx=False,  # Not using ONNX 
+            onnx_opset=13,
+            enable_tensorrt=False,  # No TensorRT support in CPU-only mode
+            
+            # Quantization settings
+            enable_quantization=self.optimization_mode == OptimizationMode.MEMORY_SAVING,
+            enable_model_quantization=self.optimization_mode == OptimizationMode.MEMORY_SAVING,
+            enable_input_quantization=False,
+            quantization_dtype="int8",
+            quantization_config=quantization_config,
+            enable_quantization_aware_inference=False,
+            
+            # Request handling
+            enable_request_deduplication=True,
+            output_streaming=False,
+            max_concurrent_requests=thread_count,
+            max_cache_entries=1000 if self.total_memory_gb > 8 else 500,
+            cache_ttl_seconds=cache_ttl,
+            
+            # Monitoring and throttling
+            monitoring_window=100 if self.environment == "cloud" else 50,
+            enable_monitoring=True,
+            monitoring_interval=monitoring_interval,
+            throttle_on_high_cpu=self.optimization_mode != OptimizationMode.PERFORMANCE,
+            cpu_threshold_percent=90.0 if self.optimization_mode == OptimizationMode.PERFORMANCE else 80.0,
+            enable_throttling=self.optimization_mode != OptimizationMode.PERFORMANCE,
+            
+            # Other settings
+            enable_feature_scaling=False,  # Handled by preprocessor
+            enable_warmup=True,
+            fallback_to_cpu=True,  # Already CPU-only
+            debug_mode=False,
+            custom_ops=[],
+            use_platform_accelerator=True,
+            platform_accelerator_config={}
+        )
+        
+    def get_optimal_batch_processor_config(self) -> BatchProcessorConfig:
+        """
+        Generate an optimized batch processor configuration based on device capabilities.
+        
+        Returns:
+            Optimized BatchProcessorConfig
+        """
+        # Get scaling factors
+        factors = self._apply_optimization_mode_factors()
+        
+        # Batch size calculations
+        # Base batch sizes adjusted by environment and optimization mode
+        if self.environment == "edge":
+            base_batch_size = 32
+        elif self.environment == "desktop":
+            base_batch_size = 64
+        else:  # cloud
+            base_batch_size = 128
+        
+        # Apply overall batch size factor
+        batch_factor = factors["batch_size"]
+        initial_batch_size = max(int(base_batch_size * batch_factor), 1)
+        
+        # Min and max are relative to initial
+        min_batch_size = max(int(initial_batch_size * 0.5), 1)
+        max_batch_size = max(int(initial_batch_size * 2.0), min_batch_size + 1)
+        
+        # Queue size depends on environment and available memory
+        if self.environment == "edge":
+            max_queue_size = 500
+        elif self.environment == "desktop":
+            max_queue_size = 1000
+        else:  # cloud
+            max_queue_size = 2000
+        
+        # Adjust queue size based on memory
+        mem_ratio = min(self.usable_memory_gb / 4.0, 1.0)  # Scale based on 4GB reference
+        max_queue_size = int(max_queue_size * mem_ratio)
+        
+        # Batch timeout - shorter for performance mode, longer for memory saving
+        batch_timeout = (
+            0.5 if self.optimization_mode == OptimizationMode.PERFORMANCE else
+            2.0 if self.optimization_mode == OptimizationMode.MEMORY_SAVING else
+            1.0  # Default for balanced and others
+        )
+        
+        # CPU resource allocation
+        cpu_factor = factors["cpu"]
+        num_workers = max(int(self.cpu_count_logical * cpu_factor), 1)
+        max_workers = max(num_workers, 2)  # At least 2 workers
+        
+        # Priority levels - more for cloud/performance, fewer for edge/memory-saving
+        priority_levels = (
+            5 if self.environment == "cloud" and self.optimization_mode in [OptimizationMode.PERFORMANCE, OptimizationMode.FULL_UTILIZATION] else
+            3 if self.environment != "edge" else
+            2  # Minimum for edge devices
+        )
+        
+        # Monitoring interval - less frequent for edge/memory-saving
+        monitoring_interval = (
+            5.0 if self.environment == "edge" or self.optimization_mode == OptimizationMode.MEMORY_SAVING else
+            2.0 if self.environment == "desktop" or self.optimization_mode == OptimizationMode.BALANCED else
+            1.0  # More frequent for cloud/performance
+        )
+        
+        # Memory thresholds - higher for performance, lower for memory-saving
+        memory_warning = (
+            80.0 if self.optimization_mode == OptimizationMode.PERFORMANCE else
+            60.0 if self.optimization_mode == OptimizationMode.MEMORY_SAVING else
+            70.0  # Default
+        )
+        
+        memory_critical = (
+            90.0 if self.optimization_mode == OptimizationMode.PERFORMANCE else
+            75.0 if self.optimization_mode == OptimizationMode.MEMORY_SAVING else
+            85.0  # Default
+        )
+        
+        # Determine processing strategy
+        if self.optimization_mode == OptimizationMode.PERFORMANCE or self.optimization_mode == OptimizationMode.FULL_UTILIZATION:
+            strategy = BatchProcessingStrategy.GREEDY
+        elif self.optimization_mode == OptimizationMode.CONSERVATIVE or self.optimization_mode == OptimizationMode.MEMORY_SAVING:
+            strategy = BatchProcessingStrategy.FIXED
+        else:
+            strategy = BatchProcessingStrategy.ADAPTIVE
+        
+        # Create optimized batch processor config
+        return BatchProcessorConfig(
+            initial_batch_size=initial_batch_size,
+            min_batch_size=min_batch_size,
+            max_batch_size=max_batch_size,
+            max_queue_size=max_queue_size,
+            batch_timeout=batch_timeout,
+            num_workers=num_workers,
+            adaptive_batching=self.optimization_mode != OptimizationMode.CONSERVATIVE,
+            batch_allocation_strategy="dynamic" if self.optimization_mode != OptimizationMode.CONSERVATIVE else "static",
+            enable_priority_queue=self.optimization_mode != OptimizationMode.MEMORY_SAVING,
+            priority_levels=priority_levels,
+            enable_monitoring=True,
+            monitoring_interval=monitoring_interval,
+            enable_memory_optimization=self.optimization_mode != OptimizationMode.PERFORMANCE,
+            enable_prefetching=self.optimization_mode in [OptimizationMode.PERFORMANCE, OptimizationMode.FULL_UTILIZATION, OptimizationMode.BALANCED],
+            prefetch_batches=1 if self.optimization_mode == OptimizationMode.MEMORY_SAVING else 2,
+            checkpoint_batches=self.resilience_level > 1,
+            checkpoint_interval=50 if self.resilience_level > 2 else 100,
+            error_handling="retry",
+            max_retries=3 if self.resilience_level > 0 else 1,
+            retry_delay=0.5,
+            distributed_processing=self.environment == "cloud" and self.cpu_count_physical > 4,
+            resource_allocation={},
+            item_timeout=5.0 if self.optimization_mode == OptimizationMode.PERFORMANCE else 10.0,
+            min_batch_interval=0.0 if self.optimization_mode == OptimizationMode.PERFORMANCE else 0.1,
+            processing_strategy=strategy,
+            enable_adaptive_batching=self.optimization_mode != OptimizationMode.CONSERVATIVE,
+            reduce_batch_on_failure=True,
+            max_batch_memory_mb=None,  # Auto-determine
+            gc_batch_threshold=32 if self.environment != "edge" else 16,
+            monitoring_window=100 if self.environment == "cloud" else 50,
+            max_workers=max_workers,
+            enable_health_monitoring=self.resilience_level > 0,
+            health_check_interval=5.0 if self.resilience_level > 1 else 10.0,
+            memory_warning_threshold=memory_warning,
+            memory_critical_threshold=memory_critical,
+            queue_warning_threshold=max_queue_size // 2,
+            queue_critical_threshold=int(max_queue_size * 0.9),
+            debug_mode=False
+        )
+    def get_system_info(self) -> Dict[str, Any]:
+        """
+        Get comprehensive information about the current system.
+        
+        Returns:
+            Dictionary with detailed system information
+        """
+        system_info = {
+            "system": self.system,
+            "release": self.release,
+            "machine": self.machine,
+            "processor": self.processor,
+            "hostname": self.hostname,
+            "python_version": self.python_version,
+            "environment": self.environment,
+            
+            "cpu": {
+                "count_physical": self.cpu_count_physical,
+                "count_logical": self.cpu_count_logical,
+                "frequency": self.cpu_freq,
+                "features": {
+                    "avx": self.has_avx,
+                    "avx2": self.has_avx2,
+                    "avx512": self.has_avx512,
+                    "sse4": self.has_sse4,
+                    "fma": self.has_fma,
+                    "neon": self.has_neon
+                },
+                "vendor": {
+                    "intel": self.is_intel_cpu,
+                    "amd": self.is_amd_cpu,
+                    "arm": self.is_arm_cpu
+                }
+            },
+            
+            "memory": {
+                "total_gb": self.total_memory_gb,
+                "available_gb": self.available_memory_gb,
+                "usable_gb": self.usable_memory_gb,
+                "swap_gb": self.swap_memory_gb
+            },
+            
+            "disk": {
+                "total_gb": self.disk_total_gb,
+                "free_gb": self.disk_free_gb,
+                "is_ssd": self.is_ssd
+            },
+            
+            "accelerators": [acc.name for acc in self.accelerators]
+        }
+        
+        return system_info
+
+    def get_optimal_training_engine_config(self) -> MLTrainingEngineConfig:
+        """
+        Generate an optimized training engine configuration based on device capabilities.
+        
+        Returns:
+            Optimized MLTrainingEngineConfig
+        """
+        # Get scaling factors
+        factors = self._apply_optimization_mode_factors()
+        
+        # Determine batch size based on memory and optimization mode
+        if self.total_memory_gb < 4:
+            batch_size = 16
+        elif self.total_memory_gb < 8:
+            batch_size = 32
+        elif self.total_memory_gb < 16:
+            batch_size = 64
+        else:
+            batch_size = 128
+        
+        # Apply batch size factor
+        batch_size = max(int(batch_size * factors["batch_size"]), 1)
+        
+        # Determine number of workers for data loading
+        num_workers = max(int(self.cpu_count_logical * factors["workers"]), 1)
+        
+        # Determine learning rate based on batch size and optimization mode
+        base_lr = 0.001  # Default base learning rate
+        
+        if self.optimization_mode == OptimizationMode.PERFORMANCE:
+            base_lr = 0.002  # Faster learning for performance mode
+        elif self.optimization_mode == OptimizationMode.CONSERVATIVE:
+            base_lr = 0.0005  # More conservative learning rate
+        
+        # Scale learning rate with batch size
+        learning_rate = base_lr * (batch_size / 32)
+        
+        # Determine epochs based on optimization mode
+        if self.optimization_mode == OptimizationMode.FULL_UTILIZATION:
+            epochs = 100
+        elif self.optimization_mode == OptimizationMode.PERFORMANCE:
+            epochs = 50
+        elif self.optimization_mode == OptimizationMode.MEMORY_SAVING:
+            epochs = 30
+        else:
+            epochs = 50  # Default
+        
+        # Model selection strategy
+        if self.optimization_mode == OptimizationMode.PERFORMANCE:
+            model_selection = ModelSelectionCriteria.SPEED
+        elif self.optimization_mode == OptimizationMode.CONSERVATIVE:
+            model_selection = ModelSelectionCriteria.ROBUSTNESS
+        else:
+            model_selection = ModelSelectionCriteria.BALANCED
+        
+        # Optimizer config based on optimization mode
+        if self.optimization_mode == OptimizationMode.PERFORMANCE:
+            optimizer_config = {
+                "type": "adam",
+                "betas": [0.9, 0.999],
+                "eps": 1e-8,
+                "weight_decay": 0.0001
+            }
+        elif self.optimization_mode == OptimizationMode.MEMORY_SAVING:
+            optimizer_config = {
+                "type": "sgd",
+                "momentum": 0.9,
+                "weight_decay": 0.0001
+            }
+        else:
+            optimizer_config = {
+                "type": "adam",
+                "betas": [0.9, 0.999],
+                "eps": 1e-8,
+                "weight_decay": 0.0001
+            }
+        
+        # Early stopping patience based on optimization mode
+        if self.optimization_mode == OptimizationMode.PERFORMANCE:
+            patience = 5
+        elif self.optimization_mode == OptimizationMode.CONSERVATIVE:
+            patience = 15
+        else:
+            patience = 10
+        
+        # Memory optimization settings
+        enable_mixed_precision = (
+            self.optimization_mode == OptimizationMode.MEMORY_SAVING or 
+            self.total_memory_gb < 8
+        )
+        
+        gradient_accumulation_steps = (
+            4 if self.total_memory_gb < 4 else
+            2 if self.total_memory_gb < 8 else
+            1
+        )
+        
+        # Checkpoint frequency - more frequent for edge devices or conservative mode
+        checkpoint_freq = (
+            5 if self.environment == "edge" or self.optimization_mode == OptimizationMode.CONSERVATIVE else
+            10 if self.optimization_mode == OptimizationMode.BALANCED else
+            20  # Less frequent for performance mode
+        )
+        
+        # GPU reserved memory percentage (for future GPU support)
+        gpu_reserved_memory = (
+            0.2 if self.optimization_mode == OptimizationMode.MEMORY_SAVING else
+            0.1 if self.optimization_mode == OptimizationMode.BALANCED else
+            0.05  # Minimal for performance mode
+        )
+        
+        # Create the configuration
+        return MLTrainingEngineConfig(
+            # Basic training parameters
+            batch_size=batch_size,
+            learning_rate=learning_rate,
+            epochs=epochs,
+            optimizer=optimizer_config["type"],
+            optimizer_params=optimizer_config,
+            scheduler="cosine" if self.optimization_mode != OptimizationMode.CONSERVATIVE else "step",
+            scheduler_params={},
+            loss_function="auto",
+            
+            # Resource management
+            num_workers=num_workers,
+            pin_memory=self.optimization_mode != OptimizationMode.MEMORY_SAVING,
+            cuda_non_blocking=True,
+            
+            # Memory optimizations
+            enable_mixed_precision=enable_mixed_precision,
+            gradient_accumulation_steps=gradient_accumulation_steps,
+            enable_gradient_checkpointing=self.optimization_mode == OptimizationMode.MEMORY_SAVING,
+            
+            # Regularization
+            weight_decay=0.0001,
+            dropout_rate=0.3 if self.optimization_mode != OptimizationMode.PERFORMANCE else 0.2,
+            label_smoothing=0.1 if self.optimization_mode != OptimizationMode.PERFORMANCE else 0.0,
+            
+            # Validation and early stopping
+            validation_frequency=1,
+            early_stopping=True,
+            patience=patience,
+            
+            # Checkpointing
+            checkpoint_frequency=checkpoint_freq,
+            keep_n_best_checkpoints=3 if self.environment != "edge" else 1,
+            
+            # Advanced settings
+            enable_automl=self.auto_tune,
+            automl_mode=AutoMLMode.BASIC if self.environment == "edge" else AutoMLMode.COMPREHENSIVE,
+            automl_trials=10 if self.environment == "edge" else 30,
+            
+            # Performance tracking
+            enable_profiling=self.optimization_mode == OptimizationMode.FULL_UTILIZATION,
+            profiling_frequency=100,
+            
+            # Model selection
+            model_selection_criteria=model_selection,
+            
+            # GPU reserved memory (for future GPU support)
+            gpu_reserved_memory_fraction=gpu_reserved_memory,
+            
+            # Explainability
+            enable_explainability=False,  # Disabled by default for CPU-only mode
+            explainability_config=ExplainabilityConfig(),
+            
+            # Monitoring
+            enable_monitoring=True,
+            monitoring_config=MonitoringConfig(),
+            
+            # Misc
+            random_seed=42,
+            deterministic=self.optimization_mode == OptimizationMode.CONSERVATIVE,
+            distributed_training=False,  # Not enabled for CPU-only version
+            distributed_backend="gloo" if self.is_intel_cpu else "mpi",
+            world_size=1,
+            debug_mode=False
+        )
 # Helper functions for creating optimized configurations
 def create_optimized_configs(
     config_path: str = "./configs", 
@@ -1244,7 +1443,6 @@ def create_optimized_configs(
     optimization_mode: OptimizationMode = OptimizationMode.BALANCED,
     workload_type: str = "mixed",
     environment: str = "auto",
-    enable_gpu: bool = True,
     enable_specialized_accelerators: bool = True,
     memory_reservation_percent: float = 10.0,
     power_efficiency: bool = False,
@@ -1253,7 +1451,7 @@ def create_optimized_configs(
     config_id: Optional[str] = None
 ) -> Dict[str, str]:
     """
-    Create and save optimized configurations for the ML pipeline using the Enhanced Device Optimizer.
+    Create and save optimized configurations for the ML pipeline using the CPU-Only Device Optimizer.
     
     Args:
         config_path: Path to save configuration files
@@ -1262,7 +1460,6 @@ def create_optimized_configs(
         optimization_mode: Mode for optimization strategy
         workload_type: Type of workload ("inference", "training", "mixed")
         environment: Computing environment ("cloud", "desktop", "edge", "auto")
-        enable_gpu: Whether to enable GPU detection and optimization
         enable_specialized_accelerators: Whether to enable detection of specialized hardware
         memory_reservation_percent: Percentage of memory to reserve for the system
         power_efficiency: Whether to optimize for power efficiency
@@ -1281,7 +1478,6 @@ def create_optimized_configs(
         optimization_mode=optimization_mode,
         workload_type=workload_type,
         environment=environment,
-        enable_gpu=enable_gpu,
         enable_specialized_accelerators=enable_specialized_accelerators,
         memory_reservation_percent=memory_reservation_percent,
         power_efficiency=power_efficiency,
@@ -1301,7 +1497,6 @@ def create_configs_for_all_modes(
     model_registry_path: str = "./model_registry",
     workload_type: str = "mixed",
     environment: str = "auto",
-    enable_gpu: bool = True,
     enable_specialized_accelerators: bool = True,
     memory_reservation_percent: float = 10.0,
     power_efficiency: bool = False,
@@ -1316,7 +1511,6 @@ def create_configs_for_all_modes(
         model_registry_path: Path for model registry
         workload_type: Type of workload ("inference", "training", "mixed")
         environment: Computing environment ("cloud", "desktop", "edge", "auto")
-        enable_gpu: Whether to enable GPU detection and optimization
         enable_specialized_accelerators: Whether to enable detection of specialized hardware
         memory_reservation_percent: Percentage of memory to reserve for the system
         power_efficiency: Whether to optimize for power efficiency
@@ -1333,7 +1527,6 @@ def create_configs_for_all_modes(
         optimization_mode=OptimizationMode.BALANCED,  # Default, will be changed
         workload_type=workload_type,
         environment=environment,
-        enable_gpu=enable_gpu,
         enable_specialized_accelerators=enable_specialized_accelerators,
         memory_reservation_percent=memory_reservation_percent,
         power_efficiency=power_efficiency,
@@ -1365,14 +1558,12 @@ def load_saved_configs(
     return optimizer.load_configs(config_id)
 
 def get_system_information(
-    enable_gpu: bool = True,
     enable_specialized_accelerators: bool = True
 ) -> Dict[str, Any]:
     """
     Get comprehensive information about the current system.
     
     Args:
-        enable_gpu: Whether to detect GPU capabilities
         enable_specialized_accelerators: Whether to detect specialized hardware
     
     Returns:
@@ -1380,7 +1571,6 @@ def get_system_information(
     """
     # Create optimizer just to use its detection capabilities
     optimizer = DeviceOptimizer(
-        enable_gpu=enable_gpu,
         enable_specialized_accelerators=enable_specialized_accelerators
     )
     
@@ -1476,4 +1666,4 @@ def apply_configs_to_pipeline(configs_dict: Dict[str, Any]) -> bool:
         
     except Exception as e:
         logger.error(f"Failed to apply configurations: {e}")
-        return False    
+        return False
