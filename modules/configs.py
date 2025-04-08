@@ -271,14 +271,52 @@ class NormalizationType(Enum):
 @dataclass
 class PreprocessorConfig:
     """Configuration for data preprocessing"""
+    # Normalization settings
     normalization: Union[NormalizationType, str] = NormalizationType.STANDARD
+    robust_percentiles: Tuple[float, float] = (25.0, 75.0)
+    
+    # Data handling settings
     handle_nan: bool = True
     handle_inf: bool = True
+    nan_strategy: str = "mean"  # Options: "mean", "median", "most_frequent", "constant"
+    nan_fill_value: float = 0.0  # Value to use for constant strategy
+    inf_strategy: str = "max_value"  # Options: "max_value", "median", "constant"
+    pos_inf_fill_value: float = np.nan  # Value to use for positive infinity
+    neg_inf_fill_value: float = np.nan  # Value to use for negative infinity
+    inf_buffer: float = 1.0  # Multiplier for max/min when replacing infinities
+    copy_X: bool = True  # Whether to copy data for transformations
+    
+    # Outlier detection and handling settings
     detect_outliers: bool = True
-    outlier_method: str = "isolation_forest"
+    outlier_method: str = "iqr"  # Options: "iqr", "zscore", "percentile", "isolation_forest"
+    outlier_handling: str = "clip"  # Options: "clip", "remove", "winsorize", "mean"
     outlier_contamination: float = 0.05
+    outlier_iqr_multiplier: float = 1.5  # Multiplier for IQR method
+    outlier_zscore_threshold: float = 3.0  # Threshold for zscore method
+    outlier_percentiles: Tuple[float, float] = (1.0, 99.0)  # Percentiles for outlier detection
+    feature_outlier_mask: Optional[List[bool]] = None  # Mask of which features to apply outlier detection to
+    
+    # Clipping settings
+    clip_values: bool = False
+    clip_min: float = float('-inf')
+    clip_max: float = float('inf')
+    
+    # Scaling settings
+    scale_shift: bool = False  # Whether to apply an offset after scaling
+    scale_offset: float = 0.0  # Offset to apply after scaling
+    
+    # Custom functions
+    custom_center_func: Optional[Callable] = None  # Custom function to compute centering values
+    custom_scale_func: Optional[Callable] = None  # Custom function to compute scaling values
+    custom_normalization_fn: Optional[Callable] = None  # Custom normalization function
+    custom_transform_fn: Optional[Callable] = None  # Custom transform function
+    custom_inverse_fn: Optional[Callable] = None  # Custom inverse function
+    
+    # Categorical features
     categorical_encoding: str = "one_hot"
     categorical_max_categories: int = 20
+    
+    # Feature engineering
     auto_feature_selection: bool = True
     numeric_transformations: List[str] = None
     text_vectorization: Optional[str] = "tfidf"
@@ -293,26 +331,22 @@ class PreprocessorConfig:
     feature_interaction_max: int = 10
     custom_transformers: List = None
     transformation_pipeline: List = None
+    
+    # Performance settings
     parallel_processing: bool = True
     cache_preprocessing: bool = True
     verbosity: int = 1
-    robust_percentiles: Tuple[float, float] = (25.0, 75.0)
-    nan_strategy: str = "mean"  # Options: "mean", "median", "most_frequent", "zero"
-    inf_strategy: str = "mean"  # Options: "mean", "median", "zero"
-    outlier_params: Dict[str, Any] = None
-    clip_values: bool = False
-    clip_range: Tuple[float, float] = (-np.inf, np.inf)
     enable_input_validation: bool = True
     input_size_limit: Optional[int] = None  # Max number of samples
     n_jobs: int = -1  # -1 for all cores
     chunk_size: Optional[int] = None  # Process large data in chunks of this size
     cache_enabled: bool = True
     cache_size: int = 128  # LRU cache size
+    
+    # Technical settings
     dtype: np.dtype = np.float64
     epsilon: float = 1e-10  # Small value to avoid division by zero
     debug_mode: bool = False
-    custom_normalization_fn: Optional[Callable] = None
-    custom_transform_fn: Optional[Callable] = None
     version: str = "1.0.0"
     
     def __post_init__(self):
@@ -332,69 +366,45 @@ class PreprocessorConfig:
             self.custom_transformers = []
         if self.transformation_pipeline is None:
             self.transformation_pipeline = []
-        if self.outlier_params is None:
-            self.outlier_params = {
-                "threshold": 1.5,
-                "clip": True,
-                "n_estimators": 100,
-                "contamination": "auto"
-            }
+            
+        # Convert feature outlier mask if needed
+        if self.feature_outlier_mask is None:
+            self.feature_outlier_mask = []
     
     def to_dict(self) -> Dict:
         """Convert config to dictionary for serialization"""
-        config_dict = {
-            "normalization": self.normalization.value,
-            "handle_nan": self.handle_nan,
-            "handle_inf": self.handle_inf,
-            "detect_outliers": self.detect_outliers,
-            "outlier_method": self.outlier_method,
-            "outlier_contamination": self.outlier_contamination,
-            "categorical_encoding": self.categorical_encoding,
-            "categorical_max_categories": self.categorical_max_categories,
-            "auto_feature_selection": self.auto_feature_selection,
-            "numeric_transformations": self.numeric_transformations,
-            "text_vectorization": self.text_vectorization,
-            "text_max_features": self.text_max_features,
-            "dimension_reduction": self.dimension_reduction,
-            "dimension_reduction_target": self.dimension_reduction_target,
-            "datetime_features": self.datetime_features,
-            "image_preprocessing": self.image_preprocessing,
-            "handle_imbalance": self.handle_imbalance,
-            "imbalance_strategy": self.imbalance_strategy,
-            "feature_interaction": self.feature_interaction,
-            "feature_interaction_max": self.feature_interaction_max,
-            "parallel_processing": self.parallel_processing,
-            "cache_preprocessing": self.cache_preprocessing,
-            "verbosity": self.verbosity,
-            "robust_percentiles": self.robust_percentiles,
-            "nan_strategy": self.nan_strategy,
-            "inf_strategy": self.inf_strategy,
-            "outlier_params": self.outlier_params,
-            "clip_values": self.clip_values,
-            "clip_range": self.clip_range,
-            "enable_input_validation": self.enable_input_validation,
-            "input_size_limit": self.input_size_limit,
-            "n_jobs": self.n_jobs,
-            "chunk_size": self.chunk_size,
-            "cache_enabled": self.cache_enabled,
-            "cache_size": self.cache_size,
-            "epsilon": self.epsilon,
-            "debug_mode": self.debug_mode,
-            "version": self.version
-        }
+        # Use dataclasses.asdict to convert to dictionary
+        config_dict = asdict(self)
         
         # Handle special types
+        if isinstance(self.normalization, NormalizationType):
+            config_dict['normalization'] = self.normalization.value
+            
         if isinstance(self.dtype, np.dtype):
             config_dict['dtype'] = str(self.dtype)
-        else:
-            config_dict['dtype'] = self.dtype
             
         # Remove non-serializable callables
         config_dict['custom_normalization_fn'] = None
         config_dict['custom_transform_fn'] = None
+        config_dict['custom_center_func'] = None
+        config_dict['custom_scale_func'] = None
+        config_dict['custom_inverse_fn'] = None
         
         return config_dict
-
+        
+    @classmethod
+    def from_dict(cls, config_dict: Dict) -> 'PreprocessorConfig':
+        """Create config from dictionary"""
+        # Remove any unknown keys
+        valid_fields = {field.name for field in fields(cls)}
+        filtered_dict = {k: v for k, v in config_dict.items() if k in valid_fields}
+        
+        # Handle special types
+        if 'dtype' in filtered_dict and isinstance(filtered_dict['dtype'], str):
+            filtered_dict['dtype'] = np.dtype(filtered_dict['dtype'])
+            
+        # Create instance
+        return cls(**filtered_dict)
 # -----------------------------------------------------------------------------
 # Configuration for Inference Engine
 # -----------------------------------------------------------------------------

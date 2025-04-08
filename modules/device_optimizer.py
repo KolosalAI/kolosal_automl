@@ -301,14 +301,6 @@ class DeviceOptimizer:
             except ImportError:
                 pass
         
-        # Check for Intel IPEX (Intel Extension for PyTorch)
-        try:
-            import intel_extension_for_pytorch
-            self.accelerators.append(HardwareAccelerator.INTEL_IPEX)
-            logger.info("Detected Intel Extension for PyTorch (IPEX)")
-        except ImportError:
-            pass
-        
         # Check for ARM NEON support on ARM architectures
         if self.is_arm_cpu and self.has_neon:
             self.accelerators.append(HardwareAccelerator.ARM_NEON)

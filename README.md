@@ -208,10 +208,10 @@ ml-training-engine/
 | test_monitoring_api.py        | ⬜ NOT RUN |
 | test_optimizer_api.py         | ⬜ NOT RUN |
 | test_batch_processor.py       | ✅ PASSED |
-| test_data_preprocessor.py     | ⬜ NOT RUN |
-| test_device_optimizer.py      | ⬜ NOT RUN |
+| test_data_preprocessor.py     | ❌ FAILED |
+| test_device_optimizer.py      | ❌ FAILED |
 | test_inference_engine.py      | ⬜ NOT RUN |
-| test_lru_ttl_cache.py         | ⬜ NOT RUN |
+| test_lru_ttl_cache.py         | ✅ PASSED |
 | test_model_manager.py         | ⬜ NOT RUN |
 | test_optimizer_asht.py        | ⬜ NOT RUN |
 | test_optimizer_hyperx.py      | ⬜ NOT RUN |

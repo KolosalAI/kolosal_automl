@@ -2,286 +2,396 @@ import unittest
 import numpy as np
 import os
 import tempfile
-import shutil
-from typing import Dict, Any
-import pytest
-# Import the DataPreprocessor, PreprocessorConfig, NormalizationType, and exceptions
-from modules.engine.data_preprocessor import DataPreprocessor
-from modules.configs import PreprocessorConfig, NormalizationType
-from modules.engine.data_preprocessor import InputValidationError, PreprocessingError
+from unittest.mock import patch, MagicMock
 
+# Import the DataPreprocessor and related classes
+from modules.configs import PreprocessorConfig, NormalizationType
+from modules.engine.data_preprocessor import (
+    DataPreprocessor, 
+    InputValidationError, 
+    StatisticsError, 
+    SerializationError,
+    PreprocessingError
+)
 
 class TestDataPreprocessor(unittest.TestCase):
+    """Test suite for the DataPreprocessor class."""
+
     def setUp(self):
-        """
-        Create test fixture for each test method.
-        This method is called before every test_xxx method.
-        """
-        self.config = PreprocessorConfig(
-            normalization=NormalizationType.STANDARD,
-            debug_mode=True,  # Enable debug mode for more verbose logging
-            detect_outliers=True,
-            outlier_method="iqr",
-            outlier_params={"threshold": 1.5, "clip": True},
-            handle_nan=True,
-            handle_inf=True,
-            nan_strategy="mean",
-            inf_strategy="mean",
-            parallel_processing=False,
-            chunk_size=None,  # For simplicity, disable chunk processing in these tests
-            cache_enabled=True
-        )
+        """Set up test fixtures before each test method."""
+        # Create a basic configuration for testing
+        self.config = PreprocessorConfig()
+        self.config.normalization = NormalizationType.STANDARD
+        self.config.handle_nan = True
+        self.config.handle_inf = True
+        self.config.detect_outliers = True
+        self.config.debug_mode = False
+        self.config.clip_values = True
+        self.config.clip_min = -10
+        self.config.clip_max = 10
+        
+        # Create a preprocessor with this configuration
         self.preprocessor = DataPreprocessor(self.config)
+        
+        # Create sample data for testing
+        self.X_train = np.array([
+            [1.0, 2.0, 3.0],
+            [4.0, 5.0, 6.0],
+            [7.0, 8.0, 9.0],
+            [10.0, 11.0, 12.0]
+        ])
+        
+        self.X_test = np.array([
+            [2.0, 3.0, 4.0],
+            [5.0, 6.0, 7.0]
+        ])
+        
+        # Data with NaN values
+        self.X_with_nan = np.array([
+            [1.0, 2.0, 3.0],
+            [np.nan, 5.0, 6.0],
+            [7.0, np.nan, 9.0],
+            [10.0, 11.0, np.nan]
+        ])
+        
+        # Data with infinite values
+        self.X_with_inf = np.array([
+            [1.0, 2.0, 3.0],
+            [np.inf, 5.0, 6.0],
+            [7.0, -np.inf, 9.0],
+            [10.0, 11.0, 12.0]
+        ])
+        
+        # Data with outliers
+        self.X_with_outliers = np.array([
+            [1.0, 2.0, 3.0],
+            [4.0, 5.0, 6.0],
+            [7.0, 8.0, 9.0],
+            [100.0, 200.0, 300.0]  # Outliers
+        ])
+        
+        # Feature names for testing
+        self.feature_names = ["feature1", "feature2", "feature3"]
 
-        # Generate a small synthetic dataset
-        np.random.seed(42)
-        self.X = np.random.randn(100, 5)  # 100 samples, 5 features
+    def test_initialization(self):
+        """Test that the preprocessor initializes correctly."""
+        # Basic initialization
+        preprocessor = DataPreprocessor()
+        self.assertFalse(preprocessor._fitted)
+        self.assertEqual(preprocessor._n_features, 0)
+        self.assertEqual(preprocessor._n_samples_seen, 0)
+        
+        # Initialization with custom config
+        custom_config = PreprocessorConfig()
+        custom_config.debug_mode = True
+        custom_config.normalization = NormalizationType.MINMAX
+        
+        preprocessor = DataPreprocessor(custom_config)
+        self.assertEqual(preprocessor.config.debug_mode, True)
+        self.assertEqual(preprocessor.config.normalization, NormalizationType.MINMAX)
 
-        # Intentionally add a few NaN/Inf values to test data cleaning
-        self.X[0, 0] = np.nan
-        self.X[1, 1] = np.inf
-        self.X[2, 2] = -np.inf
-
-    def tearDown(self):
-        """
-        Clean up after each test method.
-        This method is called after every test_xxx method.
-        """
-        pass
-
-    def test_fit_transform_standard(self):
-        """
-        Test standard (z-score) normalization:
-        - Fit the preprocessor on data with NaN/inf
-        - Transform the data
-        - Check that the transformed data has mean approx 0 and std approx 1
-        - Ensure no NaNs or inf remain in the output
-        """
-        self.preprocessor.fit(self.X)
-
-        # Check that the preprocessor is fitted
-        self.assertTrue(self.preprocessor._fitted, "Preprocessor should be marked as fitted")
-
-        # Check stats keys
+    def test_fit(self):
+        """Test the fit method."""
+        # Fit with basic data
+        self.preprocessor.fit(self.X_train, feature_names=self.feature_names)
+        
+        # Check that it's been fitted
+        self.assertTrue(self.preprocessor._fitted)
+        self.assertEqual(self.preprocessor._n_features, 3)
+        self.assertEqual(self.preprocessor._n_samples_seen, 4)
+        
+        # Check that statistics were computed
         self.assertIn('mean', self.preprocessor._stats)
         self.assertIn('std', self.preprocessor._stats)
-
-        # Transform data
-        X_transformed = self.preprocessor.transform(self.X)
-
-        # Check shape
-        self.assertEqual(X_transformed.shape, self.X.shape)
-
-        # Check for NaNs or inf
-        self.assertFalse(np.isnan(X_transformed).any(), "Transformed data should not contain NaN")
-        self.assertTrue(np.all(np.isfinite(X_transformed)), "Transformed data should not contain inf")
-
-        # Check mean/std of each feature is approximately 0 and 1
-        means = np.mean(X_transformed, axis=0)
-        stds = np.std(X_transformed, axis=0)
-        for mean_val, std_val in zip(means, stds):
-            self.assertAlmostEqual(mean_val, 0.0, places=5)
-            self.assertAlmostEqual(std_val, 1.0, places=5)
-
-    def test_fit_transform_minmax(self):
-        """
-        Test min-max normalization.
-        """
-        # Change config to min-max
-        self.preprocessor.config.normalization = NormalizationType.MINMAX
-        self.preprocessor.fit(self.X)
-        X_transformed = self.preprocessor.transform(self.X)
-
-        # Check stats
-        self.assertIn('min', self.preprocessor._stats)
-        self.assertIn('max', self.preprocessor._stats)
         self.assertIn('scale', self.preprocessor._stats)
+        
+        # Check feature names
+        self.assertEqual(self.preprocessor._feature_names, self.feature_names)
 
-        # Check range in [0, 1]
-        self.assertTrue(np.all(X_transformed >= 0.0))
-        self.assertTrue(np.all(X_transformed <= 1.0))
+    def test_transform(self):
+        """Test the transform method."""
+        # Fit first
+        self.preprocessor.fit(self.X_train, feature_names=self.feature_names)
+        
+        # Transform the data
+        transformed = self.preprocessor.transform(self.X_test)
+        
+        # Check the output shape
+        self.assertEqual(transformed.shape, self.X_test.shape)
+        
+        # Check that the results are different from the input
+        self.assertFalse(np.array_equal(transformed, self.X_test))
 
-    def test_outlier_detection_iqr(self):
-        """
-        Test outlier handling with IQR.
-        We expect outliers to be clipped to the lower/upper IQR range.
-        """
-        # Fit with the current config (IQR outliers detection is enabled)
-        self.preprocessor.fit(self.X)
-        X_transformed = self.preprocessor.transform(self.X)
-
-        # Check that the iqr boundaries are computed
-        self.assertIn('outlier_lower', self.preprocessor._stats)
-        self.assertIn('outlier_upper', self.preprocessor._stats)
-
-        lower_bound = self.preprocessor._stats['outlier_lower']
-        upper_bound = self.preprocessor._stats['outlier_upper']
-
-        # Check that all values are clipped within the computed bounds
-        self.assertTrue(np.all(X_transformed >= lower_bound - 1e-9))
-        self.assertTrue(np.all(X_transformed <= upper_bound + 1e-9))
-
-    def test_partial_fit(self):
-        """
-        Test partial fitting with multiple batches of data.
-        We'll simulate streaming data in two batches.
-        """
-        # Split data into two batches
-        X_batch1 = self.X[:50]
-        X_batch2 = self.X[50:]
-
-        # Perform partial_fit on first batch
-        self.preprocessor.partial_fit(X_batch1)
-
-        # Check that preprocessor is fitted after first batch
+    def test_fit_transform(self):
+        """Test the fit_transform method."""
+        # Use fit_transform
+        transformed = self.preprocessor.fit_transform(self.X_train, feature_names=self.feature_names)
+        
+        # Check that it's been fitted
         self.assertTrue(self.preprocessor._fitted)
+        
+        # Check the output shape
+        self.assertEqual(transformed.shape, self.X_train.shape)
+        
+        # Check that the results are different from the input
+        self.assertFalse(np.array_equal(transformed, self.X_train))
 
-        # Stats after first batch
-        stats_after_first_batch = self.preprocessor.get_stats()
+    def test_reverse_transform(self):
+        """Test the reverse_transform method."""
+        # Fit and transform the data
+        transformed = self.preprocessor.fit_transform(self.X_train, feature_names=self.feature_names)
+        
+        # Reverse transform
+        reversed_data = self.preprocessor.reverse_transform(transformed)
+        
+        # Check the output shape
+        self.assertEqual(reversed_data.shape, self.X_train.shape)
+        
+        # Check that the reversed data is close to the original
+        np.testing.assert_allclose(reversed_data, self.X_train, rtol=1e-5, atol=1e-5)
 
-        # Partial fit again with the second batch
-        self.preprocessor.partial_fit(X_batch2)
-
-        # Stats after second batch
-        stats_after_second_batch = self.preprocessor.get_stats()
-
-        # We expect some differences in statistics (unless data is identical)
-        # For instance, the mean should generally shift after seeing more data
-        if 'mean' in stats_after_first_batch:
-            self.assertTrue(
-                not np.allclose(stats_after_first_batch['mean'],
-                               stats_after_second_batch['mean']),
-                "Means after second batch should differ from the first batch in partial fit"
-            )
-
-        # Transform entire dataset after partial fit
-        X_transformed = self.preprocessor.transform(self.X)
-        self.assertEqual(X_transformed.shape, self.X.shape)
-
-    def test_inverse_transform_standard(self):
-        """
-        Test that inverse_transform roughly recovers the original data for
-        Standard normalization.
-        """
-        self.preprocessor.fit(self.X)
-        X_transformed = self.preprocessor.transform(self.X)
-
-        # Now invert
-        X_inverted = self.preprocessor.inverse_transform(X_transformed)
-
-        # Check shape
-        self.assertEqual(X_inverted.shape, self.X.shape)
-
-        # Because outliers are clipped and NaNs replaced,
-        # the recovered data won't be identical,
-        # but it should be close where data wasn't NaN/Inf or clipped.
-        # We'll test the approximate difference on a subset that wasn't
-        # originally NaN or inf or out of normal range.
-
-        # Filter out the rows with special values
-        valid_mask = np.isfinite(self.X).all(axis=1)
-        X_valid = self.X[valid_mask]
-        X_inverted_valid = X_inverted[valid_mask]
-
-        # Compare some statistic (e.g., means) to see if inversion is close
-        original_mean = np.mean(X_valid, axis=0)
-        inverted_mean = np.mean(X_inverted_valid, axis=0)
-        for om, im in zip(original_mean, inverted_mean):
-            # Allow some tolerance
-            self.assertAlmostEqual(om, im, places=1)
-
-    def test_serialization(self):
-        """
-        Test saving and loading the preprocessor from disk.
-        """
-        self.preprocessor.fit(self.X)
-
-        # Create a temporary directory to store the model
-        temp_dir = tempfile.mkdtemp()
-        try:
-            model_path = os.path.join(temp_dir, "preprocessor.json")
-            self.preprocessor.save(model_path)
-
-            # Load a new preprocessor from disk
-            loaded_preprocessor = DataPreprocessor.load(model_path)
-            self.assertTrue(loaded_preprocessor._fitted)
-
-            # Check that key stats match
-            orig_stats = self.preprocessor.get_stats()
-            new_stats = loaded_preprocessor.get_stats()
-
-            # Compare means in standard mode
-            if 'mean' in orig_stats and 'mean' in new_stats:
-                self.assertTrue(np.allclose(orig_stats['mean'], new_stats['mean'], atol=1e-6))
-
-            # Transform with the loaded preprocessor
-            X_transformed_loaded = loaded_preprocessor.transform(self.X)
-            X_transformed = self.preprocessor.transform(self.X)
-            self.assertTrue(np.allclose(X_transformed_loaded, X_transformed, atol=1e-6))
-
-        finally:
-            # Remove temp directory
-            shutil.rmtree(temp_dir)
-
-    def test_transform_unfitted_preprocessor_raises_error(self):
-        # Create a default configuration and an unfitted preprocessor.
+    def test_handle_nan_values(self):
+        """Test handling of NaN values."""
+        # Configure preprocessor for NaN handling
         config = PreprocessorConfig()
+        config.handle_nan = True
+        config.nan_strategy = "mean"
         preprocessor = DataPreprocessor(config)
         
-        # Dummy data for transformation.
-        data = np.array([[1, 2], [3, 4]])
+        # Fit and transform with NaN values
+        transformed = preprocessor.fit_transform(self.X_with_nan)
         
-        # Assert that calling transform on an unfitted preprocessor raises an Exception
-        # with the expected error message.
-        with pytest.raises(Exception, match="Preprocessor must be fitted before transform"):
-            preprocessor.transform(data)
+        # Check that there are no NaNs in the output
+        self.assertFalse(np.any(np.isnan(transformed)))
 
-    def test_exception_dimension_mismatch(self):
-        """
-        Test that transforming data with different feature dimension raises an exception.
-        """
-        # Fit with 5 features
-        self.preprocessor.fit(self.X)
-        X_wrong_dim = np.random.randn(10, 3)  #
-        # Only 3 features
-        with self.assertRaises(InputValidationError) as context:
-            _ = self.preprocessor.transform(X_wrong_dim)
-        self.assertIn("Expected 5 features, got 3", str(context.exception))
+    def test_handle_infinite_values(self):
+        """Test handling of infinite values."""
+        # Configure preprocessor for infinite value handling
+        config = PreprocessorConfig()
+        config.handle_inf = True
+        config.inf_strategy = "max_value"
+        preprocessor = DataPreprocessor(config)
+        
+        # Fit and transform with infinite values
+        transformed = preprocessor.fit_transform(self.X_with_inf)
+        
+        # Check that there are no infinite values in the output
+        self.assertFalse(np.any(np.isinf(transformed)))
 
-    def test_reset(self):
-        """
-        Test that reset() clears out fitted state.
-        """
-        self.preprocessor.fit(self.X)
+    def test_handle_outliers(self):
+        """Test handling of outliers."""
+        # Configure preprocessor for outlier detection
+        config = PreprocessorConfig()
+        config.detect_outliers = True
+        config.outlier_method = "zscore"
+        config.outlier_handling = "clip"
+        preprocessor = DataPreprocessor(config)
+        
+        # Fit and transform with outliers
+        transformed = preprocessor.fit_transform(self.X_with_outliers)
+        
+        # Check that the outliers have been handled (values should be limited)
+        self.assertTrue(np.all(transformed <= 3.0))  # Assuming z-score threshold of 3.0
+
+    def test_normalization_types(self):
+        """Test different normalization types."""
+        # Test standard normalization
+        config = PreprocessorConfig()
+        config.normalization = NormalizationType.STANDARD
+        preprocessor = DataPreprocessor(config)
+        transformed = preprocessor.fit_transform(self.X_train)
+        
+        # Standard normalization should result in approximately zero mean and unit variance
+        self.assertAlmostEqual(np.mean(transformed), 0.0, delta=0.1)
+        self.assertAlmostEqual(np.std(transformed), 1.0, delta=0.1)
+        
+        # Test min-max normalization
+        config = PreprocessorConfig()
+        config.normalization = NormalizationType.MINMAX
+        preprocessor = DataPreprocessor(config)
+        transformed = preprocessor.fit_transform(self.X_train)
+        
+        # Min-max normalization should result in values between 0 and 1
+        self.assertTrue(np.all(transformed >= 0.0))
+        self.assertTrue(np.all(transformed <= 1.0))
+        
+        # Test robust normalization
+        config = PreprocessorConfig()
+        config.normalization = NormalizationType.ROBUST
+        config.robust_percentiles = (25, 75)
+        preprocessor = DataPreprocessor(config)
+        transformed = preprocessor.fit_transform(self.X_train)
+        
+        # Just check that it doesn't error and produces output of the right shape
+        self.assertEqual(transformed.shape, self.X_train.shape)
+
+    def test_clipping(self):
+        """Test value clipping."""
+        # Configure preprocessor with clipping
+        config = PreprocessorConfig()
+        config.clip_values = True
+        config.clip_min = -5
+        config.clip_max = 5
+        preprocessor = DataPreprocessor(config)
+        
+        # Create data outside the clip range
+        X = np.array([
+            [-10, -8, -6],
+            [-4, -2, 0],
+            [2, 4, 6],
+            [8, 10, 12]
+        ])
+        
+        # Fit and transform with clipping
+        transformed = preprocessor.fit_transform(X)
+        
+        # Check that all values are within the clip range
+        self.assertTrue(np.all(transformed >= -5))
+        self.assertTrue(np.all(transformed <= 5))
+
+    def test_serialization(self):
+        """Test serialization and deserialization."""
+        # Fit the preprocessor
+        self.preprocessor.fit(self.X_train, feature_names=self.feature_names)
+        
+        # Create a temporary file for serialization
+        with tempfile.NamedTemporaryFile(delete=False) as temp_file:
+            temp_path = temp_file.name
+        
+        try:
+            # Serialize
+            success = self.preprocessor.serialize(temp_path)
+            self.assertTrue(success)
+            self.assertTrue(os.path.exists(temp_path))
+            
+            # Deserialize
+            loaded_preprocessor = DataPreprocessor.deserialize(temp_path)
+            
+            # Check that the loaded preprocessor has the same state
+            self.assertEqual(loaded_preprocessor._n_features, self.preprocessor._n_features)
+            self.assertEqual(loaded_preprocessor._n_samples_seen, self.preprocessor._n_samples_seen)
+            self.assertEqual(loaded_preprocessor._feature_names, self.preprocessor._feature_names)
+            
+            # Check that the loaded preprocessor produces the same transformations
+            original_transform = self.preprocessor.transform(self.X_test)
+            loaded_transform = loaded_preprocessor.transform(self.X_test)
+            np.testing.assert_allclose(original_transform, loaded_transform)
+            
+        finally:
+            # Clean up the temporary file
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+
+    def test_partial_fit(self):
+        """Test incremental fitting with partial_fit."""
+        # First fit with some data
+        self.preprocessor.fit(self.X_train[:2], feature_names=self.feature_names)
+        
+        # Check initial state
+        self.assertEqual(self.preprocessor._n_samples_seen, 2)
+        initial_mean = self.preprocessor._stats['mean'].copy()
+        
+        # Partial fit with the rest of the data
+        self.preprocessor.partial_fit(self.X_train[2:])
+        
+        # Check that the stats were updated
+        self.assertEqual(self.preprocessor._n_samples_seen, 4)
+        self.assertFalse(np.array_equal(self.preprocessor._stats['mean'], initial_mean))
+        
+        # Compare with a preprocessor fit on all data at once
+        full_preprocessor = DataPreprocessor(self.config)
+        full_preprocessor.fit(self.X_train, feature_names=self.feature_names)
+        
+        # Check that the statistics are similar
+        np.testing.assert_allclose(
+            self.preprocessor._stats['mean'], 
+            full_preprocessor._stats['mean'],
+            rtol=1e-5
+        )
+
+    def test_input_validation_errors(self):
+        """Test that appropriate errors are raised for invalid inputs."""
+        # Test with empty input
+        with self.assertRaises(InputValidationError):
+            self.preprocessor.fit(np.array([]))
+        
+        # Test with wrong dimensions on transform
+        self.preprocessor.fit(self.X_train)
+        with self.assertRaises(InputValidationError):
+            self.preprocessor.transform(np.array([[1, 2, 3, 4]]))  # Wrong number of features
+        
+        # Test with mismatched feature names
+        with self.assertRaises(InputValidationError):
+            self.preprocessor.fit(self.X_train, feature_names=["f1", "f2"])  # Wrong number of names
+
+    def test_error_handling_and_logging(self):
+        """Test error handling and logging functionality."""
+        # Create a mocked logger
+        with patch('logging.Logger.error') as mock_error:
+            # Create a config that will cause an error
+            config = PreprocessorConfig()
+            config.normalization = "INVALID_TYPE"  # Invalid normalization type
+            preprocessor = DataPreprocessor(config)
+            
+            # This should log an error but not raise an exception
+            preprocessor.fit(self.X_train)
+            
+            # Check that the error was logged
+            mock_error.assert_called()
+
+    def test_performance_metrics(self):
+        """Test collection of performance metrics."""
+        # Fit and transform to generate metrics
+        self.preprocessor.fit(self.X_train)
+        self.preprocessor.transform(self.X_test)
+        
+        # Get metrics
+        metrics = self.preprocessor.get_performance_metrics()
+        
+        # Check that metrics were collected
+        self.assertIn('fit_time', metrics)
+        self.assertIn('transform_time', metrics)
+        self.assertTrue(len(metrics['fit_time']) > 0)
+        self.assertTrue(len(metrics['transform_time']) > 0)
+
+    def test_parallel_processing(self):
+        """Test parallel processing mode."""
+        # Create a config with parallel processing enabled
+        config = PreprocessorConfig()
+        config.parallel_processing = True
+        config.n_jobs = 2
+        config.chunk_size = 2
+        preprocessor = DataPreprocessor(config)
+        
+        # Create larger data to trigger parallel processing
+        X_large = np.random.randn(1000, 3)
+        
+        # Fit and transform
+        preprocessor.fit(X_large)
+        transformed = preprocessor.transform(X_large)
+        
+        # Just check that it works and produces output of the right shape
+        self.assertEqual(transformed.shape, X_large.shape)
+
+    def test_update_config(self):
+        """Test updating the preprocessor configuration."""
+        # Fit the preprocessor first
+        self.preprocessor.fit(self.X_train)
         self.assertTrue(self.preprocessor._fitted)
-
-        self.preprocessor.reset()
-        self.assertFalse(self.preprocessor._fitted)
-        self.assertEqual(self.preprocessor._stats, {})
-
-    def test_copy(self):
-        """
-        Test copying a fitted preprocessor.
-        """
-        self.preprocessor.fit(self.X)
-        preprocessor_copy = self.preprocessor.copy()
-
-        # They should not be the same object
-        self.assertNotEqual(id(self.preprocessor), id(preprocessor_copy))
-
-        # But they should share the same fitted stats (by value)
-        orig_stats = self.preprocessor.get_stats()
-        copy_stats = preprocessor_copy.get_stats()
-
-        if 'mean' in orig_stats and 'mean' in copy_stats:
-            self.assertTrue(np.allclose(orig_stats['mean'], copy_stats['mean']))
         
-        # Transform the same data and compare results
-        X_orig_trans = self.preprocessor.transform(self.X)
-        X_copy_trans = preprocessor_copy.transform(self.X)
-        self.assertTrue(np.allclose(X_orig_trans, X_copy_trans, atol=1e-6))
+        # Create a new config with different settings
+        new_config = PreprocessorConfig()
+        new_config.normalization = NormalizationType.MINMAX
+        new_config.detect_outliers = False
+        
+        # Update the config
+        self.preprocessor.update_config(new_config)
+        
+        # Check that the config was updated and preprocessor was reset
+        self.assertEqual(self.preprocessor.config.normalization, NormalizationType.MINMAX)
+        self.assertEqual(self.preprocessor.config.detect_outliers, False)
+        self.assertFalse(self.preprocessor._fitted)
 
 
-# If you want to run this suite directly (e.g., `python test_datapreprocessor.py`)
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

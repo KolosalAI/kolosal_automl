@@ -6,7 +6,7 @@ import hashlib
 import json
 import pickle
 import traceback
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union, Callable, Tuple
 from functools import wraps
 from contextlib import contextmanager
 from dataclasses import asdict
@@ -33,6 +33,7 @@ class SerializationError(PreprocessingError):
     """Exception raised for errors in serialization/deserialization."""
     pass
 
+
 def log_operation(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
@@ -51,6 +52,7 @@ def log_operation(func):
             else:
                 raise Exception(f"{func.__name__} failed after {elapsed_time:.4f} seconds: {e}") from e
     return wrapper
+
 
 class DataPreprocessor:
     """
@@ -101,6 +103,7 @@ class DataPreprocessor:
         # Initialize processing functions
         self._init_processing_functions()
         
+        # Initialize caching based on config
         if self.config.cache_enabled:
             self._transform_cache = {}
         else:
@@ -116,6 +119,32 @@ class DataPreprocessor:
         
         # Initialize running stats
         self._running_stats = None
+        
+        # Get feature outlier handling mask
+        self.feature_outlier_mask = getattr(self.config, 'feature_outlier_mask', None)
+        
+        # Initialize nan and inf handling configurations
+        self.nan_fill_value = getattr(self.config, 'nan_fill_value', 0.0)
+        self.pos_inf_fill_value = getattr(self.config, 'pos_inf_fill_value', float('nan'))
+        self.neg_inf_fill_value = getattr(self.config, 'neg_inf_fill_value', float('nan'))
+        self.inf_buffer = getattr(self.config, 'inf_buffer', 1.0)
+        
+        # Init clipping values
+        self.clip_min = getattr(self.config, 'clip_min', float('-inf'))
+        self.clip_max = getattr(self.config, 'clip_max', float('inf'))
+        
+        # Handle scale shift
+        self.scale_shift = getattr(self.config, 'scale_shift', False)
+        self.scale_offset = getattr(self.config, 'scale_offset', 0.0)
+        
+        # Initialize custom functions
+        self.custom_center_func = getattr(self.config, 'custom_center_func', None)
+        self.custom_scale_func = getattr(self.config, 'custom_scale_func', None)
+        
+        # Initialize outlier params
+        self.outlier_iqr_multiplier = getattr(self.config, 'outlier_iqr_multiplier', 1.5)
+        self.outlier_zscore_threshold = getattr(self.config, 'outlier_zscore_threshold', 3.0)
+        self.outlier_percentiles = getattr(self.config, 'outlier_percentiles', (1.0, 99.0))
         
         self.logger.info(f"DataPreprocessor initialized with version {self._version}")
 
@@ -193,36 +222,44 @@ class DataPreprocessor:
                 raise PreprocessingError(error_msg) from e
 
     @log_operation
-    def fit(self, X, y=None, **fit_params):
-        """Fit the preprocessor to the data"""
+    def fit(self, X, y=None, feature_names=None, **fit_params):
+        """
+        Fit the preprocessor to the data
+        
+        Args:
+            X: Input data to fit
+            y: Target values (unused, for API compatibility)
+            feature_names: Optional list of feature names
+            **fit_params: Additional parameters
+            
+        Returns:
+            self: The fitted preprocessor
+        """
         with self._lock, self._error_context("fit operation"):
+            start_time = time.time()
+            
             # Store the input shape
             self.input_shape_ = X.shape
             
             # Extract feature names if available
-            # This is where the error is happening - need to fix the feature_names check
-            feature_names = None
-            if hasattr(X, 'columns'):
+            if feature_names is None and hasattr(X, 'columns') and hasattr(X.columns, 'tolist'):
                 feature_names = X.columns.tolist()
             
-            # Instead of directly evaluating feature_names as a boolean condition, check properly
-            if feature_names is not None and len(feature_names) > 0:
-                self._feature_names = feature_names
-            else:
-                # Create default feature names if none available
-                self._feature_names = [f"feature_{i}" for i in range(X.shape[1])]
             # Validate and convert input
             X = self._validate_and_convert_input(X, operation="fit")
             
             # Store feature count and names
             self._n_features = X.shape[1] if X.ndim > 1 else 1
-            if feature_names:
+            
+            # Process feature names
+            if feature_names is not None and len(feature_names) > 0:
                 if len(feature_names) != self._n_features:
                     raise InputValidationError(
                         f"Feature names length ({len(feature_names)}) doesn't match data dimensions ({self._n_features})"
                     )
                 self._feature_names = feature_names
             else:
+                # Create default feature names
                 self._feature_names = [f"feature_{i}" for i in range(self._n_features)]
             
             # Process in chunks if specified and data is large
@@ -242,14 +279,19 @@ class DataPreprocessor:
             if self.config.nan_strategy == "most_frequent":
                 self._compute_most_frequent_values(X)
             
-            # Ensure standard stats are computed for standard normalization
-            if self.config.normalization == NormalizationType.STANDARD:
+            # Ensure standard stats are computed for standard normalization if not already computed
+            norm_type = self._get_norm_type(self.config.normalization)
+            if norm_type == NormalizationType.STANDARD and 'mean' not in self._stats:
                 self._compute_standard_stats(X)
             
-            self.logger.info(f"Fitted preprocessor on {self._n_samples_seen} samples, {self._n_features} features")
+            # Track fit time for metrics
+            fit_time = time.time() - start_time
+            self._metrics['fit_time'].append(fit_time)
+            
+            self.logger.info(f"Fitted preprocessor on {self._n_samples_seen} samples, {self._n_features} features in {fit_time:.4f}s")
             return self
 
-    def _compute_most_frequent_values(self, X: np.array) -> None:
+    def _compute_most_frequent_values(self, X: np.ndarray) -> None:
         """Compute most frequent value for each feature."""
         most_frequent = np.zeros(X.shape[1], dtype=self.config.dtype)
         
@@ -265,9 +307,9 @@ class DataPreprocessor:
                 
         self._stats['most_frequent'] = most_frequent
 
-    def _fit_full(self, X: np.array) -> None:
+    def _fit_full(self, X: np.ndarray) -> None:
         """Compute statistics on the full dataset."""
-        norm_type = self.config.normalization
+        norm_type = self._get_norm_type(self.config.normalization)
         
         if norm_type == NormalizationType.STANDARD:
             self._compute_standard_stats(X)
@@ -275,14 +317,14 @@ class DataPreprocessor:
             self._compute_minmax_stats(X)
         elif norm_type == NormalizationType.ROBUST:
             self._compute_robust_stats(X)
-        elif norm_type == NormalizationType.CUSTOM:
+        else:  # Handle custom or other normalization types
             self._compute_custom_stats(X)
             
         # Compute outlier statistics if needed
         if self.config.detect_outliers:
             self._compute_outlier_stats(X)
 
-    def _fit_in_chunks(self, X: np.array) -> None:
+    def _fit_in_chunks(self, X: np.ndarray) -> None:
         """
         Fit on large datasets by processing in chunks to reduce memory usage.
         Incrementally updates statistics.
@@ -312,7 +354,7 @@ class DataPreprocessor:
 
     def _init_running_stats(self) -> None:
         """Initialize running statistics for incremental fitting."""
-        norm_type = self.config.normalization
+        norm_type = self._get_norm_type(self.config.normalization)
         
         if norm_type == NormalizationType.STANDARD:
             self._running_stats = {
@@ -334,9 +376,9 @@ class DataPreprocessor:
                 'n_seen': 0
             }
 
-    def _update_stats_with_chunk(self, chunk: np.array) -> None:
+    def _update_stats_with_chunk(self, chunk: np.ndarray) -> None:
         """Update running statistics with a new data chunk."""
-        norm_type = self.config.normalization
+        norm_type = self._get_norm_type(self.config.normalization)
         
         if norm_type == NormalizationType.STANDARD:
             # Update mean and std incrementally
@@ -385,8 +427,8 @@ class DataPreprocessor:
         if self._running_stats is None:
             self.logger.warning("No running stats to finalize")
             return
-            
-        norm_type = self.config.normalization
+        
+        norm_type = self._get_norm_type(self.config.normalization)
         
         if norm_type == NormalizationType.STANDARD:
             # Compute final mean and std
@@ -472,6 +514,8 @@ class DataPreprocessor:
         if not self._fitted:
             raise RuntimeError("Preprocessor must be fitted before transform")
 
+        start_time = time.time()
+        
         with self._error_context("transform operation"):
             # Validate and convert input
             X = self._validate_and_convert_input(X, operation="transform", copy=copy)
@@ -483,25 +527,33 @@ class DataPreprocessor:
                 and X.shape[0] > 1000 
                 and self.config.chunk_size
             ):
-                return self._transform_parallel(X)
-
-            # --- Manual caching for smaller arrays ---
-            if self.config.cache_enabled and X.shape[0] <= 1000:
-                # Use a hash of the array bytes as the dictionary key
-                X_hash = hashlib.md5(X.tobytes()).hexdigest()
-                if X_hash in self._transform_cache:
-                    # Cache hit
-                    return self._transform_cache[X_hash]
-                else:
-                    # Cache miss
-                    result = self._transform_raw(X)
-                    self._transform_cache[X_hash] = result
-                    return result
+                result = self._transform_parallel(X)
             else:
-                # Large arrays or caching disabled
-                return self._transform_raw(X)
+                # Manual caching for smaller arrays
+                if self.config.cache_enabled and X.shape[0] <= 1000:
+                    # Use a hash of the array bytes as the dictionary key
+                    X_hash = self._hash_array(X)
+                    if X_hash in self._transform_cache:
+                        # Cache hit
+                        result = self._transform_cache[X_hash]
+                    else:
+                        # Cache miss
+                        result = self._transform_raw(X)
+                        self._transform_cache[X_hash] = result
+                else:
+                    # Large arrays or caching disabled
+                    result = self._transform_raw(X)
+            
+            # Track transform time for metrics
+            transform_time = time.time() - start_time
+            self._metrics['transform_time'].append(transform_time)
+            
+            if self.config.debug_mode:
+                self.logger.debug(f"Transformed {X.shape[0]} samples in {transform_time:.4f}s")
+                
+            return result
 
-    def _transform_parallel(self, X: np.array) -> np.array:
+    def _transform_parallel(self, X: np.ndarray) -> np.ndarray:
         """Transform data using parallel processing for large datasets."""
         # Split data into chunks
         chunk_size = self.config.chunk_size
@@ -525,7 +577,7 @@ class DataPreprocessor:
         # Combine results
         return np.vstack(results)
 
-    def _hash_array(self, arr: np.array) -> str:
+    def _hash_array(self, arr: np.ndarray) -> str:
         """Generate a hash for a numpy array for caching purposes."""
         # For large arrays, hash a sample to improve performance
         if arr.size > 1000:
@@ -549,13 +601,12 @@ class DataPreprocessor:
             # For small arrays, hash the entire array
             return hashlib.md5(arr.tobytes()).hexdigest()
 
-    def _transform_raw(self, X: np.array, X_hash: Optional[str] = None) -> np.array:
+    def _transform_raw(self, X: np.ndarray) -> np.ndarray:
         """
         Apply preprocessing operations without caching.
         
         Args:
             X: Input data
-            X_hash: Optional hash for identification (not used in raw transform)
             
         Returns:
             Transformed data
@@ -570,7 +621,7 @@ class DataPreprocessor:
             
         return X
 
-    def _transform_in_chunks(self, X: np.array) -> np.array:
+    def _transform_in_chunks(self, X: np.ndarray) -> np.ndarray:
         """Transform large datasets by processing in chunks."""
         chunk_size = self.config.chunk_size
         n_samples = X.shape[0]
@@ -578,6 +629,8 @@ class DataPreprocessor:
         
         # Process each chunk
         for start_idx in range(0, n_samples, chunk_size):
+            start_chunk_time = time.time()
+            
             end_idx = min(start_idx + chunk_size, n_samples)
             chunk = X[start_idx:end_idx].copy()  # Make a copy to avoid modifying original
             
@@ -587,35 +640,37 @@ class DataPreprocessor:
                 
             result_chunks.append(chunk)
             
+            chunk_time = time.time() - start_chunk_time
+            self._metrics['process_chunk_time'].append(chunk_time)
+            
             if self.config.debug_mode and (start_idx // chunk_size) % 10 == 0:
                 self.logger.debug(f"Transformed chunk {start_idx//chunk_size + 1}, "
-                                 f"{end_idx}/{n_samples} samples")
+                                 f"{end_idx}/{n_samples} samples in {chunk_time:.4f}s")
         
         # Combine the transformed chunks
         return np.vstack(result_chunks)
 
     @log_operation
-    def fit_transform(self, X: Union[np.array, List], 
-                      feature_names: Optional[List[str]] = None,
-                      copy: bool = True) -> np.array:
+    def fit_transform(self, X: Union[np.ndarray, List], y=None, feature_names=None, copy: bool = True) -> np.ndarray:
         """
         Combine fit and transform operations efficiently.
         
         Args:
             X: Input data
+            y: Target values (unused, for API compatibility)
             feature_names: Optional feature names
             copy: Whether to copy the input data
             
         Returns:
             Transformed data
         """
-        self.fit(X, feature_names)
+        self.fit(X, feature_names=feature_names)
         return self.transform(X, copy=copy)
 
     def _validate_and_convert_input(self, 
-                                    X: Union[np.ndarray, List], 
-                                    operation: str = "transform",
-                                    copy: bool = False) -> np.ndarray:
+                                   X: Union[np.ndarray, List], 
+                                   operation: str = "transform",
+                                   copy: bool = False) -> np.ndarray:
         """
         Validate and convert input data efficiently with comprehensive checks.
         
@@ -629,14 +684,12 @@ class DataPreprocessor:
         """
         if self.config.enable_input_validation:
             # Check input type
-            # -- FIX #1: Use np.ndarray instead of np.array --
             if not isinstance(X, (list, tuple, np.ndarray)):
                 raise InputValidationError(
                     f"Expected numpy array, list, or tuple, got {type(X)}"
                 )
             
             # Convert to numpy array if needed
-            # -- FIX #2: Use np.ndarray instead of np.array --
             if not isinstance(X, np.ndarray):
                 try:
                     X = np.array(X, dtype=self.config.dtype)
@@ -677,7 +730,6 @@ class DataPreprocessor:
         
         else:
             # Minimal conversion without validation
-            # -- FIX #3: Use np.ndarray instead of np.array --
             if not isinstance(X, np.ndarray):
                 X = np.array(X, dtype=self.config.dtype)
             if X.ndim == 1:
@@ -691,8 +743,7 @@ class DataPreprocessor:
             
         return X
 
-
-    def _compute_standard_stats(self, X: np.array) -> None:
+    def _compute_standard_stats(self, X: np.ndarray) -> None:
         """Compute statistics for standard normalization."""
         self.logger.debug("Computing standard normalization statistics")
         mean = np.mean(X, axis=0, dtype=self.config.dtype)
@@ -710,7 +761,7 @@ class DataPreprocessor:
             for i, name in enumerate(self._feature_names):
                 self.logger.debug(f"Feature {name}: mean={mean[i]:.6f}, std={std[i]:.6f}")
 
-    def _compute_minmax_stats(self, X: np.array) -> None:
+    def _compute_minmax_stats(self, X: np.ndarray) -> None:
         """Compute statistics for min-max normalization."""
         self.logger.debug("Computing min-max normalization statistics")
         min_val = np.min(X, axis=0)
@@ -728,17 +779,19 @@ class DataPreprocessor:
         if self.config.debug_mode:
             for i, name in enumerate(self._feature_names):
                 self.logger.debug(f"Feature {name}: min={min_val[i]:.6f}, max={max_val[i]:.6f}, range={range_val[i]:.6f}")
-
-    def _compute_robust_stats(self, X: np.array) -> None:
-        """Compute robust statistics using percentiles."""
+    
+    def _compute_robust_stats(self, X: np.ndarray) -> None:
+        """Compute robust statistics for normalization."""
         self.logger.debug("Computing robust normalization statistics")
+        
         lower, upper = self.config.robust_percentiles
         lower_percentile = np.percentile(X, lower, axis=0)
         upper_percentile = np.percentile(X, upper, axis=0)
+        
         range_val = upper_percentile - lower_percentile
         range_val = np.maximum(range_val, self.config.epsilon)
         scale = 1.0 / range_val
-
+        
         self._stats['lower'] = lower_percentile
         self._stats['upper'] = upper_percentile
         self._stats['range'] = range_val
@@ -747,1011 +800,903 @@ class DataPreprocessor:
         # Log feature statistics if in debug mode
         if self.config.debug_mode:
             for i, name in enumerate(self._feature_names):
-                self.logger.debug(f"Feature {name}: lower={lower_percentile[i]:.6f}, "
-                                 f"upper={upper_percentile[i]:.6f}, range={range_val[i]:.6f}")
-
-    def _compute_custom_stats(self, X: np.array) -> None:
-        """Compute custom statistics using a user-defined method."""
+                self.logger.debug(f"Feature {name}: lower={lower_percentile[i]:.6f}, upper={upper_percentile[i]:.6f}, range={range_val[i]:.6f}")
+    
+    def _compute_custom_stats(self, X: np.ndarray) -> None:
+        """Compute custom statistics for normalization."""
         self.logger.debug("Computing custom normalization statistics")
         
-        # Check if custom normalization function is provided
-        if hasattr(self.config, 'custom_normalization_fn') and callable(self.config.custom_normalization_fn):
+        # Check if custom functions are provided
+        if self.custom_center_func is not None and self.custom_scale_func is not None:
             try:
-                # Call the custom function with data and store results
-                custom_stats = self.config.custom_normalization_fn(X)
-                if isinstance(custom_stats, dict):
-                    for key, value in custom_stats.items():
-                        self._stats[key] = value
-                else:
-                    raise ValueError("Custom normalization function must return a dictionary")
+                center = self.custom_center_func(X)
+                scale = self.custom_scale_func(X)
+                
+                self._stats['center'] = center
+                self._stats['scale'] = scale
+                
+                # Log feature statistics if in debug mode
+                if self.config.debug_mode:
+                    for i, name in enumerate(self._feature_names):
+                        self.logger.debug(f"Feature {name}: center={center[i]:.6f}, scale={scale[i]:.6f}")
             except Exception as e:
-                raise StatisticsError(f"Error in custom normalization function: {e}")
+                self.logger.error(f"Error computing custom statistics: {e}")
+                # Fall back to standard stats as a safer alternative
+                self._compute_standard_stats(X)
         else:
-            raise NotImplementedError(
-                "Custom normalization is enabled but no custom_normalization_fn is defined in config"
-            )
-
-    def _compute_outlier_stats(self, X: np.array) -> None:
+            # Default to standard stats if no custom functions
+            self._compute_standard_stats(X)
+    
+    def _compute_outlier_stats(self, X: np.ndarray) -> None:
         """Compute statistics for outlier detection."""
+        self.logger.debug("Computing outlier detection statistics")
+        
         outlier_method = self.config.outlier_method.lower()
-        self.logger.debug(f"Computing outlier statistics using {outlier_method} method")
         
-        self._compute_outlier_stats_with_method(X, outlier_method)
-
-    def _compute_outlier_stats_with_method(self, X: np.array, method: str) -> None:
-        """
-        Compute outlier statistics using the specified method.
-        
-        Args:
-            X: Input data array
-            method: Outlier detection method ('iqr', 'zscore', or 'isolation_forest')
-        """
-        self.logger.debug(f"Computing outlier statistics using {method} method")
-        
-        if method == "iqr":
-            # IQR-based outlier detection (robust to outliers)
+        if outlier_method == "iqr":
+            # Compute IQR-based bounds
             q1 = np.percentile(X, 25, axis=0)
             q3 = np.percentile(X, 75, axis=0)
             iqr = q3 - q1
-            threshold = self.config.outlier_params.get("threshold", 1.5)
             
-            self._stats['outlier_lower'] = q1 - threshold * iqr
-            self._stats['outlier_upper'] = q3 + threshold * iqr
-            self._stats['outlier_method'] = "iqr"
+            lower_bound = q1 - (self.outlier_iqr_multiplier * iqr)
+            upper_bound = q3 + (self.outlier_iqr_multiplier * iqr)
             
-        elif method == "zscore":
-            # Z-score based outlier detection
+        elif outlier_method == "zscore":
+            # Compute Z-score based bounds
             mean = np.mean(X, axis=0)
             std = np.std(X, axis=0)
-            threshold = self.config.outlier_params.get("threshold", 3.0)
+            std = np.maximum(std, self.config.epsilon)
             
-            self._stats['outlier_mean'] = mean
-            self._stats['outlier_std'] = std
-            self._stats['outlier_threshold'] = threshold
-            self._stats['outlier_method'] = "zscore"
+            lower_bound = mean - (self.outlier_zscore_threshold * std)
+            upper_bound = mean + (self.outlier_zscore_threshold * std)
             
-        elif method == "isolation_forest":
-            try:
-                from sklearn.ensemble import IsolationForest
-                
-                # Get params or use defaults
-                n_estimators = self.config.outlier_params.get("n_estimators", 100)
-                contamination = self.config.outlier_params.get("contamination", "auto")
-                random_state = self.config.outlier_params.get("random_state", 42)
-                
-                model = IsolationForest(
-                    n_estimators=n_estimators, 
-                    contamination=contamination,
-                    random_state=random_state
-                )
-                
-                # Fit the model
-                model.fit(X)
-                
-                # Store the model
-                self._stats['outlier_model'] = model
-                self._stats['outlier_method'] = "isolation_forest"
-                
-            except ImportError:
-                self.logger.warning("sklearn not available, falling back to IQR for outlier detection")
-                # Fall back to IQR method
-                self._compute_outlier_stats_with_method(X, "iqr")
-            except Exception as e:
-                self.logger.warning(f"Error in isolation forest: {e}, falling back to IQR")
-                self._compute_outlier_stats_with_method(X, "iqr")
+        elif outlier_method == "percentile":
+            # Compute percentile-based bounds
+            lower, upper = self.outlier_percentiles
+            lower_bound = np.percentile(X, lower, axis=0)
+            upper_bound = np.percentile(X, upper, axis=0)
+            
         else:
-            self.logger.warning(f"Unknown outlier method '{method}', falling back to IQR")
-            self._compute_outlier_stats_with_method(X, "iqr")
-
-    def _normalize_data(self, X: np.array) -> np.array:
-        """Apply normalization based on configured method."""
-        normalization_type = self.config.normalization
+            # Default to Z-score method
+            mean = np.mean(X, axis=0)
+            std = np.std(X, axis=0)
+            std = np.maximum(std, self.config.epsilon)
+            
+            lower_bound = mean - (3.0 * std)  # Default to 3 sigma
+            upper_bound = mean + (3.0 * std)
         
-        if normalization_type == NormalizationType.STANDARD:
-            # Make a copy to avoid potential in-place issues
-            X_normalized = (X - self._stats['mean']) * self._stats['scale']
-            return X_normalized
-            
-        elif normalization_type == NormalizationType.MINMAX:
-            # Make a copy to avoid potential in-place issues
-            X_normalized = (X - self._stats['min']) * self._stats['scale']
-            return X_normalized
-            
-        elif normalization_type == NormalizationType.ROBUST:
-            # Make a copy to avoid potential in-place issues
-            X_normalized = (X - self._stats['lower']) * self._stats['scale']
-            return X_normalized
-            
-        elif normalization_type == NormalizationType.CUSTOM:
-            # This would call a custom normalization function
-            if hasattr(self.config, 'custom_transform_fn') and callable(self.config.custom_transform_fn):
-                try:
-                    return self.config.custom_transform_fn(X, self._stats)
-                except Exception as e:
-                    self.logger.error(f"Error in custom transform function: {e}")
-                    self.logger.warning("Returning original data due to custom transform error")
-                    return X
-            else:
-                self.logger.warning("Custom normalization selected but no transform function implemented")
-            
-        return X
-
-    def _handle_infinite_values(self, X: np.array) -> np.array:
-        """Handle infinite values in data with configurable strategies."""
-        mask = ~np.isfinite(X)
-        if np.any(mask):
-            num_inf = np.sum(mask)
-            
-            # Count inf values per feature for detailed reporting
-            if self.config.debug_mode:
-                feature_inf_counts = np.sum(mask, axis=0)
-                for i, count in enumerate(feature_inf_counts):
-                    if count > 0:
-                        feature_name = self._feature_names[i] if i < len(self._feature_names) else f"feature_{i}"
-                        self.logger.debug(f"Feature {feature_name}: {count} infinite values")
-            
-            # Replace inf values based on strategy
-            inf_strategy = self.config.inf_strategy.lower()
-            if inf_strategy == "zero":
-                X[mask] = 0.0
-                replacement = "0.0"
-            elif inf_strategy == "mean" and self._fitted and 'mean' in self._stats:
-                # Replace with feature means if available
-                for i in range(X.shape[1]):
-                    col_mask = mask[:, i]
-                    if np.any(col_mask):
-                        X[col_mask, i] = self._stats['mean'][i]
-                replacement = "feature means"
-            elif inf_strategy == "median" and 'median' in self._stats:
-                # Replace with feature medians if available
-                for i in range(X.shape[1]):
-                    col_mask = mask[:, i]
-                    if np.any(col_mask):
-                        X[col_mask, i] = self._stats['median'][i]
-                replacement = "feature medians"
-            else:
-                # Default to zero
-                X[mask] = 0.0
-                replacement = "0.0"
+        # Store outlier bounds
+        self._stats['outlier_lower'] = lower_bound
+        self._stats['outlier_upper'] = upper_bound
+        
+        # Log feature statistics if in debug mode
+        if self.config.debug_mode:
+            for i, name in enumerate(self._feature_names):
+                self.logger.debug(f"Feature {name}: outlier bounds [{lower_bound[i]:.6f}, {upper_bound[i]:.6f}]")
                 
-            self.logger.warning(f"Found {num_inf} infinite values, replaced with {replacement}")
-            
-        return X
-
-    def _handle_nan_values(self, X: np.array) -> np.array:
-        """Handle NaN values in data with advanced strategies."""
-        mask = np.isnan(X)
-        if np.any(mask):
-            num_nan = np.sum(mask)
-            
-            # Count NaN values per feature for detailed reporting
-            if self.config.debug_mode:
-                feature_nan_counts = np.sum(mask, axis=0)
-                for i, count in enumerate(feature_nan_counts):
-                    if count > 0:
-                        feature_name = self._feature_names[i] if i < len(self._feature_names) else f"feature_{i}"
-                        self.logger.debug(f"Feature {feature_name}: {count} NaN values")
-            
-            # Replace NaN values based on strategy
-            nan_strategy = self.config.nan_strategy.lower()
-            if nan_strategy == "mean" and self._fitted and 'mean' in self._stats:
-                # Use mean imputation if we have statistics
-                for i in range(X.shape[1]):
-                    col_mask = mask[:, i]
-                    if np.any(col_mask):
-                        X[col_mask, i] = self._stats['mean'][i]
-                replacement = "feature means"
-            elif nan_strategy == "median" and 'median' in self._stats:
-                # Use median imputation if we have statistics
-                for i in range(X.shape[1]):
-                    col_mask = mask[:, i]
-                    if np.any(col_mask):
-                        X[col_mask, i] = self._stats['median'][i]
-                replacement = "feature medians"
-            elif nan_strategy == "most_frequent" and 'most_frequent' in self._stats:
-                # Use most frequent value imputation if we have statistics
-                for i in range(X.shape[1]):
-                    col_mask = mask[:, i]
-                    if np.any(col_mask):
-                        X[col_mask, i] = self._stats['most_frequent'][i]
-                replacement = "most frequent values"
-            else:
-                # Default to zero
-                X[mask] = 0.0
-                replacement = "0.0"
-                
-            self.logger.warning(f"Found {num_nan} NaN values, replaced with {replacement}")
-            
-        return X
-
-    def _handle_outliers(self, X: np.array) -> np.array:
-        """Detect and handle outliers based on fitted statistics."""
-        if not self.config.detect_outliers:
+    def _clip_data(self, X: np.ndarray) -> np.ndarray:
+        """Clip data to specified min/max values."""
+        if not self.config.clip_values:
             return X
             
-        outlier_method = self._stats.get('outlier_method')
-        if outlier_method is None:
-            return X
+        # Make a copy if needed to avoid modifying the original
+        if self.config.copy_X:
+            X = X.copy()
             
-        if outlier_method == "iqr":
-            # IQR-based outlier detection
-            lower_bound = self._stats['outlier_lower']
-            upper_bound = self._stats['outlier_upper']
-            
-            # Create a copy to avoid modifying the input
-            X_copy = X.copy()
-            
-            # Detect outliers
-            outliers_mask = (X_copy < lower_bound) | (X_copy > upper_bound)
-            
-            if np.any(outliers_mask):
-                n_outliers = np.sum(outliers_mask)
-                
-                # Either clip or replace outliers based on config
-                if self.config.outlier_params.get("clip", True):
-                    # Clip outliers to boundaries
-                    for i in range(X_copy.shape[1]):
-                        col_mask_lower = X_copy[:, i] < lower_bound[i]
-                        col_mask_upper = X_copy[:, i] > upper_bound[i]
-                        X_copy[col_mask_lower, i] = lower_bound[i]
-                        X_copy[col_mask_upper, i] = upper_bound[i]
-                    action = "clipped"
-                else:
-                    # Replace with boundary values
-                    for i in range(X_copy.shape[1]):
-                        col_mask_lower = outliers_mask[:, i] & (X_copy[:, i] < lower_bound[i])
-                        col_mask_upper = outliers_mask[:, i] & (X_copy[:, i] > upper_bound[i])
-                        X_copy[col_mask_lower, i] = lower_bound[i]
-                        X_copy[col_mask_upper, i] = upper_bound[i]
-                    action = "replaced"
-                    
-                self.logger.info(f"Found {n_outliers} outliers, {action} to boundary values")
-            
-            return X_copy
-
-                
-        elif outlier_method == "zscore":
-            # Z-score based outlier detection
-            mean = self._stats['outlier_mean']
-            std = self._stats['outlier_std']
-            threshold = self._stats['outlier_threshold']
-            
-            # Calculate z-scores
-            z_scores = np.abs((X - mean) / np.maximum(std, self.config.epsilon))
-            outliers_mask = z_scores > threshold
-            
-            if np.any(outliers_mask):
-                n_outliers = np.sum(outliers_mask)
-                
-                # Handle outliers
-                if self.config.outlier_params.get("clip", True):
-                    # Clip outliers to threshold * std
-                    upper_bound = mean + threshold * std
-                    lower_bound = mean - threshold * std
-                    X = np.maximum(X, lower_bound)
-                    X = np.minimum(X, upper_bound)
-                    action = "clipped"
-                else:
-                    # Replace with mean
-                    for i in range(X.shape[1]):
-                        col_mask = outliers_mask[:, i]
-                        if np.any(col_mask):
-                            X[col_mask, i] = mean[i]
-                    action = "replaced with mean"
-                    
-                self.logger.info(f"Found {n_outliers} z-score outliers, {action}")
-                
-        elif outlier_method == "isolation_forest":
-            # Use Isolation Forest for outlier detection
-            if 'outlier_model' in self._stats:
-                try:
-                    model = self._stats['outlier_model']
-                    
-                    # Predict outliers (-1 for outliers, 1 for inliers)
-                    outlier_predictions = model.predict(X)
-                    outliers_mask = outlier_predictions == -1
-                    
-                    if np.any(outliers_mask):
-                        n_outliers = np.sum(outliers_mask)
-                        
-                        # Handle outliers
-                        if 'mean' in self._stats:
-                            # Replace with feature means if available
-                            for idx in np.where(outliers_mask)[0]:
-                                X[idx] = self._stats['mean']
-                            action = "replaced with feature means"
-                        else:
-                            # Calculate feature means on the fly for this batch
-                            inliers = X[~outliers_mask]
-                            if inliers.size > 0:
-                                means = np.mean(inliers, axis=0)
-                                
-                                # Replace outliers with means
-                                for idx in np.where(outliers_mask)[0]:
-                                    X[idx] = means
-                                action = "replaced with batch means"
-                            else:
-                                # All samples are outliers, use global statistics if available
-                                if 'outlier_mean' in self._stats:
-                                    for idx in np.where(outliers_mask)[0]:
-                                        X[idx] = self._stats['outlier_mean']
-                                    action = "replaced with global means"
-                                else:
-                                    # No good replacement available
-                                    action = "not replaced (all samples are outliers)"
-                            
-                        self.logger.info(f"Found {n_outliers} isolation forest outliers, {action}")
-                except Exception as e:
-                    self.logger.error(f"Error applying isolation forest: {e}")
-                
+        # Get clip values from config or use defaults
+        clip_min = self.clip_min
+        clip_max = self.clip_max
+        
+        # Apply clipping
+        np.clip(X, clip_min, clip_max, out=X)
+        
         return X
-
-    def _clip_data(self, X: np.array) -> np.array:
-        """Clip data to specified range."""
-        min_clip, max_clip = self.config.clip_range
-        np.clip(X, min_clip, max_clip, out=X)  # In-place clipping for efficiency
-        return X
-
-    def _update_metrics(self, operation: str, elapsed_time: float) -> None:
-        """Update performance metrics for monitoring."""
-        with self._lock:  # Protect metrics updates with lock
-            if operation == 'fit':
-                self._metrics['fit_time'].append(elapsed_time)
-            elif operation == 'transform':
-                self._metrics['transform_time'].append(elapsed_time)
-            elif operation == '_transform_raw':
-                self._metrics['transform_time'].append(elapsed_time)
-            elif 'chunk' in operation:
-                self._metrics['process_chunk_time'].append(elapsed_time)
-
-    @log_operation
-    def get_stats(self) -> Dict[str, Any]:
-        """Return computed statistics with safeguards."""
-        if not self._fitted:
-            raise RuntimeError("Preprocessor not fitted yet")
-
-        result = {}
-        for k, v in self._stats.items():
-            if isinstance(v, np.ndarray):
-                # Return a copy to avoid external modification
-                result[k] = v.copy()
-            elif hasattr(v, 'copy'):
-                # Might handle other copyable objects
-                result[k] = v.copy()
-            elif k == 'outlier_model':
-                # Skip complex objects like sklearn models
-                result[k] = "Model object (not JSON serializable)"
-            else:
-                result[k] = v
-
-        return result
-
-    def get_feature_names(self) -> List[str]:
-        """Return the feature names if available."""
-        if not self._fitted:
-            raise RuntimeError("Preprocessor not fitted yet")
-        return self._feature_names.copy()
-
-    def get_metrics(self) -> Dict[str, Any]:
-        """Return performance metrics for monitoring."""
-        with self._lock:  # Protect metrics access with lock
-            metrics = {}
-            
-            for metric_name, values in self._metrics.items():
-                if values:
-                    metrics[f"avg_{metric_name}"] = np.mean(values)
-                    metrics[f"max_{metric_name}"] = np.max(values)
-                    metrics[f"min_{metric_name}"] = np.min(values)
-                    if len(values) > 1:
-                        metrics[f"std_{metric_name}"] = np.std(values)
-            
-            metrics["n_samples_seen"] = self._n_samples_seen
-            metrics["n_features"] = self._n_features
-            metrics["fitted"] = self._fitted
-            metrics["version"] = self._version
-            
-            return metrics
-
-    def reset(self) -> None:
-        """Reset the preprocessor state."""
-        with self._lock:
-            self._stats.clear()
-            self._fitted = False
-            self._n_samples_seen = 0
-            
-            # Clear caches if enabled
-            if self.config.cache_enabled and self._transform_cache is not None:
-                self._transform_cache.clear()
     
-            self.logger.info("Preprocessor state reset")
-
-    @log_operation
-    def save(self, filepath: str) -> None:
+    def _normalize_data(self, X: np.ndarray) -> np.ndarray:
         """
-        Save the preprocessor to a file with version information.
+        Apply normalization to the data according to the configured method.
         
         Args:
-            filepath: Path to save the preprocessor
-        """
-        if not self._fitted:
-            raise RuntimeError("Cannot save unfitted preprocessor")
-                    
-        with self._lock, self._error_context("serialization operation"):  # Ensure thread safety during save
-            # Create directory if it doesn't exist
-            directory = os.path.dirname(os.path.abspath(filepath))
-            os.makedirs(directory, exist_ok=True)
-            
-            # Use a temporary file for atomic writing
-            temp_filepath = f"{filepath}.tmp"
-            model_files = []
-            
-            try:
-                # Prepare data for serialization
-                data = {
-                    "version": self._version,
-                    "config": asdict(self.config),  # Convert config to dictionary
-                    "feature_names": self._feature_names,
-                    "n_features": self._n_features,
-                    "n_samples_seen": self._n_samples_seen,
-                    "fitted": self._fitted,
-                    "stats": {}
-                }
-                
-                # Convert enum values to strings in the config
-                if "normalization" in data["config"]:
-                    data["config"]["normalization"] = data["config"]["normalization"].name
-
-                if "dtype" in data["config"] and isinstance(data["config"]["dtype"], type):
-                    # or data["config"]["dtype"].__name__ if you only want "float32"
-                    data["config"]["dtype"] = str(data["config"]["dtype"])
-
-                # Get base filepath for models without extension
-                base_filepath = os.path.splitext(filepath)[0]
-                
-                # Handle stats with special cases for non-serializable objects
-                for k, v in self._stats.items():
-                    if isinstance(v, np.ndarray):
-
-                        data["stats"][k] = {
-                            "type": "ndarray",
-                            "dtype": str(v.dtype),
-                            "shape": v.shape,
-                            "data": v.tolist()
-                        }
-                    elif k == "outlier_model" or (hasattr(v, '__module__') and 'sklearn' in getattr(v, '__module__', '')):
-                        # For sklearn models or other complex objects, we need to use pickle
-                        model_path = f"{base_filepath}_model_{k}.pkl"
-                        model_files.append(model_path)
-                        
-                        try:
-                            with open(model_path, 'wb') as f:
-                                pickle.dump(v, f)
-                            data["stats"][k] = {"type": "model", "path": model_path, "serialized": True}
-                            self.logger.info(f"Model {k} saved to {model_path}")
-                        except Exception as e:
-                            self.logger.error(f"Failed to pickle model {k}: {e}")
-                            data["stats"][k] = {"type": "model", "serialized": False, "error": str(e)}
-                    elif isinstance(v, (np.integer, np.floating, np.bool_)):
-                        # Convert numpy scalars to Python scalars
-                        data["stats"][k] = v.item()
-                    elif isinstance(v, type):
-                        # Handle Python types
-                        data["stats"][k] = str(v)  # or "float64"
-                    elif isinstance(v, np.dtype):
-                        data["stats"][k] = str(v)  # e.g. "float64"
-                    elif isinstance(v, (np.integer, np.floating, np.bool_)):
-                        # Convert numpy scalars to Python scalars
-                        data["stats"][k] = v.item()
-                    elif isinstance(v, type):
-                        # Handle Python types
-                        data["stats"][k] = str(v)  # or "float64"
-                    elif isinstance(v, np.dtype):
-                        # Handle numpy data types
-                        data["stats"][k] = str(v)  # e.g. "float64"
-                    else:
-                        # Test JSON serialization first to avoid errors during final save
-                        try:
-                            json.dumps({k: v})
-                            data["stats"][k] = v
-                        except (TypeError, OverflowError):
-                            # If not JSON serializable, convert to string representation
-                            data["stats"][k] = str(v)
-                            
-                # Save the main data as JSON to temporary file first
-                with open(temp_filepath, 'w') as f:
-                    json.dump(data, f, indent=2)
-                    
-                # If we got here, atomically rename temp file to target file
-                os.replace(temp_filepath, filepath)
-                self.logger.info(f"Preprocessor saved to {filepath}")
-                
-            except Exception as e:
-                # Clean up temporary files on error
-                self.logger.error(f"Failed to save preprocessor: {e}")
-                if os.path.exists(temp_filepath):
-                    os.remove(temp_filepath)
-                for model_file in model_files:
-                    if os.path.exists(model_file) and os.path.basename(filepath) not in model_file:
-                        os.remove(model_file)
-                # Re-raise with appropriate error type
-                if isinstance(e, SerializationError):
-                    raise e
-                else:
-                    raise SerializationError(f"Failed to save preprocessor: {e}")
-
-
-    @classmethod
-    @log_operation
-    def load(cls, filepath: str) -> 'DataPreprocessor':
-        """
-        Load a preprocessor from a file.
-        
-        Args:
-            filepath: Path to load the preprocessor from
+            X: Input data array
             
         Returns:
-            Loaded preprocessor instance
+            Normalized data array
         """
-        logger = logging.getLogger(f"{__name__}.DataPreprocessor")
-        logger.info(f"Loading preprocessor from {filepath}")
-        
-        # Create a error context for class method
-        @contextmanager
-        def error_context(operation):
-            try:
-                yield
-            except Exception as e:
-                error_msg = f"Error during {operation}: {str(e)}"
-                logger.error(error_msg)
-                # Convert to appropriate exception type
-                if "validation" in operation.lower():
-                    raise InputValidationError(error_msg) from e
-                elif "serialization" in operation.lower():
-                    raise SerializationError(error_msg) from e
-                else:
-                    raise PreprocessingError(error_msg) from e
-        
-        with error_context("serialization operation"):
-            try:
-                with open(filepath, 'r') as f:
-                    data = json.load(f)
-            except Exception as e:
-                logger.error(f"Failed to load preprocessor file: {e}")
-                raise SerializationError(f"Failed to load preprocessor: {e}")
-                
-            # Extract version and verify compatibility
-            version = data.get("version", "unknown")
-            if version != data.get("config", {}).get("version", "unknown"):
-                logger.warning(f"Version mismatch: file version {version}, "
-                            f"config version {data.get('config', {}).get('version', 'unknown')}")
-                
-            # Create config from saved data
-            config_dict = data.get("config", {})
+        if self.config.normalization == NormalizationType.NONE:
+            return X
             
-            # Convert string enum values to actual enum values
-            if "normalization" in config_dict and isinstance(config_dict["normalization"], str):
+        # Make a copy if needed to avoid modifying the original
+        if self.config.copy_X:
+            X = X.copy()
+        
+        norm_type = self._get_norm_type(self.config.normalization)
+        
+        if norm_type == NormalizationType.STANDARD:
+            if 'mean' not in self._stats or 'scale' not in self._stats:
+                raise StatisticsError("Standard normalization stats not available")
+                
+            # Apply standard scaling: (X - mean) / std
+            for i in range(X.shape[1]):
+                X[:, i] = (X[:, i] - self._stats['mean'][i]) * self._stats['scale'][i]
+                
+        elif norm_type == NormalizationType.MINMAX:
+            if 'min' not in self._stats or 'scale' not in self._stats:
+                raise StatisticsError("Min-max normalization stats not available")
+                
+            # Apply min-max scaling: (X - min) / (max - min)
+            for i in range(X.shape[1]):
+                X[:, i] = (X[:, i] - self._stats['min'][i]) * self._stats['scale'][i]
+                
+        elif norm_type == NormalizationType.ROBUST:
+            if 'lower' not in self._stats or 'scale' not in self._stats:
+                raise StatisticsError("Robust normalization stats not available")
+                
+            # Apply robust scaling: (X - q_lower) / (q_upper - q_lower)
+            for i in range(X.shape[1]):
+                X[:, i] = (X[:, i] - self._stats['lower'][i]) * self._stats['scale'][i]
+                
+        elif norm_type == NormalizationType.QUANTILE:
+            # Quantile transformation logic here
+            if 'quantile_transformer' not in self._stats:
+                raise StatisticsError("Quantile transformation stats not available")
+            # This would typically use a fitted quantile transformer
+            # Implementation would depend on additional libraries
+            pass
+                
+        elif norm_type == NormalizationType.LOG:
+            # Log transformation
+            # Ensure all values are positive before log transform
+            min_vals = np.min(X, axis=0)
+            for i in range(X.shape[1]):
+                if min_vals[i] <= 0:
+                    # Add offset to make all values positive
+                    offset = abs(min_vals[i]) + 1.0
+                    X[:, i] = np.log(X[:, i] + offset)
+                else:
+                    X[:, i] = np.log(X[:, i])
+                
+        elif norm_type == NormalizationType.POWER:
+            # Power transformation (Box-Cox like)
+            # Typically would use scipy.stats.boxcox or similar
+            pass
+                
+        else:  # Custom normalization
+            if self.config.custom_normalization_fn is not None:
                 try:
-                    config_dict["normalization"] = NormalizationType[config_dict["normalization"]]
-                except KeyError:
-                    logger.warning(f"Unknown normalization type: {config_dict['normalization']}, "
-                                f"defaulting to STANDARD")
-                    config_dict["normalization"] = NormalizationType.STANDARD
-                    
-            # Create config object
-            config = PreprocessorConfig(**config_dict)
-            
-            # Create preprocessor
-            preprocessor = cls(config)
-            
-            # Restore stats with special handling for numpy arrays
-            stats = {}
-            for k, v in data.get("stats", {}).items():
-                if isinstance(v, dict) and v.get("type") == "ndarray":
-                    # Reconstruct numpy array
-                    try:
-                        arr = np.array(v["data"], dtype=np.dtype(v["dtype"]))
-                        stats[k] = arr
-                    except Exception as e:
-                        logger.error(f"Failed to reconstruct array {k}: {e}")
-                        # Use a default empty array as fallback
-                        stats[k] = np.array([], dtype=np.float64)
-                elif isinstance(v, dict) and v.get("type") == "model" and v.get("serialized", False):
-                    # Load pickled model
-                    model_path = v.get("path")
-                    if model_path and os.path.exists(model_path):
-                        try:
-                            with open(model_path, 'rb') as f:
-                                stats[k] = pickle.load(f)
-                            logger.info(f"Model {k} loaded from {model_path}")
-                        except Exception as e:
-                            logger.error(f"Failed to load model {k}: {e}")
+                    X = self.config.custom_normalization_fn(X, self._stats)
+                except Exception as e:
+                    self.logger.error(f"Error in custom normalization function: {e}")
+                    # Fall back to standard normalization if possible
+                    if 'mean' in self._stats and 'scale' in self._stats:
+                        for i in range(X.shape[1]):
+                            X[:, i] = (X[:, i] - self._stats['mean'][i]) * self._stats['scale'][i]
                     else:
-                        logger.warning(f"Model file {model_path} not found")
-                else:
-                    stats[k] = v
-                    
-            # Restore instance variables
-            preprocessor._stats = stats
-            preprocessor._feature_names = data.get("feature_names", [])
-            preprocessor._n_features = data.get("n_features", 0)
-            preprocessor._n_samples_seen = data.get("n_samples_seen", 0)
-            preprocessor._fitted = data.get("fitted", False)
-            preprocessor._version = version
-            
-            logger.info(f"Preprocessor loaded: version={version}, fitted={preprocessor._fitted}, "
-                    f"features={preprocessor._n_features}")
-            
-            return preprocessor
+                        raise StatisticsError("Custom normalization failed and no fallback available")
+                
+        # Apply scale shift if configured (e.g., to [0,1] range)
+        if self.scale_shift:
+            X = X + self.scale_offset
+        
+        return X
 
+    def _get_norm_type(self, normalization_type: Union[str, NormalizationType]) -> NormalizationType:
+        """Convert string normalization type to enum if needed and validate."""
+        if isinstance(normalization_type, str):
+            try:
+                return NormalizationType[normalization_type.upper()]
+            except KeyError:
+                self.logger.warning(f"Unknown normalization type '{normalization_type}', using 'NONE'")
+                return NormalizationType.NONE
+        return normalization_type
 
-    def inverse_transform(self, X: Union[np.array, List], copy: bool = True) -> np.array:
+    def _handle_nan_values(self, X: np.ndarray) -> np.ndarray:
         """
-        Reverse the transformation process to get original scale data.
+        Handle NaN values in the data according to the configured strategy.
         
         Args:
-            X: Transformed data
+            X: Input data array
+            
+        Returns:
+            Data array with NaN values handled
+        """
+        if not self.config.handle_nan or not np.any(np.isnan(X)):
+            return X
+            
+        # Make a copy if needed to avoid modifying the original
+        if self.config.copy_X:
+            X = X.copy()
+        
+        # Get strategy from config
+        strategy = self.config.nan_strategy.lower()
+        
+        # Replace NaN values based on strategy
+        if strategy == "mean":
+            if 'mean' not in self._stats:
+                # Calculate mean on the fly if not available
+                self._stats['mean'] = np.nanmean(X, axis=0)
+                
+            for i in range(X.shape[1]):
+                nan_mask = np.isnan(X[:, i])
+                if np.any(nan_mask):
+                    X[nan_mask, i] = self._stats['mean'][i]
+                    
+        elif strategy == "median":
+            if 'median' not in self._stats:
+                # Calculate median on the fly if not available
+                self._stats['median'] = np.nanmedian(X, axis=0)
+                
+            for i in range(X.shape[1]):
+                nan_mask = np.isnan(X[:, i])
+                if np.any(nan_mask):
+                    X[nan_mask, i] = self._stats['median'][i]
+                    
+        elif strategy == "most_frequent":
+            if 'most_frequent' not in self._stats:
+                # Calculate most frequent values if not available
+                self._compute_most_frequent_values(X)
+                
+            for i in range(X.shape[1]):
+                nan_mask = np.isnan(X[:, i])
+                if np.any(nan_mask):
+                    X[nan_mask, i] = self._stats['most_frequent'][i]
+                    
+        elif strategy == "constant":
+            # Use configured fill value
+            nan_fill_value = self.nan_fill_value
+            X[np.isnan(X)] = nan_fill_value
+            
+        else:  # Default to zero
+            X[np.isnan(X)] = 0.0
+        
+        return X
+
+    def _handle_infinite_values(self, X: np.ndarray) -> np.ndarray:
+        """
+        Handle infinite values in the data according to the configured strategy.
+        
+        Args:
+            X: Input data array
+            
+        Returns:
+            Data array with infinite values handled
+        """
+        if not self.config.handle_inf or not np.any(~np.isfinite(X)):
+            return X
+            
+        # Make a copy if needed to avoid modifying the original
+        if self.config.copy_X:
+            X = X.copy()
+        
+        # Get strategy from config
+        strategy = self.config.inf_strategy.lower()
+        
+        # Get masks for positive and negative infinities
+        pos_inf_mask = np.isposinf(X)
+        neg_inf_mask = np.isneginf(X)
+        
+        # Replace infinite values based on strategy
+        if strategy == "max_value":
+            # Replace with a large value based on data max and buffer
+            if 'max' not in self._stats:
+                # Calculate max on the fly if not available (ignoring infs)
+                finite_X = X[np.isfinite(X)] if np.any(np.isfinite(X)) else np.zeros(1)
+                self._stats['max'] = np.max(finite_X) if finite_X.size > 0 else 1.0
+                
+            # Use max + buffer for pos inf, min - buffer for neg inf
+            pos_value = self._stats['max'] * self.inf_buffer
+            neg_value = -pos_value if 'min' not in self._stats else self._stats['min'] * self.inf_buffer
+            
+            X[pos_inf_mask] = pos_value
+            X[neg_inf_mask] = neg_value
+            
+        elif strategy == "median":
+            if 'median' not in self._stats:
+                # Calculate median on the fly if not available (ignoring infs)
+                finite_X = X[np.isfinite(X)]
+                self._stats['median'] = np.median(finite_X)
+                
+            # Use median for all infinities
+            X[pos_inf_mask | neg_inf_mask] = self._stats['median']
+            
+        elif strategy == "constant":
+            # Use configured fill values
+            X[pos_inf_mask] = self.pos_inf_fill_value
+            X[neg_inf_mask] = self.neg_inf_fill_value
+            
+        else:  # Default to NaN
+            X[~np.isfinite(X)] = np.nan
+            # Then handle the NaN values
+            X = self._handle_nan_values(X)
+        
+        return X
+
+    def _handle_outliers(self, X: np.ndarray) -> np.ndarray:
+        """
+        Handle outliers in the data according to the configured method.
+        
+        Args:
+            X: Input data array
+            
+        Returns:
+            Data array with outliers handled
+        """
+        if not self.config.detect_outliers or 'outlier_lower' not in self._stats or 'outlier_upper' not in self._stats:
+            return X
+            
+        # Make a copy if needed to avoid modifying the original
+        if self.config.copy_X:
+            X = X.copy()
+        
+        # Get outlier handling strategy
+        strategy = self.config.outlier_handling.lower()
+        
+        # Get outlier bounds
+        lower_bound = self._stats['outlier_lower']
+        upper_bound = self._stats['outlier_upper']
+        
+        # Check feature-specific outlier handling if configured
+        feature_specific = self.feature_outlier_mask is not None
+        
+        # Validate feature_outlier_mask length if it's being used
+        if feature_specific and len(self.feature_outlier_mask) < X.shape[1]:
+            self.logger.warning(
+                f"feature_outlier_mask length ({len(self.feature_outlier_mask)}) is smaller than number of features ({X.shape[1]}). "
+                "Using available mask values and treating remaining features as non-masked."
+            )
+        
+        # Handle outliers differently based on strategy
+        if strategy == "clip":
+            # Clip values to the bounds
+            for i in range(X.shape[1]):
+                # Check if index is valid in the mask before accessing it
+                if not feature_specific or (i < len(self.feature_outlier_mask) and self.feature_outlier_mask[i]):
+                    col_lower = lower_bound[i]
+                    col_upper = upper_bound[i]
+                    X[:, i] = np.clip(X[:, i], col_lower, col_upper)
+                    
+        elif strategy == "remove":
+            # This would typically return a mask or indices to remove rows
+            # But since we need to return same-shape array, we'll set to NaN instead
+            outlier_mask = np.zeros_like(X, dtype=bool)
+            
+            for i in range(X.shape[1]):
+                # Check if index is valid in the mask before accessing it
+                if not feature_specific or (i < len(self.feature_outlier_mask) and self.feature_outlier_mask[i]):
+                    col_mask = (X[:, i] < lower_bound[i]) | (X[:, i] > upper_bound[i])
+                    outlier_mask[:, i] = col_mask
+                    
+            # Set outliers to NaN
+            X[outlier_mask] = np.nan
+            
+            # Handle the NaN values
+            X = self._handle_nan_values(X)
+                    
+        elif strategy == "winsorize":
+            # Replace outliers with the boundary values
+            for i in range(X.shape[1]):
+                # Check if index is valid in the mask before accessing it
+                if not feature_specific or (i < len(self.feature_outlier_mask) and self.feature_outlier_mask[i]):
+                    col = X[:, i]
+                    # Replace low outliers
+                    low_mask = col < lower_bound[i]
+                    if np.any(low_mask):
+                        col[low_mask] = lower_bound[i]
+                    
+                    # Replace high outliers
+                    high_mask = col > upper_bound[i]
+                    if np.any(high_mask):
+                        col[high_mask] = upper_bound[i]
+                        
+        elif strategy == "mean":
+            # Replace outliers with the mean
+            if 'mean' not in self._stats:
+                self._stats['mean'] = np.mean(X, axis=0)
+                
+            for i in range(X.shape[1]):
+                # Check if index is valid in the mask before accessing it
+                if not feature_specific or (i < len(self.feature_outlier_mask) and self.feature_outlier_mask[i]):
+                    col = X[:, i]
+                    outlier_mask = (col < lower_bound[i]) | (col > upper_bound[i])
+                    if np.any(outlier_mask):
+                        col[outlier_mask] = self._stats['mean'][i]
+        
+        return X
+    def serialize(self, path: str) -> bool:
+        """
+        Serialize the preprocessor to disk.
+        
+        Args:
+            path: File path to save the serialized preprocessor
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        with self._error_context("serialization"):
+            try:
+                # Create serializable state
+                state = {
+                    'config': asdict(self.config),
+                    'stats': self._stats,
+                    'feature_names': self._feature_names,
+                    'fitted': self._fitted,
+                    'n_features': self._n_features,
+                    'n_samples_seen': self._n_samples_seen,
+                    'version': self._version
+                }
+                
+                # Add hash of data for verification
+                state['hash'] = hashlib.md5(json.dumps(str(state)).encode('utf-8')).hexdigest()
+                
+                # Save to disk
+                with open(path, 'wb') as f:
+                    pickle.dump(state, f)
+                    
+                self.logger.info(f"Preprocessor serialized to {path}")
+                return True
+                
+            except Exception as e:
+                self.logger.error(f"Failed to serialize preprocessor: {e}")
+                return False
+
+    @classmethod
+    def deserialize(cls, path: str) -> 'DataPreprocessor':
+        """
+        Deserialize a preprocessor from disk.
+        
+        Args:
+            path: File path to load the serialized preprocessor from
+            
+        Returns:
+            Deserialized DataPreprocessor instance
+        """
+        try:
+            with open(path, 'rb') as f:
+                state = pickle.load(f)
+                
+            # Create config from dict
+            from modules.configs import PreprocessorConfig
+            config = PreprocessorConfig(**state['config'])
+            
+            # Create instance
+            instance = cls(config)
+            
+            # Restore state
+            instance._stats = state['stats']
+            instance._feature_names = state['feature_names']
+            instance._fitted = state['fitted']
+            instance._n_features = state['n_features']
+            instance._n_samples_seen = state['n_samples_seen']
+            instance._version = state.get('version', '1.0.0')
+            
+            # Verify hash for data integrity
+            saved_hash = state.get('hash', None)
+            if saved_hash:
+                # Create a new hash without the hash field
+                verify_state = state.copy()
+                verify_state.pop('hash', None)
+                verify_hash = hashlib.md5(json.dumps(str(verify_state)).encode('utf-8')).hexdigest()
+                
+                if saved_hash != verify_hash:
+                    raise SerializationError("Data integrity check failed. The model file may be corrupted.")
+            
+            return instance
+            
+        except Exception as e:
+            raise SerializationError(f"Failed to deserialize preprocessor: {e}") from e
+
+    def get_statistics(self) -> Dict[str, Any]:
+        """
+        Get the current statistics computed by the preprocessor.
+        
+        Returns:
+            Dictionary of statistics
+        """
+        if not self._fitted:
+            raise RuntimeError("Preprocessor must be fitted before getting statistics")
+            
+        return self._stats.copy()
+
+    def get_feature_names(self) -> List[str]:
+        """
+        Get the feature names used by the preprocessor.
+        
+        Returns:
+            List of feature names
+        """
+        return self._feature_names.copy()
+
+    def get_performance_metrics(self) -> Dict[str, List[float]]:
+        """
+        Get performance metrics collected during preprocessing operations.
+        
+        Returns:
+            Dictionary of performance metrics
+        """
+        return self._metrics.copy()
+
+    def reverse_transform(self, X: np.ndarray, copy: bool = True) -> np.ndarray:
+        """
+        Reverse the preprocessing transformations to recover original data scale.
+        
+        Args:
+            X: Transformed data to reverse
             copy: Whether to copy the input data
             
         Returns:
-            Data in original scale
+            Data with transformations reversed
         """
         if not self._fitted:
-            raise RuntimeError("Preprocessor must be fitted before inverse_transform")
+            raise RuntimeError("Preprocessor must be fitted before reverse transform")
             
         with self._error_context("inverse transform operation"):
             # Validate and convert input
-            X = self._validate_and_convert_input(X, operation="transform", copy=copy)
+            X = self._validate_and_convert_input(X, operation="reverse_transform", copy=copy)
             
-            # Apply inverse normalization
-            norm_type = self.config.normalization
+            # Apply inverse transformations in reverse order of the forward transformations
+            norm_type = self._get_norm_type(self.config.normalization)
             
-            if norm_type == NormalizationType.STANDARD:
-                if 'mean' in self._stats and 'scale' in self._stats:
-                    # Create a copy to avoid modifying the input
-                    X_inv = X.copy()
-                    # Fixed implementation for standard normalization
-                    return (X_inv / self._stats['scale']) + self._stats['mean']
+            # Handle scale shift first if applied
+            if self.scale_shift:
+                X = X - self.scale_offset
+            
+            # Reverse normalization
+            if norm_type != NormalizationType.NONE:
+                if norm_type == NormalizationType.STANDARD:
+                    if 'mean' not in self._stats or 'scale' not in self._stats:
+                        raise StatisticsError("Standard normalization stats not available")
+                        
+                    # Reverse standard scaling: X / scale + mean
+                    for i in range(X.shape[1]):
+                        X[:, i] = (X[:, i] / self._stats['scale'][i]) + self._stats['mean'][i]
+                        
+                elif norm_type == NormalizationType.MINMAX:
+                    if 'min' not in self._stats or 'scale' not in self._stats or 'range' not in self._stats:
+                        raise StatisticsError("Min-max normalization stats not available")
+                        
+                    # Reverse min-max scaling: X / scale + min
+                    for i in range(X.shape[1]):
+                        X[:, i] = (X[:, i] / self._stats['scale'][i]) + self._stats['min'][i]
+                        
+                elif norm_type == NormalizationType.ROBUST:
+                    if 'lower' not in self._stats or 'scale' not in self._stats:
+                        raise StatisticsError("Robust normalization stats not available")
+                        
+                    # Reverse robust scaling: X / scale + lower
+                    for i in range(X.shape[1]):
+                        X[:, i] = (X[:, i] / self._stats['scale'][i]) + self._stats['lower'][i]
+                        
+                elif norm_type == NormalizationType.LOG:
+                    # Reverse log transformation
+                    X = np.exp(X)
                     
-            elif norm_type == NormalizationType.MINMAX:
-                if 'min' in self._stats and 'scale' in self._stats:
-                    # Create a copy to avoid modifying the input
-                    X_inv = X.copy()
-                    # Fixed implementation for min-max scaling
-                    return (X_inv / self._stats['scale']) + self._stats['min']
+                    # Handle any offsets that were applied during the forward transform
+                    if 'log_offset' in self._stats:
+                        for i in range(X.shape[1]):
+                            if self._stats['log_offset'][i] > 0:
+                                X[:, i] = X[:, i] - self._stats['log_offset'][i]
                     
-            elif norm_type == NormalizationType.ROBUST:
-                if 'lower' in self._stats and 'scale' in self._stats:
-                    # Create a copy to avoid modifying the input
-                    X_inv = X.copy()
-                    # Fixed implementation for robust scaling
-                    return (X_inv / self._stats['scale']) + self._stats['lower']
-                    
-            elif norm_type == NormalizationType.CUSTOM:
-                # Handle custom inverse transform
-                if hasattr(self.config, 'custom_inverse_transform_fn') and callable(self.config.custom_inverse_transform_fn):
-                    try:
-                        return self.config.custom_inverse_transform_fn(X, self._stats)
-                    except Exception as e:
-                        self.logger.error(f"Error in custom inverse transform: {e}")
-                        raise
-                else:
-                    raise NotImplementedError("Custom inverse transform not implemented")
-                    
-            # If we reach here with STANDARD normalization, use the stats we have
-            if norm_type == NormalizationType.STANDARD and 'mean' in self._stats and 'std' in self._stats:
-                X_inv = X.copy()
-                return X_inv * self._stats['std'] + self._stats['mean']
-                
-            # If we still get here, we couldn't invert the transform
-            raise NotImplementedError(f"Inverse transform not implemented for {norm_type}")
+                elif norm_type == NormalizationType.CUSTOM:
+                    if self.config.custom_inverse_fn is not None:
+                        try:
+                            X = self.config.custom_inverse_fn(X, self._stats)
+                        except Exception as e:
+                            self.logger.error(f"Error in custom inverse function: {e}")
+                            raise
+            
+            # We don't reverse outlier handling or nan/inf handling
+            # as that information is generally lost in the forward transform
+            
+            return X
 
-
-    def partial_fit(self, X: Union[np.array, List], feature_names: Optional[List[str]] = None) -> 'DataPreprocessor':
+    def reset(self) -> None:
         """
-        Update preprocessing statistics with a new batch of data.
+        Reset the preprocessor to its initialized state.
+        
+        This clears all fitted statistics and state.
+        """
+        self.logger.info("Resetting preprocessor state")
+        
+        # Clear state variables
+        self._stats = {}
+        self._fitted = False
+        self._n_samples_seen = 0
+        
+        # Clear metrics
+        for key in self._metrics:
+            self._metrics[key] = []
+        
+        # Clear cache if enabled
+        if self.config.cache_enabled:
+            self._transform_cache = {}
+
+    def update_config(self, new_config: PreprocessorConfig) -> None:
+        """
+        Update the preprocessor configuration.
         
         Args:
-            X: New data batch
-            feature_names: Optional feature names (must match previous names if already fitted)
+            new_config: New configuration to apply
+        
+        Note:
+            This will reset the preprocessor state if the configuration changes
+            affect the preprocessing pipeline.
+        """
+        pipeline_changed = (
+            new_config.normalization != self.config.normalization or
+            new_config.detect_outliers != self.config.detect_outliers or
+            new_config.handle_nan != self.config.handle_nan or
+            new_config.handle_inf != self.config.handle_inf or
+            new_config.clip_values != self.config.clip_values
+        )
+        
+        # Update configuration
+        self.config = new_config
+        
+        # Update instance variables from config
+        self.feature_outlier_mask = getattr(new_config, 'feature_outlier_mask', None)
+        self.nan_fill_value = getattr(new_config, 'nan_fill_value', 0.0)
+        self.pos_inf_fill_value = getattr(new_config, 'pos_inf_fill_value', float('nan'))
+        self.neg_inf_fill_value = getattr(new_config, 'neg_inf_fill_value', float('nan'))
+        self.inf_buffer = getattr(new_config, 'inf_buffer', 1.0)
+        self.clip_min = getattr(new_config, 'clip_min', float('-inf'))
+        self.clip_max = getattr(new_config, 'clip_max', float('inf'))
+        self.scale_shift = getattr(new_config, 'scale_shift', False)
+        self.scale_offset = getattr(new_config, 'scale_offset', 0.0)
+        self.custom_center_func = getattr(new_config, 'custom_center_func', None)
+        self.custom_scale_func = getattr(new_config, 'custom_scale_func', None)
+        self.outlier_iqr_multiplier = getattr(new_config, 'outlier_iqr_multiplier', 1.5)
+        self.outlier_zscore_threshold = getattr(new_config, 'outlier_zscore_threshold', 3.0)
+        self.outlier_percentiles = getattr(new_config, 'outlier_percentiles', (1.0, 99.0))
+        
+        # Re-configure logging
+        self._configure_logging()
+        
+        # Re-initialize processing functions
+        self._init_processing_functions()
+        
+        # Re-initialize parallel executor if needed
+        if self.config.parallel_processing:
+            self._init_parallel_executor()
+        else:
+            self._parallel_executor = None
+        
+        # Reset state if pipeline has changed
+        if pipeline_changed and self._fitted:
+            self.logger.warning("Pipeline configuration changed, resetting preprocessor state")
+            self.reset()
+
+    def partial_fit(self, X: np.ndarray, feature_names=None) -> 'DataPreprocessor':
+        """
+        Update the preprocessor with new data incrementally.
+        
+        Args:
+            X: New data to incorporate
+            feature_names: Optional feature names (ignored if already fitted)
             
         Returns:
-            self for method chaining
+            self: The updated preprocessor
         """
         with self._lock, self._error_context("partial fit operation"):
-            # Validate and convert input
-            X = self._validate_and_convert_input(X, operation="fit")
+            start_time = time.time()
             
+            # Validate and convert input
+            X = self._validate_and_convert_input(X, operation="partial_fit")
+            
+            # If this is the first call, initialize as a regular fit
             if not self._fitted:
-                # First batch - do a regular fit
-                return self.fit(X, feature_names)
-            else:
-                # Validate that feature dimensions match
-                if X.shape[1] != self._n_features:
-                    raise InputValidationError(
-                        f"Input has {X.shape[1]} features, but preprocessor was fitted with {self._n_features} features"
-                    )
-                
-                # Validate feature names if provided
-                if feature_names:
-                    if feature_names != self._feature_names:
-                        raise InputValidationError("Feature names don't match previously fitted names")
-                
-                # Update statistics incrementally
-                self._update_stats_incrementally(X)
-                
-                # Add to count of samples seen
-                self._n_samples_seen += X.shape[0]
-                
-                self.logger.info(f"Updated preprocessor with {X.shape[0]} additional samples, total seen: {self._n_samples_seen}")
-                return self
+                return self.fit(X, feature_names=feature_names)
+            
+            # Verify dimensions match
+            if X.shape[1] != self._n_features:
+                raise InputValidationError(
+                    f"Expected {self._n_features} features, got {X.shape[1]}"
+                )
+            
+            # Update statistics incrementally
+            self._update_stats_incrementally(X)
+            
+            # Update samples seen
+            self._n_samples_seen += X.shape[0]
+            
+            # Track fit time for metrics
+            fit_time = time.time() - start_time
+            self._metrics['fit_time'].append(fit_time)
+            
+            self.logger.info(f"Partially fitted on additional {X.shape[0]} samples in {fit_time:.4f}s")
+            return self
 
-    def _update_stats_incrementally(self, X: np.array) -> None:
-        """Update statistics incrementally with new data."""
-        norm_type = self.config.normalization
+    def _update_stats_incrementally(self, X: np.ndarray) -> None:
+        """
+        Update statistics incrementally with new data.
         
+        Args:
+            X: New data to incorporate
+        """
+        norm_type = self._get_norm_type(self.config.normalization)
+        
+        # Update normalization statistics
         if norm_type == NormalizationType.STANDARD:
-            # For standard normalization, we update mean and variance incrementally
-            # using Welford's online algorithm
-            if 'mean' in self._stats and 'std' in self._stats:
-                old_n = self._n_samples_seen
-                new_n = X.shape[0]
-                total_n = old_n + new_n
+            # Update mean and std incrementally using Welford's algorithm
+            if 'mean' not in self._stats or 'std' not in self._stats:
+                self._compute_standard_stats(X)
+                return
                 
-                # Get current mean and update with new data
-                old_mean = self._stats['mean']
-                new_mean = np.mean(X, axis=0)
-                
-                # Calculate batch variance for new data
-                new_var = np.var(X, axis=0)
-                
-                # Compute combined mean
-                combined_mean = (old_n * old_mean + new_n * new_mean) / total_n
-                
-                # Compute combined variance using parallel variance formula
-                old_var = self._stats['std'] ** 2
-                combined_var = (old_n * old_var + new_n * new_var + 
-                                (old_n * new_n) / total_n * (old_mean - new_mean) ** 2) / total_n
-                
-                # Update statistics
-                self._stats['mean'] = combined_mean
-                self._stats['std'] = np.sqrt(np.maximum(combined_var, self.config.epsilon))
-                self._stats['scale'] = 1.0 / self._stats['std']
-                
-                self.logger.debug("Updated standard normalization statistics incrementally")
-                
+            n_prev = self._n_samples_seen
+            n_new = X.shape[0]
+            n_total = n_prev + n_new
+            
+            # Get previous statistics
+            prev_mean = self._stats['mean']
+            prev_var = self._stats['std'] ** 2
+            
+            # Compute statistics for new data
+            new_mean = np.mean(X, axis=0)
+            new_var = np.var(X, axis=0)
+            
+            # Combine statistics
+            delta = new_mean - prev_mean
+            m_a = prev_var * n_prev
+            m_b = new_var * n_new
+            M2 = m_a + m_b + delta ** 2 * n_prev * n_new / n_total
+            
+            # Update statistics
+            updated_mean = prev_mean + delta * n_new / n_total
+            updated_var = M2 / n_total
+            updated_std = np.sqrt(np.maximum(updated_var, self.config.epsilon))
+            updated_scale = 1.0 / updated_std
+            
+            # Store updated statistics
+            self._stats['mean'] = updated_mean
+            self._stats['std'] = updated_std
+            self._stats['scale'] = updated_scale
+            
         elif norm_type == NormalizationType.MINMAX:
-            # For min-max normalization, we update min and max
-            if 'min' in self._stats and 'max' in self._stats:
-                # Update min and max with new data
-                new_min = np.min(X, axis=0)
-                new_max = np.max(X, axis=0)
+            # Update min and max
+            if 'min' not in self._stats or 'max' not in self._stats:
+                self._compute_minmax_stats(X)
+                return
                 
-                # Update global min and max
-                self._stats['min'] = np.minimum(self._stats['min'], new_min)
-                self._stats['max'] = np.maximum(self._stats['max'], new_max)
-                
-                # Recalculate range and scale
-                range_val = self._stats['max'] - self._stats['min']
-                range_val = np.maximum(range_val, self.config.epsilon)
-                self._stats['range'] = range_val
-                self._stats['scale'] = 1.0 / range_val
-                
-                self.logger.debug("Updated min-max normalization statistics incrementally")
-                
+            prev_min = self._stats['min']
+            prev_max = self._stats['max']
+            
+            # Compute min and max for new data
+            new_min = np.min(X, axis=0)
+            new_max = np.max(X, axis=0)
+            
+            # Update min and max
+            updated_min = np.minimum(prev_min, new_min)
+            updated_max = np.maximum(prev_max, new_max)
+            
+            # Update range and scale
+            updated_range = updated_max - updated_min
+            updated_range = np.maximum(updated_range, self.config.epsilon)
+            updated_scale = 1.0 / updated_range
+            
+            # Store updated statistics
+            self._stats['min'] = updated_min
+            self._stats['max'] = updated_max
+            self._stats['range'] = updated_range
+            self._stats['scale'] = updated_scale
+            
         elif norm_type == NormalizationType.ROBUST:
-            # For robust normalization, we need to recalculate percentiles
-            # This is more challenging to do incrementally, so we'll use a simplified approach
-            # that approximates the results
-            if 'lower' in self._stats and 'upper' in self._stats:
-                # Get current bounds
-                old_lower = self._stats['lower']
-                old_upper = self._stats['upper']
+            # For robust statistics, we need to recalculate percentiles
+            # This is an approximation as exact incremental percentiles are complex
+            
+            # Get previous statistics or initialize
+            if 'lower' not in self._stats or 'upper' not in self._stats:
+                self._compute_robust_stats(X)
+                return
                 
-                # Calculate percentiles for new data
-                lower, upper = self.config.robust_percentiles
-                new_lower = np.percentile(X, lower, axis=0)
-                new_upper = np.percentile(X, upper, axis=0)
-                
-                # Use a weighted average based on sample counts (approximation)
-                weight_old = self._n_samples_seen / (self._n_samples_seen + X.shape[0])
-                weight_new = X.shape[0] / (self._n_samples_seen + X.shape[0])
-                
-                # Update bounds (this is an approximation, not exact percentile calculation)
-                combined_lower = weight_old * old_lower + weight_new * new_lower
-                combined_upper = weight_old * old_upper + weight_new * new_upper
-                
-                # Ensure bounds are reasonable by taking min/max as safety
-                combined_lower = np.minimum(combined_lower, np.minimum(old_lower, new_lower))
-                combined_upper = np.maximum(combined_upper, np.maximum(old_upper, new_upper))
-                
-                # Update statistics
-                self._stats['lower'] = combined_lower
-                self._stats['upper'] = combined_upper
-                range_val = combined_upper - combined_lower
-                range_val = np.maximum(range_val, self.config.epsilon)
-                self._stats['range'] = range_val
-                self._stats['scale'] = 1.0 / range_val
-                
-                self.logger.debug("Updated robust normalization statistics incrementally (approximate)")
-                
-        elif norm_type == NormalizationType.CUSTOM:
-            # For custom normalization, we need to call the user-defined function
-            if hasattr(self.config, 'custom_incremental_update_fn') and callable(self.config.custom_incremental_update_fn):
-                try:
-                    # Call custom function with current stats, new data, and sample counts
-                    self._stats = self.config.custom_incremental_update_fn(
-                        self._stats, X, self._n_samples_seen, X.shape[0]
-                    )
-                    self.logger.debug("Updated custom normalization statistics incrementally")
-                except Exception as e:
-                    self.logger.error(f"Error in custom incremental update: {e}")
-                    raise
+            # For now, we'll recompute on a sample of old + new data
+            # In a production system, you might use a more sophisticated algorithm
+            
+            # Get percentiles and sample size
+            lower, upper = self.config.robust_percentiles
+            sample_size = min(10000, self._n_samples_seen)
+            
+            # Generate random indices from previous data
+            if hasattr(self, '_prev_sample_indices') and hasattr(self, '_prev_sample'):
+                prev_indices = self._prev_sample_indices
+                prev_sample = self._prev_sample
             else:
-                self.logger.warning("No custom_incremental_update_fn defined, statistics not updated")
-        
+                # No previous sample, use current statistics as approximation
+                prev_sample = None
+                
+            # Combine with new data
+            if prev_sample is not None:
+                combined = np.vstack([prev_sample, X])
+            else:
+                combined = X
+                
+            # Compute percentiles
+            lower_percentile = np.percentile(combined, lower, axis=0)
+            upper_percentile = np.percentile(combined, upper, axis=0)
+            
+            # Update range and scale
+            updated_range = upper_percentile - lower_percentile
+            updated_range = np.maximum(updated_range, self.config.epsilon)
+            updated_scale = 1.0 / updated_range
+            
+            # Store updated statistics
+            self._stats['lower'] = lower_percentile
+            self._stats['upper'] = upper_percentile
+            self._stats['range'] = updated_range
+            self._stats['scale'] = updated_scale
+            
+            # Store a sample of this data for future updates
+            if X.shape[0] > sample_size:
+                indices = np.random.choice(X.shape[0], sample_size, replace=False)
+                self._prev_sample = X[indices].copy()
+            else:
+                self._prev_sample = X.copy()
+            self._prev_sample_indices = np.arange(len(self._prev_sample))
+            
         # Update outlier statistics if needed
         if self.config.detect_outliers:
             self._update_outlier_stats(X)
-            
-        # Update median if used for imputation
-        if self.config.nan_strategy == "median" or self.config.inf_strategy == "median":
-            if 'median' in self._stats:
-                # Approximate update of median (not mathematically exact)
-                old_weight = self._n_samples_seen / (self._n_samples_seen + X.shape[0])
-                new_weight = X.shape[0] / (self._n_samples_seen + X.shape[0])
-                new_median = np.median(X, axis=0)
-                self._stats['median'] = old_weight * self._stats['median'] + new_weight * new_median
-            else:
-                # Calculate median if not present
-                self._stats['median'] = np.median(X, axis=0)
-                
-        # Update most frequent values if needed
-        if self.config.nan_strategy == "most_frequent" and 'most_frequent' in self._stats:
-            # This is just an approximation, as keeping track of frequencies across batches
-            # would require additional memory
-            new_most_frequent = np.zeros(X.shape[1], dtype=self.config.dtype)
-            for i in range(X.shape[1]):
-                unique_vals, counts = np.unique(X[:, i], return_counts=True)
-                if len(unique_vals) > 0:
-                    new_most_frequent[i] = unique_vals[np.argmax(counts)]
-                else:
-                    new_most_frequent[i] = 0.0
-            
-            # Keep old values if they have higher frequency (approximation)
-            # In a real implementation, we would track actual frequencies
-            self._stats['most_frequent'] = self._stats['most_frequent']
 
-    def _update_outlier_stats(self, X: np.array) -> None:
-        """Update outlier detection statistics with new data."""
-        outlier_method = self._stats.get('outlier_method')
-        if outlier_method is None:
+    def _update_outlier_stats(self, X: np.ndarray) -> None:
+        """
+        Update outlier statistics incrementally with new data.
+        
+        Args:
+            X: New data to incorporate
+        """
+        outlier_method = self.config.outlier_method.lower()
+        
+        # Initialize if not already present
+        if 'outlier_lower' not in self._stats or 'outlier_upper' not in self._stats:
+            self._compute_outlier_stats(X)
             return
             
         if outlier_method == "iqr":
-            # For IQR, we update quantiles (this is an approximation)
-            if 'outlier_lower' in self._stats and 'outlier_upper' in self._stats:
-                # Calculate IQR for new data
-                q1 = np.percentile(X, 25, axis=0)
-                q3 = np.percentile(X, 75, axis=0)
-                iqr = q3 - q1
-                threshold = self.config.outlier_params.get("threshold", 1.5)
-                
-                new_lower = q1 - threshold * iqr
-                new_upper = q3 + threshold * iqr
-                
-                # Combine with existing bounds (approximation)
-                weight_old = self._n_samples_seen / (self._n_samples_seen + X.shape[0])
-                weight_new = X.shape[0] / (self._n_samples_seen + X.shape[0])
-                
-                combined_lower = weight_old * self._stats['outlier_lower'] + weight_new * new_lower
-                combined_upper = weight_old * self._stats['outlier_upper'] + weight_new * new_upper
-                
-                # Update statistics
-                self._stats['outlier_lower'] = combined_lower
-                self._stats['outlier_upper'] = combined_upper
-                
-        elif outlier_method == "zscore":
-            # For z-score, we update mean and std
-            if 'outlier_mean' in self._stats and 'outlier_std' in self._stats:
-                # Update mean and std incrementally (same as standard normalization)
-                old_n = self._n_samples_seen
-                new_n = X.shape[0]
-                total_n = old_n + new_n
-                
-                old_mean = self._stats['outlier_mean']
-                new_mean = np.mean(X, axis=0)
-                
-                new_var = np.var(X, axis=0)
-                
-                combined_mean = (old_n * old_mean + new_n * new_mean) / total_n
-                
-                old_var = self._stats['outlier_std'] ** 2
-                combined_var = (old_n * old_var + new_n * new_var + 
-                                (old_n * new_n) / total_n * (old_mean - new_mean) ** 2) / total_n
-                
-                self._stats['outlier_mean'] = combined_mean
-                self._stats['outlier_std'] = np.sqrt(np.maximum(combined_var, self.config.epsilon))
-                
-        elif outlier_method == "isolation_forest":
-            # For Isolation Forest, we could retrain the model with a sample of old and new data
-            # This is more complex and would require keeping a sample of previous data
-            # For simplicity, we'll skip this and rely on periodic full refitting
-            self.logger.warning("Partial fit with Isolation Forest not fully supported - "
-                              "model not updated incrementally")
-
-    def __repr__(self) -> str:
-        """Return string representation of the preprocessor."""
-        status = "fitted" if self._fitted else "not fitted"
-        features_info = f"{self._n_features} features" if self._fitted else "unknown features"
-        samples_info = f"{self._n_samples_seen} samples seen" if self._fitted else ""
-        return (f"DataPreprocessor(normalization={self.config.normalization}, "
-                f"{features_info}, {samples_info}, {status}, version={self._version})")
-
-    def __del__(self) -> None:
-        """Cleanup resources when the object is deleted."""
-        # Clean up parallel executor if exists
-        if hasattr(self, '_parallel_executor') and self._parallel_executor:
-            try:
-                self._parallel_executor.shutdown(wait=False)
-            except Exception:
-                # Ignore errors during cleanup
-                pass
-    def __getstate__(self):
-        state = self.__dict__.copy()
-        # Remove unpicklable attributes.
-        state.pop('_lock', None)
-        state.pop('_parallel_executor', None)
-        state.pop('logger', None)
-        return state
-    def __setstate__(self, state):
-        self.__dict__.update(state)
-        # Reinitialize the unpicklable attributes.
-        self._lock = threading.RLock()
-        self.logger = logging.getLogger(f"{__name__}.DataPreprocessor")
-        # Optionally reinitialize the parallel executor if needed.
-        if self.config.parallel_processing:
-            self._init_parallel_executor()
-    def get_memory_usage(self) -> Dict[str, Any]:
-        """
-        Estimate the memory usage of the preprocessor.
-        
-        Returns:
-            Dictionary with memory usage information
-        """
-        import sys
-        
-        memory_info = {}
-        
-        # Estimate stats memory usage
-        stats_size = 0
-        for k, v in self._stats.items():
-            if isinstance(v, np.ndarray):
-
-                stats_size += v.nbytes
-            elif hasattr(v, '__sizeof__'):
-                stats_size += sys.getsizeof(v)
+            # For IQR, we'll recalculate on a sample as exact incremental IQR is complex
+            if hasattr(self, '_prev_sample'):
+                combined = np.vstack([self._prev_sample, X])
             else:
-                stats_size += sys.getsizeof(str(v))
+                combined = X
+                
+            # Compute IQR-based bounds
+            q1 = np.percentile(combined, 25, axis=0)
+            q3 = np.percentile(combined, 75, axis=0)
+            iqr = q3 - q1
+            
+            lower_bound = q1 - (self.outlier_iqr_multiplier * iqr)
+            upper_bound = q3 + (self.outlier_iqr_multiplier * iqr)
+            
+        elif outlier_method == "zscore":
+            # For Z-score, we can use our incrementally updated mean and std
+            if 'mean' not in self._stats or 'std' not in self._stats:
+                self._update_stats_incrementally(X)
+                
+            mean = self._stats['mean']
+            std = self._stats['std']
+            
+            lower_bound = mean - (self.outlier_zscore_threshold * std)
+            upper_bound = mean + (self.outlier_zscore_threshold * std)
+            
+        elif outlier_method == "percentile":
+            # For percentile bounds, we'll recalculate on a sample
+            if hasattr(self, '_prev_sample'):
+                combined = np.vstack([self._prev_sample, X])
+            else:
+                combined = X
+                
+            lower, upper = self.outlier_percentiles
+            lower_bound = np.percentile(combined, lower, axis=0)
+            upper_bound = np.percentile(combined, upper, axis=0)
+            
+        else:
+            # Default to Z-score method
+            if 'mean' not in self._stats or 'std' not in self._stats:
+                self._update_stats_incrementally(X)
+                
+            mean = self._stats['mean']
+            std = self._stats['std']
+            
+            lower_bound = mean - (3.0 * std)  # Default to 3 sigma
+            upper_bound = mean + (3.0 * std)
         
-        memory_info['stats_bytes'] = stats_size
-        memory_info['stats_mb'] = stats_size / (1024 * 1024)
-        
-        # Estimate cache size if enabled
-        if self.config.cache_enabled and hasattr(self._cached_transform, 'cache_info'):
-            cache_info = self._cached_transform.cache_info()
-            memory_info['cache_hits'] = cache_info.hits
-            memory_info['cache_misses'] = cache_info.misses
-            memory_info['cache_size'] = cache_info.currsize
-            memory_info['cache_maxsize'] = cache_info.maxsize
-        
-        # Total object size (approximate)
-        memory_info['total_bytes'] = sys.getsizeof(self)
-        memory_info['total_mb'] = sys.getsizeof(self) / (1024 * 1024)
-        
-        return memory_info
-
-    def copy(self) -> 'DataPreprocessor':
-        """Create a deep copy of the preprocessor."""
-        import copy
-        # Use Python's deepcopy to ensure all nested objects are properly copied
-        return copy.deepcopy(self)
+        # Store updated outlier bounds
+        self._stats['outlier_lower'] = lower_bound
+        self._stats['outlier_upper'] = upper_bound
