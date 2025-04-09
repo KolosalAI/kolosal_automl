@@ -210,7 +210,7 @@ ml-training-engine/
 | test_batch_processor.py       | ✅ PASSED |
 | test_data_preprocessor.py     | ❌ FAILED |
 | test_device_optimizer.py      | ❌ FAILED |
-| test_inference_engine.py      | 🛑 ERROR |
+| test_inference_engine.py      | ❌ FAILED |
 | test_lru_ttl_cache.py         | ✅ PASSED |
 | test_model_manager.py         | ❌ FAILED |
 | test_optimizer_asht.py        | ❌ FAILED |

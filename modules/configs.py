@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field, asdict
-from enum import Enum, auto
+from enum import  Enum, auto, unique
 import os
 import numpy as np
 from typing import Optional, List, Dict, Tuple, NamedTuple, Callable, Any, Union
@@ -408,12 +408,16 @@ class PreprocessorConfig:
 # -----------------------------------------------------------------------------
 # Configuration for Inference Engine
 # -----------------------------------------------------------------------------
+
 class ModelType(Enum):
     SKLEARN = auto()
     XGBOOST = auto()
     LIGHTGBM = auto()
     CUSTOM = auto()
     ENSEMBLE = auto()
+    ONNX = auto()  # Added for ONNX model support
+    PYTORCH = auto()  # Added for PyTorch model support
+    TENSORFLOW = auto()  # Added for TensorFlow model support
 
 class EngineState(Enum):
     INITIALIZING = auto()
@@ -437,16 +441,17 @@ class OptimizationMode(str, Enum):
 @dataclass
 class InferenceEngineConfig:
     """Configuration for the inference engine"""
+    # System optimization settings
     enable_intel_optimization: bool = True
     enable_batching: bool = True
-    enable_quantization: bool = True
+    enable_quantization: bool = False  # Changed default to False for better compatibility
     model_cache_size: int = 5
     model_precision: str = "fp32"
     max_batch_size: int = 64
     timeout_ms: int = 100
     enable_jit: bool = True
     enable_onnx: bool = False
-    onnx_opset: int = 13
+    onnx_opset: int = 15  # Updated to newer opset version
     enable_tensorrt: bool = False
     runtime_optimization: bool = True
     fallback_to_cpu: bool = True
@@ -458,10 +463,11 @@ class InferenceEngineConfig:
     output_streaming: bool = False
     debug_mode: bool = False
     memory_growth: bool = True
-    custom_ops: List = None
+    custom_ops: List = field(default_factory=list)
     use_platform_accelerator: bool = True
-    platform_accelerator_config: Dict = None
-    # From base class
+    platform_accelerator_config: Dict = field(default_factory=dict)
+    
+    # Engine configuration
     model_version: str = "1.0"
     num_threads: int = 4
     set_cpu_affinity: bool = False
@@ -490,15 +496,53 @@ class InferenceEngineConfig:
     enable_quantization_aware_inference: bool = False
     enable_throttling: bool = False
     
+    # New fields aligned with the inference engine implementation
+    optimization_mode: OptimizationMode = OptimizationMode.BALANCED
+    enable_fp16_optimization: bool = False  # Enable FP16 for models that support it
+    enable_compiler_optimization: bool = True  # Enable compiler-level optimizations
+    preprocessor_config: Optional[PreprocessorConfig] = None
+    batch_processor_config: Optional[BatchProcessorConfig] = None
+    threadpoolctl_available: bool = False  # Flag to check if threadpoolctl is available
+    onnx_available: bool = False  # Flag to check if ONNX is available
+    treelite_available: bool = False  # Flag to check if Treelite is available
+    
     def __post_init__(self):
+        """Initialize default collections and validate configuration"""
+        # Set any default collections
         if self.custom_ops is None:
             self.custom_ops = []
         if self.platform_accelerator_config is None:
             self.platform_accelerator_config = {}
+            
+        # Initialize nested configurations if needed
+        if self.quantization_config is None and self.enable_quantization:
+            self.quantization_config = QuantizationConfig(
+                quantization_type=self.quantization_dtype
+            )
+            
+        if self.preprocessor_config is None and self.enable_feature_scaling:
+            self.preprocessor_config = PreprocessorConfig()
+            
+        if self.batch_processor_config is None and self.enable_batching:
+            self.batch_processor_config = BatchProcessorConfig(
+                initial_batch_size=self.initial_batch_size,
+                min_batch_size=self.min_batch_size,
+                max_batch_size=self.max_batch_size,
+                batch_timeout=self.batch_timeout,
+                max_queue_size=self.max_concurrent_requests * 2,
+                num_workers=self.num_threads
+            )
+            
+        # Validate configuration
+        if self.thread_count <= 0:
+            # Auto-detect if not specified
+            import os
+            self.thread_count = os.cpu_count() or 4
     
     def to_dict(self) -> Dict:
         """Convert config to dictionary for serialization"""
         config_dict = {
+            # System optimization settings
             "enable_intel_optimization": self.enable_intel_optimization,
             "enable_batching": self.enable_batching,
             "enable_quantization": self.enable_quantization,
@@ -523,6 +567,8 @@ class InferenceEngineConfig:
             "custom_ops": self.custom_ops,
             "use_platform_accelerator": self.use_platform_accelerator,
             "platform_accelerator_config": self.platform_accelerator_config,
+            
+            # Engine configuration
             "model_version": self.model_version,
             "num_threads": self.num_threads,
             "set_cpu_affinity": self.set_cpu_affinity,
@@ -548,14 +594,131 @@ class InferenceEngineConfig:
             "enable_feature_scaling": self.enable_feature_scaling,
             "enable_warmup": self.enable_warmup,
             "enable_quantization_aware_inference": self.enable_quantization_aware_inference,
-            "enable_throttling": self.enable_throttling
+            "enable_throttling": self.enable_throttling,
+            
+            # New fields
+            "optimization_mode": self.optimization_mode.value,
+            "enable_fp16_optimization": self.enable_fp16_optimization,
+            "enable_compiler_optimization": self.enable_compiler_optimization,
+            "threadpoolctl_available": self.threadpoolctl_available,
+            "onnx_available": self.onnx_available,
+            "treelite_available": self.treelite_available
         }
         
-        # Add quantization config if present
+        # Add nested configs if present
         if self.quantization_config:
             config_dict["quantization_config"] = self.quantization_config.to_dict()
+            
+        if self.preprocessor_config:
+            config_dict["preprocessor_config"] = self.preprocessor_config.to_dict()
+            
+        if self.batch_processor_config:
+            config_dict["batch_processor_config"] = self.batch_processor_config.to_dict()
         
         return config_dict
+        
+    @classmethod
+    def from_dict(cls, config_dict: Dict) -> 'InferenceEngineConfig':
+        """
+        Create a configuration object from a dictionary.
+        
+        Args:
+            config_dict: Dictionary with configuration parameters
+            
+        Returns:
+            InferenceEngineConfig instance
+        """
+        # Create nested configurations if present
+        quantization_config = None
+        if "quantization_config" in config_dict:
+            quantization_dict = config_dict.pop("quantization_config")
+            quantization_config = QuantizationConfig(**quantization_dict)
+            
+        preprocessor_config = None
+        if "preprocessor_config" in config_dict:
+            preprocessor_dict = config_dict.pop("preprocessor_config")
+            preprocessor_config = PreprocessorConfig(**preprocessor_dict)
+            
+        batch_processor_config = None
+        if "batch_processor_config" in config_dict:
+            batch_dict = config_dict.pop("batch_processor_config")
+            # Convert string strategy to enum if needed
+            if "processing_strategy" in batch_dict and isinstance(batch_dict["processing_strategy"], str):
+                batch_dict["processing_strategy"] = BatchProcessingStrategy(batch_dict["processing_strategy"])
+            batch_processor_config = BatchProcessorConfig(**batch_dict)
+            
+        # Handle optimization mode enum
+        if "optimization_mode" in config_dict and isinstance(config_dict["optimization_mode"], str):
+            config_dict["optimization_mode"] = OptimizationMode(config_dict["optimization_mode"])
+            
+        # Create config with nested objects
+        return cls(
+            quantization_config=quantization_config,
+            preprocessor_config=preprocessor_config,
+            batch_processor_config=batch_processor_config,
+            **config_dict
+        )
+        
+    def check_compatibility(self) -> Dict[str, bool]:
+        """
+        Check if the configuration is compatible with available libraries.
+        
+        Returns:
+            Dictionary with compatibility results
+        """
+        compatibility = {
+            "intel_optimization": False,
+            "onnx": False,
+            "tensorrt": False,
+            "threadpoolctl": False,
+            "treelite": False
+        }
+        
+        # Check Intel optimization
+        try:
+            import mkl
+            compatibility["intel_optimization"] = True
+        except ImportError:
+            try:
+                import intel
+                compatibility["intel_optimization"] = True
+            except ImportError:
+                pass
+                
+        # Check ONNX
+        try:
+            import onnx
+            import onnxruntime
+            compatibility["onnx"] = True
+            self.onnx_available = True
+        except ImportError:
+            pass
+            
+        # Check TensorRT
+        try:
+            import tensorrt
+            compatibility["tensorrt"] = True
+        except ImportError:
+            pass
+            
+        # Check threadpoolctl
+        try:
+            import threadpoolctl
+            compatibility["threadpoolctl"] = True
+            self.threadpoolctl_available = True
+        except ImportError:
+            pass
+            
+        # Check Treelite
+        try:
+            import treelite
+            import treelite_runtime
+            compatibility["treelite"] = True
+            self.treelite_available = True
+        except ImportError:
+            pass
+            
+        return compatibility
 
 # -----------------------------------------------------------------------------
 # Configuration for Training Engine
@@ -1057,3 +1220,4 @@ class MLTrainingEngineConfig:
         config_dict["monitoring_config"] = self.monitoring_config.to_dict()
         
         return config_dict
+    
