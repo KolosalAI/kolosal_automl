@@ -223,7 +223,7 @@ ml-training-engine/
 | tests/unit/test_optimizer_asht.py        | ❌ FAILED |
 | tests/unit/test_optimizer_hyperx.py      | ✅ PASSED |
 | tests/unit/test_quantizer.py             | ❌ FAILED |
-| tests/unit/test_train_engine.py          | 🛑 ERROR |
+| tests/unit/test_train_engine.py          | ❌ FAILED |
 
 Status: 
 | ✅ PASSED | ❌ FAILED |⬜ NOT RUN | 🛑 ERROR |

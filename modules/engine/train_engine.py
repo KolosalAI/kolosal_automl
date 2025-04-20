@@ -161,17 +161,17 @@ class ExperimentTracker:
         
     def start_experiment(self, config: Dict, model_info: Dict):
         """
-        Start a new experiment with configuration and model info.
-        
-        Args:
-            config: Configuration dictionary
-            model_info: Information about the model being trained
+        Begin a new experiment run and attach config / model metadata.
+
+        *config* and *model_info* are first passed through
+        ``_make_json_serializable`` so that anything written later
+        (log‑file or JSON) is guaranteed to be serialisable.
         """
         self.current_experiment = {
             "experiment_id": self.experiment_id,
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-            "config": config,
-            "model_info": model_info,
+            "config": self._make_json_serializable(config),
+            "model_info": self._make_json_serializable(model_info),
             "metrics": {},
             "feature_importance": {},
             "duration": 0,
@@ -179,61 +179,75 @@ class ExperimentTracker:
         }
         self.start_time = time.time()
         self.logger.info(f"Started experiment {self.experiment_id}")
-        
-        # Make config JSON-serializable before logging
-        json_safe_config = self._make_json_serializable(config)
-        self.logger.info(f"Configuration: {json.dumps(json_safe_config, indent=2)}")
-        self.logger.info(f"Model: {model_info}")
-        
-        # Start MLflow run if available
+        self.logger.info("Configuration:\n%s",
+                         json.dumps(self.current_experiment["config"], indent=2))
+        self.logger.info(f"Model: {self.current_experiment['model_info']}")
+
+        # ------------ (unchanged MLflow initialisation below) ----------
         if self.mlflow_configured:
             try:
                 self.active_run = mlflow.start_run(
                     experiment_id=self.mlflow_experiment_id,
                     run_name=f"{model_info.get('model_type', 'unknown')}_{self.experiment_id}"
                 )
-                
-                # Log parameters - use json-safe config for mlflow too
-                for key, value in json_safe_config.items():
-                    if isinstance(value, (str, int, float, bool)):
-                        mlflow.log_param(key, value)
-                    
-                # Log model info
-                for key, value in model_info.items():
-                    if isinstance(value, (str, int, float, bool)):
-                        mlflow.log_param(f"model_{key}", value)
-                        
-                self.logger.info(f"MLflow run started: {self.active_run.info.run_id}")
+                # log params …
+                for k, v in self.current_experiment["config"].items():
+                    if isinstance(v, (str, int, float, bool)):
+                        mlflow.log_param(k, v)
+                for k, v in self.current_experiment["model_info"].items():
+                    if isinstance(v, (str, int, float, bool)):
+                        mlflow.log_param(f"model_{k}", v)
             except Exception as e:
-                self.logger.warning(f"Failed to start MLflow run: {str(e)}")
+                self.logger.warning(f"Failed to start MLflow run: {e}")
                 self.active_run = None
 
     def _make_json_serializable(self, obj):
         """
-        Convert an object to a JSON-serializable representation.
-        
-        Args:
-            obj: Object to convert
-            
-        Returns:
-            JSON-serializable representation of the object
+        Recursively convert *obj* into a structure that the built‑in
+        ``json`` encoder can handle.
+
+        Handles:
+        • basic Python scalars (str, int, float, bool, None)  
+        • enum instances → their ``value``  
+        • numpy scalars / ndarrays → Python scalars / lists  
+        • containers (dict / list / tuple / set) – processed element‑wise  
+        • ``type`` objects → fully‑qualified class string  
+        • anything else → ``str(obj)`` fallback
         """
+        from enum import Enum
+        import numpy as np
+
+        # -------- JSON‑native types -----------------------------------
+        if isinstance(obj, (str, int, float, bool)) or obj is None:
+            return obj
+
+        # -------- numpy scalars / arrays ------------------------------
+        if isinstance(obj, np.generic):
+            return obj.item()
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+
+        # -------- Enum -> value ---------------------------------------
+        if isinstance(obj, Enum):
+            return obj.value
+
+        # -------- containers ------------------------------------------
         if isinstance(obj, dict):
             return {k: self._make_json_serializable(v) for k, v in obj.items()}
-        elif isinstance(obj, list):
-            return [self._make_json_serializable(item) for item in obj]
-        elif isinstance(obj, tuple):
-            return tuple(self._make_json_serializable(item) for item in obj)
-        elif isinstance(obj, (str, int, float, bool)) or obj is None:
-            return obj
-        elif isinstance(obj, type):
+        if isinstance(obj, (list, set)):
+            return [self._make_json_serializable(v) for v in obj]
+        if isinstance(obj, tuple):
+            return tuple(self._make_json_serializable(v) for v in obj)
+
+        # -------- class / type objects --------------------------------
+        if isinstance(obj, type):
             return f"<class '{obj.__module__}.{obj.__name__}'>"
-        else:
-            # Try to convert to string for other types
-            try:
-                return str(obj)
-            except:
-                return f"<non-serializable: {type(obj).__name__}>"
+
+        # -------- graceful fallback -----------------------------------
+        try:
+            return str(obj)
+        except Exception:
+            return f"<non‑serializable:{type(obj).__name__}>"
         
     def log_metrics(self, metrics: Dict[str, float], step: Optional[str] = None):
         """
@@ -423,37 +437,36 @@ class ExperimentTracker:
     
     def end_experiment(self):
         """
-        End the current experiment and save results.
-        
-        Returns:
-            Dictionary with experiment results
+        Finalise the experiment, write all metadata to disk, and
+        close any active MLflow run.  Returns the serialisable dict
+        that was written to *experiment_{id}.json*.
         """
-        duration = time.time() - self.start_time
-        self.current_experiment["duration"] = duration
+        self.current_experiment["duration"] = time.time() - self.start_time
         self.metrics_history.append(self.current_experiment)
-        
-        # Save experiment results
-        experiment_file = f"{self.output_dir}/experiment_{self.experiment_id}.json"
-        with open(experiment_file, 'w') as f:
-            json.dump(self.current_experiment, f, indent=2)
-            
-        self.logger.info(f"Experiment completed in {duration:.2f} seconds")
+
+        serialisable = self._make_json_serializable(self.current_experiment)
+        experiment_file = os.path.join(
+            self.output_dir, f"experiment_{self.experiment_id}.json"
+        )
+        with open(experiment_file, "w", encoding="utf-8") as fh:
+            json.dump(serialisable, fh, indent=2)
+
+        self.logger.info(
+            f"Experiment completed in {serialisable['duration']:.2f} seconds"
+        )
         self.logger.info(f"Results saved to {experiment_file}")
-        
-        # End MLflow run if active
+
+        # ------------ (unchanged MLflow tear‑down below) --------------
         if self.mlflow_configured and self.active_run:
             try:
-                # Log final metrics
-                mlflow.log_metric("duration_seconds", duration)
-                
-                # End the run
+                mlflow.log_metric("duration_seconds", serialisable["duration"])
                 mlflow.end_run()
                 self.logger.info("MLflow run ended")
                 self.active_run = None
             except Exception as e:
-                self.logger.warning(f"Failed to end MLflow run: {str(e)}")
-        
-        return self.current_experiment
+                self.logger.warning(f"Failed to end MLflow run: {e}")
+
+        return serialisable
     
     def generate_report(self, report_path: Optional[str] = None, include_plots: bool = True):
         """
@@ -2326,15 +2339,49 @@ class MLTrainingEngine:
         os.makedirs(os.path.dirname(path), exist_ok=True)
             
         try:
-            # Determine if we should save with joblib or pickle
+            # Create a copy of the model info dictionary without thread locks
+            safe_model = model_info["model"]
+            
+            # Handle threading locks in models that might use them
+            if hasattr(safe_model, 'lock') and isinstance(safe_model.lock, threading._RLock):
+                # Create a temporary copy of the model without the lock
+                if hasattr(copy, 'deepcopy'):
+                    import copy
+                    temp_model = copy.deepcopy(safe_model)
+                    # Remove or replace lock with None
+                    if hasattr(temp_model, 'lock'):
+                        temp_model.lock = None
+                    safe_model = temp_model
+            
+            # Save with joblib for better performance with large arrays
             if hasattr(joblib, 'dump'):
-                # Save with joblib for better performance with large arrays
                 if include_preprocessor:
-                    # Create a bundle with model and preprocessor
+                    # Create a bundle with model and preprocessor, being careful about locks
+                    safe_preprocessor = self.preprocessor
+                    safe_feature_selector = self.feature_selector
+                    
+                    # Handle potential locks in preprocessor
+                    if hasattr(safe_preprocessor, 'lock'):
+                        if hasattr(copy, 'deepcopy'):
+                            import copy
+                            temp_preprocessor = copy.deepcopy(safe_preprocessor)
+                            if hasattr(temp_preprocessor, 'lock'):
+                                temp_preprocessor.lock = None
+                            safe_preprocessor = temp_preprocessor
+                    
+                    # Handle potential locks in feature selector
+                    if hasattr(safe_feature_selector, 'lock'):
+                        if hasattr(copy, 'deepcopy'):
+                            import copy
+                            temp_selector = copy.deepcopy(safe_feature_selector)
+                            if hasattr(temp_selector, 'lock'):
+                                temp_selector.lock = None
+                            safe_feature_selector = temp_selector
+                    
                     bundle = {
-                        "model": model_info["model"],
-                        "preprocessor": self.preprocessor,
-                        "feature_selector": self.feature_selector,
+                        "model": safe_model,
+                        "preprocessor": safe_preprocessor,
+                        "feature_selector": safe_feature_selector,
                         "feature_names": model_info.get("feature_names", []),
                         "metrics": model_info.get("metrics", {}),
                         "params": model_info.get("params", {}),
@@ -2342,19 +2389,41 @@ class MLTrainingEngine:
                         "timestamp": datetime.now().isoformat(),
                         "engine_version": self.VERSION
                     }
+                    
                     joblib.dump(bundle, path, compress=3)
                 else:
                     # Save just the model
-                    joblib.dump(model_info["model"], path, compress=3)
+                    joblib.dump(safe_model, path, compress=3)
             else:
                 # Fall back to pickle
                 with open(path, 'wb') as f:
                     if include_preprocessor:
-                        # Create a bundle with model and preprocessor
+                        # Create a bundle with model and preprocessor, being careful about locks
+                        safe_preprocessor = self.preprocessor
+                        safe_feature_selector = self.feature_selector
+                        
+                        # Handle potential locks in preprocessor
+                        if hasattr(safe_preprocessor, 'lock'):
+                            if hasattr(copy, 'deepcopy'):
+                                import copy
+                                temp_preprocessor = copy.deepcopy(safe_preprocessor)
+                                if hasattr(temp_preprocessor, 'lock'):
+                                    temp_preprocessor.lock = None
+                                safe_preprocessor = temp_preprocessor
+                        
+                        # Handle potential locks in feature selector
+                        if hasattr(safe_feature_selector, 'lock'):
+                            if hasattr(copy, 'deepcopy'):
+                                import copy
+                                temp_selector = copy.deepcopy(safe_feature_selector)
+                                if hasattr(temp_selector, 'lock'):
+                                    temp_selector.lock = None
+                                safe_feature_selector = temp_selector
+                        
                         bundle = {
-                            "model": model_info["model"],
-                            "preprocessor": self.preprocessor,
-                            "feature_selector": self.feature_selector,
+                            "model": safe_model,
+                            "preprocessor": safe_preprocessor,
+                            "feature_selector": safe_feature_selector,
                             "feature_names": model_info.get("feature_names", []),
                             "metrics": model_info.get("metrics", {}),
                             "params": model_info.get("params", {}),
@@ -2365,7 +2434,7 @@ class MLTrainingEngine:
                         pickle.dump(bundle, f)
                     else:
                         # Save just the model
-                        pickle.dump(model_info["model"], f)
+                        pickle.dump(safe_model, f)
                         
             self.logger.info(f"Model {model_name} saved to {path}")
             
@@ -2401,7 +2470,7 @@ class MLTrainingEngine:
                         mlflow.start_run(run_name=f"save_{model_name}")
                     
                     # Log model
-                    mlflow.sklearn.log_model(model_info["model"], f"models/{model_name}")
+                    mlflow.sklearn.log_model(safe_model, f"models/{model_name}")
                     
                     # Log parameters
                     for key, value in model_info.get("params", {}).items():
