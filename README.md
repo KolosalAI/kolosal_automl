@@ -200,23 +200,30 @@ ml-training-engine/
 
 ## 🧪 Test Status
 
+### Functional
+
 | Test File                      | Status     |
 |-------------------------------|------------|
-| test_app.py                   | ⬜ NOT RUN |
-| test_engine_api.py            | ⬜ NOT RUN |
-| test_inference_api.py         | ⬜ NOT RUN |
-| test_monitoring_api.py        | ⬜ NOT RUN |
-| test_optimizer_api.py         | ⬜ NOT RUN |
-| test_batch_processor.py       | ✅ PASSED |
-| test_data_preprocessor.py     | ❌ FAILED |
-| test_device_optimizer.py      | ❌ FAILED |
-| test_inference_engine.py      | ❌ FAILED |
-| test_lru_ttl_cache.py         | ✅ PASSED |
-| test_model_manager.py         | ❌ FAILED |
-| test_optimizer_asht.py        | ❌ FAILED |
-| test_optimizer_hyperx.py      | ✅ PASSED |
-| test_quantizer.py             | ❌ FAILED |
-| test_train_engine.py          | 🛑 ERROR |
+| tests/functional/test_app.py                   | ✅ PASSED |
+| tests/functional/test_engine_api.py            | ⬜ NOT RUN |
+| tests/functional/test_inference_api.py         | ⬜ NOT RUN |
+| tests/functional/test_monitoring_api.py        | ⬜ NOT RUN |
+| tests/functional/test_optimizer_api.py         | ⬜ NOT RUN |
+
+### Unit
+
+| Test File                      | Status     |
+|-------------------------------|------------|
+| tests/unit/test_batch_processor.py       | ✅ PASSED |
+| tests/unit/test_data_preprocessor.py     | ❌ FAILED |
+| tests/unit/test_device_optimizer.py      | ❌ FAILED |
+| tests/unit/test_inference_engine.py      | ❌ FAILED |
+| tests/unit/test_lru_ttl_cache.py         | ✅ PASSED |
+| tests/unit/test_model_manager.py         | ❌ FAILED |
+| tests/unit/test_optimizer_asht.py        | ❌ FAILED |
+| tests/unit/test_optimizer_hyperx.py      | ✅ PASSED |
+| tests/unit/test_quantizer.py             | ❌ FAILED |
+| tests/unit/test_train_engine.py          | 🛑 ERROR |
 
 Status: 
 | ✅ PASSED | ❌ FAILED |⬜ NOT RUN | 🛑 ERROR |

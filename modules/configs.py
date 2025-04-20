@@ -396,7 +396,7 @@ class PreprocessorConfig:
     def from_dict(cls, config_dict: Dict) -> 'PreprocessorConfig':
         """Create config from dictionary"""
         # Remove any unknown keys
-        valid_fields = {field.name for field in fields(cls)}
+        valid_fields = {field.name for field in field(cls)}
         filtered_dict = {k: v for k, v in config_dict.items() if k in valid_fields}
         
         # Handle special types
