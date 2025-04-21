@@ -17,7 +17,8 @@ import threading
 from contextlib import contextmanager
 from queue import Queue
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
-
+import copy
+from types import MethodType
 # Import scikit-learn components
 from sklearn.base import BaseEstimator
 from sklearn.model_selection import (
@@ -78,6 +79,7 @@ from modules.configs import (
 from modules.engine.inference_engine import InferenceEngine
 from modules.engine.batch_processor import BatchProcessor
 from modules.engine.data_preprocessor import DataPreprocessor
+from modules.engine.utils import _json_safe, _scrub, _patch_pickle_for_locks
 
 # Optional imports for optimizers
 try:
@@ -170,8 +172,8 @@ class ExperimentTracker:
         self.current_experiment = {
             "experiment_id": self.experiment_id,
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-            "config": self._make_json_serializable(config),
-            "model_info": self._make_json_serializable(model_info),
+            "config": _json_safe(config),
+            "model_info": _json_safe(model_info),
             "metrics": {},
             "feature_importance": {},
             "duration": 0,
@@ -1296,119 +1298,78 @@ class MLTrainingEngine:
         return None
         
     def _get_default_param_grid(self, model):
-        """
-        Get default hyperparameter grid for the given model.
-        
-        Args:
-            model: Model instance
-            
-        Returns:
-            Dictionary with parameter grid
-        """
-        # Get model class name
-        model_class = model.__class__.__name__.lower()
-        
-        # Define default grids for common models
-        if "randomforest" in model_class:
-            return {
-                "n_estimators": [50, 100, 200],
-                "max_depth": [None, 10, 20, 30],
-                "min_samples_split": [2, 5, 10],
-                "min_samples_leaf": [1, 2, 4]
-            }
-        elif "gradientboosting" in model_class:
-            return {
-                "n_estimators": [50, 100, 200],
-                "learning_rate": [0.01, 0.1, 0.2],
-                "max_depth": [3, 5, 7],
-                "subsample": [0.8, 1.0],
-                "min_samples_split": [2, 5, 10]
-            }
-        elif "xgb" in model_class:
-            return {
-                "n_estimators": [50, 100, 200],
-                "learning_rate": [0.01, 0.1, 0.2],
-                "max_depth": [3, 5, 7],
-                "colsample_bytree": [0.7, 0.8, 1.0],
-                "subsample": [0.7, 0.8, 1.0]
-            }
-        elif "lightgbm" in model_class or "lgbm" in model_class:
-            return {
-                "n_estimators": [50, 100, 200],
-                "learning_rate": [0.01, 0.1, 0.2],
-                "max_depth": [3, 5, 7],
-                "num_leaves": [31, 50, 70],
-                "min_child_samples": [10, 20, 30]
-            }
-        elif "catboost" in model_class:
-            return {
-                "iterations": [50, 100, 200],
-                "learning_rate": [0.01, 0.1, 0.2],
-                "depth": [4, 6, 8],
-                "l2_leaf_reg": [1, 3, 5, 7, 9]
-            }
-        elif "logistic" in model_class:
-            return {
-                "C": [0.001, 0.01, 0.1, 1, 10, 100],
-                "solver": ["lbfgs", "liblinear"],
-                "penalty": ["l2", "none"]
-            }
-        elif "svc" in model_class or "svr" in model_class:
-            return {
-                "C": [0.1, 1, 10, 100],
-                "kernel": ["linear", "rbf"],
-                "gamma": ["scale", "auto", 0.1, 0.01]
-            }
-        elif "kneighbors" in model_class:
-            return {
-                "n_neighbors": [3, 5, 7, 9, 11, 15],
-                "weights": ["uniform", "distance"],
-                "p": [1, 2]
-            }
-        elif "decisiontree" in model_class:
-            return {
-                "max_depth": [None, 5, 10, 15, 20],
-                "min_samples_split": [2, 5, 10],
-                "min_samples_leaf": [1, 2, 5],
-                "criterion": ["gini", "entropy"] if "classifier" in model_class else ["squared_error", "friedman_mse"]
-            }
-        elif "linear" in model_class:
-            return {
-                "fit_intercept": [True, False],
-                "normalize": [True, False] if hasattr(model, 'normalize') else {}
-            }
-        elif "ridge" in model_class:
-            return {
-                "alpha": [0.1, 1.0, 10.0, 100.0],
-                "solver": ["auto", "svd", "cholesky", "lsqr", "sparse_cg", "sag", "saga"]
-            }
-        elif "lasso" in model_class:
-            return {
-                "alpha": [0.1, 0.5, 1.0, 5.0, 10.0],
-                "selection": ["cyclic", "random"]
-            }
-        elif "elasticnet" in model_class:
-            return {
-                "alpha": [0.1, 1.0, 10.0],
-                "l1_ratio": [0.1, 0.5, 0.7, 0.9],
-                "selection": ["cyclic", "random"]
-            }
-        elif "mlp" in model_class:
-            return {
-                "hidden_layer_sizes": [(50,), (100,), (50, 50), (100, 50)],
-                "activation": ["relu", "tanh"],
-                "alpha": [0.0001, 0.001, 0.01],
-                "learning_rate": ["constant", "adaptive"],
-                "solver": ["adam", "sgd"]
-            }
-        elif "adaboost" in model_class:
-            return {
-                "n_estimators": [50, 100, 200],
-                "learning_rate": [0.01, 0.1, 1.0]
-            }
-        else:
-            # Generic small grid for unknown models
-            self.logger.warning(f"No default parameter grid for {model_class}, using empty grid")
+        """Return a reasonable, *small* default grid for quick exploration."""
+        model_name = model.__class__.__name__.lower()
+
+        default_grids = {
+            "randomforest": dict(
+                n_estimators=[100, 300],
+                max_depth=[None, 10, 30],
+                min_samples_split=[2, 5],
+            ),
+            "gradientboosting": dict(
+                n_estimators=[100, 300],
+                learning_rate=[0.03, 0.1],
+                max_depth=[3, 5],
+            ),
+            "xgb": dict(
+                n_estimators=[200, 400],
+                learning_rate=[0.03, 0.1],
+                max_depth=[4, 6],
+                subsample=[0.8, 1.0],
+                colsample_bytree=[0.8, 1.0],
+            ),
+            "lgbm": dict(
+                n_estimators=[200, 400],
+                learning_rate=[0.03, 0.1],
+                max_depth=[-1, 6],
+                num_leaves=[31, 63],
+            ),
+            "logistic": dict(
+                C=[0.01, 0.1, 1, 10],
+                solver=["lbfgs", "liblinear"],
+                penalty=["l2"],          # 'none' not accepted by liblinear
+            ),
+            "svc": dict(
+                C=[0.1, 1, 10],
+                kernel=["rbf", "linear"],
+                gamma=["scale", 0.1],
+            ),
+            "svr": dict(
+                C=[0.1, 1, 10],
+                kernel=["rbf", "linear"],
+                gamma=["scale", 0.1],
+            ),
+            "kneighbors": dict(
+                n_neighbors=[3, 5, 11],
+                weights=["uniform", "distance"],
+                p=[1, 2],
+            ),
+            "decisiontree": dict(
+                max_depth=[None, 10, 30],
+                min_samples_split=[2, 5],
+                min_samples_leaf=[1, 3],
+            ),
+            "ridge": dict(alpha=[0.1, 1.0, 10.0]),
+            "lasso": dict(alpha=[0.001, 0.01, 0.1]),
+            "elasticnet": dict(
+                alpha=[0.001, 0.01, 0.1],
+                l1_ratio=[0.2, 0.5, 0.8],
+            ),
+        }
+
+        for key, grid in default_grids.items():
+            if key in model_name:
+                return grid
+
+        # Generic fallback: take a *very* small random subset of numeric hyper‑parameters
+        try:
+            numeric_params = {k: v for k, v in model.get_params().items()
+                            if isinstance(v, (int, float)) and k != "random_state"}
+            return {k: [v, v * 2] if isinstance(v, (int, float)) and v else [v]
+                    for k, v in list(numeric_params.items())[:4]}
+        except Exception:
+            self.logger.warning("No default grid found; using empty grid")
             return {}
     
     def _compare_metrics(self, new_metric, current_best):
@@ -2314,188 +2275,41 @@ class MLTrainingEngine:
     
     def save_model(self, model_name: str, path: str = None, include_preprocessor: bool = True):
         """
-        Save a trained model to disk.
-        
-        Args:
-            model_name: Name of the model to save
-            path: Path to save the model (defaults to model_path/model_name)
-            include_preprocessor: Whether to include the preprocessor with the model
-            
-        Returns:
-            Path to the saved model
+        Persist a model (optionally with preprocessor / selector) to disk.
+        Now bullet‑proof against threading.Lock / RLock objects.
         """
+        _patch_pickle_for_locks()          # ensure lock reducer is active
+
         if model_name not in self.models:
-            self.logger.error(f"Model {model_name} not found")
+            self.logger.error("Model %s not found", model_name)
             return None
-        
-        # Get model info
-        model_info = self.models[model_name]
-        
-        # Determine save path
-        if path is None:
-            path = os.path.join(self.config.model_path, f"{model_name}.pkl")
-            
-        # Ensure directory exists
+
+        info = self.models[model_name]
+        path = path or os.path.join(self.config.model_path, f"{model_name}.pkl")
         os.makedirs(os.path.dirname(path), exist_ok=True)
-            
-        try:
-            # Create a copy of the model info dictionary without thread locks
-            safe_model = model_info["model"]
-            
-            # Handle threading locks in models that might use them
-            if hasattr(safe_model, 'lock') and isinstance(safe_model.lock, threading._RLock):
-                # Create a temporary copy of the model without the lock
-                if hasattr(copy, 'deepcopy'):
-                    import copy
-                    temp_model = copy.deepcopy(safe_model)
-                    # Remove or replace lock with None
-                    if hasattr(temp_model, 'lock'):
-                        temp_model.lock = None
-                    safe_model = temp_model
-            
-            # Save with joblib for better performance with large arrays
-            if hasattr(joblib, 'dump'):
-                if include_preprocessor:
-                    # Create a bundle with model and preprocessor, being careful about locks
-                    safe_preprocessor = self.preprocessor
-                    safe_feature_selector = self.feature_selector
-                    
-                    # Handle potential locks in preprocessor
-                    if hasattr(safe_preprocessor, 'lock'):
-                        if hasattr(copy, 'deepcopy'):
-                            import copy
-                            temp_preprocessor = copy.deepcopy(safe_preprocessor)
-                            if hasattr(temp_preprocessor, 'lock'):
-                                temp_preprocessor.lock = None
-                            safe_preprocessor = temp_preprocessor
-                    
-                    # Handle potential locks in feature selector
-                    if hasattr(safe_feature_selector, 'lock'):
-                        if hasattr(copy, 'deepcopy'):
-                            import copy
-                            temp_selector = copy.deepcopy(safe_feature_selector)
-                            if hasattr(temp_selector, 'lock'):
-                                temp_selector.lock = None
-                            safe_feature_selector = temp_selector
-                    
-                    bundle = {
-                        "model": safe_model,
-                        "preprocessor": safe_preprocessor,
-                        "feature_selector": safe_feature_selector,
-                        "feature_names": model_info.get("feature_names", []),
-                        "metrics": model_info.get("metrics", {}),
-                        "params": model_info.get("params", {}),
-                        "task_type": self.config.task_type.value,
-                        "timestamp": datetime.now().isoformat(),
-                        "engine_version": self.VERSION
-                    }
-                    
-                    joblib.dump(bundle, path, compress=3)
-                else:
-                    # Save just the model
-                    joblib.dump(safe_model, path, compress=3)
-            else:
-                # Fall back to pickle
-                with open(path, 'wb') as f:
-                    if include_preprocessor:
-                        # Create a bundle with model and preprocessor, being careful about locks
-                        safe_preprocessor = self.preprocessor
-                        safe_feature_selector = self.feature_selector
-                        
-                        # Handle potential locks in preprocessor
-                        if hasattr(safe_preprocessor, 'lock'):
-                            if hasattr(copy, 'deepcopy'):
-                                import copy
-                                temp_preprocessor = copy.deepcopy(safe_preprocessor)
-                                if hasattr(temp_preprocessor, 'lock'):
-                                    temp_preprocessor.lock = None
-                                safe_preprocessor = temp_preprocessor
-                        
-                        # Handle potential locks in feature selector
-                        if hasattr(safe_feature_selector, 'lock'):
-                            if hasattr(copy, 'deepcopy'):
-                                import copy
-                                temp_selector = copy.deepcopy(safe_feature_selector)
-                                if hasattr(temp_selector, 'lock'):
-                                    temp_selector.lock = None
-                                safe_feature_selector = temp_selector
-                        
-                        bundle = {
-                            "model": safe_model,
-                            "preprocessor": safe_preprocessor,
-                            "feature_selector": safe_feature_selector,
-                            "feature_names": model_info.get("feature_names", []),
-                            "metrics": model_info.get("metrics", {}),
-                            "params": model_info.get("params", {}),
-                            "task_type": self.config.task_type.value,
-                            "timestamp": datetime.now().isoformat(),
-                            "engine_version": self.VERSION
-                        }
-                        pickle.dump(bundle, f)
-                    else:
-                        # Save just the model
-                        pickle.dump(safe_model, f)
-                        
-            self.logger.info(f"Model {model_name} saved to {path}")
-            
-            # Save additional metadata separately if configured
-            if hasattr(self.config, 'generate_model_summary') and self.config.generate_model_summary:
-                metadata_path = os.path.splitext(path)[0] + "_metadata.json"
-                with open(metadata_path, 'w') as f:
-                    json.dump({
-                        "model_name": model_name,
-                        "feature_names": model_info.get("feature_names", []),
-                        "metrics": {k: float(v) if isinstance(v, (int, float)) else v 
-                                for k, v in model_info.get("metrics", {}).items()},
-                        "params": model_info.get("params", {}),
-                        "task_type": self.config.task_type.value,
-                        "training_time": model_info.get("training_time", 0),
-                        "timestamp": datetime.now().isoformat(),
-                        "engine_version": self.VERSION
-                    }, f, indent=2)
-                self.logger.info(f"Model metadata saved to {metadata_path}")
-                
-            # Log to MLflow if available and configured
-            if MLFLOW_AVAILABLE and hasattr(self.config, 'experiment_tracking') and self.config.experiment_tracking:
-                try:
-                    # Start a run if not already active
-                    run_active = False
-                    try:
-                        mlflow.active_run()
-                        run_active = True
-                    except:
-                        pass
-                        
-                    if not run_active:
-                        mlflow.start_run(run_name=f"save_{model_name}")
-                    
-                    # Log model
-                    mlflow.sklearn.log_model(safe_model, f"models/{model_name}")
-                    
-                    # Log parameters
-                    for key, value in model_info.get("params", {}).items():
-                        if isinstance(value, (int, float, str, bool)):
-                            mlflow.log_param(key, value)
-                    
-                    # Log metrics
-                    for key, value in model_info.get("metrics", {}).items():
-                        if isinstance(value, (int, float)):
-                            mlflow.log_metric(key, value)
-                    
-                    # End run if we started it
-                    if not run_active:
-                        mlflow.end_run()
-                        
-                except Exception as e:
-                    self.logger.warning(f"Failed to log model to MLflow: {str(e)}")
-            
-            return path
-            
+
+        bundle = {"model": info["model"]}
+        if include_preprocessor:
+            bundle.update(
+                preprocessor=self.preprocessor,
+                feature_selector=self.feature_selector,
+                feature_names=info.get("feature_names", []),
+                metrics=info.get("metrics", {}),
+                params=info.get("params", {}),
+                task_type=self.config.task_type.value,
+                timestamp=datetime.now().isoformat(),
+                engine_version=self.VERSION,
+            )
+
+        try:                                    # 1‑st choice: joblib (fast for arrays)
+            joblib.dump(bundle, path, compress=("gzip", 3))
         except Exception as e:
-            self.logger.error(f"Failed to save model {model_name}: {str(e)}")
-            if hasattr(self.config, 'debug_mode') and self.config.debug_mode:
-                self.logger.error(traceback.format_exc())
-            return None
+            self.logger.warning("joblib dump failed (%s). Falling back to pickle.", e)
+            with open(path, "wb") as fh:       # 2‑nd choice: std‑lib pickle
+                pickle.dump(bundle, fh, protocol=pickle.HIGHEST_PROTOCOL)
+
+        self.logger.info("Model %s saved to %s", model_name, path)
+        return path
         
     def load_model(self, path: str, model_name: str = None):
         """
@@ -2691,7 +2505,7 @@ class MLTrainingEngine:
         # Check if SHAP is available for the default method
         if method == "shap" and not SHAP_AVAILABLE:
             self.logger.warning("SHAP is not installed. Please install with 'pip install shap'")
-            return {"error": "SHAP library not available"}
+            return {"error": "SHAP library not available", "method": method}
             
         # Determine which model to use
         if model_name is None and self.best_model is not None:
@@ -2703,7 +2517,7 @@ class MLTrainingEngine:
             feature_names = self.models[model_name].get("feature_names", None)
         else:
             self.logger.error(f"Model {model_name} not found")
-            return {"error": f"Model {model_name} not found"}
+            return {"error": f"Model {model_name} not found", "method": method}
             
         # Use provided data or fall back to cached data
         if X is None:
@@ -2712,7 +2526,7 @@ class MLTrainingEngine:
                 self.logger.info("Using cached training data for explanations")
             else:
                 self.logger.error("No data provided and no cached data available")
-                return {"error": "No data available for explanations"}
+                return {"error": "No data available for explanations", "method": method}
                 
         # Apply preprocessing if needed
         if self.preprocessor and hasattr(self.preprocessor, 'transform'):
@@ -2720,7 +2534,15 @@ class MLTrainingEngine:
                 X = self.preprocessor.transform(X)
             except Exception as e:
                 self.logger.error(f"Preprocessing failed during explanation: {str(e)}")
-                return {"error": f"Preprocessing error: {str(e)}"}
+                return {"error": f"Preprocessing error: {str(e)}", "method": method}
+                
+        # Apply feature selection if needed
+        if self.feature_selector and hasattr(self.feature_selector, 'transform'):
+            try:
+                X = self.feature_selector.transform(X)
+            except Exception as e:
+                self.logger.error(f"Feature selection failed during explanation: {str(e)}")
+                return {"error": f"Feature selection error: {str(e)}", "method": method}
                 
         # Generate explanations based on method
         if method == "shap":
@@ -2795,7 +2617,7 @@ class MLTrainingEngine:
                 self.logger.error(f"SHAP explanation failed: {str(e)}")
                 if hasattr(self.config, 'debug_mode') and self.config.debug_mode:
                     self.logger.error(traceback.format_exc())
-                return {"error": f"SHAP explanation failed: {str(e)}"}
+                return {"error": f"SHAP explanation failed: {str(e)}", "method": method}
         
         elif method == "permutation":
             try:
@@ -2851,11 +2673,11 @@ class MLTrainingEngine:
                 self.logger.error(f"Permutation importance calculation failed: {str(e)}")
                 if hasattr(self.config, 'debug_mode') and self.config.debug_mode:
                     self.logger.error(traceback.format_exc())
-                return {"error": f"Permutation importance failed: {str(e)}"}
+                return {"error": f"Permutation importance failed: {str(e)}", "method": method}
         
         else:
             self.logger.error(f"Unsupported explainability method: {method}")
-            return {"error": f"Unsupported explainability method: {method}"}
+            return {"error": f"Unsupported explainability method: {method}", "method": method}
     
     def get_model_summary(self, model_name=None):
         """
