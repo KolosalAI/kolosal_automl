@@ -1659,3 +1659,72 @@ def apply_configs_to_pipeline(configs_dict: Dict[str, Any]) -> bool:
     except Exception as e:
         logger.error(f"Failed to apply configurations: {e}")
         return False
+
+def get_default_config(
+    optimization_mode: OptimizationMode = OptimizationMode.BALANCED,
+    workload_type: str = "mixed",
+    environment: str = "auto",
+    output_dir: str = "./configs/default",
+    enable_specialized_accelerators: bool = True,
+) -> Dict[str, Any]:
+    """
+    Get a set of default configurations optimized for the current system.
+    
+    This function creates a DeviceOptimizer instance and generates optimized
+    configurations based on the specified parameters and current system capabilities.
+    
+    Args:
+        optimization_mode: The optimization strategy to use
+            (BALANCED, PERFORMANCE, MEMORY_SAVING, etc.)
+        workload_type: Type of workload to optimize for 
+            ("inference", "training", or "mixed")
+        environment: Computing environment 
+            ("cloud", "desktop", "edge", or "auto" for automatic detection)
+        output_dir: Directory where configuration files will be saved
+        enable_specialized_accelerators: Whether to enable detection and 
+            optimization for specialized hardware accelerators
+    
+    Returns:
+        Dictionary containing all optimized configurations:
+        - quantization_config: Configuration for model quantization
+        - batch_processor_config: Configuration for batch processing
+        - preprocessor_config: Configuration for data preprocessing
+        - inference_engine_config: Configuration for inference engine
+        - training_engine_config: Configuration for training engine
+        - system_info: Information about the detected system
+    """
+    # Create paths for configurations
+    config_path = os.path.join(output_dir, "configs")
+    checkpoint_path = os.path.join(output_dir, "checkpoints")
+    model_registry_path = os.path.join(output_dir, "model_registry")
+    
+    # Create optimizer with the specified parameters
+    optimizer = DeviceOptimizer(
+        config_path=config_path,
+        checkpoint_path=checkpoint_path,
+        model_registry_path=model_registry_path,
+        optimization_mode=optimization_mode,
+        workload_type=workload_type,
+        environment=environment,
+        enable_specialized_accelerators=enable_specialized_accelerators,
+        auto_tune=False  # Disable auto-tuning for default config
+    )
+    
+    # Generate all configurations
+    configs = {
+        "quantization_config": optimizer.get_optimal_quantization_config(),
+        "batch_processor_config": optimizer.get_optimal_batch_processor_config(),
+        "preprocessor_config": optimizer.get_optimal_preprocessor_config(),
+        "inference_engine_config": optimizer.get_optimal_inference_engine_config(),
+        "training_engine_config": optimizer.get_optimal_training_engine_config(),
+        "system_info": optimizer.get_system_info()
+    }
+    
+    # Save configurations to files if output_dir is provided
+    if output_dir:
+        # Create a unique config_id
+        config_id = f"default_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        master_config = optimizer.save_configs(config_id)
+        configs["master_config"] = master_config
+    
+    return configs

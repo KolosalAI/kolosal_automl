@@ -204,11 +204,9 @@ ml-training-engine/
 
 | Test File                      | Status     |
 |-------------------------------|------------|
-| tests/functional/test_app.py                   | ✅ PASSED |
-| tests/functional/test_engine_api.py            | ⬜ NOT RUN |
-| tests/functional/test_inference_api.py         | ⬜ NOT RUN |
-| tests/functional/test_monitoring_api.py        | ⬜ NOT RUN |
-| tests/functional/test_optimizer_api.py         | ⬜ NOT RUN |
+| tests/functional/test_app.py                      | ✅ PASSED |
+| tests\functional\test_quantizer_api.py            | ❌ FAILED |
+| tests\functional\test_data_preprocessor_api.py    | ❌ FAILED |
 
 ### Unit
 
