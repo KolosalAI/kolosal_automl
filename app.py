@@ -3,1353 +3,2096 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-import json
 import os
+import json
 import time
-from datetime import datetime
-import requests
-import io
-import base64
-from PIL import Image
-import tempfile
-import uuid
-import plotly.express as px
-import plotly.graph_objects as go
-from kolosal_client import KolosalAutoML
+import joblib
+from io import StringIO
+from sklearn.model_selection import train_test_split
+from concurrent.futures import ThreadPoolExecutor
 
-# Page configuration
+# Import the configuration classes
+from modules.configs import (
+    TaskType,
+    OptimizationStrategy,
+    MLTrainingEngineConfig,
+    PreprocessorConfig,
+    NormalizationType,
+    BatchProcessorConfig,
+    BatchProcessingStrategy,
+    InferenceEngineConfig,
+    QuantizationConfig,
+    QuantizationType,
+    QuantizationMode,
+)
+from modules.engine.train_engine import MLTrainingEngine
+from modules.device_optimizer import *
+
+# Set page configuration
 st.set_page_config(
-    page_title="Kolosal AutoML",
+    page_title="Advanced ML Training Engine",
     page_icon="🤖",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="expanded",
 )
 
-# Custom CSS
-st.markdown("""
-<style>
-    .main .block-container {
-        padding-top: 2rem;
-    }
-    .stButton button {
-        width: 100%;
-    }
-    .status-online {
-        color: green;
-        font-weight: bold;
-    }
-    .status-offline {
-        color: red;
-        font-weight: bold;
-    }
-    .metric-card {
-        background-color: #f0f2f6;
-        border-radius: 10px;
-        padding: 20px;
-        margin: 10px 0;
-    }
-    .small-font {
-        font-size: 0.8rem;
-    }
-    .medium-font {
-        font-size: 1rem;
-    }
-    .large-font {
-        font-size: 1.5rem;
-        font-weight: bold;
-    }
-    .info-box {
-        background-color: #e6f3ff;
-        border-radius: 5px;
-        padding: 15px;
-        margin: 10px 0;
-        border-left: 5px solid #4da6ff;
-    }
-    .warning-box {
-        background-color: #fff6e6;
-        border-radius: 5px;
-        padding: 15px;
-        margin: 10px 0;
-        border-left: 5px solid #ffaa00;
-    }
-    .success-box {
-        background-color: #e6fff0;
-        border-radius: 5px;
-        padding: 15px;
-        margin: 10px 0;
-        border-left: 5px solid #00cc66;
-    }
-</style>
-""", unsafe_allow_html=True)
+# Initialize session state variables
+if "data" not in st.session_state:
+    st.session_state.data = None
+if "target" not in st.session_state:
+    st.session_state.target = None
+if "features" not in st.session_state:
+    st.session_state.features = None
+if "engine" not in st.session_state:
+    st.session_state.engine = None
+if "training_completed" not in st.session_state:
+    st.session_state.training_completed = False
+if "models" not in st.session_state:
+    st.session_state.models = {}
+if "best_model" not in st.session_state:
+    st.session_state.best_model = None
+if "model_metrics" not in st.session_state:
+    st.session_state.model_metrics = {}
+if "predictions" not in st.session_state:
+    st.session_state.predictions = None
+if "experiment_results" not in st.session_state:
+    st.session_state.experiment_results = []
+if "config" not in st.session_state:
+    st.session_state.config = None
+if "selected_models" not in st.session_state:
+    st.session_state.selected_models = []
+if "device_optimized" not in st.session_state:
+    st.session_state.device_optimized = False
+if "optimized_configs" not in st.session_state:
+    st.session_state.optimized_configs = {}
+if "all_mode_configs" not in st.session_state:
+    st.session_state.all_mode_configs = {}
+if "device_optimization_mode" not in st.session_state:
+    st.session_state.device_optimization_mode = None
 
-# Session state initialization
-if 'client' not in st.session_state:
-    st.session_state.client = None
-if 'authenticated' not in st.session_state:
-    st.session_state.authenticated = False
-if 'current_page' not in st.session_state:
-    st.session_state.current_page = "login"
-if 'api_status' not in st.session_state:
-    st.session_state.api_status = {"status": "unknown"}
-if 'uploaded_data' not in st.session_state:
-    st.session_state.uploaded_data = None
-if 'data_columns' not in st.session_state:
-    st.session_state.data_columns = []
-if 'trained_models' not in st.session_state:
-    st.session_state.trained_models = []
-if 'training_result' not in st.session_state:
-    st.session_state.training_result = None
+# Define model options by task type
+MODEL_OPTIONS = {
+    TaskType.CLASSIFICATION: [
+        "LogisticRegression",
+        "RandomForestClassifier",
+        "GradientBoostingClassifier",
+        "XGBClassifier",
+        "LGBMClassifier",
+        "CatBoostClassifier",
+        "SVC",
+    ],
+    TaskType.REGRESSION: [
+        "LinearRegression",
+        "RandomForestRegressor",
+        "GradientBoostingRegressor",
+        "XGBRegressor",
+        "LGBMRegressor",
+        "CatBoostRegressor",
+        "SVR",
+    ],
+}
 
-def update_model_list():
-    """Update the list of available models"""
+# Default hyperparameter grids
+DEFAULT_PARAM_GRIDS = {
+    "LogisticRegression": {
+        "model__C": [0.01, 0.1, 1.0, 10.0],
+        "model__penalty": ["l1", "l2", "elasticnet", None],
+        "model__solver": ["lbfgs", "liblinear", "saga"],
+    },
+    "RandomForestClassifier": {
+        "model__n_estimators": [50, 100, 200],
+        "model__max_depth": [None, 5, 10, 20],
+        "model__min_samples_split": [2, 5, 10],
+        "model__min_samples_leaf": [1, 2, 4],
+    },
+    "RandomForestRegressor": {
+        "model__n_estimators": [50, 100, 200],
+        "model__max_depth": [None, 5, 10, 20],
+        "model__min_samples_split": [2, 5, 10],
+        "model__min_samples_leaf": [1, 2, 4],
+    },
+    "GradientBoostingClassifier": {
+        "model__n_estimators": [50, 100, 200],
+        "model__learning_rate": [0.01, 0.1, 0.2],
+        "model__max_depth": [3, 5, 8],
+        "model__subsample": [0.8, 1.0],
+    },
+    "GradientBoostingRegressor": {
+        "model__n_estimators": [50, 100, 200],
+        "model__learning_rate": [0.01, 0.1, 0.2],
+        "model__max_depth": [3, 5, 8],
+        "model__subsample": [0.8, 1.0],
+    },
+    "XGBClassifier": {
+        "model__n_estimators": [50, 100, 200],
+        "model__learning_rate": [0.01, 0.1, 0.3],
+        "model__max_depth": [3, 5, 8],
+        "model__subsample": [0.8, 1.0],
+        "model__colsample_bytree": [0.8, 1.0],
+    },
+    "XGBRegressor": {
+        "model__n_estimators": [50, 100, 200],
+        "model__learning_rate": [0.01, 0.1, 0.3],
+        "model__max_depth": [3, 5, 8],
+        "model__subsample": [0.8, 1.0],
+        "model__colsample_bytree": [0.8, 1.0],
+    },
+    "LGBMClassifier": {
+        "model__n_estimators": [50, 100, 200],
+        "model__learning_rate": [0.01, 0.1, 0.3],
+        "model__max_depth": [3, 5, 8],
+        "model__subsample": [0.8, 1.0],
+        "model__colsample_bytree": [0.8, 1.0],
+    },
+    "LGBMRegressor": {
+        "model__n_estimators": [50, 100, 200],
+        "model__learning_rate": [0.01, 0.1, 0.3],
+        "model__max_depth": [3, 5, 8],
+        "model__subsample": [0.8, 1.0],
+        "model__colsample_bytree": [0.8, 1.0],
+    },
+    "CatBoostClassifier": {
+        "model__iterations": [50, 100, 200],
+        "model__learning_rate": [0.01, 0.1, 0.3],
+        "model__depth": [4, 6, 8],
+    },
+    "CatBoostRegressor": {
+        "model__iterations": [50, 100, 200],
+        "model__learning_rate": [0.01, 0.1, 0.3],
+        "model__depth": [4, 6, 8],
+    },
+    "SVC": {
+        "model__C": [0.1, 1.0, 10.0],
+        "model__kernel": ["linear", "rbf", "poly"],
+        "model__gamma": ["scale", "auto", 0.1, 1.0],
+    },
+    "SVR": {
+        "model__C": [0.1, 1.0, 10.0],
+        "model__kernel": ["linear", "rbf", "poly"],
+        "model__gamma": ["scale", "auto", 0.1, 1.0],
+    },
+    "LinearRegression": {
+        "model__fit_intercept": [True, False],
+        "model__normalize": [True, False],
+    },
+}
+
+def import_model_libraries():
+    """Import the necessary model libraries based on selections"""
+    from sklearn.linear_model import LogisticRegression, LinearRegression
+    from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+    from sklearn.ensemble import GradientBoostingClassifier, GradientBoostingRegressor
+    from sklearn.svm import SVC, SVR
+
+    models = {
+        "LogisticRegression": LogisticRegression,
+        "LinearRegression": LinearRegression,
+        "RandomForestClassifier": RandomForestClassifier,
+        "RandomForestRegressor": RandomForestRegressor,
+        "GradientBoostingClassifier": GradientBoostingClassifier,
+        "GradientBoostingRegressor": GradientBoostingRegressor,
+        "SVC": SVC,
+        "SVR": SVR,
+    }
+
+    # Try to import optional libraries
     try:
-        if st.session_state.client:
-            models = st.session_state.client.list_models()
-            st.session_state.trained_models = models.get("models", [])
-    except Exception as e:
-        st.error(f"Failed to fetch models: {str(e)}")
+        from xgboost import XGBClassifier, XGBRegressor
+        models["XGBClassifier"] = XGBClassifier
+        models["XGBRegressor"] = XGBRegressor
+    except ImportError:
+        st.warning("XGBoost is not installed. XGBoost models will not be available.")
 
-def load_data(uploaded_file):
-    """Load data from uploaded file into a pandas DataFrame"""
     try:
-        file_extension = uploaded_file.name.split('.')[-1].lower()
-        
-        if file_extension == 'csv':
-            df = pd.read_csv(uploaded_file)
-        elif file_extension in ['xls', 'xlsx']:
-            df = pd.read_excel(uploaded_file)
-        elif file_extension == 'json':
-            df = pd.read_json(uploaded_file)
-        else:
-            st.error(f"Unsupported file format: {file_extension}")
-            return None
-        
-        st.session_state.uploaded_data = df
-        st.session_state.data_columns = df.columns.tolist()
-        return df
-    except Exception as e:
-        st.error(f"Error loading data: {str(e)}")
-        return None
+        from lightgbm import LGBMClassifier, LGBMRegressor
+        models["LGBMClassifier"] = LGBMClassifier
+        models["LGBMRegressor"] = LGBMRegressor
+    except ImportError:
+        st.warning("LightGBM is not installed. LightGBM models will not be available.")
 
-def show_data_summary(df):
-    """Display summary statistics and visualizations for the data"""
-    if df is None:
-        return
-    
-    st.subheader("Data Summary")
-    
-    # Basic info
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Rows", df.shape[0])
-    col2.metric("Columns", df.shape[1])
-    col3.metric("Memory Usage", f"{df.memory_usage(deep=True).sum() / (1024*1024):.2f} MB")
-    
-    # Data types summary
-    st.write("**Data Types:**")
-    dtypes_df = pd.DataFrame(df.dtypes, columns=['Data Type'])
-    dtypes_df['Data Type'] = dtypes_df['Data Type'].astype(str)
-    dtypes_df['Count'] = dtypes_df.groupby('Data Type')['Data Type'].transform('count')
-    dtypes_summary = dtypes_df.drop_duplicates().reset_index()
-    dtypes_summary.columns = ['Column', 'Data Type', 'Count']
-    
-    # Display as bar chart
-    fig = px.bar(
-        dtypes_summary, 
-        x='Data Type', 
-        y='Count',
-        color='Data Type',
-        title='Column Data Types'
-    )
-    st.plotly_chart(fig, use_container_width=True)
-    
-    # Missing values analysis
-    missing_values = df.isnull().sum()
-    if missing_values.sum() > 0:
-        st.write("**Missing Values:**")
-        missing_df = pd.DataFrame({
-            'Column': missing_values.index,
-            'Missing Values': missing_values.values,
-            'Percentage': (missing_values.values / len(df) * 100).round(2)
-        })
-        missing_df = missing_df[missing_df['Missing Values'] > 0].sort_values('Missing Values', ascending=False)
-        
-        fig = px.bar(
-            missing_df, 
-            x='Column', 
-            y='Percentage',
-            title='Missing Values by Column (%)',
-            labels={'Percentage': 'Missing (%)'}
-        )
-        st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.success("No missing values found in the dataset")
-    
-    # Show first few rows
-    with st.expander("Preview Data"):
-        st.dataframe(df.head(10))
-    
-    # Data statistics
-    with st.expander("Numerical Statistics"):
-        st.dataframe(df.describe().T)
-
-def get_plot_for_column(df, column):
-    """Generate an appropriate plot for a given column"""
     try:
-        if pd.api.types.is_numeric_dtype(df[column]):
-            # For numeric columns
-            fig = go.Figure()
-            fig.add_trace(go.Histogram(x=df[column], name=column))
-            fig.update_layout(title=f'Distribution of {column}')
-            return fig
-        elif pd.api.types.is_string_dtype(df[column]) or df[column].nunique() < 10:
-            # For categorical columns or low-cardinality numerics
-            value_counts = df[column].value_counts().reset_index()
-            value_counts.columns = ['Value', 'Count']
-            fig = px.bar(
-                value_counts.head(20), 
-                x='Value', 
-                y='Count', 
-                title=f'Value Counts for {column}'
+        from catboost import CatBoostClassifier, CatBoostRegressor
+        models["CatBoostClassifier"] = CatBoostClassifier
+        models["CatBoostRegressor"] = CatBoostRegressor
+    except ImportError:
+        st.warning("CatBoost is not installed. CatBoost models will not be available.")
+
+    return models
+
+def optimize_for_device():
+    """Run device optimization and create optimized configurations"""
+    with st.spinner("Optimizing for your device..."):
+        # Create output directories if they don't exist
+        configs_dir = "./configs"
+        checkpoint_dir = "./checkpoints"
+        model_registry_dir = "./models"
+        
+        os.makedirs(configs_dir, exist_ok=True)
+        os.makedirs(checkpoint_dir, exist_ok=True)
+        os.makedirs(model_registry_dir, exist_ok=True)
+        
+        # Create optimized configurations
+        try:
+            # Use the create_optimized_configs function from device_optimizer
+            master_config = create_optimized_configs(
+                config_path=configs_dir,
+                checkpoint_path=checkpoint_dir,
+                model_registry_path=model_registry_dir,
+                optimization_mode=OptimizationMode.BALANCED  # Default balanced mode
             )
-            return fig
-        else:
-            # Default to box plot for other types
-            fig = px.box(df, y=column, title=f'Box Plot for {column}')
-            return fig
-    except Exception as e:
-        st.error(f"Error generating plot for {column}: {str(e)}")
-        return None
-
-def render_login_page():
-    """Render the login page"""
-    st.markdown("# 🤖 Kolosal AutoML")
-    st.markdown("### Connect to AutoML API")
-    
-    with st.form("login_form"):
-        base_url = st.text_input("API Base URL", value="http://localhost:5000")
-        
-        auth_method = st.radio("Authentication Method", ["Username/Password", "API Key"])
-        
-        if auth_method == "Username/Password":
-            username = st.text_input("Username")
-            password = st.text_input("Password", type="password")
-            api_key = None
-        else:
-            username = None
-            password = None
-            api_key = st.text_input("API Key")
-        
-        submitted = st.form_submit_button("Connect")
-        
-        if submitted:
-            with st.spinner("Connecting to API..."):
-                try:
-                    if api_key:
-                        client = KolosalAutoML(base_url=base_url, api_key=api_key)
-                    else:
-                        client = KolosalAutoML(base_url=base_url, username=username, password=password)
-                    
-                    # Check connection by getting API status
-                    status = client.check_status()
-                    st.session_state.api_status = status
-                    st.session_state.client = client
-                    st.session_state.authenticated = True
-                    
-                    # Get existing models
-                    update_model_list()
-                    
-                    st.success("Connected successfully")
-                    st.session_state.current_page = "dashboard"
-                    st.experimental_rerun()
-                except Exception as e:
-                    st.session_state.api_status = {"status": "offline", "error": str(e)}
-                    st.error(f"Connection failed: {str(e)}")
-
-def render_sidebar():
-    """Render the sidebar navigation"""
-    with st.sidebar:
-        st.image("https://via.placeholder.com/150x80?text=Kolosal+AutoML", width=150)
-        
-        # API Status indicator
-        status = st.session_state.api_status.get("status", "unknown")
-        if status == "online":
-            st.markdown(f"<p>Status: <span class='status-online'>●&nbsp;Online</span></p>", unsafe_allow_html=True)
-            st.markdown(f"<p class='small-font'>API Version: {st.session_state.api_status.get('version', 'unknown')}</p>", unsafe_allow_html=True)
-        else:
-            st.markdown(f"<p>Status: <span class='status-offline'>●&nbsp;Offline</span></p>", unsafe_allow_html=True)
-            if "error" in st.session_state.api_status:
-                st.markdown(f"<p class='small-font'>Error: {st.session_state.api_status['error']}</p>", unsafe_allow_html=True)
-        
-        st.divider()
-        
-        # Navigation
-        pages = {
-            "dashboard": "📊 Dashboard",
-            "data_upload": "📂 Data Upload",
-            "data_exploration": "🔍 Data Exploration",
-            "training": "🧠 Model Training",
-            "models": "🤖 Models",
-            "predictions": "🔮 Predictions",
-            "settings": "⚙️ Settings"
-        }
-        
-        # Make buttons look like navigation items
-        for page_id, page_name in pages.items():
-            if st.button(page_name, key=f"nav_{page_id}", disabled=page_id=="data_exploration" and st.session_state.uploaded_data is None):
-                st.session_state.current_page = page_id
-                st.experimental_rerun()
-        
-        st.divider()
-        
-        if st.button("🚪 Logout"):
-            st.session_state.clear()
-            st.experimental_rerun()
-
-def render_dashboard():
-    """Render the dashboard page"""
-    st.markdown("# 📊 Dashboard")
-    st.markdown("### Kolosal AutoML Platform Overview")
-    
-    # API Information
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown('<div class="info-box">', unsafe_allow_html=True)
-        st.markdown("#### API Information")
-        st.markdown(f"**Status:** {st.session_state.api_status.get('status', 'unknown')}")
-        st.markdown(f"**Version:** {st.session_state.api_status.get('version', 'unknown')}")
-        st.markdown(f"**Timestamp:** {st.session_state.api_status.get('timestamp', '')}")
-        st.markdown('</div>', unsafe_allow_html=True)
-    
-    with col2:
-        st.markdown('<div class="info-box">', unsafe_allow_html=True)
-        st.markdown("#### System Statistics")
-        if st.session_state.client:
-            try:
-                config = st.session_state.client.get_automl_config()
-                st.markdown(f"**Task Type:** {config.get('task_type', 'Unknown')}")
-                st.markdown(f"**Optimization Mode:** {config.get('optimization_mode', 'Unknown')}")
-                st.markdown(f"**Workers:** {config.get('max_workers', 'Unknown')}")
-                st.markdown(f"**Memory Optimization:** {'Enabled' if config.get('memory_optimization', False) else 'Disabled'}")
-            except Exception as e:
-                st.error(f"Could not fetch system configuration: {str(e)}")
-        st.markdown('</div>', unsafe_allow_html=True)
-    
-    # Model Summary
-    st.markdown("### Model Summary")
-    
-    if st.session_state.trained_models:
-        # Model count by type
-        model_types = {}
-        for model in st.session_state.trained_models:
-            model_type = model.get("model_type", "Unknown")
-            model_types[model_type] = model_types.get(model_type, 0) + 1
-        
-        # Display as metrics
-        cols = st.columns(len(model_types) + 1)
-        cols[0].metric("Total Models", len(st.session_state.trained_models))
-        
-        idx = 1
-        for model_type, count in model_types.items():
-            if idx < len(cols):
-                cols[idx].metric(f"{model_type} Models", count)
-                idx += 1
-        
-        # Recent models table
-        st.markdown("#### Recent Models")
-        recent_models = sorted(
-            st.session_state.trained_models,
-            key=lambda x: x.get("modified", ""),
-            reverse=True
-        )[:5]  # Only show 5 most recent models
-        
-        model_df = pd.DataFrame([
-            {
-                "Model Name": model.get("name", ""),
-                "Type": model.get("model_type", "Unknown"),
-                "Last Modified": model.get("modified", ""),
-                "Size": f"{model.get('size', 0) / 1024:.2f} KB"
+            
+            # Read and parse the configuration files
+            quantization_config_path = master_config.get('quantization_config')
+            batch_config_path = master_config.get('batch_processor_config')
+            preprocessor_config_path = master_config.get('preprocessor_config')
+            inference_config_path = master_config.get('inference_engine_config')
+            training_config_path = master_config.get('training_engine_config')
+            
+            # Load configurations using the load_config function
+            quantization_config = load_config(quantization_config_path, QuantizationConfig)
+            batch_config = load_config(batch_config_path, BatchProcessorConfig)
+            preprocessor_config = load_config(preprocessor_config_path, PreprocessorConfig)
+            inference_config = load_config(inference_config_path, InferenceEngineConfig)
+            training_config = load_config(training_config_path, MLTrainingEngineConfig)
+            
+            # Store optimized configurations in session state
+            st.session_state.optimized_configs = {
+                "quantization": quantization_config,
+                "batch": batch_config,
+                "preprocessor": preprocessor_config,
+                "inference": inference_config,
+                "training": training_config
             }
-            for model in recent_models
-        ])
+            
+            # Display configuration summary
+            st.subheader("Device Optimization Summary")
+            
+            # Show key optimization details
+            cols = st.columns(3)
+            
+            with cols[0]:
+                st.metric("Optimization Mode", "Balanced")
+                st.metric("CPU Cores Used", training_config.n_jobs)
+            
+            with cols[1]:
+                st.metric("Batch Processing", 
+                          f"Initial: {batch_config.initial_batch_size}, "
+                          f"Max: {batch_config.max_batch_size}")
+                st.metric("Quantization", 
+                          f"{quantization_config.quantization_type} "
+                          f"({quantization_config.quantization_mode})")
+            
+            with cols[2]:
+                st.metric("Memory Optimization", 
+                          "Enabled" if training_config.memory_optimization else "Disabled")
+                st.metric("Cross-Validation", 
+                          f"{training_config.cv_folds} Folds")
+            
+            # Optional: Show detailed config if needed
+            with st.expander("Detailed Optimization Configuration"):
+                st.json(master_config)
+            
+            st.session_state.device_optimized = True
+            
+            return True, master_config
         
-        st.dataframe(model_df, use_container_width=True)
-    else:
-        st.markdown('<div class="warning-box">', unsafe_allow_html=True)
-        st.markdown("#### No models available")
-        st.markdown("You don't have any models yet. Go to the Model Training page to create your first model.")
-        if st.button("Go to Training"):
-            st.session_state.current_page = "training"
-            st.experimental_rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
+        except Exception as e:
+            st.error(f"Error during device optimization: {str(e)}")
+            import traceback
+            st.code(traceback.format_exc())
+            return False, None
+
+def data_upload_and_configuration():
+    """Combined data upload and training configuration section"""
+    st.title("Data Upload & Training Configuration")
     
-    # Quick Actions
-    st.markdown("### Quick Actions")
-    col1, col2, col3 = st.columns(3)
+    # Create two columns for the layout
+    col1, col2 = st.columns([1, 1])
     
     with col1:
-        st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-        st.markdown("#### 📂 Upload Data")
-        st.markdown("Upload new data for analysis and model training.")
-        if st.button("Upload Data", key="dashboard_upload"):
-            st.session_state.current_page = "data_upload"
-            st.experimental_rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
-    
-    with col2:
-        st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-        st.markdown("#### 🧠 Train Model")
-        st.markdown("Create a new machine learning model with your data.")
-        if st.button("Train Model", key="dashboard_train"):
-            st.session_state.current_page = "training"
-            st.experimental_rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
-    
-    with col3:
-        st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-        st.markdown("#### 🔮 Make Predictions")
-        st.markdown("Use your models to make predictions on new data.")
-        if st.button("Make Predictions", key="dashboard_predict"):
-            st.session_state.current_page = "predictions"
-            st.experimental_rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
-
-def render_data_upload():
-    """Render the data upload page"""
-    st.markdown("# 📂 Data Upload")
-    st.markdown("### Upload your dataset for analysis and model training")
-    
-    # File uploader
-    uploaded_file = st.file_uploader(
-        "Choose a CSV, Excel, or JSON file",
-        type=["csv", "xlsx", "xls", "json"]
-    )
-    
-    if uploaded_file is not None:
-        with st.spinner("Loading data..."):
-            df = load_data(uploaded_file)
+        st.header("Data Upload & Exploration")
         
-        if df is not None:
-            st.success(f"Successfully loaded data with {df.shape[0]} rows and {df.shape[1]} columns")
-            
-            # Quick view of the data
-            st.subheader("Data Preview")
-            st.dataframe(df.head())
-            
-            # Navigation buttons
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("Explore Data", key="explore_data_btn"):
-                    st.session_state.current_page = "data_exploration"
-                    st.experimental_rerun()
-            with col2:
-                if st.button("Train Model", key="train_model_btn"):
-                    st.session_state.current_page = "training"
-                    st.experimental_rerun()
+        # File upload
+        uploaded_file = st.file_uploader("Upload your dataset (CSV, Excel)", type=["csv", "xlsx"])
 
-def render_data_exploration():
-    """Render the data exploration page"""
-    st.markdown("# 🔍 Data Exploration")
-    
-    if st.session_state.uploaded_data is None:
-        st.warning("No data uploaded. Please upload data first.")
-        if st.button("Go to Data Upload"):
-            st.session_state.current_page = "data_upload"
-            st.experimental_rerun()
-        return
-    
-    df = st.session_state.uploaded_data
-    
-    # Data summary
-    show_data_summary(df)
-    
-    # Column exploration
-    st.markdown("### Column Exploration")
-    
-    # Let user select columns to explore
-    selected_columns = st.multiselect(
-        "Select columns to explore",
-        options=df.columns.tolist(),
-        default=df.select_dtypes(include=['int64', 'float64']).columns.tolist()[:3]
-    )
-    
-    if selected_columns:
-        # Create plots for selected columns
-        for column in selected_columns:
-            st.subheader(f"Analysis of {column}")
-            
-            # Basic statistics
-            col1, col2, col3, col4 = st.columns(4)
-            
+        if uploaded_file is not None:
             try:
-                col1.metric("Unique Values", df[column].nunique())
-                
-                if pd.api.types.is_numeric_dtype(df[column]):
-                    col2.metric("Mean", f"{df[column].mean():.2f}")
-                    col3.metric("Median", f"{df[column].median():.2f}")
-                    col4.metric("Std. Dev", f"{df[column].std():.2f}")
+                # Try to determine file type from extension
+                if uploaded_file.name.endswith(".csv"):
+                    data = pd.read_csv(uploaded_file)
+                elif uploaded_file.name.endswith((".xls", ".xlsx")):
+                    data = pd.read_excel(uploaded_file)
                 else:
-                    col2.metric("Most Common", df[column].value_counts().index[0] if not df[column].value_counts().empty else "N/A")
-                    col3.metric("Most Common (%)", f"{df[column].value_counts(normalize=True).iloc[0]:.2%}" if not df[column].value_counts().empty else "N/A")
-                    col4.metric("Missing", f"{df[column].isna().sum()} ({df[column].isna().mean():.2%})")
-            except Exception as e:
-                st.error(f"Error calculating statistics for {column}: {str(e)}")
-            
-            # Plot
-            fig = get_plot_for_column(df, column)
-            if fig:
-                st.plotly_chart(fig, use_container_width=True)
-    
-    # Correlation analysis for numeric columns
-    numeric_cols = df.select_dtypes(include=['int64', 'float64']).columns.tolist()
-    if len(numeric_cols) > 1:
-        with st.expander("Correlation Analysis"):
-            corr = df[numeric_cols].corr()
-            
-            # Plot correlation heatmap
-            fig = px.imshow(
-                corr,
-                labels=dict(color="Correlation"),
-                x=corr.columns,
-                y=corr.columns,
-                color_continuous_scale="RdBu_r",
-                zmin=-1, zmax=1
-            )
-            st.plotly_chart(fig, use_container_width=True)
-            
-            # Show strongest correlations
-            st.subheader("Strongest Correlations")
-            
-            # Get absolute correlations and remove self-correlations
-            corr_abs = corr.abs().unstack()
-            corr_abs = corr_abs[corr_abs < 1].sort_values(ascending=False)
-            
-            # Take top 10 correlations
-            top_corr = corr_abs.head(10)
-            top_corr_df = pd.DataFrame({
-                'Feature 1': [i[0] for i in top_corr.index],
-                'Feature 2': [i[1] for i in top_corr.index],
-                'Correlation': top_corr.values
-            })
-            
-            st.dataframe(top_corr_df, use_container_width=True)
-    
-    # Navigation buttons
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("Back to Data Upload"):
-            st.session_state.current_page = "data_upload"
-            st.experimental_rerun()
-    with col2:
-        if st.button("Proceed to Model Training"):
-            st.session_state.current_page = "training"
-            st.experimental_rerun()
+                    st.error("Unsupported file format")
+                    return
 
-def render_training():
-    """Render the model training page"""
-    st.markdown("# 🧠 Model Training")
+                st.session_state.data = data
+
+                # Display data preview
+                st.subheader("Data Preview")
+                st.dataframe(data.head())
+
+                # Display basic statistics
+                st.subheader("Data Statistics")
+
+                # Show data dimensions
+                col_a, col_b, col_c, col_d = st.columns(4)
+                col_a.metric("Rows", f"{data.shape[0]:,}")
+                col_b.metric("Columns", data.shape[1])
+                col_c.metric("Missing Values", f"{data.isna().sum().sum():,}")
+                col_d.metric("Duplicated Rows", f"{data.duplicated().sum():,}")
+
+                # Data exploration tabs
+                tab1, tab2, tab3 = st.tabs(["Column Info", "Correlation", "Distribution"])
+
+                with tab1:
+                    # Column information
+                    column_info = pd.DataFrame(
+                        {
+                            "Column": data.columns,
+                            "Type": data.dtypes,
+                            "Non-Null Count": data.count(),
+                            "Null Count": data.isna().sum(),
+                            "Unique Values": [data[col].nunique() for col in data.columns],
+                            "Sample Values": [str(data[col].unique()[:3]) for col in data.columns],
+                        }
+                    )
+                    st.dataframe(column_info)
+
+                with tab2:
+                    # Correlation heatmap for numeric columns
+                    numeric_data = data.select_dtypes(include=["number"])
+                    if not numeric_data.empty:
+                        fig, ax = plt.subplots(figsize=(10, 8))
+                        corr_matrix = numeric_data.corr()
+                        mask = np.triu(np.ones_like(corr_matrix, dtype=bool))
+                        sns.heatmap(
+                            corr_matrix,
+                            mask=mask,
+                            annot=True,
+                            fmt=".2f",
+                            cmap="coolwarm",
+                            square=True,
+                            ax=ax,
+                        )
+                        st.pyplot(fig)
+                    else:
+                        st.info("No numeric columns found for correlation analysis.")
+
+                with tab3:
+                    # Distribution of columns
+                    if not numeric_data.empty:
+                        selected_column = st.selectbox(
+                            "Select column for distribution analysis",
+                            options=numeric_data.columns,
+                        )
+
+                        fig, ax = plt.subplots(figsize=(10, 6))
+                        sns.histplot(data=data, x=selected_column, kde=True, ax=ax)
+                        st.pyplot(fig)
+                    else:
+                        st.info("No numeric columns found for distribution analysis.")
+
+                # Target column selection
+                st.subheader("Target Selection")
+                target_col = st.selectbox("Select target column for prediction", options=data.columns)
+
+                if st.button("Set Target"):
+                    st.session_state.target = target_col
+                    st.session_state.features = data.columns.tolist()
+                    st.session_state.features.remove(target_col)
+                    st.success(f"Target set to '{target_col}'")
+
+                    # Show target info
+                    target_data = data[target_col]
+
+                    st.subheader(f"Target Column: {target_col}")
+
+                    # Detect if classification or regression based on number of unique values
+                    unique_values = target_data.nunique()
+
+                    if unique_values < 10:  # Assuming classification
+                        st.info(f"Detected a classification problem with {unique_values} classes")
+
+                        # Show distribution
+                        fig, ax = plt.subplots(figsize=(10, 6))
+                        value_counts = target_data.value_counts()
+                        sns.barplot(x=value_counts.index, y=value_counts.values, ax=ax)
+                        ax.set_title(f"Distribution of {target_col}")
+                        ax.set_ylabel("Count")
+                        plt.xticks(rotation=45)
+                        st.pyplot(fig)
+                    else:  # Assuming regression
+                        st.info("Detected a regression problem")
+
+                        # Show distribution
+                        fig, ax = plt.subplots(figsize=(10, 6))
+                        sns.histplot(data=target_data, kde=True, ax=ax)
+                        ax.set_title(f"Distribution of {target_col}")
+                        st.pyplot(fig)
+
+                        # Show basic stats
+                        st.write(
+                            {
+                                "Mean": target_data.mean(),
+                                "Median": target_data.median(),
+                                "Min": target_data.min(),
+                                "Max": target_data.max(),
+                                "Std Dev": target_data.std(),
+                            }
+                        )
+
+            except Exception as e:
+                st.error(f"Error reading file: {str(e)}")
+        else:
+            # Display sample data option
+            if st.button("Load Sample Data"):
+                # Create sample data
+                import sklearn.datasets
+
+                X, y = sklearn.datasets.load_breast_cancer(return_X_y=True, as_frame=True)
+                data = pd.concat([X, pd.Series(y, name="target")], axis=1)
+                st.session_state.data = data
+                st.session_state.target = "target"
+                st.session_state.features = X.columns.tolist()
+                st.success("Sample classification data loaded (Breast Cancer dataset)")
+                st.rerun()
     
-    if st.session_state.uploaded_data is None:
-        st.warning("No data uploaded. Please upload data first.")
-        if st.button("Go to Data Upload"):
-            st.session_state.current_page = "data_upload"
-            st.experimental_rerun()
-        return
-    
-    df = st.session_state.uploaded_data
-    
-    with st.form("training_form"):
-        st.markdown("### Training Configuration")
+    with col2:
+        st.header("Training Configuration")
+
+        if st.session_state.data is None or st.session_state.target is None:
+            st.warning("Please upload data and select a target column first")
+            return
+
+        data = st.session_state.data
+        target = st.session_state.target
+
+        # Device optimization section
+        st.subheader("Device Optimization")
         
-        # Basic settings
-        col1, col2 = st.columns(2)
+        # Optimization mode selection
+        optimization_mode_options = [
+            ("Balanced (Recommended)", OptimizationMode.BALANCED),
+            ("Conservative", OptimizationMode.CONSERVATIVE),
+            ("Performance", OptimizationMode.PERFORMANCE),
+            ("Full Utilization", OptimizationMode.FULL_UTILIZATION),
+            ("Memory Saving", OptimizationMode.MEMORY_SAVING)
+        ]
+
+        optimization_mode_labels = [o[0] for o in optimization_mode_options]
+        optimization_mode_values = [o[1] for o in optimization_mode_options]
+
+        optimization_mode_index = st.radio(
+            "Select Optimization Mode",
+            options=range(len(optimization_mode_options)),
+            format_func=lambda x: optimization_mode_labels[x],
+            index=0  # Default to Balanced
+        )
+        selected_optimization_mode = optimization_mode_values[optimization_mode_index]
+
+        # Optimization buttons
+        col_opt1, col_opt2 = st.columns(2)
         
-        with col1:
-            model_name = st.text_input("Model Name (optional)", 
-                                      placeholder="Leave blank for auto-generated name")
-            
-            target_column = st.selectbox(
-                "Target Column (what to predict)",
-                options=df.columns.tolist()
-            )
-            
-            model_type = st.selectbox(
-                "Model Type",
-                options=["classification", "regression"],
-                help="Classification for categorical targets, regression for numerical targets"
-            )
-        
-        with col2:
-            test_size = st.slider(
-                "Test Size",
-                min_value=0.1,
-                max_value=0.5,
-                value=0.2,
-                step=0.05,
-                help="Fraction of data to use for testing"
-            )
-            
-            optimization_mode = st.selectbox(
-                "Optimization Mode",
-                options=["BALANCED", "CONSERVATIVE", "PERFORMANCE", "FULL_UTILIZATION", "MEMORY_SAVING"],
-                help="Controls resource usage during training"
-            )
-            
-            optimization_strategy = st.selectbox(
-                "Optimization Strategy",
-                options=["RANDOM_SEARCH", "BAYESIAN_OPTIMIZATION", "GRID_SEARCH", "ASHT"],
-                help="Method for hyperparameter optimization"
-            )
-        
-        # Advanced settings
-        with st.expander("Advanced Settings"):
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                feature_selection = st.checkbox(
-                    "Feature Selection",
-                    value=True,
-                    help="Automatically select the most important features"
-                )
-                
-                cv_folds = st.number_input(
-                    "Cross-Validation Folds",
-                    min_value=2,
-                    max_value=10,
-                    value=5,
-                    help="Number of folds for cross-validation"
-                )
-            
-            with col2:
-                optimization_iterations = st.number_input(
-                    "Optimization Iterations",
-                    min_value=10,
-                    max_value=200,
-                    value=50,
-                    help="Number of iterations for hyperparameter search"
-                )
-                
-                random_state = st.number_input(
-                    "Random Seed",
-                    value=42,
-                    help="Seed for reproducible results"
-                )
-            
-            with col3:
-                task_type = st.selectbox(
-                    "Task Type (Optional)",
-                    options=["", "CLASSIFICATION", "REGRESSION"],
-                    help="Explicitly set the task type (usually inferred from model type)"
-                )
-        
-        # Submit button
-        submitted = st.form_submit_button("Train Model")
-        
-        if submitted:
-            with st.spinner("Training model... This may take a while."):
+        with col_opt1:
+            if st.button("Optimize for Your Device", key="device_optimize_btn"):
                 try:
-                    # Build training request
-                    result = st.session_state.client.train_model(
-                        data=df,
-                        target_column=target_column,
-                        model_type=model_type,
-                        model_name=model_name if model_name else None,
-                        task_type=task_type if task_type else None,
-                        test_size=test_size,
-                        optimization_strategy=optimization_strategy,
-                        optimization_iterations=optimization_iterations,
-                        feature_selection=feature_selection,
-                        cv_folds=cv_folds,
-                        random_state=random_state,
-                        optimization_mode=optimization_mode
+                    # Create DeviceOptimizer with selected mode
+                    optimizer = DeviceOptimizer(
+                        config_path="./configs", 
+                        checkpoint_path="./checkpoints", 
+                        model_registry_path="./models",
+                        optimization_mode=selected_optimization_mode
                     )
                     
-                    st.session_state.training_result = result
+                    # Save configurations
+                    master_config = optimizer.save_configs()
                     
-                    # Update model list
-                    update_model_list()
+                    # Store in session state
+                    st.session_state.optimized_configs = {
+                        "quantization": load_config(master_config['quantization_config'], QuantizationConfig),
+                        "batch": load_config(master_config['batch_processor_config'], BatchProcessorConfig),
+                        "preprocessor": load_config(master_config['preprocessor_config'], PreprocessorConfig),
+                        "inference": load_config(master_config['inference_engine_config'], InferenceEngineConfig),
+                        "training": load_config(master_config['training_engine_config'], MLTrainingEngineConfig)
+                    }
                     
-                    st.success("Model trained successfully!")
-                    st.json(result)
+                    st.session_state.device_optimized = True
+                    st.session_state.device_optimization_mode = selected_optimization_mode
                     
-                    # Redirect to model view
-                    st.session_state.current_page = "models"
-                    st.experimental_rerun()
+                    st.success(f"Device optimization completed in {selected_optimization_mode.value} mode!")
+                    st.info("Optimized configurations are ready to be used for training.")
                 except Exception as e:
-                    st.error(f"Training failed: {str(e)}")
-    
-    # Model registry section
-    st.markdown("### Existing Models")
-    
-    if st.session_state.trained_models:
-        model_df = pd.DataFrame([
-            {
-                "Model Name": model.get("name", ""),
-                "Type": model.get("model_type", "Unknown"),
-                "Last Modified": model.get("modified", ""),
-                "Size": f"{model.get('size', 0) / 1024:.2f} KB",
-                "Task": model.get("task_type", "Unknown")
-            }
-            for model in st.session_state.trained_models
-        ])
-        
-        st.dataframe(model_df, use_container_width=True)
-        
-        cols = st.columns(4)
-        with cols[0]:
-            if st.button("Refresh Models"):
-                update_model_list()
-                st.success("Model list refreshed")
-    else:
-        st.info("No models found. Train your first model using the form above.")
+                    st.error(f"Device optimization failed: {str(e)}")
 
-def render_models_page():
-    """Render the models management page"""
-    st.markdown("# 🤖 Models")
-    st.markdown("### Manage your machine learning models")
-    
-    # Refresh model list
-    update_model_list()
-    
-    if not st.session_state.trained_models:
-        st.info("No models found. Go to the Training page to create your first model.")
-        if st.button("Go to Training"):
-            st.session_state.current_page = "training"
-            st.experimental_rerun()
-        return
-    
-    # Model selection
-    model_names = [model.get("name", "") for model in st.session_state.trained_models]
-    selected_model = st.selectbox("Select a model", model_names)
-    
-    # Get selected model information
-    selected_model_info = next((model for model in st.session_state.trained_models if model.get("name", "") == selected_model), None)
-    
-    if selected_model_info:
-        tabs = st.tabs(["Overview", "Metrics", "Features", "Actions"])
-        
-        with tabs[0]:  # Overview tab
-            st.subheader("Model Overview")
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.markdown(f"**Name:** {selected_model_info.get('name', 'Unknown')}")
-                st.markdown(f"**Type:** {selected_model_info.get('model_type', 'Unknown')}")
-                st.markdown(f"**Task:** {selected_model_info.get('task_type', 'Unknown')}")
-                st.markdown(f"**Size:** {selected_model_info.get('size', 0) / 1024:.2f} KB")
-                
-                if "modified" in selected_model_info:
-                    st.markdown(f"**Last Modified:** {selected_model_info.get('modified', '')}")
-            
-            with col2:
+        with col_opt2:
+            if st.button("Generate Configs for All Modes", key="all_modes_config_btn"):
                 try:
-                    # Get detailed metrics
-                    metrics = st.session_state.client.get_model_metrics(selected_model)
-                    if metrics and "metrics" in metrics:
-                        st.markdown("**Performance Metrics:**")
-                        for metric_name, metric_value in metrics["metrics"].items():
-                            if isinstance(metric_value, (int, float)):
-                                st.markdown(f"- {metric_name}: {metric_value:.4f}")
+                    # Generate configurations for all optimization modes
+                    all_mode_configs = create_configs_for_all_modes(
+                        config_path="./configs", 
+                        checkpoint_path="./checkpoints", 
+                        model_registry_path="./models"
+                    )
+                    
+                    # Store in session state for reference
+                    st.session_state.all_mode_configs = all_mode_configs
+                    
+                    st.success("Configurations generated for all optimization modes!")
+                    st.info("You can review and select specific configurations as needed.")
                 except Exception as e:
-                    st.error(f"Error fetching metrics: {str(e)}")
-        
-        with tabs[1]:  # Metrics tab
-            st.subheader("Performance Metrics")
-            
-            try:
-                # Get detailed metrics
-                metrics = st.session_state.client.get_model_metrics(selected_model)
+                    st.error(f"Failed to generate all mode configurations: {str(e)}")
+
+        # Show configuration details if optimized
+        if st.session_state.device_optimized:
+            with st.expander("Current Optimization Configuration", expanded=False):
+                st.write(f"**Mode:** {st.session_state.device_optimization_mode.value}")
                 
-                if metrics and "metrics" in metrics:
-                    # Display metrics as cards
-                    metric_values = metrics["metrics"]
-                    
-                    # Classify metrics
-                    classification_metrics = [
-                        "accuracy", "precision", "recall", "f1", "auc", "roc_auc"
+                # Display key configuration highlights
+                config = st.session_state.optimized_configs
+                
+                cols = st.columns(3)
+                with cols[0]:
+                    st.metric("CPU Threads", config['training'].n_jobs)
+                with cols[1]:
+                    st.metric("CV Folds", config['training'].cv_folds)
+                with cols[2]:
+                    st.metric("Batch Size", config['batch'].initial_batch_size)
+                
+                # Full configuration details
+                st.subheader("Detailed Configuration")
+                config_tabs = st.tabs([
+                    "Training Config", 
+                    "Preprocessing Config", 
+                    "Batch Processing", 
+                    "Inference Config", 
+                    "Quantization Config"
+                ])
+                
+                with config_tabs[0]:
+                    st.json(safe_dict_serializer(config['training']))
+                with config_tabs[1]:
+                    st.json(safe_dict_serializer(config['preprocessor']))
+                with config_tabs[2]:
+                    st.json(safe_dict_serializer(config['batch']))
+                with config_tabs[3]:
+                    st.json(safe_dict_serializer(config['inference']))
+                with config_tabs[4]:
+                    st.json(safe_dict_serializer(config['quantization']))
+        with st.form("training_config_form"):
+            st.subheader("Task Configuration")
+
+            # Task type selection
+            task_type_options = [
+                ("Classification", TaskType.CLASSIFICATION),
+                ("Regression", TaskType.REGRESSION),
+            ]
+
+            task_type_labels = [t[0] for t in task_type_options]
+            task_type_values = [t[1] for t in task_type_options]
+
+            task_type_index = st.radio(
+                "Select task type",
+                options=range(len(task_type_options)),
+                format_func=lambda x: task_type_labels[x],
+            )
+            selected_task_type = task_type_values[task_type_index]
+
+            # Feature selection
+            st.subheader("Feature Selection")
+
+            enable_feature_selection = st.checkbox("Enable feature selection", value=True)
+            feature_selection_method = st.selectbox(
+                "Feature selection method",
+                options=["f_classif", "mutual_info"],
+                disabled=not enable_feature_selection,
+            )
+
+            feature_selection_k = st.slider(
+                "Number of features to select (k)",
+                min_value=1,
+                max_value=len(st.session_state.features),
+                value=min(10, len(st.session_state.features)),
+                disabled=not enable_feature_selection,
+            )
+
+            # Model selection
+            st.subheader("Model Selection")
+
+            available_models = MODEL_OPTIONS[selected_task_type]
+            selected_models = st.multiselect(
+                "Select models to train",
+                options=available_models,
+                default=available_models[:3],  # Default to first 3 models
+            )
+
+            # Optimization strategy
+            st.subheader("Optimization Strategy")
+
+            optimization_options = [
+                ("Grid Search", OptimizationStrategy.GRID_SEARCH),
+                ("Random Search", OptimizationStrategy.RANDOM_SEARCH),
+                ("Bayesian Optimization", OptimizationStrategy.BAYESIAN_OPTIMIZATION),
+                ("ASHT (Adaptive Surrogate-Assisted Hyperparameter Tuning)", OptimizationStrategy.ASHT),
+                ("HyperOptX (Multi-Stage Optimization and Meta-Learning)", OptimizationStrategy.HYPERX),
+            ]
+
+            optimization_labels = [o[0] for o in optimization_options]
+            optimization_values = [o[1] for o in optimization_options]
+
+            optimization_index = st.radio(
+                "Select optimization strategy",
+                options=range(len(optimization_options)),
+                format_func=lambda x: optimization_labels[x],
+            )
+            selected_optimization = optimization_values[optimization_index]
+
+            optimization_iterations = st.slider(
+                "Number of optimization iterations",
+                min_value=10,
+                max_value=100,
+                value=30,
+                disabled=selected_optimization == OptimizationStrategy.GRID_SEARCH,
+            )
+
+            # Cross-validation configuration
+            st.subheader("Cross-Validation")
+
+            cv_folds = st.slider(
+                "Number of cross-validation folds",
+                min_value=2,
+                max_value=10,
+                value=5,
+            )
+
+            test_size = st.slider(
+                "Test set size (%)",
+                min_value=10,
+                max_value=40,
+                value=20,
+            ) / 100
+
+            stratify = st.checkbox(
+                "Use stratified sampling",
+                value=selected_task_type == TaskType.CLASSIFICATION,
+            )
+
+            # Advanced options
+            with st.expander("Advanced Options", expanded=False):
+                advanced_tabs = st.tabs(["Preprocessing", "Batch Processing", "Quantization", "System"])
+                
+                with advanced_tabs[0]:
+                    # Normalization options
+                    normalization_options = [
+                        ("None", NormalizationType.NONE),
+                        ("Standard Scaling", NormalizationType.STANDARD),
+                        ("Min-Max Scaling", NormalizationType.MINMAX),
+                        ("Robust Scaling", NormalizationType.ROBUST),
                     ]
-                    regression_metrics = [
-                        "mse", "rmse", "mae", "r2", "explained_variance"
+
+                    normalization_index = st.selectbox(
+                        "Normalization Method",
+                        options=range(len(normalization_options)),
+                        format_func=lambda x: normalization_options[x][0],
+                    )
+                    selected_normalization = normalization_options[normalization_index][1]
+
+                    handle_nan = st.checkbox("Handle missing values", value=True)
+                    handle_inf = st.checkbox("Handle infinity values", value=True)
+
+                    nan_strategy = st.selectbox(
+                        "Missing value strategy",
+                        options=["mean", "median", "most_frequent", "zero"],
+                        disabled=not handle_nan,
+                    )
+
+                    detect_outliers = st.checkbox("Detect and handle outliers", value=False)
+                    
+                    outlier_method = st.selectbox(
+                        "Outlier detection method",
+                        options=["IQR", "Z-score", "Isolation Forest"],
+                        disabled=not detect_outliers,
+                    )
+                    
+                    outlier_threshold = st.slider(
+                        "Outlier threshold",
+                        min_value=1.0,
+                        max_value=5.0,
+                        value=3.0,
+                        step=0.1,
+                        disabled=not detect_outliers,
+                    )
+                    
+                    categorical_encoding = st.selectbox(
+                        "Categorical encoding method",
+                        options=["OneHot", "Label", "Target", "Binary", "Frequency"],
+                    )
+                    
+                    enable_feature_engineering = st.checkbox("Enable automatic feature engineering", value=False)
+                    
+                    if enable_feature_engineering:
+                        feature_engineering_methods = st.multiselect(
+                            "Feature engineering methods",
+                            options=["Polynomial", "Interaction", "Binning", "Log Transform", "Power Transform"],
+                            default=["Polynomial", "Interaction"],
+                        )
+                        
+                        polynomial_degree = st.slider(
+                            "Polynomial degree",
+                            min_value=2,
+                            max_value=5,
+                            value=2,
+                            disabled="Polynomial" not in feature_engineering_methods,
+                        )
+
+                with advanced_tabs[1]:
+                    # Batch processing options
+                    batch_strategy_options = [
+                        ("Fixed", BatchProcessingStrategy.FIXED),
+                        ("Adaptive", BatchProcessingStrategy.ADAPTIVE),
+                        ("Greedy", BatchProcessingStrategy.GREEDY),
                     ]
+
+                    batch_strategy_index = st.selectbox(
+                        "Batch Processing Strategy",
+                        options=range(len(batch_strategy_options)),
+                        format_func=lambda x: batch_strategy_options[x][0],
+                    )
+                    selected_batch_strategy = batch_strategy_options[batch_strategy_index][1]
+
+                    initial_batch_size = st.slider(
+                        "Initial batch size",
+                        min_value=1,
+                        max_value=200,
+                        value=16,
+                    )
                     
-                    # Filter and display based on type
-                    classification_metrics_found = {k: v for k, v in metric_values.items() 
-                                                  if k.lower() in classification_metrics and isinstance(v, (int, float))}
+                    max_batch_size = st.slider(
+                        "Maximum batch size",
+                        min_value=initial_batch_size,
+                        max_value=500,
+                        value=min(128, initial_batch_size * 4),
+                        disabled=selected_batch_strategy != BatchProcessingStrategy.ADAPTIVE,
+                    )
                     
-                    regression_metrics_found = {k: v for k, v in metric_values.items() 
-                                              if k.lower() in regression_metrics and isinstance(v, (int, float))}
+                    batch_growth_factor = st.slider(
+                        "Batch growth factor",
+                        min_value=1.1,
+                        max_value=3.0,
+                        value=1.5,
+                        step=0.1,
+                        disabled=selected_batch_strategy != BatchProcessingStrategy.ADAPTIVE,
+                    )
                     
-                    if classification_metrics_found:
-                        st.markdown("#### Classification Metrics")
-                        metric_cols = st.columns(len(classification_metrics_found))
-                        
-                        for i, (metric_name, metric_value) in enumerate(classification_metrics_found.items()):
-                            metric_cols[i].metric(
-                                label=metric_name.upper(),
-                                value=f"{metric_value:.4f}"
-                            )
+                    enable_batch_caching = st.checkbox("Enable batch caching", value=True)
                     
-                    if regression_metrics_found:
-                        st.markdown("#### Regression Metrics")
-                        metric_cols = st.columns(len(regression_metrics_found))
-                        
-                        for i, (metric_name, metric_value) in enumerate(regression_metrics_found.items()):
-                            metric_cols[i].metric(
-                                label=metric_name.upper(),
-                                value=f"{metric_value:.4f}"
-                            )
+                    batch_timeout = st.slider(
+                        "Batch timeout (seconds)",
+                        min_value=1,
+                        max_value=60,
+                        value=10,
+                    )
+
+                with advanced_tabs[2]:
+                    # Quantization options
+                    enable_quantization = st.checkbox("Enable model quantization", value=False)
+
+                    quantization_type_options = [
+                        ("INT8", QuantizationType.INT8),
+                        ("UINT8", QuantizationType.UINT8),
+                        ("INT16", QuantizationType.INT16),
+                    ]
+
+                    quantization_type_index = st.selectbox(
+                        "Quantization Type",
+                        options=range(len(quantization_type_options)),
+                        format_func=lambda x: quantization_type_options[x][0],
+                        disabled=not enable_quantization,
+                    )
+                    selected_quantization_type = quantization_type_options[quantization_type_index][1]
+
+                    quantization_mode_options = [
+                        ("Symmetric", QuantizationMode.SYMMETRIC),
+                        ("Asymmetric", QuantizationMode.ASYMMETRIC),
+                        ("Dynamic Per Batch", QuantizationMode.DYNAMIC_PER_BATCH),
+                        ("Dynamic Per Channel", QuantizationMode.DYNAMIC_PER_CHANNEL),
+                    ]
+
+                    quantization_mode_index = st.selectbox(
+                        "Quantization Mode",
+                        options=range(len(quantization_mode_options)),
+                        format_func=lambda x: quantization_mode_options[x][0],
+                        disabled=not enable_quantization,
+                    )
+                    selected_quantization_mode = quantization_mode_options[quantization_mode_index][1]
                     
-                    # Other metrics
-                    other_metrics = {k: v for k, v in metric_values.items() 
-                                   if k.lower() not in classification_metrics and
-                                   k.lower() not in regression_metrics and
-                                   isinstance(v, (int, float))}
+                    calibration_dataset_size = st.slider(
+                        "Calibration dataset size",
+                        min_value=10,
+                        max_value=1000,
+                        value=100,
+                        disabled=not enable_quantization,
+                    )
                     
-                    if other_metrics:
-                        st.markdown("#### Other Metrics")
-                        metric_cols = st.columns(min(3, len(other_metrics)))
-                        
-                        for i, (metric_name, metric_value) in enumerate(other_metrics.items()):
-                            col_index = i % len(metric_cols)
-                            metric_cols[col_index].metric(
-                                label=metric_name.upper(),
-                                value=f"{metric_value:.4f}" if isinstance(metric_value, float) else metric_value
-                            )
-                    
-                    # If confusion matrix exists, display it
-                    if "confusion_matrix" in metric_values:
-                        st.markdown("#### Confusion Matrix")
-                        conf_matrix = metric_values["confusion_matrix"]
-                        
-                        # Convert to numpy array if it's a list
-                        if isinstance(conf_matrix, list):
-                            conf_matrix = np.array(conf_matrix)
-                        
-                        # Create heatmap
-                        fig = px.imshow(
-                            conf_matrix,
-                            labels=dict(x="Predicted", y="Actual", color="Count"),
-                            x=[str(i) for i in range(conf_matrix.shape[1])],
-                            y=[str(i) for i in range(conf_matrix.shape[0])],
-                            text_auto=True
+                    enable_quantization_aware_training = st.checkbox(
+                        "Enable quantization-aware training",
+                        value=False,
+                        disabled=not enable_quantization,
+                    )
+
+                with advanced_tabs[3]:
+                    # System settings
+                    with ThreadPoolExecutor() as executor:
+                        max_workers = executor._max_workers
+                        n_jobs = st.slider(
+                            "Number of parallel jobs",
+                            min_value=1,
+                            max_value=max_workers,
+                            value=max_workers//2,
                         )
-                        st.plotly_chart(fig, use_container_width=True)
+
+                    memory_optimization = st.checkbox("Enable memory optimization", value=True)
                     
-                    # Show any visualization plots if available
-                    for key in metric_values:
-                        if key.endswith("_plot") and isinstance(metric_values[key], str):
-                            try:
-                                # Try to decode base64 image
-                                image_data = base64.b64decode(metric_values[key])
-                                image = Image.open(io.BytesIO(image_data))
-                                st.image(image, caption=key.replace("_plot", "").replace("_", " ").title())
-                            except:
-                                st.warning(f"Could not display {key} visualization")
-                else:
-                    st.info("No metrics available for this model.")
-            except Exception as e:
-                st.error(f"Error fetching metrics: {str(e)}")
-        
-        with tabs[2]:  # Features tab
-            st.subheader("Feature Importance")
+                    memory_limit = st.slider(
+                        "Memory limit (GB)",
+                        min_value=1,
+                        max_value=32,
+                        value=8,
+                        disabled=not memory_optimization,
+                    )
+                    
+                    enable_gpu = st.checkbox("Enable GPU acceleration (if available)", value=True)
+                    
+                    verbose = st.checkbox("Verbose output", value=True)
+
+                    log_level = st.selectbox(
+                        "Log level",
+                        options=["DEBUG", "INFO", "WARNING", "ERROR"],
+                        index=1,  # Default to INFO
+                    )
+                    
+                    random_state = st.number_input(
+                        "Random state (seed)",
+                        min_value=0,
+                        max_value=9999,
+                        value=42,
+                    )
+
+                    # Model path
+                    model_path = st.text_input("Model save path", value="./models")
+
+            # Feature importance threshold
+            feature_importance_threshold = st.slider(
+                "Feature importance threshold",
+                min_value=0.01,
+                max_value=0.5,
+                value=0.05,
+                disabled=not enable_feature_selection,
+            )
+
+            # Submit button
+            submit_button = st.form_submit_button("Save Configuration")
+
+            if submit_button:
+                # Create preprocessor config
+                preprocessor_config = PreprocessorConfig(
+                    normalization=selected_normalization,
+                    handle_nan=handle_nan,
+                    handle_inf=handle_inf,
+                    nan_strategy=nan_strategy,
+                    inf_strategy=nan_strategy,  # Use same strategy for inf
+                    detect_outliers=detect_outliers,
+                    outlier_method=outlier_method.lower() if detect_outliers else "iqr",
+                    outlier_params={
+                        "threshold": outlier_threshold if detect_outliers else 1.5,
+                        "clip": True,
+                        "n_estimators": 100,
+                        "contamination": "auto"
+                    },
+                    clip_values=False,  # You can add UI controls for this if needed
+                    enable_input_validation=True,
+                    parallel_processing=True,
+                    n_jobs=n_jobs,
+                    cache_enabled=True,
+                    debug_mode=(log_level == "DEBUG"),
+                )
+
+                # Create batch processing config
+                batch_processing_config = BatchProcessorConfig(
+                    min_batch_size=1,
+                    max_batch_size=max_batch_size,
+                    initial_batch_size=initial_batch_size,
+                    max_queue_size=1000,
+                    batch_timeout=batch_timeout,
+                    processing_strategy=selected_batch_strategy,
+                    enable_adaptive_batching=(
+                        selected_batch_strategy == BatchProcessingStrategy.ADAPTIVE
+                    ),
+                    enable_memory_optimization=memory_optimization,
+                    max_workers=n_jobs,
+                    debug_mode=(log_level == "DEBUG"),
+                )
+
+                # Create quantization config
+                quantization_config = QuantizationConfig(
+                    quantization_type=selected_quantization_type.value,  # Use .value to get the string value
+                    quantization_mode=selected_quantization_mode.value,  # Use .value to get the string value
+                    enable_cache=True,
+                    cache_size=1024,
+                    buffer_size=0,  # Default to no buffer
+                    use_percentile=False,
+                    min_percentile=0.1,
+                    max_percentile=99.9,
+                    error_on_nan=False,
+                    error_on_inf=False,
+                    outlier_threshold=outlier_threshold if enable_quantization and detect_outliers else None,
+                    num_bits=8,  # Default to 8 bits
+                    optimize_memory=memory_optimization
+                )
+
+                # Create inference engine config
+                inference_engine_config = InferenceEngineConfig(
+                    debug_mode=(log_level == "DEBUG"),
+                    num_threads=n_jobs,
+                    enable_quantization=enable_quantization,
+                    enable_model_quantization=enable_quantization,
+                    quantization_dtype=selected_quantization_type,
+                    quantization_config=quantization_config,
+                    enable_batching=True,
+                    initial_batch_size=initial_batch_size,
+                    enable_memory_optimization=memory_optimization,
+                    enable_monitoring=True,
+                )
+
+                # Create main config
+                config = MLTrainingEngineConfig(
+                    task_type=selected_task_type,
+                    model_path=model_path,
+                    preprocessing_config=preprocessor_config,
+                    batch_processing_config=batch_processing_config,
+                    inference_config=inference_engine_config,
+                    quantization_config=quantization_config,
+                    feature_selection=enable_feature_selection,
+                    feature_selection_method=feature_selection_method,
+                    feature_selection_k=feature_selection_k,
+                    feature_importance_threshold=feature_importance_threshold,
+                    optimization_strategy=selected_optimization,
+                    optimization_iterations=optimization_iterations,
+                    cv_folds=cv_folds,
+                    test_size=test_size,
+                    stratify=stratify,
+                    experiment_tracking=True,
+                    n_jobs=n_jobs,
+                    memory_optimization=memory_optimization,
+                    use_intel_optimization=enable_gpu,  # Map enable_gpu to use_intel_optimization
+                    verbose=1 if verbose else 0,
+                    log_level=log_level,
+                    random_state=random_state,
+                )
+
+                # Save config in session state
+                st.session_state.config = config
+                st.session_state.selected_models = selected_models
+
+                st.success("Configuration saved successfully!")
+
+                # Display the config summary
+                with st.expander("Configuration Summary", expanded=True):
+                    st.json(config.to_dict())
+
+def training_and_evaluation():
+    """Combined model training and evaluation section"""
+    st.title("Model Training & Evaluation")
+
+    if st.session_state.data is None or st.session_state.target is None:
+        st.warning("Please upload data and select a target column first")
+        return
+
+    if not hasattr(st.session_state, "config") or st.session_state.config is None:
+        st.warning("Please configure training parameters first")
+        return
+
+    data = st.session_state.data
+    target = st.session_state.target
+    config = st.session_state.config
+    selected_models = (
+        st.session_state.selected_models
+        if hasattr(st.session_state, "selected_models")
+        else []
+    )
+
+    if not selected_models:
+        st.error("No models selected for training")
+        return
+
+    # Create directory for models if it doesn't exist
+    if not os.path.exists(config.model_path):
+        os.makedirs(config.model_path)
+
+    # Split data into features and target
+    X = data.drop(columns=[target])
+    y = data[target]
+
+    # Create tabs for training and evaluation
+    train_tab, eval_tab = st.tabs(["Training", "Evaluation"])
+    
+    with train_tab:
+        # Display dataset information
+        st.subheader("Dataset Information")
+        st.write(f"Features: {X.shape[1]} columns, {X.shape[0]} samples")
+        st.write(f"Target: '{target}'")
+
+        # Display configuration summary
+        st.subheader("Training Configuration Summary")
+        st.write(f"Task Type: {config.task_type.value}")
+        st.write(f"Models to train: {', '.join(selected_models)}")
+        st.write(f"Optimization Strategy: {config.optimization_strategy.value}")
+        st.write(f"Cross-validation: {config.cv_folds} folds")
+
+        # Advanced training options
+        with st.expander("Advanced Training Options", expanded=False):
+            early_stopping = st.checkbox("Enable early stopping", value=True)
             
+            patience = st.slider(
+                "Early stopping patience",
+                min_value=1,
+                max_value=20,
+                value=5,
+                disabled=not early_stopping,
+            )
+            
+            train_subset = st.slider(
+                "Training data subset (%)",
+                min_value=10,
+                max_value=100,
+                value=100,
+            )
+            
+            custom_scoring = st.text_input(
+                "Custom scoring metric (scikit-learn compatible)",
+                value="",
+                help="Leave empty to use default metrics based on task type"
+            )
+            
+            enable_ensemble = st.checkbox("Enable ensemble of best models", value=False)
+            
+            ensemble_method = st.selectbox(
+                "Ensemble method",
+                options=["Voting", "Stacking", "Bagging"],
+                disabled=not enable_ensemble,
+            )
+            
+            ensemble_size = st.slider(
+                "Number of models in ensemble",
+                min_value=2,
+                max_value=len(selected_models),
+                value=min(3, len(selected_models)),
+                disabled=not enable_ensemble,
+            )
+
+        # Initialize and run training
+        if st.button("Start Training"):
+            # Initialize progress bar and status
+            progress = st.progress(0)
+            status_text = st.empty()
+
             try:
-                # Get feature importance
-                feature_importance = st.session_state.client.feature_importance(selected_model)
-                
-                if feature_importance and "top_features" in feature_importance:
-                    # Get top features
-                    top_features = feature_importance["top_features"]
-                    
-                    # Convert to DataFrame for display
-                    if isinstance(top_features, dict):
-                        df = pd.DataFrame({
-                            "Feature": list(top_features.keys()),
-                            "Importance": list(top_features.values())
-                        })
-                        df = df.sort_values("Importance", ascending=False)
-                        
-                        # Plot
-                        fig = px.bar(
-                            df,
-                            x="Importance",
-                            y="Feature",
-                            orientation='h',
-                            title="Feature Importance",
-                            labels={"Importance": "Importance Score", "Feature": "Feature Name"}
-                        )
-                        st.plotly_chart(fig, use_container_width=True)
-                    
-                    # If plot is available, display it
-                    if "plot_path" in feature_importance:
-                        try:
-                            with open(feature_importance["plot_path"], "rb") as file:
-                                st.image(file.read(), caption="Feature Importance Visualization")
-                        except:
-                            st.warning("Could not display feature importance plot")
-                else:
-                    st.info("No feature importance data available for this model.")
-            except Exception as e:
-                st.error(f"Error fetching feature importance: {str(e)}")
-        
-        with tabs[3]:  # Actions tab
-            st.subheader("Model Actions")
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.markdown("#### Export Model")
-                export_format = st.selectbox(
-                    "Export Format",
-                    options=["sklearn", "onnx", "pmml", "tf", "torchscript"],
-                    index=0
-                )
-                
-                include_pipeline = st.checkbox("Include Pipeline", value=True)
-                
-                if st.button("Export Model"):
-                    try:
-                        with st.spinner("Exporting model..."):
-                            # Create a temporary file path
-                            with tempfile.NamedTemporaryFile(delete=False, suffix=f".{export_format}") as tmp:
-                                output_path = tmp.name
-                            
-                            # Export the model
-                            path = st.session_state.client.export_model(
-                                model_name=selected_model,
-                                format=export_format,
-                                include_pipeline=include_pipeline,
-                                output_path=output_path
-                            )
-                            
-                            # Read the file
-                            with open(path, "rb") as file:
-                                file_bytes = file.read()
-                            
-                            # Create download button
-                            st.download_button(
-                                label=f"Download {export_format.upper()} Model",
-                                data=file_bytes,
-                                file_name=f"{selected_model}.{export_format}",
-                                mime="application/octet-stream"
-                            )
-                    except Exception as e:
-                        st.error(f"Export failed: {str(e)}")
-            
-            with col2:
-                st.markdown("#### Quantize Model")
-                
-                quantization_type = st.selectbox(
-                    "Quantization Type",
-                    options=["int8", "float16"],
-                    index=0
-                )
-                
-                quantization_mode = st.selectbox(
-                    "Quantization Mode",
-                    options=["dynamic_per_batch", "dynamic_per_channel"],
-                    index=0
-                )
-                
-                if st.button("Quantize Model"):
-                    try:
-                        with st.spinner("Quantizing model..."):
-                            result = st.session_state.client.quantize_model(
-                                model_name=selected_model,
-                                quantization_type=quantization_type,
-                                quantization_mode=quantization_mode
-                            )
-                            
-                            st.success("Model quantized successfully!")
-                            st.json(result)
-                    except Exception as e:
-                        st.error(f"Quantization failed: {str(e)}")
-            
-            st.divider()
-            
-            # Danger zone
-            st.markdown("#### Danger Zone")
-            st.warning("Caution: These actions cannot be undone!")
-            
-            if st.button("Delete Model"):
-                try:
-                    confirm = st.text_input("Type the model name to confirm deletion:")
-                    
-                    if confirm == selected_model:
-                        with st.spinner("Deleting model..."):
-                            result = st.session_state.client.delete_model(selected_model)
-                            
-                            st.success("Model deleted successfully!")
-                            
-                            # Update model list
-                            update_model_list()
-                            
-                            # Redirect to models page
-                            st.experimental_rerun()
+                # Import model libraries
+                models_dict = import_model_libraries()
+
+                # Initialize the training engine
+                status_text.text("Initializing ML Training Engine...")
+
+                if st.session_state.engine is None:
+                    st.session_state.engine = MLTrainingEngine(config)
+
+                engine = st.session_state.engine
+
+                # Create param grids for selected models
+                param_grids = {}
+                for model_name in selected_models:
+                    if model_name in DEFAULT_PARAM_GRIDS:
+                        param_grids[model_name] = DEFAULT_PARAM_GRIDS[model_name]
                     else:
-                        st.error("Model name doesn't match. Deletion cancelled.")
-                except Exception as e:
-                    st.error(f"Deletion failed: {str(e)}")
+                        # Use empty param grid if no defaults exist
+                        param_grids[model_name] = {}
 
-def render_predictions():
-    """Render the predictions page"""
-    st.markdown("# 🔮 Predictions")
-    st.markdown("### Make predictions with your trained models")
+                # Split data for training and testing
+                if config.stratify and config.task_type == TaskType.CLASSIFICATION:
+                    X_train, X_test, y_train, y_test = train_test_split(
+                        X,
+                        y, 
+                        test_size=config.test_size,
+                        random_state=config.random_state,
+                        stratify=y
+                    )
+                else:
+                    X_train, X_test, y_train, y_test = train_test_split(
+                        X, y, test_size=config.test_size, random_state=config.random_state
+                    )
+                    
+                # Apply training subset if needed
+                if train_subset < 100:
+                    subset_size = int(len(X_train) * train_subset / 100)
+                    if config.stratify and config.task_type == TaskType.CLASSIFICATION:
+                        X_train_subset, _, y_train_subset, _ = train_test_split(
+                            X_train, y_train,
+                            train_size=subset_size,
+                            random_state=config.random_state,
+                            stratify=y_train
+                        )
+                    else:
+                        X_train_subset, _, y_train_subset, _ = train_test_split(
+                            X_train, y_train,
+                            train_size=subset_size,
+                            random_state=config.random_state
+                        )
+                    X_train = X_train_subset
+                    y_train = y_train_subset
+                    status_text.text(f"Using {subset_size} samples ({train_subset}%) for training")
+
+                # Train each model
+                results = {}
+                for i, model_name in enumerate(selected_models):
+                    status_text.text(f"Training model {i+1}/{len(selected_models)}: {model_name}")
+                    progress.progress((i) / len(selected_models))
+
+                    # Instantiate the model
+                    if model_name in models_dict:
+                        model_class = models_dict[model_name]
+                        model_instance = model_class(random_state=config.random_state)
+
+                        # Train the model
+                        best_model, metrics = engine.train_model(
+                            model=model_instance,
+                            model_name=model_name,
+                            param_grid=param_grids[model_name],
+                            X=X_train.values if isinstance(X_train, pd.DataFrame) else X_train,
+                            y=y_train.values if isinstance(y_train, pd.DataFrame) or isinstance(y_train, pd.Series) else y_train,
+                            X_test=X_test.values if isinstance(X_test, pd.DataFrame) else X_test,
+                            y_test=y_test.values if isinstance(y_test, pd.DataFrame) or isinstance(y_test, pd.Series) else y_test,
+                        )
+
+                        # Save results
+                        results[model_name] = {
+                            "metrics": metrics,
+                            "model_name": model_name,
+                        }
+
+                        if engine.save_model(model_name):
+                            status_text.text(f"Model {model_name} trained and saved successfully")
+
+                        # Add to session state
+                        st.session_state.models[model_name] = best_model
+                        st.session_state.model_metrics[model_name] = metrics
+
+                        # Check if this is the best model
+                        if engine.best_model and engine.best_model["name"] == model_name:
+                            st.session_state.best_model = {
+                                "name": model_name,
+                                "model": best_model,
+                                "metrics": metrics,
+                            }
+                    else:
+                        status_text.text(f"Model {model_name} not found in available models")
+
+                # Create ensemble if enabled
+                if enable_ensemble and len(results) >= 2:
+                    status_text.text(f"Creating {ensemble_method} ensemble with top {ensemble_size} models...")
+                    
+                    # This is a placeholder for ensemble creation
+                    # In a real implementation, you would create the ensemble here
+                    # using the trained models based on the selected ensemble method
+                    
+                    st.session_state.ensemble_created = True
+                    st.session_state.ensemble_method = ensemble_method
+                    st.session_state.ensemble_size = ensemble_size
+
+                # Update progress to completion
+                progress.progress(1.0)
+                status_text.text("Training completed successfully!")
+
+                # Save experiment results
+                experiment_result = {
+                    "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                    "models_trained": selected_models,
+                    "results": results,
+                    "config": config.to_dict(),
+                }
+                st.session_state.experiment_results.append(experiment_result)
+
+                # Mark training as completed
+                st.session_state.training_completed = True
+
+                # Generate report if enabled
+                report_path = engine.generate_report()
+                if report_path:
+                    status_text.text(f"Training completed and report generated at {report_path}")
+
+                # Display success message
+                st.success("All models trained successfully! Go to the Evaluation tab to see results.")
+
+            except Exception as e:
+                st.error(f"Error during training: {str(e)}")
+                import traceback
+
+                st.code(traceback.format_exc())
     
-    # Update model list
-    update_model_list()
-    
-    if not st.session_state.trained_models:
-        st.info("No models found. Go to the Training page to create your first model.")
-        if st.button("Go to Training"):
-            st.session_state.current_page = "training"
-            st.experimental_rerun()
+    with eval_tab:
+        if not st.session_state.training_completed:
+            st.warning("Please train models first")
+            return
+
+        if not st.session_state.models:
+            st.warning("No trained models found")
+            return
+
+        # Get model names and metrics
+        model_names = list(st.session_state.models.keys())
+        metrics = st.session_state.model_metrics
+
+        # Display best model
+        st.subheader("Best Performing Model")
+        if st.session_state.best_model:
+            best_model = st.session_state.best_model
+            st.write(f"**{best_model['name']}**")
+
+            # Display metrics
+            best_metrics = best_model["metrics"]
+            col1, col2, col3, col4 = st.columns(4)
+
+            # Display primary metric
+            if "accuracy" in best_metrics:
+                col1.metric("Accuracy", f"{best_metrics['accuracy']:.4f}")
+            elif "r2" in best_metrics:
+                col1.metric("R²", f"{best_metrics['r2']:.4f}")
+
+            # Display secondary metrics
+            if "precision" in best_metrics and "recall" in best_metrics:
+                col2.metric("Precision", f"{best_metrics['precision']:.4f}")
+                col3.metric("Recall", f"{best_metrics['recall']:.4f}")
+                col4.metric("F1 Score", f"{best_metrics['f1']:.4f}")
+            elif "mae" in best_metrics and "mse" in best_metrics:
+                col2.metric("MAE", f"{best_metrics['mae']:.4f}")
+                col3.metric("MSE", f"{best_metrics['mse']:.4f}")
+                col4.metric("RMSE", f"{best_metrics['rmse']:.4f}")
+        else:
+            st.info("No best model identified")
+
+        # Ensemble information if created
+        if hasattr(st.session_state, 'ensemble_created') and st.session_state.ensemble_created:
+            st.subheader("Ensemble Model")
+            st.write(f"Created a {st.session_state.ensemble_method} ensemble with {st.session_state.ensemble_size} models")
+            # Display ensemble metrics if available
+
+        # Comparison tabs
+        eval_tab1, eval_tab2, eval_tab3, eval_tab4 = st.tabs(["Metrics Comparison", "Feature Importance", "Learning Curves", "Prediction Analysis"])
+
+        with eval_tab1:
+            # Create comparison dataframe
+            comparison_data = []
+            for model_name in model_names:
+                model_metrics = metrics[model_name]
+
+                # Extract relevant metrics
+                model_row = {"Model": model_name}
+                for metric_name, metric_value in model_metrics.items():
+                    if isinstance(metric_value, (int, float)):
+                        model_row[metric_name] = round(metric_value, 4)
+
+                comparison_data.append(model_row)
+
+            comparison_df = pd.DataFrame(comparison_data)
+
+            # Display metrics table
+            st.subheader("Metrics Comparison")
+            st.dataframe(comparison_df)
+
+            # Plot comparison
+            st.subheader("Visual Comparison")
+            if comparison_df.shape[0] > 0:
+                # Determine if classification or regression
+                if "accuracy" in comparison_df.columns:
+                    # Classification metrics
+                    metrics_to_plot = ["accuracy", "precision", "recall", "f1"]
+                    metrics_to_plot = [m for m in metrics_to_plot if m in comparison_df.columns]
+                else:
+                    # Regression metrics
+                    metrics_to_plot = ["r2", "neg_mean_squared_error", "neg_mean_absolute_error"]
+                    metrics_to_plot = [m for m in metrics_to_plot if m in comparison_df.columns]
+
+                if metrics_to_plot:
+                    # Prepare data for plotting
+                    plot_data = comparison_df.melt(
+                        id_vars=["Model"],
+                        value_vars=metrics_to_plot,
+                        var_name="Metric",
+                        value_name="Value",
+                    )
+
+                    # Create plot
+                    fig, ax = plt.subplots(figsize=(10, 6))
+                    sns.barplot(data=plot_data, x="Model", y="Value", hue="Metric", ax=ax)
+                    plt.xticks(rotation=45)
+                    plt.tight_layout()
+                    st.pyplot(fig)
+
+        with eval_tab2:
+            st.subheader("Feature Importance")
+
+            selected_model = st.selectbox(
+                "Select model for feature importance",
+                options=model_names,
+            )
+
+            if selected_model in st.session_state.models:
+                model = st.session_state.models[selected_model]
+
+                # Check if model has feature_importances_ attribute
+                if hasattr(model, "feature_importances_"):
+                    # Get feature importances
+                    importances = model.feature_importances_
+                    feature_names = st.session_state.features
+
+                    # Create dataframe
+                    importance_df = pd.DataFrame(
+                        {"Feature": feature_names, "Importance": importances}
+                    ).sort_values("Importance", ascending=False)
+
+                    # Display table
+                    st.dataframe(importance_df)
+
+                    # Create plot
+                    fig, ax = plt.subplots(figsize=(10, 8))
+                    sns.barplot(data=importance_df.head(15), x="Importance", y="Feature", ax=ax)
+                    plt.tight_layout()
+                    st.pyplot(fig)
+                elif hasattr(model, "coef_"):
+                    # For linear models
+                    coef = model.coef_
+                    if coef.ndim > 1:
+                        # For multi-class models, take the mean absolute coefficient
+                        coef = np.mean(np.abs(coef), axis=0)
+                    
+                    feature_names = st.session_state.features
+                    
+                    # Create dataframe
+                    importance_df = pd.DataFrame(
+                        {"Feature": feature_names, "Coefficient": coef}
+                    ).sort_values("Coefficient", ascending=False)
+                    
+                    # Display table
+                    st.dataframe(importance_df)
+                    
+                    # Create plot
+                    fig, ax = plt.subplots(figsize=(10, 8))
+                    sns.barplot(data=importance_df.head(15), x="Coefficient", y="Feature", ax=ax)
+                    plt.tight_layout()
+                    st.pyplot(fig)
+                else:
+                    st.info("This model doesn't provide feature importance information")
+
+        with eval_tab3:
+            st.subheader("Learning Curves")
+            
+            # This would typically show learning curves from cross-validation
+            # For now, we'll just show a placeholder
+            st.info("Learning curves visualization will be available in a future update")
+            
+            # If you have learning curve data from your training process:
+            # selected_model_for_curves = st.selectbox(
+            #     "Select model for learning curves",
+            #     options=model_names,
+            #     key="learning_curve_model"
+            # )
+            # 
+            # if selected_model_for_curves in st.session_state.models:
+            #     # Plot learning curves if available
+            #     pass
+
+        with eval_tab4:
+            st.subheader("Prediction Analysis")
+            
+            # This section would analyze model predictions on test data
+            if st.session_state.data is not None and st.session_state.target is not None:
+                selected_model_for_analysis = st.selectbox(
+                    "Select model for prediction analysis",
+                    options=model_names,
+                    key="prediction_analysis_model"
+                )
+                
+                if selected_model_for_analysis in st.session_state.models:
+                    model = st.session_state.models[selected_model_for_analysis]
+                    
+                    # Get the engine
+                    engine = st.session_state.engine
+                    
+                    # Get test data
+                    data = st.session_state.data
+                    target = st.session_state.target
+                    X = data.drop(columns=[target])
+                    y = data[target]
+                    
+                    # Split data for analysis
+                    if engine.config.stratify and engine.config.task_type == TaskType.CLASSIFICATION:
+                        _, X_test, _, y_test = train_test_split(
+                            X, y, 
+                            test_size=engine.config.test_size,
+                            random_state=engine.config.random_state,
+                            stratify=y
+                        )
+                    else:
+                        _, X_test, _, y_test = train_test_split(
+                            X, y, 
+                            test_size=engine.config.test_size,
+                            random_state=engine.config.random_state
+                        )
+                    
+                    # Make predictions
+                    try:
+                        # Convert DataFrame to NumPy array before prediction
+                        X_test_array = X_test.values if isinstance(X_test, pd.DataFrame) else X_test
+                        y_test_array = y_test.values if isinstance(y_test, pd.Series) else y_test
+                        
+                        # Use the model directly for prediction to avoid preprocessing issues
+                        y_pred = model.predict(X_test_array)
+                        
+                        # Display prediction analysis based on task type
+                        if engine.config.task_type == TaskType.CLASSIFICATION:
+                            # For classification
+                            from sklearn.metrics import confusion_matrix, classification_report
+                            
+                            # Confusion matrix
+                            st.write("Confusion Matrix")
+                            cm = confusion_matrix(y_test_array, y_pred)
+                            fig, ax = plt.subplots(figsize=(8, 6))
+                            sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', ax=ax)
+                            ax.set_xlabel('Predicted')
+                            ax.set_ylabel('Actual')
+                            st.pyplot(fig)
+                            
+                            # Classification report
+                            st.write("Classification Report")
+                            report = classification_report(y_test_array, y_pred, output_dict=True)
+                            report_df = pd.DataFrame(report).transpose()
+                            st.dataframe(report_df)
+                            
+                            # ROC curve for binary classification
+                            if len(np.unique(y)) == 2:
+                                from sklearn.metrics import roc_curve, auc
+                                try:
+                                    y_prob = model.predict_proba(X_test_array)[:, 1]
+                                    fpr, tpr, _ = roc_curve(y_test_array, y_prob)
+                                    roc_auc = auc(fpr, tpr)
+                                    
+                                    fig, ax = plt.subplots(figsize=(8, 6))
+                                    ax.plot(fpr, tpr, label=f'ROC curve (area = {roc_auc:.2f})')
+                                    ax.plot([0, 1], [0, 1], 'k--')
+                                    ax.set_xlim([0.0, 1.0])
+                                    ax.set_ylim([0.0, 1.05])
+                                    ax.set_xlabel('False Positive Rate')
+                                    ax.set_ylabel('True Positive Rate')
+                                    ax.set_title('Receiver Operating Characteristic')
+                                    ax.legend(loc="lower right")
+                                    st.pyplot(fig)
+                                except (AttributeError, IndexError):
+                                    st.info("ROC curve not available for this model")
+                        
+                        else:
+                            # For regression
+                            # Residual plot
+                            residuals = y_test_array - y_pred
+                            
+                            fig, ax = plt.subplots(figsize=(10, 6))
+                            ax.scatter(y_pred, residuals)
+                            ax.axhline(y=0, color='r', linestyle='-')
+                            ax.set_xlabel('Predicted')
+                            ax.set_ylabel('Residuals')
+                            ax.set_title('Residual Plot')
+                            st.pyplot(fig)
+                            
+                            # Actual vs Predicted
+                            fig, ax = plt.subplots(figsize=(10, 6))
+                            ax.scatter(y_test_array, y_pred)
+                            ax.plot([y_test_array.min(), y_test_array.max()], [y_test_array.min(), y_test_array.max()], 'k--')
+                            ax.set_xlabel('Actual')
+                            ax.set_ylabel('Predicted')
+                            ax.set_title('Actual vs Predicted')
+                            st.pyplot(fig)
+                            
+                            # Distribution of residuals
+                            fig, ax = plt.subplots(figsize=(10, 6))
+                            sns.histplot(residuals, kde=True, ax=ax)
+                            ax.set_title('Distribution of Residuals')
+                            st.pyplot(fig)
+                            
+                    except Exception as e:
+                        st.error(f"Error analyzing predictions: {str(e)}")
+                        import traceback
+                        st.code(traceback.format_exc())
+
+
+def inference_page():
+    """Inference page"""
+    st.title("Model Inference")
+
+    if not st.session_state.training_completed:
+        st.warning("Please train models first")
         return
+
+    if not st.session_state.models:
+        st.warning("No trained models found")
+        return
+
+    # Get model names
+    model_names = list(st.session_state.models.keys())
+
+    # Select model for prediction
+    selected_model = st.selectbox(
+        "Select model for prediction",
+        options=model_names,
+        index=model_names.index(st.session_state.best_model["name"])
+        if st.session_state.best_model
+        else 0,
+    )
+
+    # Input method
+    input_method = st.radio("Input method", ["Upload new data", "Manual input", "Batch processing"])
+
+    if input_method == "Upload new data":
+        # File upload
+        uploaded_file = st.file_uploader(
+            "Upload data for prediction (CSV, Excel)", type=["csv", "xlsx"]
+        )
+
+        if uploaded_file is not None:
+            try:
+                # Try to determine file type from extension
+                if uploaded_file.name.endswith(".csv"):
+                    pred_data = pd.read_csv(uploaded_file)
+                elif uploaded_file.name.endswith((".xls", ".xlsx")):
+                    pred_data = pd.read_excel(uploaded_file)
+                else:
+                    st.error("Unsupported file format")
+                    return
+
+                # Display data preview
+                st.subheader("Data Preview")
+                st.dataframe(pred_data.head())
+
+                # Check for target column
+                if st.session_state.target in pred_data.columns:
+                    has_target = st.checkbox("Data contains target column")
+                    if not has_target:
+                        pred_data = pred_data.drop(columns=[st.session_state.target])
+
+                # Make predictions
+                with st.spinner("Making predictions..."):
+                    try:
+                        # Get model directly from session state
+                        model = st.session_state.models[selected_model]
+                        
+                        # Convert to numpy array
+                        pred_array = pred_data.values
+                        
+                        # Try direct prediction first
+                        try:
+                            predictions = model.predict(pred_array)
+                        except Exception as model_error:
+                            st.warning(f"Direct prediction failed: {str(model_error)}. Trying alternative method...")
+                            
+                            # If direct prediction fails, try to load the model fresh
+                            try:
+                                import joblib
+                                engine = st.session_state.engine
+                                model_path = os.path.join(engine.config.model_path, f"{selected_model}.joblib")
+                                
+                                if os.path.exists(model_path):
+                                    fresh_model = joblib.load(model_path)
+                                    predictions = fresh_model.predict(pred_array)
+                                else:
+                                    # If model file doesn't exist, try engine's predict method
+                                    predictions = engine.predict(pred_data, selected_model)
+                            except Exception as load_error:
+                                # If all else fails, raise the error
+                                raise load_error
+
+                        # Display predictions
+                        st.subheader("Predictions")
+
+                        # Store predictions in session state
+                        st.session_state.predictions = predictions
+
+                        # Create dataframe with predictions
+                        pred_df = pd.DataFrame({"Prediction": predictions})
+
+                        # Display predictions
+                        st.dataframe(pred_df)
+
+                        # Add download button
+                        csv = pred_df.to_csv(index=False)
+                        st.download_button(
+                            label="Download Predictions",
+                            data=csv,
+                            file_name="predictions.csv",
+                            mime="text/csv",
+                        )
+
+                    except Exception as e:
+                        st.error(f"Error making predictions: {str(e)}")
+                        import traceback
+                        st.code(traceback.format_exc())
+
+            except Exception as e:
+                st.error(f"Error reading file: {str(e)}")
+                import traceback
+                st.code(traceback.format_exc())
+
+
+    elif input_method == "Manual input":
+        st.subheader("Enter Feature Values")
+
+        # Create a form for feature inputs
+        with st.form("prediction_form"):
+            # Get feature list
+            features = st.session_state.features
+
+            # Create input fields for each feature
+            input_values = {}
+            for feature in features:
+                # Try to determine appropriate input type
+                feature_type = st.session_state.data[feature].dtype
+
+                if pd.api.types.is_numeric_dtype(feature_type):
+                    # For numeric features
+                    min_val = float(st.session_state.data[feature].min())
+                    max_val = float(st.session_state.data[feature].max())
+                    mean_val = float(st.session_state.data[feature].mean())
+
+                    # Use slider for reasonable ranges, otherwise input
+                    if max_val - min_val < 100:
+                        input_values[feature] = st.slider(
+                            feature,
+                            min_value=min_val,
+                            max_value=max_val,
+                            value=mean_val,
+                            step=(max_val - min_val) / 100,
+                        )
+                    else:
+                        input_values[feature] = st.number_input(feature, value=mean_val)
+                else:
+                    # For categorical features
+                    unique_values = st.session_state.data[feature].unique().tolist()
+                    input_values[feature] = st.selectbox(
+                        feature,
+                        options=unique_values,
+                        index=0,
+                    )
+
+            # Submit button
+            predict_button = st.form_submit_button("Make Prediction")
+
+        if predict_button:
+            try:
+                # Create dataframe from input values
+                input_df = pd.DataFrame([input_values])
+                
+                # Convert to numpy array
+                input_array = input_df.values
+                
+                # Get model directly from session state
+                model = st.session_state.models[selected_model]
+                
+                # Make prediction using direct model access
+                with st.spinner("Making prediction..."):
+                    try:
+                        # First try direct prediction with the model
+                        prediction = model.predict(input_array)
+                    except Exception as model_error:
+                        st.warning(f"Direct prediction failed: {str(model_error)}. Trying alternative method...")
+                        
+                        # If direct prediction fails, try to load the model fresh
+                        try:
+                            import joblib
+                            engine = st.session_state.engine
+                            model_path = os.path.join(engine.config.model_path, f"{selected_model}.joblib")
+                            
+                            if os.path.exists(model_path):
+                                fresh_model = joblib.load(model_path)
+                                prediction = fresh_model.predict(input_array)
+                            else:
+                                # If model file doesn't exist, try engine's predict method
+                                # but with raw numpy array
+                                prediction = engine.predict(input_array, selected_model)
+                        except Exception as load_error:
+                            # If all else fails, try the engine's predict method with DataFrame
+                            prediction = engine.predict(input_df, selected_model)
+
+                # Display prediction
+                st.subheader("Prediction Result")
+
+                # Format the prediction based on task type
+                if st.session_state.config.task_type == TaskType.CLASSIFICATION:
+                    # For classification tasks
+                    st.write(f"Predicted class: **{prediction[0]}**")
+                    
+                    # Try to get probability if available
+                    try:
+                        if hasattr(model, 'predict_proba'):
+                            proba = model.predict_proba(input_array)
+                            
+                            # Display probabilities
+                            st.write("Class Probabilities:")
+                            
+                            # Get class names if available
+                            if hasattr(model, 'classes_'):
+                                classes = model.classes_
+                                proba_df = pd.DataFrame({
+                                    'Class': classes,
+                                    'Probability': proba[0]
+                                })
+                                
+                                # Create bar chart
+                                fig, ax = plt.subplots(figsize=(10, 4))
+                                sns.barplot(data=proba_df, x='Class', y='Probability', ax=ax)
+                                ax.set_ylim(0, 1)
+                                st.pyplot(fig)
+                            else:
+                                # Just show probabilities
+                                st.write(proba[0])
+                    except Exception as e:
+                        st.info("Probability information not available")
+                else:
+                    # For regression tasks
+                    st.write(f"Predicted value: **{prediction[0]:.4f}**")
+                    
+                    # Try to get prediction intervals if available
+                    # This is a placeholder - most models don't provide this directly
+                    st.info("Prediction intervals not available for this model")
+
+            except Exception as e:
+                st.error(f"Error making prediction: {str(e)}")
+                import traceback
+                st.code(traceback.format_exc())
+
     
-    # Tabs for different prediction methods
-    pred_tabs = st.tabs(["Upload Data", "Enter Values Manually"])
-    
-    with pred_tabs[0]:  # Upload Data tab
-        st.subheader("Predict with Data File")
+    else:  # Batch processing
+        st.subheader("Batch Processing")
         
-        # Model selection
-        model_names = [model.get("name", "") for model in st.session_state.trained_models]
-        selected_model = st.selectbox("Select a model", model_names, key="pred_model_file")
-        
-        # Upload prediction data
-        pred_file = st.file_uploader(
-            "Upload prediction data",
-            type=["csv", "xlsx", "xls", "json"],
-            key="pred_file"
+        # Batch size configuration
+        batch_size = st.slider(
+            "Batch size",
+            min_value=1,
+            max_value=1000,
+            value=100
         )
         
-        # Options
-        col1, col2 = st.columns(2)
+        # File upload for batch processing
+        batch_file = st.file_uploader(
+            "Upload data for batch processing (CSV, Excel)",
+            type=["csv", "xlsx"],
+            key="batch_file_uploader"
+        )
         
-        with col1:
-            batch_size = st.number_input(
-                "Batch Size",
-                min_value=0,
-                max_value=1000,
-                value=0,
-                help="0 means direct prediction, use larger values for big datasets"
-            )
-        
-        with col2:
-            return_proba = st.checkbox(
-                "Return Probabilities",
-                value=False,
-                help="For classification models, return class probabilities"
-            )
-        
-        if pred_file is not None:
-            if st.button("Make Predictions", key="pred_btn_file"):
-                try:
-                    with st.spinner("Making predictions..."):
-                        # Load data
-                        df = load_data(pred_file)
-                        
-                        if df is None:
-                            st.error("Failed to load prediction data")
-                            return
-                        
-                        # Make predictions
-                        predictions = st.session_state.client.predict(
-                            model=selected_model,
-                            data=df,
-                            batch_size=batch_size,
-                            return_proba=return_proba
-                        )
-                        
-                        if predictions and "predictions" in predictions:
+        if batch_file is not None:
+            try:
+                # Load data
+                if batch_file.name.endswith(".csv"):
+                    batch_data = pd.read_csv(batch_file)
+                elif batch_file.name.endswith((".xls", ".xlsx")):
+                    batch_data = pd.read_excel(batch_file)
+                else:
+                    st.error("Unsupported file format")
+                    return
+                
+                # Display data preview
+                st.subheader("Data Preview")
+                st.dataframe(batch_data.head())
+                
+                # Check for target column
+                # Check for target column
+                if st.session_state.target in batch_data.columns:
+                    has_target = st.checkbox("Data contains target column", key="batch_has_target")
+                    if not has_target:
+                        batch_data = batch_data.drop(columns=[st.session_state.target])
+                
+                # Process in batches
+                if st.button("Process Batch"):
+                    with st.spinner("Processing batch data..."):
+                        try:
+                            engine = st.session_state.engine
+                            
+                            # Initialize progress bar
+                            progress_bar = st.progress(0)
+                            status_text = st.empty()
+                            
+                            # Split data into batches
+                            num_samples = len(batch_data)
+                            num_batches = (num_samples + batch_size - 1) // batch_size
+                            
+                            all_predictions = []
+                            
+                            for i in range(num_batches):
+                                # Get batch
+                                start_idx = i * batch_size
+                                end_idx = min((i + 1) * batch_size, num_samples)
+                                batch = batch_data.iloc[start_idx:end_idx]
+                                
+                                # Update status
+                                status_text.text(f"Processing batch {i+1}/{num_batches}...")
+                                
+                                # Make predictions
+                                batch_predictions = engine.predict(batch, selected_model)
+                                all_predictions.extend(batch_predictions)
+                                
+                                # Update progress
+                                progress_bar.progress((i + 1) / num_batches)
+                            
+                            # Create dataframe with predictions
+                            pred_df = pd.DataFrame({"Prediction": all_predictions})
+                            
                             # Display predictions
-                            st.success(f"Successfully made {len(predictions['predictions'])} predictions")
-                            
-                            # Convert predictions to DataFrame
-                            pred_values = predictions["predictions"]
-                            
-                            if return_proba and isinstance(pred_values[0], list):
-                                # For probability outputs
-                                pred_df = pd.DataFrame(
-                                    pred_values,
-                                    columns=[f"Class {i} Probability" for i in range(len(pred_values[0]))]
-                                )
-                            else:
-                                # For standard predictions
-                                pred_df = pd.DataFrame({"Prediction": pred_values})
-                            
-                            # Add index from original data
-                            if hasattr(df, 'index') and len(df.index) == len(pred_df):
-                                pred_df.index = df.index
-                            
-                            # Display predictions
+                            st.subheader("Batch Predictions")
                             st.dataframe(pred_df)
                             
                             # Add download button
-                            csv = pred_df.to_csv()
+                            csv = pred_df.to_csv(index=False)
                             st.download_button(
-                                label="Download Predictions",
+                                label="Download Batch Predictions",
                                 data=csv,
-                                file_name="predictions.csv",
-                                mime="text/csv"
+                                file_name="batch_predictions.csv",
+                                mime="text/csv",
                             )
                             
-                            # Show processing time
-                            if "processing_time_ms" in predictions:
-                                st.info(f"Processing time: {predictions['processing_time_ms']} ms")
-                except Exception as e:
-                    st.error(f"Prediction failed: {str(e)}")
-    
-    with pred_tabs[1]:  # Manual Input tab
-        st.subheader("Predict with Manual Input")
-        
-        # Model selection
-        model_names = [model.get("name", "") for model in st.session_state.trained_models]
-        selected_model = st.selectbox("Select a model", model_names, key="pred_model_manual")
-        
-        # Get model info to show features
-        try:
-            model_info = next((model for model in st.session_state.trained_models if model.get("name", "") == selected_model), None)
+                            # Store predictions in session state
+                            st.session_state.predictions = all_predictions
+                            
+                            status_text.text("Batch processing completed!")
+                            
+                        except Exception as e:
+                            st.error(f"Error processing batch: {str(e)}")
+                            import traceback
+                            st.code(traceback.format_exc())
             
-            if model_info and "features" in model_info and model_info["features"]:
-                features = model_info["features"]
+            except Exception as e:
+                st.error(f"Error loading batch file: {str(e)}")
+
+def experiment_tracking():
+    """Experiment tracking and comparison page"""
+    st.title("Experiment Tracking")
+    
+    if not hasattr(st.session_state, "experiment_results") or not st.session_state.experiment_results:
+        st.warning("No experiments have been run yet")
+        return
+    
+    # Display experiment history
+    st.subheader("Experiment History")
+    
+    # Create a summary table of experiments
+    experiment_summaries = []
+    for i, exp in enumerate(st.session_state.experiment_results):
+        # Extract key information
+        timestamp = exp.get("timestamp", "Unknown")
+        models_trained = exp.get("models_trained", [])
+        config = exp.get("config", {})
+        
+        # Get best model and its performance
+        best_model = None
+        best_metric = 0
+        primary_metric = "accuracy" if config.get("task_type") == "CLASSIFICATION" else "r2"
+        
+        for model_name, result in exp.get("results", {}).items():
+            metrics = result.get("metrics", {})
+            if primary_metric in metrics and (best_model is None or metrics[primary_metric] > best_metric):
+                best_model = model_name
+                best_metric = metrics[primary_metric]
+        
+        # Create summary
+        summary = {
+            "Experiment": i + 1,
+            "Timestamp": timestamp,
+            "Models Trained": len(models_trained),
+            "Best Model": best_model,
+            f"Best {primary_metric.capitalize()}": f"{best_metric:.4f}" if best_metric else "N/A",
+            "Task Type": config.get("task_type", "Unknown"),
+        }
+        
+        experiment_summaries.append(summary)
+    
+    # Display summary table
+    summary_df = pd.DataFrame(experiment_summaries)
+    st.dataframe(summary_df)
+    
+    # Select experiments to compare
+    st.subheader("Compare Experiments")
+    
+    selected_experiments = st.multiselect(
+        "Select experiments to compare",
+        options=range(1, len(st.session_state.experiment_results) + 1),
+        format_func=lambda x: f"Experiment {x}"
+    )
+    
+    if selected_experiments:
+        # Get selected experiment data
+        selected_data = [st.session_state.experiment_results[i-1] for i in selected_experiments]
+        
+        # Create comparison dataframe
+        comparison_data = []
+        
+        for exp_idx, exp in zip(selected_experiments, selected_data):
+            # Get results for each model
+            for model_name, result in exp.get("results", {}).items():
+                metrics = result.get("metrics", {})
                 
-                # Create input fields for each feature
-                feature_values = {}
+                row = {
+                    "Experiment": f"Exp {exp_idx}",
+                    "Model": model_name,
+                }
                 
-                st.markdown("### Enter feature values:")
+                # Add metrics
+                for metric_name, metric_value in metrics.items():
+                    if isinstance(metric_value, (int, float)):
+                        row[metric_name] = round(metric_value, 4)
                 
-                # Create columns for better layout
-                num_cols = 3
-                features_per_col = len(features) // num_cols + (1 if len(features) % num_cols > 0 else 0)
-                
-                for i in range(0, len(features), features_per_col):
-                    cols = st.columns(num_cols)
-                    
-                    for col_idx in range(num_cols):
-                        feature_idx = i + col_idx
-                        
-                        if feature_idx < len(features):
-                            feature = features[feature_idx]
-                            feature_values[feature] = cols[col_idx].number_input(
-                                f"{feature}",
-                                value=0.0,
-                                key=f"feature_{feature_idx}"
-                            )
-                
-                # Prediction button
-                if st.button("Make Prediction", key="pred_btn_manual"):
-                    try:
-                        with st.spinner("Making prediction..."):
-                            # Convert values to list
-                            feature_list = [feature_values[feature] for feature in features]
-                            
-                            # Make prediction
-                            predictions = st.session_state.client.predict(
-                                model=selected_model,
-                                data=[feature_list],  # Single sample as a list of lists
-                                return_proba=st.checkbox("Return Probabilities", key="manual_proba")
-                            )
-                            
-                            if predictions and "predictions" in predictions:
-                                # Display prediction
-                                pred_value = predictions["predictions"][0]
-                                
-                                if isinstance(pred_value, list):
-                                    # For probability outputs
-                                    st.success("Prediction Successful!")
-                                    
-                                    # Display as bar chart
-                                    pred_df = pd.DataFrame({
-                                        "Class": [f"Class {i}" for i in range(len(pred_value))],
-                                        "Probability": pred_value
-                                    })
-                                    
-                                    fig = px.bar(
-                                        pred_df,
-                                        x="Class",
-                                        y="Probability",
-                                        title="Prediction Probabilities",
-                                        labels={"Probability": "Probability", "Class": "Class"}
-                                    )
-                                    st.plotly_chart(fig, use_container_width=True)
-                                    
-                                    # Also show as text
-                                    for i, prob in enumerate(pred_value):
-                                        st.write(f"Class {i}: {prob:.4f}")
-                                else:
-                                    # For standard predictions
-                                    st.success(f"Prediction: {pred_value}")
-                    except Exception as e:
-                        st.error(f"Prediction failed: {str(e)}")
+                comparison_data.append(row)
+        
+        # Create dataframe
+        if comparison_data:
+            comparison_df = pd.DataFrame(comparison_data)
+            
+            # Display comparison table
+            st.dataframe(comparison_df)
+            
+            # Create visualization
+            st.subheader("Visual Comparison")
+            
+            # Determine metrics to plot based on task type
+            if "accuracy" in comparison_df.columns:
+                # Classification metrics
+                metrics_to_plot = ["accuracy", "precision", "recall", "f1"]
+                metrics_to_plot = [m for m in metrics_to_plot if m in comparison_df.columns]
             else:
-                st.warning("Model information is incomplete. Feature information is not available.")
-                
-                # Create generic input
-                st.markdown("### Enter comma-separated feature values:")
-                
-                feature_input = st.text_input(
-                    "Feature values",
-                    placeholder="e.g., 5.1,3.5,1.4,0.2",
-                    help="Enter values separated by commas"
+                # Regression metrics
+                metrics_to_plot = ["r2", "neg_mean_squared_error", "neg_mean_absolute_error"]
+                metrics_to_plot = [m for m in metrics_to_plot if m in comparison_df.columns]
+            
+            if metrics_to_plot:
+                # Let user select metric to visualize
+                selected_metric = st.selectbox(
+                    "Select metric to visualize",
+                    options=metrics_to_plot
                 )
                 
-                if st.button("Make Prediction", key="pred_btn_generic"):
-                    try:
-                        with st.spinner("Making prediction..."):
-                            # Parse input
-                            try:
-                                feature_list = [float(x.strip()) for x in feature_input.split(",")]
-                            except ValueError:
-                                st.error("Invalid input format. Please enter numeric values separated by commas.")
-                                return
-                            
-                            # Make prediction
-                            predictions = st.session_state.client.predict(
-                                model=selected_model,
-                                data=[feature_list],  # Single sample as a list of lists
-                                return_proba=st.checkbox("Return Probabilities", key="generic_proba")
-                            )
-                            
-                            if predictions and "predictions" in predictions:
-                                # Display prediction
-                                pred_value = predictions["predictions"][0]
-                                
-                                if isinstance(pred_value, list):
-                                    # For probability outputs
-                                    st.success("Prediction Successful!")
-                                    
-                                    # Display as bar chart
-                                    pred_df = pd.DataFrame({
-                                        "Class": [f"Class {i}" for i in range(len(pred_value))],
-                                        "Probability": pred_value
-                                    })
-                                    
-                                    fig = px.bar(
-                                        pred_df,
-                                        x="Class",
-                                        y="Probability",
-                                        title="Prediction Probabilities"
-                                    )
-                                    st.plotly_chart(fig, use_container_width=True)
-                                else:
-                                    # For standard predictions
-                                    st.success(f"Prediction: {pred_value}")
-                    except Exception as e:
-                        st.error(f"Prediction failed: {str(e)}")
-        except Exception as e:
-            st.error(f"Error loading model information: {str(e)}")
-
-def render_settings():
-    """Render the settings page"""
-    st.markdown("# ⚙️ Settings")
-    st.markdown("### Configure AutoML Platform Settings")
-    
-    # API Configuration
-    st.subheader("API Configuration")
-    
-    # Get current config
-    try:
-        config = st.session_state.client.get_automl_config()
-        
-        # Display current settings
-        st.markdown("#### Current Configuration")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown(f"**Task Type:** {config.get('task_type', 'Unknown')}")
-            st.markdown(f"**Optimization Mode:** {config.get('optimization_mode', 'Unknown')}")
-            st.markdown(f"**Optimization Strategy:** {config.get('optimization_strategy', 'Unknown')}")
-            st.markdown(f"**Feature Selection:** {'Enabled' if config.get('feature_selection', False) else 'Disabled'}")
-        
-        with col2:
-            st.markdown(f"**CV Folds:** {config.get('cv_folds', 'Unknown')}")
-            st.markdown(f"**Max Workers:** {config.get('max_workers', 'Unknown')}")
-            st.markdown(f"**Memory Optimization:** {'Enabled' if config.get('memory_optimization', False) else 'Disabled'}")
-            st.markdown(f"**Quantization Enabled:** {'Enabled' if config.get('quantization_enabled', False) else 'Disabled'}")
-        
-        # Update settings
-        st.markdown("#### Update Configuration")
-        
-        optimization_mode = st.selectbox(
-            "Optimization Mode",
-            options=["BALANCED", "CONSERVATIVE", "PERFORMANCE", "FULL_UTILIZATION", "MEMORY_SAVING"],
-            index=["BALANCED", "CONSERVATIVE", "PERFORMANCE", "FULL_UTILIZATION", "MEMORY_SAVING"].index(
-                config.get("optimization_mode", "BALANCED")),
-            help="Controls resource usage during training and inference"
-        )
-        
-        if st.button("Update Configuration"):
-            try:
-                with st.spinner("Updating configuration..."):
-                    new_config = st.session_state.client.update_automl_config(optimization_mode=optimization_mode)
-                    st.success("Configuration updated successfully")
-                    
-                    # Update in session state
-                    config = new_config
-                    
-                    # Show new settings
-                    st.markdown("#### Updated Configuration")
-                    
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
-                        st.markdown(f"**Task Type:** {config.get('task_type', 'Unknown')}")
-                        st.markdown(f"**Optimization Mode:** {config.get('optimization_mode', 'Unknown')}")
-                        st.markdown(f"**Optimization Strategy:** {config.get('optimization_strategy', 'Unknown')}")
-                        st.markdown(f"**Feature Selection:** {'Enabled' if config.get('feature_selection', False) else 'Disabled'}")
-                    
-                    with col2:
-                        st.markdown(f"**CV Folds:** {config.get('cv_folds', 'Unknown')}")
-                        st.markdown(f"**Max Workers:** {config.get('max_workers', 'Unknown')}")
-                        st.markdown(f"**Memory Optimization:** {'Enabled' if config.get('memory_optimization', False) else 'Disabled'}")
-                        st.markdown(f"**Quantization Enabled:** {'Enabled' if config.get('quantization_enabled', False) else 'Disabled'}")
-            except Exception as e:
-                st.error(f"Failed to update configuration: {str(e)}")
-    except Exception as e:
-        st.error(f"Failed to load configuration: {str(e)}")
-    
-    # API Connection
-    st.subheader("API Connection")
-    
-    # Show current connection info
-    st.markdown(f"**Current API URL:** {st.session_state.client.config.base_url}")
-    st.markdown(f"**Status:** {'Connected' if st.session_state.api_status.get('status') == 'online' else 'Disconnected'}")
-    
-    # Reconnect option
-    if st.button("Reconnect to API"):
-        st.session_state.current_page = "login"
-        st.experimental_rerun()
-
-# Main app
-def main():
-    # Check if authenticated
-    if not st.session_state.authenticated:
-        render_login_page()
-    else:
-        # Render sidebar
-        render_sidebar()
-        
-        # Render current page
-        if st.session_state.current_page == "dashboard":
-            render_dashboard()
-        elif st.session_state.current_page == "data_upload":
-            render_data_upload()
-        elif st.session_state.current_page == "data_exploration":
-            render_data_exploration()
-        elif st.session_state.current_page == "training":
-            render_training()
-        elif st.session_state.current_page == "models":
-            render_models_page()
-        elif st.session_state.current_page == "predictions":
-            render_predictions()
-        elif st.session_state.current_page == "settings":
-            render_settings()
+                # Create plot
+                fig, ax = plt.subplots(figsize=(10, 6))
+                sns.barplot(data=comparison_df, x="Model", y=selected_metric, hue="Experiment", ax=ax)
+                plt.xticks(rotation=45)
+                plt.tight_layout()
+                st.pyplot(fig)
         else:
-            # Default to dashboard
-            render_dashboard()
+            st.info("No comparison data available")
+    
+    # Export experiments
+    st.subheader("Export Experiments")
+    
+    if st.button("Export All Experiments"):
+        # Convert to JSON
+        import json
+        
+        # Create a simplified version for export
+        export_data = []
+        for exp in st.session_state.experiment_results:
+            # Create a simplified version that's JSON serializable
+            simplified_exp = {
+                "timestamp": exp.get("timestamp", ""),
+                "models_trained": exp.get("models_trained", []),
+                "results": {},
+                "config": exp.get("config", {})
+            }
+            
+            # Simplify results
+            for model_name, result in exp.get("results", {}).items():
+                simplified_exp["results"][model_name] = {
+                    "metrics": result.get("metrics", {}),
+                    "model_name": result.get("model_name", "")
+                }
+            
+            export_data.append(simplified_exp)
+        
+        # Convert to JSON
+        json_str = json.dumps(export_data, indent=2)
+        
+        # Create download button
+        st.download_button(
+            label="Download Experiments (JSON)",
+            data=json_str,
+            file_name="ml_experiments.json",
+            mime="application/json"
+        )
+
+def main():
+    """Main function to run the Streamlit app"""
+    # Create sidebar
+    st.sidebar.title("Navigation")
+    
+    # Create navigation
+    pages = {
+        "Data & Configuration": data_upload_and_configuration,
+        "Training & Evaluation": training_and_evaluation,
+        "Model Inference": inference_page,
+        "Experiment Tracking": experiment_tracking,
+    }
+    
+    # Select page
+    selection = st.sidebar.radio("Go to", list(pages.keys()))
+    
+    # Display page
+    pages[selection]()
+    
+    # Add info in sidebar
+    with st.sidebar:
+        st.markdown("---")
+        st.subheader("Session Info")
+        
+        # Display data info
+        if st.session_state.data is not None:
+            st.write(f"Data: {st.session_state.data.shape[0]} rows, {st.session_state.data.shape[1]} columns")
+        else:
+            st.write("Data: None")
+        
+        # Display target info
+        if st.session_state.target is not None:
+            st.write(f"Target: {st.session_state.target}")
+        else:
+            st.write("Target: None")
+        
+        # Display model info
+        if hasattr(st.session_state, "models") and st.session_state.models:
+            st.write(f"Trained models: {len(st.session_state.models)}")
+            
+            if st.session_state.best_model:
+                st.write(f"Best model: {st.session_state.best_model['name']}")
+        else:
+            st.write("Trained models: None")
+        
+        # Display experiment info
+        if hasattr(st.session_state, "experiment_results") and st.session_state.experiment_results:
+            st.write(f"Experiments: {len(st.session_state.experiment_results)}")
+        else:
+            st.write("Experiments: None")
+        
+        # Add clear session button
+        if st.button("Clear Session"):
+            for key in list(st.session_state.keys()):
+                del st.session_state[key]
+            st.rerun()
+        
+        # Add about section
+        st.markdown("---")
+        st.markdown("### About")
+        st.markdown("Advanced ML Training Engine")
+        st.markdown("Beta Version")
+        st.markdown("© Kolosal AI 2025")
 
 if __name__ == "__main__":
     main()
