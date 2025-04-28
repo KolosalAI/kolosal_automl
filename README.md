@@ -207,6 +207,8 @@ ml-training-engine/
 | tests/functional/test_app.py                      | ✅ PASSED |
 | tests\functional\test_quantizer_api.py            | ❌ FAILED |
 | tests\functional\test_data_preprocessor_api.py    | ❌ FAILED |
+| tests\functional\test_device_optimizer_api.py    | ❌ FAILED |
+| tests\functional\test_train_engine_api.py    | ❌ FAILED |
 
 ### Unit
 

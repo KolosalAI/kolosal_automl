@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from pathlib import Path
 
 # Import the FastAPI app
-from modules.api.device_optimizer import app, API_KEY, verify_api_key
+from modules.api.device_optimizer_api import app, API_KEY, verify_api_key
 
 # Import the modules being used by the app
 from modules.device_optimizer import (

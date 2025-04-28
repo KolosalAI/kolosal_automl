@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from contextlib import contextmanager
 
 # Import the FastAPI app and related modules
-from modules.api.quantizer import app, get_quantizer, numpy_to_list, list_to_numpy
+from modules.api.quantizer_api import app, get_quantizer, numpy_to_list, list_to_numpy
 from modules.configs import QuantizationConfig, QuantizationType, QuantizationMode
 from modules.engine.quantizer import Quantizer
 
