@@ -1,237 +1,212 @@
-# SecureModelManager Documentation
+# Module: `secure_model_manager`
 
 ## Overview
+The `SecureModelManager` class manages trained machine learning models with 
+robust support for secure encryption, integrity verification, quantization, access 
+control, and versioning. It offers enhanced capabilities for model serialization, 
+decryption, validation, and rotation of encryption keys.
 
-`SecureModelManager` is a security-focused model management system designed to safely store, encrypt, and manage machine learning models. It provides robust encryption, access control mechanisms, and integrity verification to protect sensitive model data.
+---
 
-## Key Features
+## Prerequisites
+- Python >= 3.8
+- Dependencies:
+  ```bash
+  pip install cryptography joblib numpy
+  ```
+- Custom module dependency: `modules.configs` with at least the `TaskType` definition
 
-- **Strong Encryption**: Uses Fernet symmetric encryption (AES-128-CBC) with key derivation
-- **Access Control**: Supports password-protected models with strong key derivation
-- **Integrity Verification**: Checksum validation to detect tampering
-- **Key Rotation**: Ability to change encryption keys while preserving model access
-- **Model Quantization**: Optional model compression support
-- **Best Model Tracking**: Automatic tracking of the best performing model
+---
 
-## Installation Requirements
+## Configuration
+| Config Option        | Type     | Default       | Description |
+|----------------------|----------|---------------|-------------|
+| `enable_encryption`  | `bool`   | `True`        | Enables encryption of model files |
+| `model_path`         | `str`    | required      | Directory where models are saved |
+| `task_type`          | `Enum`   | Regression or Classification | Defines task type for scoring |
+| `primary_metric`     | `str`    | Optional      | Primary metric used to rank models |
+| `use_scrypt`         | `bool`   | `True`        | Whether to use `Scrypt` over `PBKDF2` |
+| `key_iterations`     | `int`    | `200000`      | Number of iterations for PBKDF2 |
+| `hash_algorithm`     | `str`    | `sha512`      | Hash algorithm for PBKDF2 |
+| `enable_quantization`| `bool`   | Optional      | If True, enables saving quantized models |
+| `quantizer`          | `object` | Optional      | A quantizer instance with `quantize()` |
 
-The `SecureModelManager` requires the following dependencies:
+---
 
-```
-cryptography
-numpy
-joblib
-```
-
-## Initialization
-
-### Basic Initialization
-
+## Usage
 ```python
-from modules.configs import TaskType
 from secure_model_manager import SecureModelManager
+from modules.configs import MyModelConfig
 
-# Create a configuration object
-class Config:
-    model_path = "./models"
-    task_type = TaskType.CLASSIFICATION
-    enable_encryption = True
-    
-config = Config()
+config = MyModelConfig(model_path='models/')
 manager = SecureModelManager(config)
+model = SomeTrainedModel()
+
+# Save model securely
+manager.models['my_model'] = {"model": model, "metrics": {"accuracy": 0.91}}
+manager.save_model('my_model')
+
+# Load model
+loaded_model = manager.load_model('models/my_model.pkl')
 ```
 
-### Advanced Initialization
+---
 
+## Classes
+
+### `SecureModelManager`
 ```python
-import logging
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-# Create configuration with enhanced security
-class AdvancedConfig:
-    model_path = "./secure_models"
-    task_type = TaskType.REGRESSION
-    enable_encryption = True
-    key_iterations = 300000  # Higher than default for stronger security
-    use_scrypt = True  # Use Scrypt instead of PBKDF2
-    primary_metric = "mae"  # Specify which metric to use for model comparison
-    enable_quantization = True  # Enable model compression
-    
-config = AdvancedConfig()
-manager = SecureModelManager(config, logger=logger)
+class SecureModelManager:
 ```
+- **Description**: 
+  Manages secure saving, loading, quantizing, and validating machine learning models. 
+  Supports encryption using Fernet, access control with password hashing (PBKDF2/Scrypt),
+  and configuration-aware score tracking.
 
-## Saving Models
-
-### Basic Model Saving
-
+#### Constructor
 ```python
-# Assuming 'model' is your trained model
-model_data = {
-    "name": "my_model",
-    "model": model,
-    "params": model.get_params(),
-    "metrics": {"accuracy": 0.95, "f1": 0.94}
-}
-
-manager.models["my_model"] = model_data
-manager.save_model("my_model")
+def __init__(self, config, logger=None, secret_key=None):
 ```
+- **Parameters**:
+  - `config`: Object with attributes like `model_path`, `task_type`, `enable_encryption`
+  - `logger`: Optional logger instance
+  - `secret_key`: Optional base64 key for Fernet encryption
 
-### Saving with Access Controls
+---
 
+## Methods
+
+### `_initialize_encryption`
 ```python
-# Save model with password protection
-access_code = "secure_password_123"
-manager.save_model("my_model", access_code=access_code)
+def _initialize_encryption(self, secret_key=None):
 ```
+- Initializes Fernet encryption either via:
+  - Secret key from environment or argument
+  - Password-derived key using Scrypt or PBKDF2
+  - Auto-generated secure random key if no password provided
 
-### Saving with Custom Path
+---
 
+### `_encrypt_data`
 ```python
-# Save to a specific location
-custom_path = "/secure/location/my_special_model.pkl"
-manager.save_model("my_model", filepath=custom_path)
+def _encrypt_data(self, data):
 ```
+- **Encrypts and serializes model data with integrity hash and metadata.**
+- **Returns**: dict with `encrypted_data`, `checksum`, and metadata.
 
-## Loading Models
+---
 
-### Basic Model Loading
-
+### `_decrypt_data`
 ```python
-# Load a model
-model = manager.load_model("./models/my_model.pkl")
-
-# Use the loaded model
-if model is not None:
-    predictions = model.predict(X_test)
+def _decrypt_data(self, encrypted_package):
 ```
+- **Decrypts model content** and verifies its checksum using SHA-512.
+- Returns `pickle`-loaded model object on success or `None` on failure.
 
-### Loading Password-Protected Models
+---
 
+### `save_model`
 ```python
-# Load a password-protected model
-access_code = "secure_password_123"
-model = manager.load_model("./models/protected_model.pkl", access_code=access_code)
+def save_model(self, model_name=None, filepath=None, access_code=None, compression_level=5):
 ```
+- **Saves model securely** to disk, with:
+  - Encrypted and versioned format
+  - Optional password protection (Scrypt/PBKDF2)
+  - Compression via joblib (if encryption is off)
+- Creates `.bak` backup before overwriting
 
-## Security Management
+---
 
-### Key Rotation
-
+### `load_model`
 ```python
-# Rotate encryption keys (reencrypts all models)
-manager.rotate_encryption_key()
-
-# Rotate keys with a new password
-manager.rotate_encryption_key(new_password="new_secure_password")
+def load_model(self, filepath: str, access_code: Optional[str] = None):
 ```
+- **Loads model from disk**, decrypts and validates access if necessary.
+- **Returns**: Model object or `None`
 
-### Integrity Verification
+---
 
+### `_save_quantized_model`
 ```python
-# Verify model hasn't been tampered with
-is_valid = manager.verify_model_integrity("./models/my_model.pkl")
-if not is_valid:
-    print("Warning: Model may have been compromised!")
+def _save_quantized_model(self, model_data, model_name):
 ```
+- Converts model bytes to quantized form using a provided quantizer
+- Saves it encrypted (if enabled) with metadata
 
-## Best Model Management
+---
 
-The manager automatically tracks the best model based on metrics:
-
+### `_safe_config_export`
 ```python
-# Get the current best model
-best_model = manager.best_model["model"]
-
-# Check the best score
-print(f"Best model score: {manager.best_score}")
-
-# Save the best model
-manager.save_model()  # No model_name needed when saving the best model
+def _safe_config_export(self):
 ```
+- Exports the config dictionary omitting sensitive fields like keys and tokens
 
-## Encryption Details
+---
 
-The `SecureModelManager` supports two key derivation methods:
-
-1. **Scrypt** (default, more resistant to hardware acceleration attacks)
-2. **PBKDF2** with SHA-512 (still strong with sufficient iterations)
-
-When encryption is enabled:
-
-- A secret key is either provided, loaded from environment variables, derived from a password, or generated randomly
-- All model data is encrypted before being saved to disk
-- File permissions are set to restrict access (0o600 - owner only)
-- Integrity verification is added via SHA-512 checksums
-
-## Advanced Usage Patterns
-
-### Working with Quantized Models
-
-If quantization is enabled and a quantizer is provided:
-
+### `_verify_access_control`
 ```python
-# Configure a quantizer
-class SimpleQuantizer:
-    def quantize(self, data):
-        # Implement quantization logic
-        return quantized_data
-        
-    def get_config(self):
-        return {"quantization_method": "simple"}
-
-config.quantizer = SimpleQuantizer()
-manager = SecureModelManager(config)
-
-# Save a model (will also save quantized version)
-manager.save_model("my_model")
+def _verify_access_control(self, model_package: Dict[str, Any], access_code: Optional[str]) -> bool:
 ```
+- Checks the correctness of access password using hash verification (PBKDF2/Scrypt)
 
-### Environment Variable Configuration
+---
 
-You can set encryption keys via environment variables:
-
-```bash
-# Set in environment
-export MODEL_ENCRYPTION_KEY="your-base64-key"
-```
-
+### `rotate_encryption_key`
 ```python
-# The manager will use the environment variable key
-manager = SecureModelManager(config)
+def rotate_encryption_key(self, new_password: Optional[str] = None) -> bool:
 ```
+- Rotates the current encryption key
+- Re-encrypts all `.pkl` model files in `model_path`
 
-## Error Handling
+---
 
-The manager includes extensive error handling and fallback mechanisms:
+### `verify_model_integrity`
+```python
+def verify_model_integrity(self, filepath: str) -> bool:
+```
+- Verifies the SHA-512 checksum of an encrypted model file
+- Returns `True` if verified, else `False`
 
-- Creates backups before overwriting files
-- Falls back to unencrypted mode if encryption fails
-- Logs detailed error information
-- Returns meaningful boolean results from operations
+---
 
-## Security Best Practices
+### `_get_model_score`
+```python
+def _get_model_score(self, metrics: Dict[str, float]) -> float:
+```
+- Returns a numeric score depending on task type:
+  - Regression: lower is better (MAE, MSE, etc.)
+  - Classification: higher is better (Accuracy, F1, etc.)
 
-1. Store models in a directory with restricted permissions
-2. Use strong, unique passwords for access codes
-3. Rotate encryption keys periodically
-4. Verify model integrity before using models from untrusted sources
-5. Consider using Scrypt key derivation for stronger security
-6. Do not share encryption keys or access codes in code repositories
-7. Set up proper backup procedures for encrypted models
+---
 
-## Performance Considerations
+### `_update_best_model`
+```python
+def _update_best_model(self, model_name):
+```
+- Updates the internal best model tracker based on performance score
 
-- Encryption and decryption add overhead to save/load operations
-- Higher key iteration counts increase security but slow down operations
-- Quantization can significantly reduce model size at some cost to accuracy
+---
 
-## Limitations
+### `_find_model_files`
+```python
+def _find_model_files(self):
+```
+- Finds `.pkl` model files in `model_path`
 
-- Encryption is only as strong as the key management
-- Requires maintaining access to encryption keys to use models
-- Not designed for distributed or multi-user environments without additional access controls
+---
+
+## Security & Compliance
+- AES-128 (via Fernet) encryption
+- SHA-512 checksum verification
+- Secure password hashing with `Scrypt` or `PBKDF2`
+- Password-protected access control
+- File system permissions set to owner-only (`chmod 600`)
+
+---
+
+## Versioning & Metadata
+> Last Updated: 2025-04-28  
+> Version: 0.1.0  
+> Encryption format includes timestamp and algorithm metadata for compatibility
+
+---

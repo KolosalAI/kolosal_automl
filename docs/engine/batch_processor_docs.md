@@ -1,356 +1,230 @@
-# Batch Processor Documentation
-
-The `BatchProcessor` is a highly optimized, asynchronous batch processing system designed for handling large volumes of data with adaptive batching, priority queuing, and comprehensive monitoring. This document provides an overview of the key features, usage, and configuration options.
-
-## Table of Contents
-1. [Overview](#overview)
-2. [Key Features](#key-features)
-3. [Configuration](#configuration)
-4. [Usage](#usage)
-5. [Statistics and Monitoring](#statistics-and-monitoring)
-6. [Error Handling](#error-handling)
-7. [Health Monitoring](#health-monitoring)
-8. [API Reference](#api-reference)
+# Module: `modules.engine.batch_processor`
 
 ## Overview
+This module implements an advanced asynchronous batch processing engine designed for
+high-throughput and low-latency batch processing. It includes features such as adaptive
+batch sizing, system load tracking, priority queuing, error handling, monitoring, and
+resource optimization.
 
-The `BatchProcessor` is designed to efficiently process batches of data, particularly when dealing with large arrays or high-throughput systems. It supports adaptive batching, priority-based queuing, and detailed performance monitoring. The processor is thread-safe and optimized for memory usage, making it suitable for both CPU-bound and I/O-bound tasks.
+It supports both numpy-based and generic data processing, ensuring flexibility across
+a wide range of applications.
 
-## Key Features
+## Prerequisites
+- Python ≥3.8
+- Required Packages:
+  ```bash
+  pip install numpy psutil
+  ```
+- Hardware: Multi-core CPU recommended
+- Optional: `psutil` library for enhanced memory monitoring
 
-- **Adaptive Batching**: Dynamically adjusts batch sizes based on system load and memory usage.
-- **Priority Queuing**: Supports priority-based processing of items.
-- **Comprehensive Monitoring**: Tracks processing times, queue lengths, error rates, and more.
-- **Graceful Shutdown**: Ensures all pending items are processed before shutting down.
-- **Error Handling**: Robust error handling with retries and automatic batch size adjustment.
-- **Health Monitoring**: Background thread monitors system health, including memory usage and queue growth.
-
-## Configuration
-
-The `BatchProcessor` is configured using the `BatchProcessorConfig` class, which includes the following parameters:
-
-- `initial_batch_size`: Initial size of each batch.
-- `min_batch_size`: Minimum allowed batch size.
-- `max_batch_size`: Maximum allowed batch size.
-- `max_queue_size`: Maximum number of items in the queue.
-- `batch_timeout`: Maximum time to wait for a batch to fill.
-- `min_batch_interval`: Minimum time between batch processing.
-- `max_retries`: Maximum number of retries for failed batches.
-- `retry_delay`: Delay between retries.
-- `enable_priority_queue`: Whether to use priority-based queuing.
-- `enable_monitoring`: Whether to enable performance monitoring.
-- `monitoring_window`: Number of batches to include in statistics.
-- `enable_health_monitoring`: Whether to enable health monitoring.
-- `health_check_interval`: Interval between health checks.
-- `memory_warning_threshold`: Memory usage threshold for warnings.
-- `memory_critical_threshold`: Memory usage threshold for critical actions.
-- `queue_warning_threshold`: Queue size threshold for warnings.
-- `queue_critical_threshold`: Queue size threshold for critical actions.
-- `enable_memory_optimization`: Whether to enable memory optimization.
-- `gc_batch_threshold`: Batch size threshold for garbage collection.
+## Installation
+```bash
+pip install -r requirements.txt
+```
 
 ## Usage
-
-### Initialization
-
 ```python
-from configs import BatchProcessorConfig
-from batch_processor import BatchProcessor
+from modules.engine.batch_processor import BatchProcessor
 
-config = BatchProcessorConfig(
-    initial_batch_size=100,
-    min_batch_size=50,
-    max_batch_size=200,
-    max_queue_size=1000,
-    batch_timeout=1.0,
-    min_batch_interval=0.1,
-    max_retries=3,
-    retry_delay=0.5,
-    enable_priority_queue=True,
-    enable_monitoring=True,
-    monitoring_window=100,
-    enable_health_monitoring=True,
-    health_check_interval=10.0,
-    memory_warning_threshold=80.0,
-    memory_critical_threshold=90.0,
-    queue_warning_threshold=500,
-    queue_critical_threshold=800,
-    enable_memory_optimization=True,
-    gc_batch_threshold=100
-)
+# Initialize configuration
+config = BatchProcessorConfig(...)
 
-processor = BatchProcessor(config)
+# Create batch processor
+processor = BatchProcessor(config=config)
+
+# Start processing with a processing function
+def my_process_func(batch):
+    return model.predict(batch)
+
+processor.start(my_process_func)
+
+# Enqueue an item
+processor.enqueue_predict(item)
+
+# Stop processor
+processor.stop()
 ```
 
-### Starting the Processor
+## Configuration
+| Config Option                  | Type          | Description                                         |
+|---------------------------------|---------------|-----------------------------------------------------|
+| `max_queue_size`                | int           | Max items allowed in the queue                      |
+| `initial_batch_size`            | int           | Starting batch size                                |
+| `max_batch_memory_mb`           | Optional[int] | Limit for memory size of batches                   |
+| `batch_timeout`                 | float         | Max time to wait for batch completion (seconds)     |
+| `min_batch_size`, `max_batch_size` | int        | Bounds for batch size during adaptation            |
+| `processing_strategy`           | Enum          | Batching strategy (e.g., Adaptive, Fixed)           |
+| `enable_priority_queue`         | bool          | Enable priority queueing                           |
+| `enable_monitoring`             | bool          | Enable metrics collection                          |
+| `debug_mode`                    | bool          | Enable debug logging                               |
 
-```python
-def process_batch(batch: np.ndarray) -> np.ndarray:
-    # Process the batch and return results
-    return batch * 2
+_(Refer to `BatchProcessorConfig` in `configs.py` for full details.)_
 
-processor.start(process_batch)
+## Architecture
+**Core Components:**
+- `BatchStats`: Tracks processing time, latency, throughput.
+- `BatchProcessor`: Manages batch lifecycle, adaptive control, memory optimization.
+- Threading model: Dedicated worker and health monitor threads.
+- System load estimation based on processing time.
+- Health monitoring: memory, queue size, stuck batch detection.
+
+## Testing
+```bash
+pytest tests/engine/test_batch_processor.py
 ```
+Recommended to test:
+- Normal batch processing
+- Priority-based queue handling
+- Error recovery under simulated failures
+- Memory optimization impact
 
-### Enqueuing Items
+## Security/Compliance
+- Data is processed in-memory.
+- No external network calls.
+- Sensitive data handling should be added at the application level.
 
-```python
-# Enqueue an item without expecting a result
-processor.enqueue(np.array([1, 2, 3]))
+## Versioning and Metadata
+> Last Updated: 2025-04-28
 
-# Enqueue an item and get a future for the result
-future = processor.enqueue_predict(np.array([4, 5, 6]))
-result = future.result()  # Block until result is available
-```
-
-### Stopping the Processor
-
-```python
-processor.stop(timeout=5.0)
-```
-
-## Statistics and Monitoring
-
-The `BatchProcessor` provides detailed statistics on processing performance, which can be accessed using the `get_stats` method:
-
-```python
-stats = processor.get_stats()
-print(stats)
-```
-
-The statistics include:
-
-- `avg_processing_time_ms`: Average processing time per batch.
-- `p95_processing_time_ms`: 95th percentile processing time.
-- `avg_batch_size`: Average batch size.
-- `max_batch_size`: Maximum batch size.
-- `min_batch_size`: Minimum batch size.
-- `avg_queue_time_ms`: Average time items spend in the queue.
-- `avg_latency_ms`: Average latency (queue time + processing time).
-- `p95_latency_ms`: 95th percentile latency.
-- `p99_latency_ms`: 99th percentile latency.
-- `avg_queue_length`: Average queue length.
-- `max_queue_length`: Maximum queue length.
-- `error_rate`: Error rate (errors per processed item).
-- `throughput`: Throughput in items per second.
-- `batch_count`: Total number of batches processed.
-- `total_processed`: Total number of items processed.
-- `current_batch_size`: Current batch size.
-- `system_load`: Current system load (0-1).
-- `active_batches`: Number of batches currently being processed.
-- `queue_size`: Current queue size.
-- `is_paused`: Whether the processor is paused.
-- `is_stopping`: Whether the processor is stopping.
-
-## Error Handling
-
-The `BatchProcessor` includes robust error handling with automatic retries and batch size adjustment. If a batch fails, the processor will retry up to `max_retries` times. If the error persists, the batch size may be reduced to prevent further failures.
-
-## Health Monitoring
-
-The processor includes a background health monitoring thread that checks for:
-
-- **Stuck Batches**: Batches that have been processing for too long.
-- **Memory Usage**: High memory usage, which may trigger garbage collection or batch size reduction.
-- **Queue Growth**: Rapidly growing queue, which may trigger batch size increases.
-
-## API Reference
-
-### `BatchStats`
-
-Tracks batch processing statistics with thread-safety and performance optimizations.
-
-#### Methods
-
-- `update(processing_time, batch_size, queue_time, latency, queue_length)`: Update statistics with batch processing information.
-- `record_error(count)`: Record processing errors.
-- `get_stats()`: Get processing statistics with caching for performance.
-
-### `BatchProcessor`
-
-Enhanced asynchronous batch processor with adaptive batching, monitoring, priority queuing, and efficient resource management.
-
-#### Methods
-
-- `start(process_func)`: Start the batch processing thread.
-- `stop(timeout)`: Stop the batch processor with graceful shutdown.
-- `pause()`: Pause processing temporarily.
-- `resume()`: Resume processing after pause.
-- `enqueue(item, timeout, priority)`: Enqueue item for processing without expecting results.
-- `enqueue_predict(item, timeout, priority)`: Enqueue item for processing and return future for result.
-- `update_batch_size(new_size)`: Update the current batch size.
-- `get_stats()`: Get current processing statistics.
-
-#### Internal Methods
-
-- `_queue_is_prioritized()`: Check if the queue is using priority-based queuing.
-- `_get_item_size(item)`: Get the size of an item for batching decisions.
-- `_get_batch_memory_size(item)`: Estimate memory size of an item in bytes.
-- `_wrapped_worker_loop(process_func)`: Wrapper for worker loop with error handling and cleanup.
-- `_worker_loop(process_func)`: Enhanced worker loop with adaptive batching and monitoring.
-- `_collect_batch()`: Collect items for a batch with adaptive sizing.
-- `_process_batch(batch_requests, process_func)`: Process a batch of requests with retries and error handling.
-- `_process_numpy_batch(batch_requests, process_func, batch_id, start_time, queue_time)`: Process a batch of numpy arrays.
-- `_process_generic_batch(batch_requests, process_func, batch_id, start_time, queue_time)`: Process a batch of generic items individually.
-- `_get_next_batch_id()`: Get a unique batch ID.
-- `_update_system_load(processing_time)`: Update system load estimation based on processing time.
-- `_adjust_batch_size_adaptive()`: Dynamically adjust batch size based on system load.
-- `_handle_batch_error(error, batch_requests)`: Handle errors in batch processing.
-- `_process_remaining_items(timeout)`: Process remaining items in the queue before shutdown.
-- `_start_health_monitor()`: Start a background thread to monitor processor health.
-- `_health_check_loop()`: Background thread for monitoring system health.
-- `_check_stuck_batches()`: Check for batches that have been processing too long.
-- `_check_memory_usage()`: Monitor memory usage and take action if it's too high.
-- `_check_queue_growth()`: Monitor queue size and take action if it's growing too quickly.
-- `_cleanup()`: Clean up resources during shutdown
-
-Certainly! Here’s the continuation of the documentation:
+- Compatible with Python 3.8+
+- Designed for modular extension (custom processors, monitoring hooks)
 
 ---
 
-### `_cleanup()` (continued)
+# Classes and Functions
 
-Cleans up resources during shutdown, including failing any pending futures, clearing data structures, and signaling all waiting threads.
-
----
-
-### `get_stats()`
-
-Retrieves current processing statistics, including both basic and extended metrics.
-
----
-
-## Example Use Case
-
-### Processing Batches of Numpy Arrays
-
+## Class: `BatchStats`
 ```python
-import numpy as np
-from configs import BatchProcessorConfig
-from batch_processor import BatchProcessor
+class BatchStats:
+```
+### Description
+Tracks and computes moving-window statistics for batch processing performance, with thread-safe
+updates and caching for efficiency.
 
-# Define a simple processing function
-def process_batch(batch: np.ndarray) -> np.ndarray:
-    return batch * 2  # Example: Double each element in the batch
+### Attributes
+| Name | Type | Purpose |
+|-----|------|---------|
+| `window_size` | int | Number of recent samples to keep |
+| `processing_times` | deque | Recorded processing times |
+| `batch_sizes` | deque | Batch size per operation |
+| `queue_times` | deque | Time spent in queue |
+| `latencies` | deque | Total latency per batch |
+| `queue_lengths` | deque | Length of queue over time |
+| `error_counts` | int | Number of processing errors |
+| `batch_counts` | int | Number of batches processed |
+| `total_processed` | int | Total items processed |
 
-# Configure the processor
-config = BatchProcessorConfig(
-    initial_batch_size=100,
-    min_batch_size=50,
-    max_batch_size=200,
-    max_queue_size=1000,
-    batch_timeout=1.0,
-    min_batch_interval=0.1,
-    max_retries=3,
-    retry_delay=0.5,
-    enable_priority_queue=True,
-    enable_monitoring=True,
-    monitoring_window=100,
-    enable_health_monitoring=True,
-    health_check_interval=10.0,
-    memory_warning_threshold=80.0,
-    memory_critical_threshold=90.0,
-    queue_warning_threshold=500,
-    queue_critical_threshold=800,
-    enable_memory_optimization=True,
-    gc_batch_threshold=100
-)
+### Methods
 
-# Initialize the processor
-processor = BatchProcessor(config)
+#### `update`
+```python
+def update(self, processing_time: float, batch_size: int, queue_time: float, latency: float = 0.0, queue_length: int = 0) -> None
+```
+Update statistics with a new batch.
 
-# Start the processor
-processor.start(process_batch)
+#### `record_error`
+```python
+def record_error(self, count: int = 1) -> None
+```
+Increment error counter.
 
-# Enqueue items for processing
-for i in range(1000):
-    item = np.random.rand(10)  # Example: 10-element numpy array
-    processor.enqueue(item)
+#### `get_stats`
+```python
+def get_stats(self) -> Dict[str, float]
+```
+Retrieve current statistics (averages, percentiles, throughput, error rate).
 
-# Retrieve and print statistics
-stats = processor.get_stats()
-print("Processing Statistics:", stats)
+---
 
-# Stop the processor
-processor.stop(timeout=5.0)
+## Class: `BatchProcessor`
+```python
+class BatchProcessor(Generic[T, U]):
+```
+
+### Description
+Manages adaptive, asynchronous batch processing with options for priority queuing,
+performance monitoring, dynamic batch sizing, and robust error recovery.
+
+### Constructor
+```python
+def __init__(self, config: BatchProcessorConfig, metrics_collector: Optional[Any] = None)
+```
+Initialize processor with provided config and optional external metrics system.
+
+### Main Methods
+
+#### `start`
+```python
+def start(self, process_func: Callable[[NDArray[T]], NDArray[U]]) -> None
+```
+Start batch processor with a given processing function.
+
+#### `stop`
+```python
+def stop(self, timeout: Optional[float] = 5.0) -> None
+```
+Gracefully stop processor with timeout.
+
+#### `pause`
+```python
+def pause(self) -> None
+```
+Pause batch processing.
+
+#### `resume`
+```python
+def resume(self) -> None
+```
+Resume batch processing.
+
+#### `enqueue`
+```python
+def enqueue(self, item: T, timeout: Optional[float] = None, priority: BatchPriority = BatchPriority.NORMAL) -> None
+```
+Submit item without waiting for results.
+
+#### `enqueue_predict`
+```python
+def enqueue_predict(self, item: T, timeout: Optional[float] = None, priority: BatchPriority = BatchPriority.NORMAL) -> Future[U]
+```
+Submit item and return a future to retrieve result.
+
+#### `update_batch_size`
+```python
+def update_batch_size(self, new_size: int) -> None
+```
+Update batch size manually.
+
+#### `get_stats`
+```python
+def get_stats(self) -> Dict[str, Any]
+```
+Fetch runtime performance statistics.
+
+### Internal and Support Methods
+- `_worker_loop`, `_wrapped_worker_loop`
+- `_collect_batch`, `_process_batch`, `_process_numpy_batch`, `_process_generic_batch`
+- `_handle_batch_error`
+- `_adjust_batch_size_adaptive`, `_update_system_load`
+- `_start_health_monitor`, `_health_check_loop`
+
+### Examples
+```python
+# Using BatchProcessor
+processor.enqueue_predict(np.random.randn(10, 128))
+
+# Pause and resume
+processor.pause()
+time.sleep(5)
+processor.resume()
 ```
 
 ---
 
-## Advanced Features
-
-### Adaptive Batching
-
-The processor dynamically adjusts the batch size based on system load and memory usage. If the system is under heavy load, the batch size is reduced to prevent overloading. Conversely, if the system is underutilized, the batch size is increased to improve throughput.
-
-### Priority Queuing
-
-When `enable_priority_queue` is set to `True`, items can be enqueued with different priorities (`BatchPriority.LOW`, `BatchPriority.NORMAL`, `BatchPriority.HIGH`). Higher-priority items are processed before lower-priority ones.
-
-### Memory Optimization
-
-When `enable_memory_optimization` is enabled, the processor uses pre-allocated arrays for numpy batches to minimize memory fragmentation and improve performance. Garbage collection is also triggered opportunistically to free up memory.
-
-### Health Monitoring
-
-The health monitoring thread continuously checks for:
-
-- **Stuck Batches**: Batches that exceed the expected processing time.
-- **Memory Usage**: High memory usage triggers garbage collection and batch size reduction.
-- **Queue Growth**: Rapidly growing queues trigger batch size increases to prevent backlogs.
+# Notes
+- **BatchProcessor** is optimized for ML inference workloads but can be extended for any batched processing.
+- **BatchStats** helps in tracking and diagnosing performance bottlenecks.
+- **Adaptive batching** ensures robustness even under system load fluctuations.
 
 ---
-
-## Error Handling and Recovery
-
-The processor includes robust error handling mechanisms:
-
-- **Retries**: Failed batches are retried up to `max_retries` times.
-- **Batch Size Reduction**: If a batch fails repeatedly, the batch size is reduced to prevent further failures.
-- **Graceful Shutdown**: During shutdown, all pending items are processed, and any remaining futures are marked as failed.
-
----
-
-## Performance Considerations
-
-- **Thread Safety**: The processor uses `RLock` and `Lock` to ensure thread safety during concurrent operations.
-- **Caching**: Statistics are cached to avoid expensive recalculations, improving performance.
-- **Efficient Batching**: For numpy arrays, the processor uses `np.vstack` or pre-allocated arrays to efficiently combine batches.
-
----
-
-## Troubleshooting
-
-### High Memory Usage
-
-If memory usage exceeds the configured thresholds:
-
-1. Enable `enable_memory_optimization` to reduce memory fragmentation.
-2. Reduce the `max_batch_size` to limit the amount of data processed at once.
-3. Trigger garbage collection manually using `gc.collect()`.
-
-### Queue Backlogs
-
-If the queue grows too quickly:
-
-1. Increase the `max_batch_size` to process more items per batch.
-2. Reduce the `min_batch_interval` to process batches more frequently.
-3. Check the processing function for bottlenecks.
-
-### Stuck Batches
-
-If batches are taking too long to process:
-
-1. Increase the `batch_timeout` to allow more time for processing.
-2. Optimize the processing function to reduce execution time.
-3. Check for system-level issues (e.g., CPU or I/O bottlenecks).
-
----
-
-## Conclusion
-
-The `BatchProcessor` is a powerful tool for handling large-scale batch processing tasks with adaptive batching, priority queuing, and comprehensive monitoring. Its robust error handling and health monitoring features make it suitable for production environments where reliability and performance are critical.
-
-For further customization, refer to the source code and adjust the configuration parameters as needed.
-
---- 
