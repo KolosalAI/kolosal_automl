@@ -11,9 +11,9 @@ from datetime import datetime
 from functools import lru_cache
 
 # Add the project root to sys.path
-# This is a more direct approach that points to the actual root directory
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
-sys.path.insert(0, project_root)
+# Use an absolute path for the project root to ensure it works regardless of where it's executed from
+project_root = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(project_root))
 
 from fastapi import FastAPI, APIRouter, Depends, HTTPException, Request, Response, status, Header
 from fastapi.middleware.cors import CORSMiddleware
@@ -105,7 +105,7 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down kolosal AutoML API")
 
 
-async def verify_api_key(api_key: str = Header(None)):
+async def verify_api_key(api_key: str = Header(None, alias=API_KEY_HEADER)):
     """Verify that the API key is valid."""
     # Check if API key is required
     if REQUIRE_API_KEY:
@@ -264,28 +264,49 @@ async def get_redoc(authorized: bool = Depends(verify_api_key)):
     )
 
 
-# Mount components on main router
-def mount_component(component_app: FastAPI, prefix: str, tags: List[str]) -> None:
+# Improved function to include component routes in the main application
+def include_component_routes(app: FastAPI, router: APIRouter, prefix: str, tags: List[str]):
     """
-    Mounts a component API application to the main router.
+    Include routes from a FastAPI app into a router with specific prefix and tags.
     
     Args:
-        component_app: The FastAPI app to mount
+        app: The FastAPI app containing the routes
+        router: The router to add the routes to
         prefix: URL prefix for the component
         tags: OpenAPI tags for the component
     """
-    # Create a new router for the component
     component_router = APIRouter(prefix=prefix, tags=tags)
     
-    # Extract routes from component app
-    for route in component_app.routes:
-        # Skip non-API routes (like static file mounts)
+    # Extract routes from the app
+    for route in app.routes:
+        # Skip non-API routes
         if hasattr(route, "methods"):
-            # Add the route to the component router
-            component_router.routes.append(route)
+            # Create a new route with the same endpoint but modified path and add to component router
+            path = route.path
+            if path.startswith("/"):
+                path = path[1:]  # Remove leading slash to avoid double slashes
+                
+            component_router.add_api_route(
+                path=f"/{path}" if path else "",  # Add leading slash back
+                endpoint=route.endpoint,
+                methods=route.methods,
+                response_model=getattr(route, "response_model", None),
+                status_code=getattr(route, "status_code", 200),
+                tags=getattr(route, "tags", None),
+                dependencies=getattr(route, "dependencies", None),
+                summary=getattr(route, "summary", None),
+                description=getattr(route, "description", None),
+                response_description=getattr(route, "response_description", "Successful Response"),
+                responses=getattr(route, "responses", None),
+                deprecated=getattr(route, "deprecated", None),
+                operation_id=getattr(route, "operation_id", None),
+                include_in_schema=getattr(route, "include_in_schema", True),
+                response_class=getattr(route, "response_class", JSONResponse),
+                name=getattr(route, "name", None),
+            )
     
-    # Include the component router in the main router
-    main_router.include_router(component_router)
+    # Include the component router in the provided router
+    router.include_router(component_router)
 
 
 # Health check endpoints
@@ -339,35 +360,40 @@ async def get_metrics():
     }
 
 
-# Include component routers
-# Mount each API component with a specific prefix and tags
-mount_component(
-    data_preprocessor_app, 
+# Include component routers with improved function
+include_component_routes(
+    app=data_preprocessor_app,
+    router=main_router,
     prefix="/preprocessor", 
     tags=["Data Preprocessing"]
 )
-mount_component(
-    device_optimizer_app,
+include_component_routes(
+    app=device_optimizer_app,
+    router=main_router,
     prefix="/device",
     tags=["Device Optimization"]
 )
-mount_component(
-    inference_engine_app,
+include_component_routes(
+    app=inference_engine_app,
+    router=main_router,
     prefix="/inference",
     tags=["Inference Engine"]
 )
-mount_component(
-    model_manager_app,
+include_component_routes(
+    app=model_manager_app,
+    router=main_router,
     prefix="/models",
     tags=["Model Management"]
 )
-mount_component(
-    quantizer_app,
+include_component_routes(
+    app=quantizer_app,
+    router=main_router,
     prefix="/quantizer",
     tags=["Quantization"]
 )
-mount_component(
-    train_engine_app,
+include_component_routes(
+    app=train_engine_app,
+    router=main_router,
     prefix="/train",
     tags=["Training Engine"]
 )
@@ -378,7 +404,7 @@ app.include_router(health_router)
 app.include_router(main_router)
 
 
-# Global exception handler
+# Improved global exception handler
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     """
@@ -394,11 +420,25 @@ async def global_exception_handler(request: Request, exc: Exception):
     # Get request ID if available
     request_id = getattr(request.state, "request_id", None)
     
+    # Determine status code - use HTTP exception status if available, else 500
+    status_code = getattr(exc, "status_code", 500)
+    
     # Log the error with traceback
     logger.exception(f"Unhandled exception on request {request_id}: {str(exc)}")
     
     # Increment error count
     app.state.error_count += 1
+    
+    # Get exception details
+    error_details = None
+    if hasattr(exc, "__dict__"):
+        try:
+            # Try to extract relevant details from the exception
+            error_details = {k: v for k, v in exc.__dict__.items() 
+                            if not k.startswith('_') and not callable(v)}
+        except:
+            # If extraction fails, don't include details
+            pass
     
     # Create error response
     error_response = {
@@ -409,9 +449,13 @@ async def global_exception_handler(request: Request, exc: Exception):
         "timestamp": datetime.now().isoformat()
     }
     
+    # Add details if available
+    if error_details:
+        error_response["details"] = error_details
+    
     # Return JSON response
     return JSONResponse(
-        status_code=500,
+        status_code=status_code,
         content=error_response
     )
 
