@@ -3,11 +3,17 @@ import time
 import json
 import logging
 import uuid
+import sys
 from typing import Dict, List, Any, Optional, Union, Callable
 from pathlib import Path
 from contextlib import asynccontextmanager
 from datetime import datetime
 from functools import lru_cache
+
+# Add the project root to sys.path
+# This is a more direct approach that points to the actual root directory
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
+sys.path.insert(0, project_root)
 
 from fastapi import FastAPI, APIRouter, Depends, HTTPException, Request, Response, status, Header
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,7 +22,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
 from fastapi.security import APIKeyHeader
 from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field
 import uvicorn
 
 # Import API modules
@@ -258,7 +264,7 @@ async def get_redoc(authorized: bool = Depends(verify_api_key)):
     )
 
 
-# Mount components on main router - FIXED FUNCTION
+# Mount components on main router
 def mount_component(component_app: FastAPI, prefix: str, tags: List[str]) -> None:
     """
     Mounts a component API application to the main router.
@@ -414,7 +420,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 if __name__ == "__main__":
     # Run the application
     uvicorn.run(
-        "app:app",
+        "modules.api.app:app",
         host=API_HOST,
         port=API_PORT,
         reload=API_DEBUG,
