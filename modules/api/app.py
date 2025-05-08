@@ -10,10 +10,6 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from functools import lru_cache
 
-# Add the project root to sys.path
-# Use an absolute path for the project root to ensure it works regardless of where it's executed from
-project_root = Path(__file__).resolve().parent.parent.parent
-sys.path.insert(0, str(project_root))
 
 from fastapi import FastAPI, APIRouter, Depends, HTTPException, Request, Response, status, Header
 from fastapi.middleware.cors import CORSMiddleware

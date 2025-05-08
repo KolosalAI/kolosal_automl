@@ -95,7 +95,10 @@ class DeviceOptimizer:
         self.resilience_level = min(max(resilience_level, 0), 3)  # Clamp between 0 and 3
         self.auto_tune = auto_tune
         self.memory_reservation_percent = min(max(memory_reservation_percent, 0), 50)  # Clamp between 0 and 50
-        
+        self.needs_feature_scaling = False  # Placeholder for feature scaling requirement
+        self.onnx_available = False  # Placeholder for ONNX availability
+        self.threadpoolctl_available = False  # Placeholder for threadpoolctl availability
+        self.treelite_available = False  # Placeholder for Treelite availability
         # Create directories if they don't exist
         for path in [self.config_path, self.checkpoint_path, self.model_registry_path]:
             path.mkdir(parents=True, exist_ok=True)
@@ -876,6 +879,12 @@ class DeviceOptimizer:
         # Numeric dtype - use float32 to save memory if needed
         dtype = np.float32 if self.optimization_mode == OptimizationMode.MEMORY_SAVING else np.float64
         
+        # Determine numeric transformations based on optimization mode
+        numeric_transformations = (
+            ["standard", "log", "sqrt"] if self.optimization_mode == OptimizationMode.FULL_UTILIZATION else 
+            []
+        )
+        
         # Create the configuration
         return PreprocessorConfig(
             normalization=normalization,
@@ -883,11 +892,12 @@ class DeviceOptimizer:
             handle_inf=True,
             detect_outliers=detect_outliers,
             outlier_method="isolation_forest" if self.cpu_count_logical > 2 else "iqr",
+            outlier_handling="clip",  # Added this parameter which was missing
             outlier_contamination=0.05,
             categorical_encoding="one_hot" if self.total_memory_gb > 4 else "label",
             categorical_max_categories=20 if self.total_memory_gb > 8 else 10,
             auto_feature_selection=auto_feature_selection,
-            numeric_transformations=["standard", "log", "sqrt"] if self.optimization_mode == OptimizationMode.FULL_UTILIZATION else [],
+            numeric_transformations=numeric_transformations,
             text_vectorization="tfidf" if self.optimization_mode != OptimizationMode.MEMORY_SAVING else "count",
             text_max_features=text_max_features,
             dimension_reduction=dimension_reduction,
@@ -905,15 +915,10 @@ class DeviceOptimizer:
             verbosity=2 if self.optimization_mode == OptimizationMode.FULL_UTILIZATION else 1,
             robust_percentiles=(25.0, 75.0),
             nan_strategy="mean" if self.optimization_mode != OptimizationMode.PERFORMANCE else "median",
-            inf_strategy="mean" if self.optimization_mode != OptimizationMode.PERFORMANCE else "median",
-            outlier_params={
-                "threshold": 1.5,
-                "clip": True,
-                "n_estimators": 100 if self.cpu_count_logical > 4 else 50,
-                "contamination": "auto"
-            },
+            inf_strategy="max_value" if self.optimization_mode != OptimizationMode.PERFORMANCE else "median",
             clip_values=self.optimization_mode in [OptimizationMode.MEMORY_SAVING, OptimizationMode.CONSERVATIVE],
-            clip_range=(-np.inf, np.inf),  # Default to no clipping
+            clip_min=float('-inf'),  # Added proper clip min param 
+            clip_max=float('inf'),   # Added proper clip max param
             enable_input_validation=True,
             input_size_limit=None if self.environment == "cloud" else 100000,
             n_jobs=n_jobs,
@@ -925,6 +930,13 @@ class DeviceOptimizer:
             debug_mode=False,
             custom_normalization_fn=None,
             custom_transform_fn=None,
+            # Added missing custom_center_func, custom_scale_func, and custom_inverse_fn
+            custom_center_func=None,
+            custom_scale_func=None,
+            custom_inverse_fn=None,
+            # Added missing scale_shift and scale_offset
+            scale_shift=False,
+            scale_offset=0.0,
             version="1.0.0"
         )
         
@@ -941,10 +953,13 @@ class DeviceOptimizer:
         # Determine model precision based on optimization mode
         if self.optimization_mode == OptimizationMode.MEMORY_SAVING:
             model_precision = "fp16"  # Use half precision to save memory
+            enable_fp16_optimization = True
         elif self.optimization_mode == OptimizationMode.PERFORMANCE:
             model_precision = "fp32"  # Use full precision for performance
+            enable_fp16_optimization = False
         else:
             model_precision = "fp32"  # Default
+            enable_fp16_optimization = False
         
         # Number of threads for inference
         thread_count = max(int(self.cpu_count_logical * factors["cpu"]), 1)
@@ -995,80 +1010,89 @@ class DeviceOptimizer:
         # Create quantization config if needed
         quantization_config = self.get_optimal_quantization_config() if self.optimization_mode == OptimizationMode.MEMORY_SAVING else None
         
-        # Create optimized inference engine config
-        return InferenceEngineConfig(
-            # CPU optimization settings
-            enable_intel_optimization=enable_intel,
-            thread_count=thread_count,
-            num_threads=thread_count,
-            set_cpu_affinity=self.optimization_mode == OptimizationMode.PERFORMANCE,
-            
-            # Batching settings
-            enable_batching=True,
-            max_batch_size=max_batch_size,
+        # Prepare batch processor config
+        batch_processor_config = BatchProcessorConfig(
             initial_batch_size=initial_batch_size,
             min_batch_size=1,
+            max_batch_size=max_batch_size,
             batch_timeout=0.05 if self.optimization_mode == OptimizationMode.PERFORMANCE else 0.1,
-            batching_strategy="dynamic" if self.optimization_mode != OptimizationMode.CONSERVATIVE else "static",
-            enable_adaptive_batching=self.optimization_mode != OptimizationMode.CONSERVATIVE,
-            
-            # Model settings
+            max_queue_size=thread_count * 2,  # Double the number of threads for queue size
+            num_workers=thread_count
+        )
+        
+        # Preprocessor config if feature scaling is enabled
+        preprocessor_config = None
+        if self.needs_feature_scaling:
+            preprocessor_config = PreprocessorConfig()
+        
+        # Create optimized inference engine config
+        return InferenceEngineConfig(
+            # System optimization settings
+            enable_intel_optimization=enable_intel,
+            enable_batching=True,
+            enable_quantization=self.optimization_mode == OptimizationMode.MEMORY_SAVING,
             model_cache_size=model_cache_size,
             model_precision=model_precision,
-            model_version="1.0",
-            
-            # Performance settings
+            max_batch_size=max_batch_size,
             timeout_ms=50 if self.optimization_mode == OptimizationMode.PERFORMANCE else 100,
             enable_jit=True,
+            enable_onnx=self.onnx_available,  # Use flag to check if ONNX is available
+            onnx_opset=15,  # Updated to match the config default
+            enable_tensorrt=False,  # No TensorRT support in CPU-only mode
             runtime_optimization=True,
+            fallback_to_cpu=True,
+            thread_count=thread_count,
             warmup=True,
             warmup_iterations=5 if self.environment == "edge" else 10,
             profiling=self.optimization_mode == OptimizationMode.FULL_UTILIZATION,
-            
-            # Memory settings
+            batching_strategy="dynamic" if self.optimization_mode != OptimizationMode.CONSERVATIVE else "static",
+            output_streaming=False,
+            debug_mode=False,
             memory_growth=self.optimization_mode != OptimizationMode.MEMORY_SAVING,
-            enable_memory_optimization=self.optimization_mode != OptimizationMode.PERFORMANCE,
-            memory_high_watermark_mb=1024 if self.total_memory_gb > 4 else 512,
-            memory_limit_gb=memory_limit,
+            custom_ops=[],
+            use_platform_accelerator=True,
+            platform_accelerator_config={},
             
-            # Export formats
-            enable_onnx=False,  # Not using ONNX 
-            onnx_opset=13,
-            enable_tensorrt=False,  # No TensorRT support in CPU-only mode
-            
-            # Quantization settings
-            enable_quantization=self.optimization_mode == OptimizationMode.MEMORY_SAVING,
+            # Engine configuration
+            model_version="1.0",
+            num_threads=thread_count,
+            set_cpu_affinity=self.optimization_mode == OptimizationMode.PERFORMANCE,
             enable_model_quantization=self.optimization_mode == OptimizationMode.MEMORY_SAVING,
             enable_input_quantization=False,
             quantization_dtype="int8",
             quantization_config=quantization_config,
-            enable_quantization_aware_inference=False,
-            
-            # Request handling
             enable_request_deduplication=True,
-            output_streaming=False,
-            max_concurrent_requests=thread_count,
             max_cache_entries=1000 if self.total_memory_gb > 8 else 500,
             cache_ttl_seconds=cache_ttl,
-            
-            # Monitoring and throttling
             monitoring_window=100 if self.environment == "cloud" else 50,
             enable_monitoring=True,
             monitoring_interval=monitoring_interval,
             throttle_on_high_cpu=self.optimization_mode != OptimizationMode.PERFORMANCE,
             cpu_threshold_percent=90.0 if self.optimization_mode == OptimizationMode.PERFORMANCE else 80.0,
+            memory_high_watermark_mb=1024 if self.total_memory_gb > 4 else 512,
+            memory_limit_gb=memory_limit,
+            batch_timeout=0.05 if self.optimization_mode == OptimizationMode.PERFORMANCE else 0.1,
+            max_concurrent_requests=thread_count,
+            initial_batch_size=initial_batch_size,
+            min_batch_size=1,
+            enable_adaptive_batching=self.optimization_mode != OptimizationMode.CONSERVATIVE,
+            enable_memory_optimization=self.optimization_mode != OptimizationMode.PERFORMANCE,
+            enable_feature_scaling=self.needs_feature_scaling,
+            enable_warmup=True,
+            enable_quantization_aware_inference=False,
             enable_throttling=self.optimization_mode != OptimizationMode.PERFORMANCE,
             
-            # Other settings
-            enable_feature_scaling=False,  # Handled by preprocessor
-            enable_warmup=True,
-            fallback_to_cpu=True,  # Already CPU-only
-            debug_mode=False,
-            custom_ops=[],
-            use_platform_accelerator=True,
-            platform_accelerator_config={}
+            # New fields aligned with the inference engine implementation
+            optimization_mode=self.optimization_mode,
+            enable_fp16_optimization=enable_fp16_optimization,
+            enable_compiler_optimization=True,
+            preprocessor_config=preprocessor_config,
+            batch_processor_config=batch_processor_config,
+            threadpoolctl_available=self.threadpoolctl_available,  # Use class member
+            onnx_available=self.onnx_available,  # Use class member
+            treelite_available=self.treelite_available  # Use class member
         )
-        
+ 
     def get_optimal_batch_processor_config(self) -> BatchProcessorConfig:
         """
         Generate an optimized batch processor configuration based on device capabilities.
@@ -1259,173 +1283,299 @@ class DeviceOptimizer:
         # Get scaling factors
         factors = self._apply_optimization_mode_factors()
         
-        # Determine batch size based on memory and optimization mode
+        # Determine optimal configurations based on hardware and optimization mode
         if self.total_memory_gb < 4:
             batch_size = 16
+            cv_folds = 3
         elif self.total_memory_gb < 8:
             batch_size = 32
+            cv_folds = 4
         elif self.total_memory_gb < 16:
             batch_size = 64
+            cv_folds = 5
         else:
             batch_size = 128
+            cv_folds = 5
         
         # Apply batch size factor
         batch_size = max(int(batch_size * factors["batch_size"]), 1)
         
-        # Determine number of workers for data loading
-        num_workers = max(int(self.cpu_count_logical * factors["workers"]), 1)
+        # Determine number of workers/jobs
+        n_jobs = max(int(self.cpu_count_logical * factors["workers"]), 1) 
         
-        # Determine learning rate based on batch size and optimization mode
-        base_lr = 0.001  # Default base learning rate
-        
-        if self.optimization_mode == OptimizationMode.PERFORMANCE:
-            base_lr = 0.002  # Faster learning for performance mode
-        elif self.optimization_mode == OptimizationMode.CONSERVATIVE:
-            base_lr = 0.0005  # More conservative learning rate
-        
-        # Scale learning rate with batch size
-        learning_rate = base_lr * (batch_size / 32)
-        
-        # Determine epochs based on optimization mode
+        # Determine optimization iterations based on optimization mode
         if self.optimization_mode == OptimizationMode.FULL_UTILIZATION:
-            epochs = 100
+            optimization_iterations = 100
         elif self.optimization_mode == OptimizationMode.PERFORMANCE:
-            epochs = 50
+            optimization_iterations = 50
         elif self.optimization_mode == OptimizationMode.MEMORY_SAVING:
-            epochs = 30
+            optimization_iterations = 30
         else:
-            epochs = 50  # Default
+            optimization_iterations = 50  # Default
         
-        # Model selection strategy
+        # Determine model selection criteria based on optimization mode
         if self.optimization_mode == OptimizationMode.PERFORMANCE:
-            model_selection = ModelSelectionCriteria.SPEED
+            model_selection_criteria = ModelSelectionCriteria.SPEED
         elif self.optimization_mode == OptimizationMode.CONSERVATIVE:
-            model_selection = ModelSelectionCriteria.ROBUSTNESS
+            model_selection_criteria = ModelSelectionCriteria.ROBUSTNESS
         else:
-            model_selection = ModelSelectionCriteria.BALANCED
+            model_selection_criteria = ModelSelectionCriteria.BALANCED
         
-        # Optimizer config based on optimization mode
+        # Early stopping rounds based on optimization mode
         if self.optimization_mode == OptimizationMode.PERFORMANCE:
-            optimizer_config = {
-                "type": "adam",
-                "betas": [0.9, 0.999],
-                "eps": 1e-8,
-                "weight_decay": 0.0001
-            }
-        elif self.optimization_mode == OptimizationMode.MEMORY_SAVING:
-            optimizer_config = {
-                "type": "sgd",
-                "momentum": 0.9,
-                "weight_decay": 0.0001
-            }
-        else:
-            optimizer_config = {
-                "type": "adam",
-                "betas": [0.9, 0.999],
-                "eps": 1e-8,
-                "weight_decay": 0.0001
-            }
-        
-        # Early stopping patience based on optimization mode
-        if self.optimization_mode == OptimizationMode.PERFORMANCE:
-            patience = 5
+            early_stopping_rounds = 5
         elif self.optimization_mode == OptimizationMode.CONSERVATIVE:
-            patience = 15
+            early_stopping_rounds = 15
         else:
-            patience = 10
+            early_stopping_rounds = 10
         
-        # Memory optimization settings
-        enable_mixed_precision = (
-            self.optimization_mode == OptimizationMode.MEMORY_SAVING or 
-            self.total_memory_gb < 8
-        )
-        
-        gradient_accumulation_steps = (
-            4 if self.total_memory_gb < 4 else
-            2 if self.total_memory_gb < 8 else
-            1
-        )
-        
-        # Checkpoint frequency - more frequent for edge devices or conservative mode
-        checkpoint_freq = (
+        # Checkpoint interval - more frequent for edge devices or conservative mode
+        checkpoint_interval = (
             5 if self.environment == "edge" or self.optimization_mode == OptimizationMode.CONSERVATIVE else
             10 if self.optimization_mode == OptimizationMode.BALANCED else
             20  # Less frequent for performance mode
         )
         
-        # GPU reserved memory percentage (for future GPU support)
-        gpu_reserved_memory = (
+        # GPU memory fraction
+        gpu_memory_fraction = (
             0.2 if self.optimization_mode == OptimizationMode.MEMORY_SAVING else
-            0.1 if self.optimization_mode == OptimizationMode.BALANCED else
-            0.05  # Minimal for performance mode
+            0.5 if self.optimization_mode == OptimizationMode.BALANCED else
+            0.8  # More for performance mode
+        )
+        
+        # Memory optimization setting
+        memory_optimization = self.optimization_mode == OptimizationMode.MEMORY_SAVING
+        
+        # Determine optimization strategy
+        if self.optimization_mode == OptimizationMode.PERFORMANCE:
+            optimization_strategy = OptimizationStrategy.HYPERX
+        elif self.optimization_mode == OptimizationMode.MEMORY_SAVING:
+            optimization_strategy = OptimizationStrategy.BASIC
+        else:
+            optimization_strategy = OptimizationStrategy.STANDARD
+        
+        # Feature selection settings
+        feature_selection = self.total_memory_gb < 16 or self.optimization_mode == OptimizationMode.MEMORY_SAVING
+        
+        # Auto ML settings
+        if self.auto_tune:
+            if self.environment == "edge":
+                auto_ml = AutoMLMode.BASIC
+                auto_ml_time_budget = 1800  # 30 minutes
+            else:
+                auto_ml = AutoMLMode.COMPREHENSIVE
+                auto_ml_time_budget = 3600  # 1 hour
+        else:
+            auto_ml = AutoMLMode.DISABLED
+            auto_ml_time_budget = None
+        
+        # Ensemble settings based on optimization mode and hardware
+        ensemble_models = (
+            self.optimization_mode == OptimizationMode.FULL_UTILIZATION and
+            self.total_memory_gb >= 8 and
+            self.cpu_count_logical >= 4
+        )
+        
+        # Create preprocessing config
+        preprocessing_config = PreprocessorConfig(
+            normalization=NormalizationType.STANDARD,
+            handle_nan=True,
+            handle_inf=True,
+            detect_outliers=self.optimization_mode != OptimizationMode.PERFORMANCE,
+            parallel_processing=n_jobs > 1
+        )
+        
+        # Create batch processing config
+        batch_processing_config = BatchProcessorConfig(
+            initial_batch_size=batch_size,
+            min_batch_size=max(batch_size // 2, 1),
+            max_batch_size=batch_size * 2,
+            max_queue_size=batch_size * 10,
+            batch_timeout=1.0,
+            enable_priority_queue=self.optimization_mode != OptimizationMode.MEMORY_SAVING,
+            enable_monitoring=True,
+            enable_memory_optimization=memory_optimization
+        )
+        
+        # Create inference config
+        inference_config = InferenceEngineConfig(
+            enable_intel_optimization=self.is_intel_cpu,
+            enable_batching=True,
+            enable_quantization=self.optimization_mode == OptimizationMode.MEMORY_SAVING,
+            debug_mode=False
+        )
+        
+        # Create quantization config
+        quantization_config = QuantizationConfig(
+            quantization_type=QuantizationType.INT8.value,
+            quantization_mode=QuantizationMode.DYNAMIC_PER_BATCH.value,
+            enable_cache=self.total_memory_gb >= 4,
+            cache_size=128 if self.total_memory_gb < 8 else 256
+        )
+        
+        # Create explainability config
+        explainability_config = ExplainabilityConfig(
+            enable_explainability=self.optimization_mode != OptimizationMode.MEMORY_SAVING,
+            methods=["shap", "feature_importance"] if self.total_memory_gb >= 8 else ["feature_importance"],
+            default_method="feature_importance" if self.total_memory_gb < 8 else "shap"
+        )
+        
+        # Create monitoring config
+        monitoring_config = MonitoringConfig(
+            enable_monitoring=True,
+            drift_detection=self.optimization_mode != OptimizationMode.MEMORY_SAVING,
+            performance_tracking=True
+        )
+        
+        # Create distribution config
+        distributed_config = {
+            "backend": "gloo" if self.is_intel_cpu else "mpi",
+            "world_size": self.cpu_count_logical,
+            "rank": 0
+        }
+        
+        # Create security config
+        security_config = {
+            "enable_encryption": self.optimization_mode != OptimizationMode.PERFORMANCE,
+            "encryption_level": "high" if self.optimization_mode == OptimizationMode.CONSERVATIVE else "medium",
+            "verify_input": True
+        }
+        
+        # Determine if we need to enable distributed training
+        enable_distributed = (
+            self.cpu_count_logical >= 4 and
+            self.optimization_mode != OptimizationMode.MEMORY_SAVING
         )
         
         # Create the configuration
         return MLTrainingEngineConfig(
-            # Basic training parameters
-            batch_size=batch_size,
-            learning_rate=learning_rate,
-            epochs=epochs,
-            optimizer=optimizer_config["type"],
-            optimizer_params=optimizer_config,
-            scheduler="cosine" if self.optimization_mode != OptimizationMode.CONSERVATIVE else "step",
-            scheduler_params={},
-            loss_function="auto",
+            # Basic parameters
+            task_type=TaskType.CLASSIFICATION,  # Default, can be changed by user
+            random_state=42,
+            n_jobs=n_jobs,
+            verbose=1 if self.optimization_mode != OptimizationMode.PERFORMANCE else 0,
+            cv_folds=cv_folds,
+            test_size=0.2,
+            stratify=True,
             
-            # Resource management
-            num_workers=num_workers,
-            pin_memory=self.optimization_mode != OptimizationMode.MEMORY_SAVING,
-            cuda_non_blocking=True,
+            # Optimization parameters
+            optimization_strategy=optimization_strategy,
+            optimization_iterations=optimization_iterations,
+            optimization_timeout=auto_ml_time_budget,
+            optimization_metric=model_selection_criteria,
             
-            # Memory optimizations
-            enable_mixed_precision=enable_mixed_precision,
-            gradient_accumulation_steps=gradient_accumulation_steps,
-            enable_gradient_checkpointing=self.optimization_mode == OptimizationMode.MEMORY_SAVING,
-            
-            # Regularization
-            weight_decay=0.0001,
-            dropout_rate=0.3 if self.optimization_mode != OptimizationMode.PERFORMANCE else 0.2,
-            label_smoothing=0.1 if self.optimization_mode != OptimizationMode.PERFORMANCE else 0.0,
-            
-            # Validation and early stopping
-            validation_frequency=1,
+            # Early stopping parameters
             early_stopping=True,
-            patience=patience,
+            early_stopping_rounds=early_stopping_rounds,
+            early_stopping_metric=None,  # Will use default based on task type
+            
+            # Feature selection parameters
+            feature_selection=feature_selection,
+            feature_selection_method="mutual_info",
+            feature_selection_k=None,  # Auto determine
+            feature_importance_threshold=0.01,
+            
+            # Configuration objects
+            preprocessing_config=preprocessing_config,
+            batch_processing_config=batch_processing_config,
+            inference_config=inference_config,
+            quantization_config=quantization_config,
+            explainability_config=explainability_config,
+            monitoring_config=monitoring_config,
+            
+            # Path configurations
+            model_path="./models",
+            model_registry_url=None,
+            checkpoint_path="./checkpoints",
+            
+            # Model management
+            auto_version_models=True,
+            experiment_tracking=True,
+            experiment_tracking_platform="mlflow" if self.total_memory_gb >= 4 else "csv",
+            experiment_tracking_config={},
+            
+            # Hardware utilization
+            use_intel_optimization=self.is_intel_cpu,
+            use_gpu=self.has_gpu,
+            gpu_memory_fraction=gpu_memory_fraction,
+            memory_optimization=memory_optimization,
+            
+            # Distributed training
+            enable_distributed=enable_distributed,
+            distributed_strategy="mirrored" if self.has_gpu else "multiprocessing",
+            distributed_config=distributed_config,
             
             # Checkpointing
-            checkpoint_frequency=checkpoint_freq,
-            keep_n_best_checkpoints=3 if self.environment != "edge" else 1,
+            checkpointing=True,
+            checkpoint_interval=checkpoint_interval,
             
-            # Advanced settings
-            enable_automl=self.auto_tune,
-            automl_mode=AutoMLMode.BASIC if self.environment == "edge" else AutoMLMode.COMPREHENSIVE,
-            automl_trials=10 if self.environment == "edge" else 30,
+            # Model pruning
+            enable_pruning=self.optimization_mode == OptimizationMode.MEMORY_SAVING,
             
-            # Performance tracking
-            enable_profiling=self.optimization_mode == OptimizationMode.FULL_UTILIZATION,
-            profiling_frequency=100,
+            # AutoML
+            auto_ml=auto_ml,
+            auto_ml_time_budget=auto_ml_time_budget,
             
-            # Model selection
-            model_selection_criteria=model_selection,
+            # Ensemble
+            ensemble_models=ensemble_models,
+            ensemble_method="stacking" if self.total_memory_gb >= 16 else "voting",
+            ensemble_size=3 if self.total_memory_gb < 16 else 5,
             
-            # GPU reserved memory (for future GPU support)
-            gpu_reserved_memory_fraction=gpu_reserved_memory,
+            # Hyperparameter tuning
+            hyperparameter_tuning_cv=self.optimization_mode != OptimizationMode.MEMORY_SAVING,
+            model_selection_criteria=model_selection_criteria,
             
-            # Explainability
-            enable_explainability=False,  # Disabled by default for CPU-only mode
-            explainability_config=ExplainabilityConfig(),
+            # Auto save
+            auto_save=True,
+            auto_save_on_shutdown=True,
+            save_state_on_shutdown=False,
+            load_best_model_after_train=True,
             
-            # Monitoring
-            enable_monitoring=True,
-            monitoring_config=MonitoringConfig(),
+            # Model optimization
+            enable_quantization=self.optimization_mode == OptimizationMode.MEMORY_SAVING,
+            enable_model_compression=self.optimization_mode == OptimizationMode.MEMORY_SAVING,
+            compression_method="pruning",
             
-            # Misc
-            random_seed=42,
-            deterministic=self.optimization_mode == OptimizationMode.CONSERVATIVE,
-            distributed_training=False,  # Not enabled for CPU-only version
-            distributed_backend="gloo" if self.is_intel_cpu else "mpi",
-            world_size=1,
-            debug_mode=False
+            # Importance and explanations
+            compute_permutation_importance=self.optimization_mode != OptimizationMode.MEMORY_SAVING,
+            generate_feature_importance_report=True,
+            generate_model_summary=True,
+            generate_prediction_explanations=self.optimization_mode == OptimizationMode.FULL_UTILIZATION,
+            
+            # Export and deployment
+            enable_model_export=True,
+            export_formats=["sklearn", "onnx"] if self.optimization_mode != OptimizationMode.MEMORY_SAVING else ["onnx"],
+            auto_deploy=False,
+            deployment_platform=None,
+            deployment_config={},
+            
+            # Logging and debugging
+            log_level="INFO" if not self.debug_mode else "DEBUG",
+            debug_mode=self.debug_mode,
+            enable_telemetry=False,
+            
+            # Backend
+            backend="sklearn",
+            custom_callbacks=[],
+            
+            # Security and validation
+            enable_data_validation=True,
+            enable_security=self.optimization_mode != OptimizationMode.PERFORMANCE,
+            security_config=security_config,
+            
+            # Metadata
+            metadata={
+                "device_info": {
+                    "cpu_count": self.cpu_count_physical,
+                    "cpu_count_logical": self.cpu_count_logical,
+                    "total_memory_gb": self.total_memory_gb,
+                    "is_intel_cpu": self.is_intel_cpu,
+                    "has_gpu": self.has_gpu
+                },
+                "optimization_mode": self.optimization_mode.value,
+                "environment": self.environment,
+                "auto_tune": self.auto_tune
+            }
         )
 # Helper functions for creating optimized configurations
 def create_optimized_configs(
