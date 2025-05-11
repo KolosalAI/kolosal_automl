@@ -1,646 +1,634 @@
-# Module: `data_preprocessor`
+# Module: `DataPreprocessor`
 
 ## Overview
-The `data_preprocessor` module provides an advanced, scalable, and production-ready data
-preprocessing system optimized for large-scale machine learning deployments. It supports:
-- Multiple normalization strategies (standard, min-max, robust, custom)
-- Outlier detection and handling
-- NaN and infinite value handling
-- Chunked processing for large datasets
-- Caching and serialization
-- Parallelized transformations
-
-It is designed for high performance, modularity, and robustness, suitable for real-world industrial applications.
-
----
+A high-performance, production-ready data preprocessor for machine learning pipelines with extensive functionality including multiple normalization strategies, outlier detection, thread-safety, memory optimization, comprehensive error handling, monitoring, and serialization capabilities.
 
 ## Prerequisites
-- **Python Version**: ≥3.8
-- **Required packages**:
+- Python ≥3.7
+- Required packages:
   ```bash
-  pip install numpy
+  pip install numpy>=1.19.0
   ```
-- **Optional** (recommended for better performance):
-  - `psutil` (for memory monitoring)
-  - `concurrent.futures` (for parallelism, included in Python 3.8+)
+- Optional dependencies: `threading`, `logging`, `pickle`, `dataclasses`
 
 ## Installation
-```bash
-pip install numpy
+The module is part of a larger package structure. To use it within your project:
+
+```python
+from modules.preprocessor import DataPreprocessor
+from modules.configs import PreprocessorConfig
 ```
 
 ## Usage
 ```python
-from modules.configs import PreprocessorConfig
-from data_preprocessor import DataPreprocessor
+import numpy as np
+from modules.preprocessor import DataPreprocessor
+from modules.configs import PreprocessorConfig, NormalizationType
 
-# Initialize preprocessor with default config
-preprocessor = DataPreprocessor()
+# Create a config with standard normalization
+config = PreprocessorConfig(
+    normalization=NormalizationType.STANDARD,
+    handle_nan=True,
+    detect_outliers=True
+)
 
-# Fit on training data
+# Initialize and fit the preprocessor
+preprocessor = DataPreprocessor(config)
+X_train = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
 preprocessor.fit(X_train)
 
-# Transform data
-X_train_transformed = preprocessor.transform(X_train)
+# Transform new data
+X_test = np.array([[2.0, 3.0], [4.0, 5.0]])
+X_transformed = preprocessor.transform(X_test)
 
-# Save preprocessor
+# Save the fitted preprocessor
 preprocessor.serialize("preprocessor.pkl")
 
-# Load preprocessor later
+# Load later
 loaded_preprocessor = DataPreprocessor.deserialize("preprocessor.pkl")
-X_test_transformed = loaded_preprocessor.transform(X_test)
 ```
 
 ## Configuration
-| Config Option | Default | Description |
-|---|---|---|
-| `normalization` | `NONE` | Normalization strategy (STANDARD, MINMAX, ROBUST, CUSTOM) |
-| `handle_nan` | `True` | Whether to handle NaN values |
-| `nan_strategy` | `"mean"` | Strategy for handling NaNs (mean, median, most_frequent, constant) |
-| `handle_inf` | `True` | Whether to handle infinite values |
-| `inf_strategy` | `"max_value"` | Strategy for handling inf values |
-| `detect_outliers` | `False` | Whether to detect and handle outliers |
-| `outlier_method` | `"zscore"` | Outlier detection method (iqr, zscore, percentile) |
-| `cache_enabled` | `False` | Enable caching of small transforms |
-| `parallel_processing` | `False` | Enable parallel transformation |
-| `chunk_size` | `None` | Chunk size for processing large datasets |
-| `debug_mode` | `False` | Enable detailed debug logging |
-| `clip_values` | `False` | Whether to clip values during transformation |
-| `scale_shift` | `False` | Whether to shift scaling |
-| `input_size_limit` | `None` | Limit input size for validation |
+The `DataPreprocessor` is configured via a `PreprocessorConfig` dataclass with these key parameters:
 
----
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `normalization` | `NormalizationType.NONE` | Normalization strategy (STANDARD, MINMAX, ROBUST, etc.) |
+| `handle_nan` | `False` | Whether to handle NaN values |
+| `nan_strategy` | `"mean"` | Strategy for NaN replacement (mean, median, constant) |
+| `handle_inf` | `False` | Whether to handle infinite values |
+| `detect_outliers` | `False` | Whether to detect and handle outliers |
+| `outlier_method` | `"zscore"` | Method for outlier detection (zscore, iqr, percentile) |
+| `chunk_size` | `None` | Size of chunks for processing large datasets |
+| `parallel_processing` | `False` | Whether to use parallel processing |
+| `debug_mode` | `False` | Enable detailed logging |
+| `cache_enabled` | `False` | Enable caching for transform operations |
 
 ## Architecture
-**Data Flow**:
-```
-Input Data → Validate → Handle NaN/Inf → Handle Outliers → Normalize → Clip → Output
-```
-Optional caching and parallel execution is integrated based on configuration.
+The preprocessor uses a pipeline architecture where multiple processing steps are applied sequentially:
+
+1. Data validation and conversion
+2. NaN/Inf handling (if enabled)
+3. Outlier detection and handling (if enabled)
+4. Normalization (if enabled)
+5. Value clipping (if enabled)
+
+Each step is encapsulated in a separate method and the pipeline is constructed based on the provided configuration.
 
 ---
 
-## Testing
-```bash
-pytest tests/
-```
+## Exception Classes
 
-Unit tests should cover:
-- Fitting and transforming small datasets
-- Serialization/deserialization
-- Chunked processing for large datasets
-- NaN/Inf handling
-- Different normalization types
-- Parallel transformation correctness
+### `PreprocessingError`
+```python
+class PreprocessingError(Exception):
+```
+- **Description**:  
+  Base class for all preprocessing exceptions. Serves as a parent class for more specific exception types.
+
+### `InputValidationError`
+```python
+class InputValidationError(PreprocessingError):
+```
+- **Description**:  
+  Exception raised for input validation errors, such as incompatible shapes, data types, or out-of-range values.
+
+### `StatisticsError`
+```python
+class StatisticsError(PreprocessingError):
+```
+- **Description**:  
+  Exception raised for errors in computing statistics, such as division by zero or other numerical issues.
+
+### `SerializationError`
+```python
+class SerializationError(PreprocessingError):
+```
+- **Description**:  
+  Exception raised for errors in serialization or deserialization operations, such as file I/O problems or data integrity issues.
+
+---
+
+## Utility Functions
+
+### `log_operation(func)`
+```python
+def log_operation(func):
+```
+- **Description**:  
+  Decorator for logging operation timing and handling exceptions.
+
+- **Parameters**:  
+  - `func (Callable)`: The function to be decorated.
+
+- **Returns**:  
+  - `Callable`: Wrapped function that logs timing and handles exceptions.
+
+---
+
+## Main Class: DataPreprocessor
+
+### `__init__(config=None)`
+```python
+def __init__(self, config: Optional[PreprocessorConfig] = None):
+```
+- **Description**:  
+  Initializes the preprocessor with the specified configuration.
+
+- **Parameters**:  
+  - `config (Optional[PreprocessorConfig])`: Configuration object, or None to use defaults.
+
+### `fit(X, y=None, feature_names=None, **fit_params)`
+```python
+def fit(self, X, y=None, feature_names=None, **fit_params):
+```
+- **Description**:  
+  Fits the preprocessor to the data, computing necessary statistics for transformations.
+
+- **Parameters**:  
+  - `X (Union[np.ndarray, List])`: Input data to fit.
+  - `y (Any)`: Target values (unused, for API compatibility).
+  - `feature_names (Optional[List[str]])`: Optional list of feature names.
+  - `**fit_params`: Additional parameters.
+
+- **Returns**:  
+  - `DataPreprocessor`: The fitted preprocessor instance.
+
+- **Raises**:  
+  - `InputValidationError`: If input data is invalid.
+  - `StatisticsError`: If statistics computation fails.
+
+### `transform(X, copy=True)`
+```python
+def transform(self, X: Union[np.ndarray, List], copy: bool = True) -> np.ndarray:
+```
+- **Description**:  
+  Applies preprocessing transformations to the input data.
+
+- **Parameters**:  
+  - `X (Union[np.ndarray, List])`: Input data to transform.
+  - `copy (bool)`: If True, ensures input is not modified in-place.
+
+- **Returns**:  
+  - `np.ndarray`: Transformed data array.
+
+- **Raises**:  
+  - `RuntimeError`: If preprocessor is not fitted.
+  - `InputValidationError`: If input data is invalid.
+
+### `fit_transform(X, y=None, feature_names=None, copy=True)`
+```python
+def fit_transform(self, X: Union[np.ndarray, List], y=None, feature_names=None, copy: bool = True) -> np.ndarray:
+```
+- **Description**:  
+  Combines fit and transform operations efficiently.
+
+- **Parameters**:  
+  - `X (Union[np.ndarray, List])`: Input data.
+  - `y (Any)`: Target values (unused, for API compatibility).
+  - `feature_names (Optional[List[str]])`: Optional feature names.
+  - `copy (bool)`: Whether to copy the input data.
+
+- **Returns**:  
+  - `np.ndarray`: Transformed data.
+
+### `partial_fit(X, feature_names=None)`
+```python
+def partial_fit(self, X: np.ndarray, feature_names=None) -> 'DataPreprocessor':
+```
+- **Description**:  
+  Updates the preprocessor with new data incrementally.
+
+- **Parameters**:  
+  - `X (np.ndarray)`: New data to incorporate.
+  - `feature_names (Optional[List[str]])`: Optional feature names (ignored if already fitted).
+
+- **Returns**:  
+  - `DataPreprocessor`: The updated preprocessor.
+
+- **Raises**:  
+  - `InputValidationError`: If dimensions don't match.
+
+### `reverse_transform(X, copy=True)`
+```python
+def reverse_transform(self, X: np.ndarray, copy: bool = True) -> np.ndarray:
+```
+- **Description**:  
+  Reverses the preprocessing transformations to recover original data scale.
+
+- **Parameters**:  
+  - `X (np.ndarray)`: Transformed data to reverse.
+  - `copy (bool)`: Whether to copy the input data.
+
+- **Returns**:  
+  - `np.ndarray`: Data with transformations reversed.
+
+- **Raises**:  
+  - `RuntimeError`: If not fitted.
+  - `StatisticsError`: If required statistics are missing.
+
+### `serialize(path)`
+```python
+def serialize(self, path: str) -> bool:
+```
+- **Description**:  
+  Serializes the preprocessor to disk.
+
+- **Parameters**:  
+  - `path (str)`: File path to save the serialized preprocessor.
+
+- **Returns**:  
+  - `bool`: True if successful, False otherwise.
+
+### `deserialize(path)`
+```python
+@classmethod
+def deserialize(cls, path: str) -> 'DataPreprocessor':
+```
+- **Description**:  
+  Deserializes a preprocessor from disk.
+
+- **Parameters**:  
+  - `path (str)`: File path to load the serialized preprocessor from.
+
+- **Returns**:  
+  - `DataPreprocessor`: Deserialized DataPreprocessor instance.
+
+- **Raises**:  
+  - `SerializationError`: If deserialization fails.
+
+### `get_statistics()`
+```python
+def get_statistics(self) -> Dict[str, Any]:
+```
+- **Description**:  
+  Gets the current statistics computed by the preprocessor.
+
+- **Returns**:  
+  - `Dict[str, Any]`: Dictionary of statistics.
+
+- **Raises**:  
+  - `RuntimeError`: If preprocessor is not fitted.
+
+### `get_feature_names()`
+```python
+def get_feature_names(self) -> List[str]:
+```
+- **Description**:  
+  Gets the feature names used by the preprocessor.
+
+- **Returns**:  
+  - `List[str]`: List of feature names.
+
+### `get_performance_metrics()`
+```python
+def get_performance_metrics(self) -> Dict[str, List[float]]:
+```
+- **Description**:  
+  Gets performance metrics collected during preprocessing operations.
+
+- **Returns**:  
+  - `Dict[str, List[float]]`: Dictionary of performance metrics.
+
+### `reset()`
+```python
+def reset(self) -> None:
+```
+- **Description**:  
+  Resets the preprocessor to its initialized state, clearing all fitted statistics.
+
+### `update_config(new_config)`
+```python
+def update_config(self, new_config: PreprocessorConfig) -> None:
+```
+- **Description**:  
+  Updates the preprocessor configuration, resetting state if pipeline changes.
+
+- **Parameters**:  
+  - `new_config (PreprocessorConfig)`: New configuration to apply.
+
+---
+
+## Internal Methods
+
+### `_configure_logging()`
+```python
+def _configure_logging(self) -> None:
+```
+- **Description**:  
+  Configures logging based on config settings.
+
+### `_init_parallel_executor()`
+```python
+def _init_parallel_executor(self) -> None:
+```
+- **Description**:  
+  Initializes parallel processing executor if parallel processing is enabled.
+
+### `_init_processing_functions()`
+```python
+def _init_processing_functions(self) -> None:
+```
+- **Description**:  
+  Initializes preprocessing functions based on configuration, creating the processing pipeline.
+
+### `_error_context(operation)`
+```python
+@contextmanager
+def _error_context(self, operation: str):
+```
+- **Description**:  
+  Context manager for handling errors during preprocessing operations.
+
+- **Parameters**:  
+  - `operation (str)`: Name of the operation being performed.
+
+### `_validate_and_convert_input(X, operation, copy)`
+```python
+def _validate_and_convert_input(self, X: Union[np.ndarray, List], operation: str = "transform", copy: bool = False) -> np.ndarray:
+```
+- **Description**:  
+  Validates and converts input data efficiently with comprehensive checks.
+
+- **Parameters**:  
+  - `X (Union[np.ndarray, List])`: Input data.
+  - `operation (str)`: Operation being performed ('fit' or 'transform').
+  - `copy (bool)`: Whether to copy the input data.
+
+- **Returns**:  
+  - `np.ndarray`: Validated and converted numpy array.
+
+- **Raises**:  
+  - `InputValidationError`: If validation fails.
+
+### `_fit_full(X)`
+```python
+def _fit_full(self, X: np.ndarray) -> None:
+```
+- **Description**:  
+  Computes statistics on the full dataset.
+
+- **Parameters**:  
+  - `X (np.ndarray)`: Input data array.
+
+### `_fit_in_chunks(X)`
+```python
+def _fit_in_chunks(self, X: np.ndarray) -> None:
+```
+- **Description**:  
+  Fits on large datasets by processing in chunks to reduce memory usage.
+
+- **Parameters**:  
+  - `X (np.ndarray)`: Input data array.
+
+### `_init_running_stats()`
+```python
+def _init_running_stats(self) -> None:
+```
+- **Description**:  
+  Initializes running statistics for incremental fitting.
+
+### `_update_stats_with_chunk(chunk)`
+```python
+def _update_stats_with_chunk(self, chunk: np.ndarray) -> None:
+```
+- **Description**:  
+  Updates running statistics with a new data chunk.
+
+- **Parameters**:  
+  - `chunk (np.ndarray)`: Data chunk to process.
+
+### `_finalize_running_stats()`
+```python
+def _finalize_running_stats(self) -> None:
+```
+- **Description**:  
+  Finalizes statistics after processing all chunks.
+
+### `_transform_parallel(X)`
+```python
+def _transform_parallel(self, X: np.ndarray) -> np.ndarray:
+```
+- **Description**:  
+  Transforms data using parallel processing for large datasets.
+
+- **Parameters**:  
+  - `X (np.ndarray)`: Input data array.
+
+- **Returns**:  
+  - `np.ndarray`: Transformed data array.
+
+### `_hash_array(arr)`
+```python
+def _hash_array(self, arr: np.ndarray) -> str:
+```
+- **Description**:  
+  Generates a hash for a numpy array for caching purposes.
+
+- **Parameters**:  
+  - `arr (np.ndarray)`: Input array to hash.
+
+- **Returns**:  
+  - `str`: Hash string for the array.
+
+### `_transform_raw(X)`
+```python
+def _transform_raw(self, X: np.ndarray) -> np.ndarray:
+```
+- **Description**:  
+  Applies preprocessing operations without caching.
+
+- **Parameters**:  
+  - `X (np.ndarray)`: Input data.
+
+- **Returns**:  
+  - `np.ndarray`: Transformed data.
+
+### `_transform_in_chunks(X)`
+```python
+def _transform_in_chunks(self, X: np.ndarray) -> np.ndarray:
+```
+- **Description**:  
+  Transforms large datasets by processing in chunks.
+
+- **Parameters**:  
+  - `X (np.ndarray)`: Input data array.
+
+- **Returns**:  
+  - `np.ndarray`: Transformed data array.
+
+### `_compute_standard_stats(X)`
+```python
+def _compute_standard_stats(self, X: np.ndarray) -> None:
+```
+- **Description**:  
+  Computes statistics for standard normalization (mean, std).
+
+- **Parameters**:  
+  - `X (np.ndarray)`: Input data array.
+
+### `_compute_minmax_stats(X)`
+```python
+def _compute_minmax_stats(self, X: np.ndarray) -> None:
+```
+- **Description**:  
+  Computes statistics for min-max normalization.
+
+- **Parameters**:  
+  - `X (np.ndarray)`: Input data array.
+
+### `_compute_robust_stats(X)`
+```python
+def _compute_robust_stats(self, X: np.ndarray) -> None:
+```
+- **Description**:  
+  Computes robust statistics for normalization using percentiles.
+
+- **Parameters**:  
+  - `X (np.ndarray)`: Input data array.
+
+### `_compute_custom_stats(X)`
+```python
+def _compute_custom_stats(self, X: np.ndarray) -> None:
+```
+- **Description**:  
+  Computes custom statistics for normalization.
+
+- **Parameters**:  
+  - `X (np.ndarray)`: Input data array.
+
+### `_compute_outlier_stats(X)`
+```python
+def _compute_outlier_stats(self, X: np.ndarray) -> None:
+```
+- **Description**:  
+  Computes statistics for outlier detection.
+
+- **Parameters**:  
+  - `X (np.ndarray)`: Input data array.
+
+### `_clip_data(X)`
+```python
+def _clip_data(self, X: np.ndarray) -> np.ndarray:
+```
+- **Description**:  
+  Clips data to specified min/max values.
+
+- **Parameters**:  
+  - `X (np.ndarray)`: Input data array.
+
+- **Returns**:  
+  - `np.ndarray`: Clipped data array.
+
+### `_normalize_data(X)`
+```python
+def _normalize_data(self, X: np.ndarray) -> np.ndarray:
+```
+- **Description**:  
+  Applies normalization to the data according to the configured method.
+
+- **Parameters**:  
+  - `X (np.ndarray)`: Input data array.
+
+- **Returns**:  
+  - `np.ndarray`: Normalized data array.
+
+- **Raises**:  
+  - `StatisticsError`: If required statistics are not available.
+
+### `_get_norm_type(normalization_type)`
+```python
+def _get_norm_type(self, normalization_type: Union[str, NormalizationType]) -> NormalizationType:
+```
+- **Description**:  
+  Converts string normalization type to enum if needed and validates.
+
+- **Parameters**:  
+  - `normalization_type (Union[str, NormalizationType])`: Normalization type.
+
+- **Returns**:  
+  - `NormalizationType`: Validated normalization type enum.
+
+### `_handle_nan_values(X)`
+```python
+def _handle_nan_values(self, X: np.ndarray) -> np.ndarray:
+```
+- **Description**:  
+  Handles NaN values in the data according to the configured strategy.
+
+- **Parameters**:  
+  - `X (np.ndarray)`: Input data array.
+
+- **Returns**:  
+  - `np.ndarray`: Data array with NaN values handled.
+
+### `_handle_infinite_values(X)`
+```python
+def _handle_infinite_values(self, X: np.ndarray) -> np.ndarray:
+```
+- **Description**:  
+  Handles infinite values in the data according to the configured strategy.
+
+- **Parameters**:  
+  - `X (np.ndarray)`: Input data array.
+
+- **Returns**:  
+  - `np.ndarray`: Data array with infinite values handled.
+
+### `_handle_outliers(X)`
+```python
+def _handle_outliers(self, X: np.ndarray) -> np.ndarray:
+```
+- **Description**:  
+  Handles outliers in the data according to the configured method.
+
+- **Parameters**:  
+  - `X (np.ndarray)`: Input data array.
+
+- **Returns**:  
+  - `np.ndarray`: Data array with outliers handled.
+
+### `_update_stats_incrementally(X)`
+```python
+def _update_stats_incrementally(self, X: np.ndarray) -> None:
+```
+- **Description**:  
+  Updates statistics incrementally with new data.
+
+- **Parameters**:  
+  - `X (np.ndarray)`: New data to incorporate.
+
+### `_update_outlier_stats(X)`
+```python
+def _update_outlier_stats(self, X: np.ndarray) -> None:
+```
+- **Description**:  
+  Updates outlier statistics incrementally with new data.
+
+- **Parameters**:  
+  - `X (np.ndarray)`: New data to incorporate.
+
+### `_compute_most_frequent_values(X)`
+```python
+def _compute_most_frequent_values(self, X: np.ndarray) -> None:
+```
+- **Description**:  
+  Computes most frequent value for each feature for NaN imputation.
+
+- **Parameters**:  
+  - `X (np.ndarray)`: Input data array.
 
 ---
 
 ## Security & Compliance
-- **Pickle** is used for serialization; use in a trusted environment.
-- No direct user input execution risk.
+- Thread-safe implementation using reentrant locks
+- Protection against numerical instabilities
+- Data validation to prevent corrupt processing
+- Serialization with data integrity verification
 
----
-
-> Last Updated: 2025-04-28
-
----
-# Classes
-
----
-
-## `PreprocessingError`
-```python
-class PreprocessingError(Exception)
-```
-**Description**:  
-Base class for all preprocessing-related exceptions.
-
----
-
-## `InputValidationError`
-```python
-class InputValidationError(PreprocessingError)
-```
-**Description**:  
-Raised for invalid input data types, shapes, or sizes during preprocessing.
-
----
-
-## `StatisticsError`
-```python
-class StatisticsError(PreprocessingError)
-```
-**Description**:  
-Raised when there are errors in statistical computations (e.g., missing mean/std).
-
----
-
-## `SerializationError`
-```python
-class SerializationError(PreprocessingError)
-```
-**Description**:  
-Raised for errors during serialization or deserialization of the preprocessor.
-
----
-
-## `DataPreprocessor`
-```python
-class DataPreprocessor:
+## Testing
+```bash
+python -m unittest tests/test_preprocessor.py
 ```
 
-**Description**:  
-A highly optimized and configurable data preprocessing engine for industrial ML pipelines.
-Supports various preprocessing steps with thread-safety, incremental updates, and error handling.
-
-### Attributes
-| Attribute | Type | Description |
-|---|---|---|
-| `_stats` | `Dict[str, Any]` | Stored statistics (mean, std, etc.) |
-| `_feature_names` | `List[str]` | List of feature names |
-| `_fitted` | `bool` | Whether the preprocessor is fitted |
-| `_n_features` | `int` | Number of features |
-| `_n_samples_seen` | `int` | Number of samples seen during fitting |
-| `_metrics` | `Dict[str, List[float]]` | Performance metrics (fit time, transform time) |
-| `_transform_cache` | `Dict[str, np.ndarray]` | Cache for fast repeated transformations |
-| `_parallel_executor` | `ThreadPoolExecutor` | Executor for parallel processing |
-| `_running_stats` | `Dict[str, Any]` | Statistics for chunked fitting |
-
----
-
-## Methods (Function-by-Function)
-
----
-
-### `__init__`
-```python
-def __init__(self, config: Optional[PreprocessorConfig] = None)
-```
-**Description**:  
-Initializes a `DataPreprocessor` with optional configuration.
-
-- **Parameters**:
-  - `config (Optional[PreprocessorConfig])`: Configuration object or `None` for defaults.
-
-- **Returns**:  
-  - `None`
-
----
-
-### `fit`
-```python
-@log_operation
-def fit(self, X, y=None, feature_names=None, **fit_params)
-```
-**Description**:  
-Fits the preprocessor on training data, calculating required statistics.
-
-- **Parameters**:
-  - `X (array-like)`: Input data.
-  - `y (ignored)`: Placeholder for compatibility.
-  - `feature_names (list, optional)`: Custom feature names.
-  - `fit_params`: Additional parameters.
-
-- **Returns**:
-  - `self`
-
-- **Raises**:
-  - `InputValidationError`
-  - `StatisticsError`
-
----
-
-### `transform`
-```python
-@log_operation
-def transform(self, X: Union[np.ndarray, List], copy: bool = True) -> np.ndarray
-```
-**Description**:  
-Applies preprocessing transformations to the input data.
-
-- **Parameters**:
-  - `X (array-like)`: Data to transform.
-  - `copy (bool)`: If `True`, operates on a copy.
-
-- **Returns**:
-  - `np.ndarray`: Transformed data.
-
-- **Raises**:
-  - `InputValidationError`
-  - `StatisticsError`
-
----
-
-### `fit_transform`
-```python
-@log_operation
-def fit_transform(self, X, y=None, feature_names=None, copy: bool = True) -> np.ndarray
-```
-**Description**:  
-Convenience method: fits and transforms the data in one step.
-
-- **Returns**:
-  - `np.ndarray`
-
----
-
-### `partial_fit`
-```python
-def partial_fit(self, X: np.ndarray, feature_names=None) -> 'DataPreprocessor'
-```
-**Description**:  
-Updates the preprocessor incrementally with new data.
-
-- **Returns**:
-  - `self`
-
-- **Raises**:
-  - `InputValidationError`
-
----
-
-### `serialize`
-```python
-def serialize(self, path: str) -> bool
-```
-**Description**:  
-Saves the preprocessor state to disk.
-
-- **Returns**:
-  - `True` if successful, `False` otherwise.
-
-- **Raises**:
-  - `SerializationError`
-
----
-
-### `deserialize`
-```python
-@classmethod
-def deserialize(cls, path: str) -> 'DataPreprocessor'
-```
-**Description**:  
-Loads a preprocessor from disk.
-
-- **Returns**:
-  - `DataPreprocessor` instance
-
-- **Raises**:
-  - `SerializationError`
-
----
-
-### `reverse_transform`
-```python
-def reverse_transform(self, X: np.ndarray, copy: bool = True) -> np.ndarray
-```
-**Description**:  
-Reverse the transformations to approximate original data.
-
-- **Returns**:
-  - `np.ndarray`
-
----
-
-### `reset`
-```python
-def reset(self) -> None
-```
-**Description**:  
-Resets internal state, statistics, and caches.
-
----
-
-### `update_config`
-```python
-def update_config(self, new_config: PreprocessorConfig) -> None
-```
-**Description**:  
-Updates the configuration and resets if pipeline settings change.
-
----
-
-### `get_statistics`
-```python
-def get_statistics(self) -> Dict[str, Any]
-```
-**Description**:  
-Retrieves the current computed statistics.
-
-- **Returns**:
-  - `Dict[str, Any]`
-
----
-
-### `get_feature_names`
-```python
-def get_feature_names(self) -> List[str]
-```
-**Description**:  
-Retrieves the feature names used during fitting.
-
----
-
-### `get_performance_metrics`
-```python
-def get_performance_metrics(self) -> Dict[str, List[float]]
-```
-**Description**:  
-Retrieves performance metrics like fit and transform time.
-
----
-Perfect —  
-I’ll continue now and **fully expand** the documentation for all **private and helper methods** into the same industrial-grade format.
-
-Continuing from where we left:
-
----
-
-# Private Helper Functions
-
----
-
-### `_configure_logging`
-```python
-def _configure_logging(self) -> None
-```
-**Description**:  
-Configures the logger for the preprocessor based on the debug mode setting.
-
-- **Parameters**:  
-  - None
-
-- **Returns**:  
-  - None
-
----
-
-### `_init_parallel_executor`
-```python
-def _init_parallel_executor(self) -> None
-```
-**Description**:  
-Initializes a thread pool executor for parallel transformation if enabled.
-
-- **Parameters**:  
-  - None
-
-- **Returns**:  
-  - None
-
-- **Raises**:
-  - Automatically disables parallelism if `concurrent.futures` is not available.
-
----
-
-### `_init_processing_functions`
-```python
-def _init_processing_functions(self) -> None
-```
-**Description**:  
-Initializes a pipeline list of preprocessing functions based on configuration flags.
-
-- **Parameters**:  
-  - None
-
-- **Returns**:  
-  - None
-
----
-
-### `_error_context`
-```python
-@contextmanager
-def _error_context(self, operation: str)
-```
-**Description**:  
-Context manager for standardized error handling during operations.
-
-- **Parameters**:
-  - `operation (str)`: Operation name (e.g., "fit", "transform").
-
-- **Yields**:
-  - None
-
-- **Raises**:
-  - Reraises categorized custom errors based on operation type.
-
----
-
-### `_validate_and_convert_input`
-```python
-def _validate_and_convert_input(self, X, operation: str = "transform", copy: bool = False) -> np.ndarray
-```
-**Description**:  
-Validates input data type, shape, and properties, then converts it to a numpy array.
-
-- **Parameters**:
-  - `X (array-like)`: Input data.
-  - `operation (str)`: Operation type (fit, transform, etc.).
-  - `copy (bool)`: Copy data if required.
-
-- **Returns**:
-  - `np.ndarray`: Validated input array.
-
-- **Raises**:
-  - `InputValidationError`
-
----
-
-### `_fit_full`
-```python
-def _fit_full(self, X: np.ndarray) -> None
-```
-**Description**:  
-Fits statistics on the full input dataset in one pass.
-
----
-
-### `_fit_in_chunks`
-```python
-def _fit_in_chunks(self, X: np.ndarray) -> None
-```
-**Description**:  
-Processes large datasets in chunks for memory efficiency during fitting.
-
----
-
-### `_init_running_stats`
-```python
-def _init_running_stats(self) -> None
-```
-**Description**:  
-Initializes structures to accumulate running statistics for incremental fitting.
-
----
-
-### `_update_stats_with_chunk`
-```python
-def _update_stats_with_chunk(self, chunk: np.ndarray) -> None
-```
-**Description**:  
-Updates running statistics with a processed data chunk.
-
----
-
-### `_finalize_running_stats`
-```python
-def _finalize_running_stats(self) -> None
-```
-**Description**:  
-Finalizes the accumulated running statistics after all chunks are processed.
-
----
-
-### `_transform_parallel`
-```python
-def _transform_parallel(self, X: np.ndarray) -> np.ndarray
-```
-**Description**:  
-Transforms data using parallel execution.
-
----
-
-### `_transform_raw`
-```python
-def _transform_raw(self, X: np.ndarray) -> np.ndarray
-```
-**Description**:  
-Applies transformations sequentially to the input data without caching.
-
----
-
-### `_transform_in_chunks`
-```python
-def _transform_in_chunks(self, X: np.ndarray) -> np.ndarray
-```
-**Description**:  
-Processes transformation of large datasets in manageable chunks.
-
----
-
-### `_hash_array`
-```python
-def _hash_array(self, arr: np.ndarray) -> str
-```
-**Description**:  
-Generates a unique hash for a numpy array for caching purposes.
-
----
-
-### `_compute_standard_stats`
-```python
-def _compute_standard_stats(self, X: np.ndarray) -> None
-```
-**Description**:  
-Computes mean and standard deviation for standard normalization.
-
----
-
-### `_compute_minmax_stats`
-```python
-def _compute_minmax_stats(self, X: np.ndarray) -> None
-```
-**Description**:  
-Computes minimum and maximum for min-max normalization.
-
----
-
-### `_compute_robust_stats`
-```python
-def _compute_robust_stats(self, X: np.ndarray) -> None
-```
-**Description**:  
-Computes lower and upper percentiles for robust normalization.
-
----
-
-### `_compute_custom_stats`
-```python
-def _compute_custom_stats(self, X: np.ndarray) -> None
-```
-**Description**:  
-Computes custom center and scaling statistics using user-provided functions.
-
----
-
-### `_compute_outlier_stats`
-```python
-def _compute_outlier_stats(self, X: np.ndarray) -> None
-```
-**Description**:  
-Computes statistics for outlier detection (bounds based on IQR, z-score, or percentiles).
-
----
-
-### `_handle_nan_values`
-```python
-def _handle_nan_values(self, X: np.ndarray) -> np.ndarray
-```
-**Description**:  
-Fills NaN values according to the configured strategy (mean, median, etc.).
-
----
-
-### `_handle_infinite_values`
-```python
-def _handle_infinite_values(self, X: np.ndarray) -> np.ndarray
-```
-**Description**:  
-Replaces or handles infinite values according to configured strategy.
-
----
-
-### `_handle_outliers`
-```python
-def _handle_outliers(self, X: np.ndarray) -> np.ndarray
-```
-**Description**:  
-Handles detected outliers by clipping, replacing, winsorizing, or setting to NaN.
-
----
-
-### `_clip_data`
-```python
-def _clip_data(self, X: np.ndarray) -> np.ndarray
-```
-**Description**:  
-Clips input data values to a specified min/max range.
-
----
-
-### `_normalize_data`
-```python
-def _normalize_data(self, X: np.ndarray) -> np.ndarray
-```
-**Description**:  
-Applies normalization (standard, min-max, robust, etc.) to input data.
-
----
-
-### `_get_norm_type`
-```python
-def _get_norm_type(self, normalization_type: Union[str, NormalizationType]) -> NormalizationType
-```
-**Description**:  
-Converts string normalization types to their enum equivalents.
-
----
-
-### `_update_stats_incrementally`
-```python
-def _update_stats_incrementally(self, X: np.ndarray) -> None
-```
-**Description**:  
-Updates normalization statistics incrementally when new data is received.
-
----
-
-### `_update_outlier_stats`
-```python
-def _update_outlier_stats(self, X: np.ndarray) -> None
-```
-**Description**:  
-Updates outlier detection statistics incrementally when new data is received.
-
----
+> Last Updated: 2025-05-11

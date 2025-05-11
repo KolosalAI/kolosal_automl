@@ -1,213 +1,343 @@
-# ML Training Engine Documentation
+# Detailed Function Documentation for ML Training Engine
 
-## Overview
+## ExperimentTracker Class
 
-The ML Training Engine is a powerful and comprehensive framework for training, optimizing, and deploying machine learning models. The system provides end-to-end capabilities from data preprocessing to model optimization, evaluation, and inference.
+### `__init__(output_dir="./experiments", experiment_name=None)`
+- **Purpose**: Initializes the experiment tracker.
+- **Parameters**:
+  - `output_dir`: Directory to store experiment results
+  - `experiment_name`: Name for this experiment series (defaults to timestamp-based name)
+- **Returns**: ExperimentTracker instance
 
-## Key Components
+### `start_experiment(config, model_info)`
+- **Purpose**: Begin a new experiment run and attach configuration and model metadata.
+- **Parameters**:
+  - `config`: Dictionary of configuration parameters
+  - `model_info`: Dictionary of model metadata
+- **Returns**: None
 
-### MLTrainingEngine
+### `_make_json_serializable(obj)`
+- **Purpose**: Recursively convert objects into JSON-serializable structures.
+- **Parameters**:
+  - `obj`: Object to convert
+- **Returns**: JSON-serializable version of the input object
 
-The core class that orchestrates the entire training and optimization process. It provides:
+### `log_metrics(metrics, step=None)`
+- **Purpose**: Log metrics for the current experiment.
+- **Parameters**:
+  - `metrics`: Dictionary of metric names and values
+  - `step`: Optional step identifier to organize metrics by stages
+- **Returns**: None
 
-- Hyperparameter optimization with multiple strategies (Grid Search, Random Search, Bayesian)
-- Automated feature selection
-- Pipeline creation with preprocessing
-- Model evaluation and comparison
-- Batch inference capabilities
-- Experiment tracking and reporting
+### `log_feature_importance(feature_names, importance)`
+- **Purpose**: Log and visualize feature importance scores.
+- **Parameters**:
+  - `feature_names`: List of feature names
+  - `importance`: Array of importance scores
+- **Returns**: None
 
-### ExperimentTracker
+### `log_model(model, model_name, path=None)`
+- **Purpose**: Save a trained model and add it to experiment artifacts.
+- **Parameters**:
+  - `model`: Trained model object
+  - `model_name`: Name for the model
+  - `path`: Optional custom save path
+- **Returns**: None
 
-Tracks experiments and metrics during model training:
+### `log_confusion_matrix(y_true, y_pred, class_names=None)`
+- **Purpose**: Generate and save confusion matrix for classification tasks.
+- **Parameters**:
+  - `y_true`: True labels
+  - `y_pred`: Predicted labels
+  - `class_names`: Optional list of class names for better visualization
+- **Returns**: None
 
-- Records metrics, configurations, and feature importance
-- Generates reports and visualizations
-- Provides experiment logging
-- Maintains history of experiments for comparison
+### `end_experiment()`
+- **Purpose**: Finalize the experiment, write metadata to disk, and close MLflow run.
+- **Returns**: Dictionary containing the serialized experiment data
 
-### Supporting Components
+### `generate_report(report_path=None, include_plots=True)`
+- **Purpose**: Create a comprehensive markdown report of the experiment.
+- **Parameters**:
+  - `report_path`: Path to save the report
+  - `include_plots`: Whether to include plots in the report
+- **Returns**: String path to the generated report
 
-- **DataPreprocessor**: Handles data preparation
-- **BatchProcessor**: Manages batch processing for large datasets
-- **InferenceEngine**: Optimized prediction interface
-- **Quantizer**: Model compression for deployment
+## MLTrainingEngine Class
 
-## Configuration
+### `__init__(config)`
+- **Purpose**: Initialize the training engine with the given configuration.
+- **Parameters**:
+  - `config`: Configuration object for the training engine
+- **Returns**: MLTrainingEngine instance
 
-The engine is highly configurable through the `MLTrainingEngineConfig` class:
+### `_init_components()`
+- **Purpose**: Initialize all engine components based on configuration.
+- **Returns**: None
 
-```python
-from modules.configs import TaskType, OptimizationStrategy, MLTrainingEngineConfig
+### `_register_shutdown_handlers()`
+- **Purpose**: Register handlers for proper cleanup during shutdown.
+- **Returns**: None
 
-config = MLTrainingEngineConfig(
-    task_type=TaskType.CLASSIFICATION,
-    optimization_strategy=OptimizationStrategy.RANDOM_SEARCH,
-    feature_selection=True,
-    feature_selection_k=20,
-    cv_folds=5,
-    model_path="./models",
-    experiment_tracking=True
-)
-```
+### `_signal_handler(signum, frame)`
+- **Purpose**: Handle signals for graceful shutdown.
+- **Parameters**:
+  - `signum`: Signal number
+  - `frame`: Current stack frame
+- **Returns**: None
 
-## Usage Examples
+### `_cleanup_on_shutdown()`
+- **Purpose**: Perform cleanup operations before shutdown.
+- **Returns**: None
 
-### Basic Training Flow
+### `_register_model_types()`
+- **Purpose**: Register built-in model types for automatic discovery.
+- **Returns**: None
 
-```python
-from sklearn.ensemble import RandomForestClassifier
-import pandas as pd
-from sklearn.datasets import load_iris
+### `_get_feature_selector(X, y)`
+- **Purpose**: Create appropriate feature selector based on configuration.
+- **Parameters**:
+  - `X`: Feature matrix
+  - `y`: Target variable
+- **Returns**: Configured feature selector or None
 
-# Initialize the engine
-engine = MLTrainingEngine(config)
+### `_create_pipeline(model)`
+- **Purpose**: Create a scikit-learn pipeline with preprocessing and model.
+- **Parameters**:
+  - `model`: The model estimator
+- **Returns**: sklearn.pipeline.Pipeline object
 
-# Load data
-data = load_iris()
-X = pd.DataFrame(data.data, columns=data.feature_names)
-y = data.target
+### `_get_cv_splitter(y=None)`
+- **Purpose**: Get appropriate cross-validation splitter based on task type.
+- **Parameters**:
+  - `y`: Target variable for stratification
+- **Returns**: KFold or StratifiedKFold object
 
-# Define model and hyperparameter grid
-model = RandomForestClassifier()
-param_grid = {
-    'model__n_estimators': [50, 100, 200],
-    'model__max_depth': [None, 10, 20],
-    'model__min_samples_split': [2, 5, 10]
-}
+### `_get_optimization_search(model, param_grid)`
+- **Purpose**: Configure hyperparameter optimization based on strategy.
+- **Parameters**:
+  - `model`: The model estimator
+  - `param_grid`: Parameter grid/space for optimization
+- **Returns**: Configured optimization object (GridSearchCV, RandomizedSearchCV, etc.)
 
-# Train model
-best_model, metrics = engine.train_model(
-    model=model,
-    model_name="random_forest",
-    param_grid=param_grid,
-    X=X,
-    y=y
-)
+### `_get_scoring_metric()`
+- **Purpose**: Determine the appropriate scoring metric based on task type.
+- **Returns**: String identifier for sklearn scoring metric
 
-# Save model
-engine.save_model()
+### `_extract_feature_names(X)`
+- **Purpose**: Extract feature names from input data.
+- **Parameters**:
+  - `X`: Input data (DataFrame, array, etc.)
+- **Returns**: List of feature names
 
-# Make predictions
-predictions = engine.predict(X_test)
-```
+### `_get_feature_importance(model)`
+- **Purpose**: Extract feature importance from a trained model.
+- **Parameters**:
+  - `model`: Trained model
+- **Returns**: Array of feature importance values or None
 
-### Multiple Model Comparison
+### `_get_default_param_grid(model)`
+- **Purpose**: Generate a reasonable default hyperparameter grid.
+- **Parameters**:
+  - `model`: Model instance
+- **Returns**: Dictionary of parameter grids
 
-```python
-from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
-from sklearn.linear_model import LogisticRegression
+### `_compare_metrics(new_metric, current_best)`
+- **Purpose**: Compare metrics to determine if new model is better.
+- **Parameters**:
+  - `new_metric`: Metric value of new model
+  - `current_best`: Current best metric value
+- **Returns**: Boolean indicating if new model is better
 
-# Train multiple models
-models = {
-    "rf": RandomForestClassifier(),
-    "gb": GradientBoostingClassifier(),
-    "lr": LogisticRegression()
-}
+### `_get_best_metric_value(metrics)`
+- **Purpose**: Extract the best metric value based on task type.
+- **Parameters**:
+  - `metrics`: Dictionary of metrics
+- **Returns**: Float value of the most relevant metric
 
-param_grids = {
-    "rf": {...},  # RandomForest params
-    "gb": {...},  # GradientBoosting params
-    "lr": {...}   # LogisticRegression params
-}
+### `train_model(X, y, model_type=None, custom_model=None, param_grid=None, model_name=None, X_val=None, y_val=None)`
+- **Purpose**: Train a machine learning model with hyperparameter optimization.
+- **Parameters**:
+  - `X`: Feature matrix
+  - `y`: Target variable
+  - `model_type`: Type of model to train (e.g., "random_forest")
+  - `custom_model`: Custom pre-initialized model
+  - `param_grid`: Hyperparameter grid for optimization
+  - `model_name`: Custom name for the model
+  - `X_val`, `y_val`: Optional validation data
+- **Returns**: Dictionary with training results and metrics
+- **Example output**:
+  ```python
+  {
+      "model_name": "random_forest_1621478921",
+      "model": <RandomForestClassifier object>,
+      "params": {"n_estimators": 200, "max_depth": 10, ...},
+      "metrics": {"accuracy": 0.92, "f1": 0.91, "precision": 0.90, "recall": 0.93},
+      "feature_importance": [0.2, 0.15, 0.1, ...],
+      "training_time": 15.6
+  }
+  ```
 
-for name, model in models.items():
-    engine.train_model(
-        model=model,
-        model_name=name,
-        param_grid=param_grids[name],
-        X=X,
-        y=y
-    )
+### `get_performance_comparison()`
+- **Purpose**: Compare performance across all trained models.
+- **Returns**: Dictionary with model comparisons
+- **Example output**:
+  ```python
+  {
+      "models": [
+          {
+              "name": "random_forest_1621478921",
+              "type": "RandomForestClassifier",
+              "training_time": 15.6,
+              "is_best": True,
+              "metrics": {"accuracy": 0.92, "f1": 0.91, ...}
+          },
+          {
+              "name": "xgboost_1621479045",
+              "type": "XGBClassifier",
+              "training_time": 25.2,
+              "is_best": False,
+              "metrics": {"accuracy": 0.90, "f1": 0.89, ...}
+          }
+      ],
+      "best_model": "random_forest_1621478921",
+      "primary_metric": "f1"
+  }
+  ```
 
-# Evaluate all models
-results = engine.evaluate_all_models(X_test, y_test)
+### `_determine_primary_metric(available_metrics)`
+- **Purpose**: Determine the most appropriate metric for model comparison.
+- **Parameters**:
+  - `available_metrics`: Set of available metric names
+- **Returns**: String name of the primary metric
 
-# Generate comparison report
-engine.generate_report("model_comparison.html")
-```
+### `generate_report(output_file=None)`
+- **Purpose**: Generate a comprehensive report of all models.
+- **Parameters**:
+  - `output_file`: Path to save the report
+- **Returns**: String path to the generated report
 
-## Advanced Features
+### `shutdown()`
+- **Purpose**: Explicitly shut down the engine and release resources.
+- **Returns**: None
 
-### Feature Selection
+### `get_best_model()`
+- **Purpose**: Get the current best model and its metrics.
+- **Returns**: Tuple of (model_name, model_info)
+- **Example output**:
+  ```python
+  ("random_forest_1621478921", {
+      "model": <RandomForestClassifier object>,
+      "params": {"n_estimators": 200, "max_depth": 10, ...},
+      "feature_names": ["feature1", "feature2", ...],
+      "metrics": {"accuracy": 0.92, "f1": 0.91, ...},
+      "feature_importance": [0.2, 0.15, 0.1, ...]
+  })
+  ```
 
-The engine supports automated feature selection:
+### `evaluate_model(model_name=None, X_test=None, y_test=None, detailed=False)`
+- **Purpose**: Evaluate a model with comprehensive metrics.
+- **Parameters**:
+  - `model_name`: Name of the model to evaluate
+  - `X_test`, `y_test`: Test data
+  - `detailed`: Whether to compute additional detailed metrics
+- **Returns**: Dictionary of evaluation metrics
+- **Example output**:
+  ```python
+  {
+      "accuracy": 0.92,
+      "precision": 0.90,
+      "recall": 0.93,
+      "f1": 0.91,
+      "roc_auc": 0.95,
+      "prediction_time": 0.15,
+      "detailed_report": {...},  # Only if detailed=True
+      "confusion_matrix": [[45, 5], [3, 47]]  # Only if detailed=True
+  }
+  ```
 
-```python
-config = MLTrainingEngineConfig(
-    feature_selection=True,
-    feature_selection_method="mutual_info",  # or "f_classif"
-    feature_selection_k=15  # Select top 15 features
-)
-```
+### `save_model(model_name, path=None, include_preprocessor=True)`
+- **Purpose**: Persist a model to disk.
+- **Parameters**:
+  - `model_name`: Name of the model to save
+  - `path`: Custom save path
+  - `include_preprocessor`: Whether to include preprocessor and metadata
+- **Returns**: String path to the saved model
 
-### Experiment Tracking
+### `load_model(path, model_name=None)`
+- **Purpose**: Load a saved model from disk.
+- **Parameters**:
+  - `path`: Path to the saved model
+  - `model_name`: Name to give the loaded model
+- **Returns**: Tuple of (success flag, model or error message)
+- **Example output**:
+  ```python
+  (True, <RandomForestClassifier object>)  # Success
+  (False, "Model file not found: ./models/my_model.pkl")  # Error
+  ```
 
-Track experiments and generate reports:
+### `predict(X, model_name=None, return_proba=False)`
+- **Purpose**: Make predictions using a trained model.
+- **Parameters**:
+  - `X`: Features to predict
+  - `model_name`: Name of the model to use
+  - `return_proba`: Whether to return probabilities for classification
+- **Returns**: Tuple of (success flag, predictions or error message)
+- **Example output**:
+  ```python
+  (True, np.array([0, 1, 0, 1, ...]))  # Classification
+  (True, np.array([0.2, 0.8, 0.3, ...]))  # Regression or probabilities
+  (False, "Model not found")  # Error
+  ```
 
-```python
-# Experiments are automatically tracked when enabled
-engine = MLTrainingEngine(config)
+### `generate_explainability(model_name=None, X=None, method="shap")`
+- **Purpose**: Generate model explainability visualizations.
+- **Parameters**:
+  - `model_name`: Name of the model to explain
+  - `X`: Data for explanations
+  - `method`: Explainability method (shap, permutation)
+- **Returns**: Dictionary with explainability results
+- **Example output**:
+  ```python
+  {
+      "method": "shap",
+      "importance": {"feature1": 0.25, "feature2": 0.18, ...},
+      "plot_path": "./models/explanations/shap_summary_model1.png"
+  }
+  ```
 
-# After training
-# Generate experiment report
-if engine.tracker:
-    report = engine.tracker.generate_report(include_plots=True)
-```
+### `get_model_summary(model_name=None)`
+- **Purpose**: Get a summary of a model's information.
+- **Parameters**:
+  - `model_name`: Name of the model
+- **Returns**: Dictionary with model summary
+- **Example output**:
+  ```python
+  {
+      "model_name": "random_forest_1621478921",
+      "model_type": "RandomForestClassifier",
+      "feature_count": 15,
+      "metrics": {"accuracy": 0.92, "f1": 0.91, ...},
+      "training_time": 15.6,
+      "is_best_model": True,
+      "top_features": {"feature1": 0.25, "feature2": 0.18, ...}
+  }
+  ```
 
-### Batch Processing for Large Datasets
-
-```python
-def data_generator():
-    # Generator function yielding batches of data
-    for i in range(0, len(data), 1000):
-        yield data[i:i+1000]
-
-results = engine.run_batch_inference(data_generator(), batch_size=1000)
-```
-
-## API Reference
-
-### MLTrainingEngine
-
-- **train_model(model, model_name, param_grid, X, y, X_test=None, y_test=None)**: Trains and optimizes a model
-- **predict(X, model_name=None)**: Makes predictions using specified or best model
-- **save_model(model_name=None, filepath=None)**: Saves model to disk
-- **load_model(filepath)**: Loads model from disk
-- **evaluate_all_models(X_test, y_test)**: Evaluates all trained models
-- **run_batch_inference(data_generator, batch_size=None, model_name=None)**: Runs inference in batches
-- **generate_report(output_file=None)**: Generates performance report
-- **shutdown()**: Releases resources
-
-### ExperimentTracker
-
-- **start_experiment(config, model_info)**: Starts a new experiment
-- **log_metrics(metrics, step=None)**: Records metrics
-- **log_feature_importance(feature_names, importance)**: Records feature importance
-- **end_experiment()**: Finalizes the experiment
-- **generate_report(include_plots=True)**: Creates experiment report
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Memory Issues**: For large datasets, enable memory optimization in config
-2. **Slow Training**: Use batch processing and adjust optimization parameters
-3. **Serialization Errors**: Ensure all components are serializable
-
-### Logging
-
-The system includes comprehensive logging:
-
-```python
-config = MLTrainingEngineConfig(
-    log_level="DEBUG"  # Options: DEBUG, INFO, WARNING, ERROR
-)
-```
-
-## Best Practices
-
-1. Always run `shutdown()` when finished to release resources
-2. Use stratification for imbalanced classification tasks
-3. Leverage experiment tracking for reproducible research
-4. Save models after optimizing for deployment
+### `_evaluate_model(model, X, y, X_test=None, y_test=None)`
+- **Purpose**: Evaluate model performance with appropriate metrics.
+- **Parameters**:
+  - `model`: Trained model
+  - `X`, `y`: Training data
+  - `X_test`, `y_test`: Test data
+- **Returns**: Dictionary of evaluation metrics
+- **Example output**:
+  ```python
+  {
+      "accuracy": 0.92,
+      "precision": 0.90,
+      "recall": 0.93,
+      "f1": 0.91,
+      "prediction_time": 0.15
+  }
+  ```
