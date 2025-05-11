@@ -5,7 +5,7 @@ A RESTful API for the high-performance InferenceEngine.
 Provides endpoints for model loading, inference, batch processing,
 and monitoring performance metrics.
 
-Author: Your Name
+Author: Evint Leovonzko
 Date: 2025-04-28
 """
 
