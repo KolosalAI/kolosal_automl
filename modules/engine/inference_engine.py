@@ -68,10 +68,10 @@ except ImportError:
     TREELITE_AVAILABLE = False
 
 # Import local modules
-from modules.engine.batch_processor import BatchProcessor
-from modules.engine.data_preprocessor import DataPreprocessor
-from modules.engine.quantizer import Quantizer
-from modules.engine.lru_ttl_cache import LRUTTLCache
+from .batch_processor import BatchProcessor
+from .data_preprocessor import DataPreprocessor
+from .quantizer import Quantizer
+from .lru_ttl_cache import LRUTTLCache
 from modules.configs import (
     QuantizationConfig, BatchProcessorConfig, BatchProcessingStrategy,
     BatchPriority, PreprocessorConfig, NormalizationType, 

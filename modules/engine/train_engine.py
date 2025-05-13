@@ -76,10 +76,10 @@ from ..configs import (
     MonitoringConfig,
     ExplainabilityConfig
 )
-from modules.engine.inference_engine import InferenceEngine
-from modules.engine.batch_processor import BatchProcessor
-from modules.engine.data_preprocessor import DataPreprocessor
-from modules.engine.utils import _json_safe, _scrub, _patch_pickle_for_locks
+from .inference_engine import InferenceEngine
+from .batch_processor import BatchProcessor
+from .data_preprocessor import DataPreprocessor
+from .utils import _json_safe, _scrub, _patch_pickle_for_locks
 
 # Optional imports for optimizers
 try:
