@@ -4,7 +4,7 @@ kolosal AutoML API modules.
 This package contains all the API components for the kolosal AutoML platform.
 """
 
-__version__ = "1.0.0"
+__version__ = "0.1.0"
 
 # This file makes the 'modules/api' directory a Python package
 # It allows for imports like:

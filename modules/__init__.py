@@ -8,11 +8,11 @@ This package contains all the core modules for the ML pipeline including:
 - Batch processing and quantization
 """
 
-from modules.configs import *
-from modules.engine import *
+from .configs import *
+from .engine import *
 
-__version__ = "1.0.0"
-__author__ = "ML Engine Team"
+__version__ = "0.1.0"
+__author__ = "Kolosal AI Team"
 
 # Package metadata
 __all__ = [
