@@ -64,7 +64,7 @@ except ImportError:
 
 # Import engine components if needed
 # This section would need to be adjusted based on your specific project structure
-from modules.configs import (
+from ..configs import (
     TaskType,
     OptimizationStrategy,
     MLTrainingEngineConfig,
