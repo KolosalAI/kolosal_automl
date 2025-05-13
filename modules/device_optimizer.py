@@ -1312,16 +1312,15 @@ class DeviceOptimizer:
             optimization_iterations = 30
         else:
             optimization_iterations = 50  # Default
-        '''
+
         # Determine model selection criteria based on optimization mode
-        if self.optimization_mode == OptimizationMode.PERFORMANCE:
-            model_selection_criteria = ModelSelectionCriteria.SPEED
-        elif self.optimization_mode == OptimizationMode.CONSERVATIVE:
-            model_selection_criteria = ModelSelectionCriteria.ROBUSTNESS
+        if self.optimization_mode == TaskType.CLASSIFICATION:
+            model_selection_criteria = ModelSelectionCriteria.ACCURACY
+        elif self.optimization_mode == TaskType.REGRESSION:
+            model_selection_criteria = ModelSelectionCriteria.ROOT_MEAN_SQUARED_ERROR
         else:
-            model_selection_criteria = ModelSelectionCriteria.BALANCED
+            model_selection_criteria = ModelSelectionCriteria.CUSTOM
         
-        '''
         # Early stopping rounds based on optimization mode
         if self.optimization_mode == OptimizationMode.PERFORMANCE:
             early_stopping_rounds = 5
