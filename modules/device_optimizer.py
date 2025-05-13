@@ -1312,7 +1312,7 @@ class DeviceOptimizer:
             optimization_iterations = 30
         else:
             optimization_iterations = 50  # Default
-        
+        '''
         # Determine model selection criteria based on optimization mode
         if self.optimization_mode == OptimizationMode.PERFORMANCE:
             model_selection_criteria = ModelSelectionCriteria.SPEED
@@ -1321,6 +1321,7 @@ class DeviceOptimizer:
         else:
             model_selection_criteria = ModelSelectionCriteria.BALANCED
         
+        '''
         # Early stopping rounds based on optimization mode
         if self.optimization_mode == OptimizationMode.PERFORMANCE:
             early_stopping_rounds = 5
