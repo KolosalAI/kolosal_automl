@@ -18,7 +18,7 @@ from .quantizer import Quantizer
 from .lru_ttl_cache import LRUTTLCache
 
 # Import utilities
-from modules.engine.utils import (
+from .utils import (
     _json_safe,
     _scrub,
     _patch_pickle_for_locks,

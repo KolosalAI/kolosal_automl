@@ -12,7 +12,7 @@ from contextlib import contextmanager
 from dataclasses import asdict
 import time
 
-from .configs import PreprocessorConfig, NormalizationType
+from ..configs import PreprocessorConfig, NormalizationType
 
 class PreprocessingError(Exception):
     """Base class for all preprocessing exceptions."""
@@ -1255,7 +1255,7 @@ class DataPreprocessor:
                 state = pickle.load(f)
                 
             # Create config from dict
-            from .configs import PreprocessorConfig
+            from ..configs import PreprocessorConfig
             config = PreprocessorConfig(**state['config'])
             
             # Create instance

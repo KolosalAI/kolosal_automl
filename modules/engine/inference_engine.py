@@ -72,7 +72,7 @@ from .batch_processor import BatchProcessor
 from .data_preprocessor import DataPreprocessor
 from .quantizer import Quantizer
 from .lru_ttl_cache import LRUTTLCache
-from .configs import (
+from ..configs import (
     QuantizationConfig, BatchProcessorConfig, BatchProcessingStrategy,
     BatchPriority, PreprocessorConfig, NormalizationType, 
     QuantizationMode, ModelType, EngineState, InferenceEngineConfig

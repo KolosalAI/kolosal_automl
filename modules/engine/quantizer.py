@@ -12,7 +12,7 @@ import hashlib
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(name)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-from .configs import QuantizationConfig, QuantizationType, QuantizationMode
+from ..configs import QuantizationConfig, QuantizationType, QuantizationMode
 
 
 class Quantizer:

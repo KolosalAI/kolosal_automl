@@ -83,13 +83,13 @@ from .utils import _json_safe, _scrub, _patch_pickle_for_locks
 
 # Optional imports for optimizers
 try:
-    from .optimizer.asht import ASHTOptimizer
+    from ..optimizer.asht import ASHTOptimizer
     ASHT_AVAILABLE = True
 except ImportError:
     ASHT_AVAILABLE = False
 
 try:
-    from .optimizer.hyperoptx import HyperOptX
+    from ..optimizer.hyperoptx import HyperOptX
     HYPEROPTX_AVAILABLE = True
 except ImportError:
     HYPEROPTX_AVAILABLE = False
