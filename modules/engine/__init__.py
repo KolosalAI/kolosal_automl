@@ -10,12 +10,12 @@ This subpackage contains all the core engine components for machine learning:
 - Various utilities and caching mechanisms
 """
 
-from ..inference_engine import InferenceEngine
-from ..train_engine import MLTrainingEngine
-from ..batch_processor import BatchProcessor
-from ..data_preprocessor import DataPreprocessor
-from ..quantizer import Quantizer
-from ..lru_ttl_cache import LRUTTLCache
+from .inference_engine import InferenceEngine
+from .train_engine import MLTrainingEngine
+from .batch_processor import BatchProcessor
+from .data_preprocessor import DataPreprocessor
+from .quantizer import Quantizer
+from .lru_ttl_cache import LRUTTLCache
 
 # Import utilities
 from modules.engine.utils import (
