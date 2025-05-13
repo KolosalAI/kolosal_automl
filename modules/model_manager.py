@@ -17,7 +17,7 @@ from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 from cryptography.hazmat.backends import default_backend
 from getpass import getpass
 
-from modules.configs import TaskType
+from .configs import TaskType
 
 class SecureModelManager:
     """

@@ -21,7 +21,7 @@ from dataclasses import asdict, is_dataclass
 
 # Assuming the modules.configs has been imported elsewhere
 # If not, you'd need to properly import all the configuration classes
-from modules.configs import (
+from .configs import (
     QuantizationType, QuantizationMode, QuantizationConfig, BatchProcessorConfig,
     PreprocessorConfig, InferenceEngineConfig, MLTrainingEngineConfig,
     OptimizationMode, BatchProcessingStrategy, NormalizationType, TaskType,
