@@ -599,7 +599,7 @@ class ExperimentTracker:
             f.write(report)
             
         self.logger.info(f"Report generated: {report_path}")
-        return report_path
+        return report
 
 
 class MLTrainingEngine:
