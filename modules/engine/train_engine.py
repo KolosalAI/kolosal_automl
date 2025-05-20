@@ -664,7 +664,7 @@ class MLTrainingEngine:
         self._register_shutdown_handlers()
         
         # Log initialization
-        self.logger.info(f"ML Training Engine v{self.VERSION} initialized with task type: {config.task_type.value}")
+        self.logger.info(f"ML Training Engine v{self.VERSION} initialized with task type: {config.task_type}")
         if hasattr(config, 'use_gpu') and config.use_gpu:
             self.logger.info(f"GPU usage enabled with memory fraction: {config.gpu_memory_fraction}")
             
@@ -1461,7 +1461,7 @@ class MLTrainingEngine:
         self._last_feature_names = feature_names
         
         # Determine model type based on task
-        task_key = self.config.task_type.value
+        task_key = self.config.task_type
         
         # Validate inputs
         if custom_model is None and model_type is None:
@@ -2296,7 +2296,7 @@ class MLTrainingEngine:
                 feature_names=info.get("feature_names", []),
                 metrics=info.get("metrics", {}),
                 params=info.get("params", {}),
-                task_type=self.config.task_type.value,
+                task_type=self.config.task_type,
                 timestamp=datetime.now().isoformat(),
                 engine_version=self.VERSION,
             )
