@@ -2489,30 +2489,44 @@ class MLTrainingEngine:
             if hasattr(self.config, 'debug_mode') and self.config.debug_mode:
                 self.logger.error(traceback.format_exc())
             return False, f"Prediction error: {str(e)}"
-    
-    def generate_explainability(self, model_name=None, X=None, method="shap"):
+        
+    def generate_explainability(self, model_name=None, X=None, y=None, method="shap"):
         """
         Generate model explainability visualizations.
         
         Args:
             model_name: Name of the model to explain (uses best model if None)
             X: Data for explanations (uses cached data if None)
+            y: Target values for explanations (uses cached data if None, required for permutation)
             method: Explainability method to use (shap, lime, permutation, etc.)
             
         Returns:
             Dictionary with explainability results
         """
-        # Check if SHAP is available for the default method
-        if method == "shap" and not SHAP_AVAILABLE:
-            self.logger.warning("SHAP is not installed. Please install with 'pip install shap'")
-            return {"error": "SHAP library not available", "method": method}
+        # Check if plotting is available
+        PLOTTING_AVAILABLE = False
+        try:
+            import matplotlib.pyplot as plt
+            PLOTTING_AVAILABLE = True
+        except ImportError:
+            self.logger.warning("Matplotlib is not installed. Plots will not be generated.")
             
+        # Check if SHAP is available for the default method
+        SHAP_AVAILABLE = False
+        if method == "shap":
+            try:
+                import shap
+                SHAP_AVAILABLE = True
+            except ImportError:
+                self.logger.warning("SHAP is not installed. Please install with 'pip install shap'")
+                return {"error": "SHAP library not available", "method": method}
+                
         # Determine which model to use
-        if model_name is None and self.best_model is not None:
+        if model_name is None and hasattr(self, 'best_model') and self.best_model is not None:
             model = self.best_model["model"]
             model_name = self.best_model_name
             feature_names = self.best_model.get("feature_names", None)
-        elif model_name in self.models:
+        elif model_name is not None and hasattr(self, 'models') and model_name in self.models:
             model = self.models[model_name]["model"]
             feature_names = self.models[model_name].get("feature_names", None)
         else:
@@ -2527,25 +2541,60 @@ class MLTrainingEngine:
             else:
                 self.logger.error("No data provided and no cached data available")
                 return {"error": "No data available for explanations", "method": method}
+        
+        # Get target values for methods that need them
+        if y is None and method == "permutation":
+            if hasattr(self, '_last_y_train'):
+                y = self._last_y_train
+                self.logger.info("Using cached training labels for explanations")
+            else:
+                self.logger.error("No target values provided for permutation importance and no cached values available")
+                return {"error": "No target values available for permutation importance", "method": method}
                 
+        # Track original feature names before transformations
+        original_feature_names = feature_names
+        
         # Apply preprocessing if needed
-        if self.preprocessor and hasattr(self.preprocessor, 'transform'):
+        if hasattr(self, 'preprocessor') and self.preprocessor and hasattr(self.preprocessor, 'transform'):
             try:
                 X = self.preprocessor.transform(X)
+                # Update feature names if they might have changed due to preprocessing
+                if hasattr(self.preprocessor, 'get_feature_names_out'):
+                    try:
+                        feature_names = list(self.preprocessor.get_feature_names_out())
+                    except Exception as e:
+                        self.logger.warning(f"Could not get feature names from preprocessor: {str(e)}")
             except Exception as e:
                 self.logger.error(f"Preprocessing failed during explanation: {str(e)}")
                 return {"error": f"Preprocessing error: {str(e)}", "method": method}
                 
         # Apply feature selection if needed
-        if self.feature_selector and hasattr(self.feature_selector, 'transform'):
+        if hasattr(self, 'feature_selector') and self.feature_selector and hasattr(self.feature_selector, 'transform'):
             try:
+                # Get selected feature indices before transformation
+                if hasattr(self.feature_selector, 'get_support'):
+                    selected_indices = self.feature_selector.get_support(indices=True)
+                    # Update feature names if we have them
+                    if feature_names is not None:
+                        feature_names = [feature_names[i] for i in selected_indices]
+                
                 X = self.feature_selector.transform(X)
             except Exception as e:
                 self.logger.error(f"Feature selection failed during explanation: {str(e)}")
                 return {"error": f"Feature selection error: {str(e)}", "method": method}
+        
+        # Make sure feature_names is appropriate length
+        if feature_names is None or len(feature_names) != X.shape[1]:
+            feature_names = [f"feature_{i}" for i in range(X.shape[1])]
+        
+        # Create directory for plots
+        plot_dir = None
+        if PLOTTING_AVAILABLE and hasattr(self, 'config') and hasattr(self.config, 'model_path'):
+            plot_dir = os.path.join(self.config.model_path, "explanations")
+            os.makedirs(plot_dir, exist_ok=True)
                 
         # Generate explanations based on method
-        if method == "shap":
+        if method == "shap" and SHAP_AVAILABLE:
             try:
                 import shap
                 explainer = None
@@ -2564,14 +2613,16 @@ class MLTrainingEngine:
                     sample_size = min(100, X.shape[0])
                     sample_indices = np.random.choice(X.shape[0], sample_size, replace=False)
                     background = X[sample_indices]
-                    explainer = shap.KernelExplainer(model.predict, background)
+                    # Make sure the predict function returns the right format
+                    pred_fn = getattr(model, "predict_proba", model.predict)
+                    explainer = shap.KernelExplainer(pred_fn, background)
                 
                 # Calculate SHAP values
                 shap_values = explainer.shap_values(X)
                 
                 # Create summary plot if plotting is available
                 plot_path = None
-                if PLOTTING_AVAILABLE:
+                if PLOTTING_AVAILABLE and plot_dir:
                     try:
                         plt.figure(figsize=(12, 8))
                         if isinstance(shap_values, list):
@@ -2582,8 +2633,6 @@ class MLTrainingEngine:
                             shap.summary_plot(shap_values, X, feature_names=feature_names, show=False)
                         
                         # Save the plot
-                        plot_dir = os.path.join(self.config.model_path, "explanations")
-                        os.makedirs(plot_dir, exist_ok=True)
                         plot_path = os.path.join(plot_dir, f"shap_summary_{model_name}.png")
                         plt.tight_layout()
                         plt.savefig(plot_path, dpi=300, bbox_inches='tight')
@@ -2600,7 +2649,7 @@ class MLTrainingEngine:
                 
                 # Create feature importance dictionary
                 shap_importance = {}
-                for i, name in enumerate(feature_names or [f"feature_{i}" for i in range(len(mean_abs_shap))]):
+                for i, name in enumerate(feature_names):
                     if i < len(mean_abs_shap):
                         shap_importance[name] = float(mean_abs_shap[i])
                 
@@ -2614,8 +2663,9 @@ class MLTrainingEngine:
                 }
                 
             except Exception as e:
+                import traceback
                 self.logger.error(f"SHAP explanation failed: {str(e)}")
-                if hasattr(self.config, 'debug_mode') and self.config.debug_mode:
+                if hasattr(self, 'config') and hasattr(self.config, 'debug_mode') and self.config.debug_mode:
                     self.logger.error(traceback.format_exc())
                 return {"error": f"SHAP explanation failed: {str(e)}", "method": method}
         
@@ -2623,17 +2673,26 @@ class MLTrainingEngine:
             try:
                 from sklearn.inspection import permutation_importance
                 
+                # Check if we have target values
+                if y is None:
+                    self.logger.error("Target values (y) are required for permutation importance")
+                    return {"error": "Target values (y) are required for permutation importance", "method": method}
+                
+                # Set random state
+                random_state = 42
+                if hasattr(self, 'config') and hasattr(self.config, 'random_state'):
+                    random_state = self.config.random_state
+                
                 # Calculate permutation importance
                 perm_importance = permutation_importance(
-                    model, X, 
-                    self._last_y_train if hasattr(self, '_last_y_train') else None,
+                    model, X, y,
                     n_repeats=10,
-                    random_state=self.config.random_state
+                    random_state=random_state
                 )
                 
                 # Create feature importance dictionary
                 importance_dict = {}
-                for i, name in enumerate(feature_names or [f"feature_{i}" for i in range(len(perm_importance.importances_mean))]):
+                for i, name in enumerate(feature_names):
                     if i < len(perm_importance.importances_mean):
                         importance_dict[name] = float(perm_importance.importances_mean[i])
                 
@@ -2642,9 +2701,10 @@ class MLTrainingEngine:
                 
                 # Create and save plot if plotting is available
                 plot_path = None
-                if PLOTTING_AVAILABLE:
+                if PLOTTING_AVAILABLE and plot_dir:
                     try:
                         plt.figure(figsize=(12, 8))
+                        # Limit to top 15 features for better visualization
                         features = list(importance_dict.keys())[:15]
                         importances = [importance_dict[f] for f in features]
                         
@@ -2655,8 +2715,6 @@ class MLTrainingEngine:
                         plt.tight_layout()
                         
                         # Save the plot
-                        plot_dir = os.path.join(self.config.model_path, "explanations")
-                        os.makedirs(plot_dir, exist_ok=True)
                         plot_path = os.path.join(plot_dir, f"permutation_importance_{model_name}.png")
                         plt.savefig(plot_path, dpi=300, bbox_inches='tight')
                         plt.close()
@@ -2670,8 +2728,9 @@ class MLTrainingEngine:
                 }
                 
             except Exception as e:
+                import traceback
                 self.logger.error(f"Permutation importance calculation failed: {str(e)}")
-                if hasattr(self.config, 'debug_mode') and self.config.debug_mode:
+                if hasattr(self, 'config') and hasattr(self.config, 'debug_mode') and self.config.debug_mode:
                     self.logger.error(traceback.format_exc())
                 return {"error": f"Permutation importance failed: {str(e)}", "method": method}
         
