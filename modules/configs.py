@@ -1205,7 +1205,7 @@ class MLTrainingEngineConfig:
         }
         
         # Add nested configurations
-        if self.optimization_metric:
+        if isinstance(self.optimization_metric, str):
             if isinstance(self.optimization_metric, ModelSelectionCriteria):
                 config_dict["optimization_metric"] = self.optimization_metric.value
             else:
