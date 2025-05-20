@@ -2530,6 +2530,8 @@ class MLTrainingEngine:
                 return None
 
         def drop_column_importance(model, X, y, feature_names, scorer):
+            from sklearn.base import clone
+
             baseline_score = scorer(model, X, y)
             importance_dict = {}
 
@@ -2539,15 +2541,19 @@ class MLTrainingEngine:
                 if i % 5 == 0:
                     check_timeout()
 
-                X_without = X_df.drop(columns=[feature])
+                X_dropped = X_df.drop(columns=[feature])
                 try:
-                    score_without = scorer(model, X_without, y)
-                    importance = baseline_score - score_without
+                    model_clone = clone(model)
+                    model_clone.fit(X_dropped, y)
+                    score_dropped = scorer(model_clone, X_dropped, y)
+                    importance = baseline_score - score_dropped
                     importance_dict[feature] = float(importance)
-                except Exception:
+                except Exception as e:
+                    self.logger.warning(f"Failed to evaluate feature {feature}: {str(e)}")
                     importance_dict[feature] = 0.0
 
             return dict(sorted(importance_dict.items(), key=lambda item: item[1], reverse=True))
+
 
         def permutation_feature_importance(model, X, y, feature_names):
             check_timeout()
