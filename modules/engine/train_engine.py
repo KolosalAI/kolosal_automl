@@ -1466,9 +1466,9 @@ class MLTrainingEngine:
         # Validate inputs
         if custom_model is None and model_type is None:
             # Auto-select default model type based on task
-            if task_key == "classification":
+            if task_key == TaskType.CLASSIFICATION:
                 model_type = "random_forest"
-            elif task_key == "regression":
+            elif task_key == TaskType.REGRESSION:
                 model_type = "random_forest"
             else:
                 raise ValueError(f"Please specify model_type or custom_model for task type: {task_key}")
