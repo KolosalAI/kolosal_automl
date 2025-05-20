@@ -783,7 +783,7 @@ class DeviceOptimizer:
             treelite_available=self.treelite_available
         )
 
-    def get_optimal_training_engine_config(self, tasktype) -> MLTrainingEngineConfig:
+    def get_optimal_training_engine_config(self) -> MLTrainingEngineConfig:
         factors = self._apply_optimization_mode_factors()
 
         enable_intel_opt = self.is_intel_cpu and \
