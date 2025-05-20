@@ -1204,7 +1204,7 @@ class MLTrainingEngineConfig:
             "metadata": self.metadata,
         }
         
-        config_dict["optimization_metric"] = self.optimization_metric.value
+        config_dict["optimization_metric"] = self.optimization_metric
         # Convert nested config objects
         config_dict["preprocessing_config"] = self.preprocessing_config.to_dict()
         config_dict["batch_processing_config"] = self.batch_processing_config.to_dict()
