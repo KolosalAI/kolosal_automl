@@ -1204,13 +1204,7 @@ class MLTrainingEngineConfig:
             "metadata": self.metadata,
         }
         
-        # Add nested configurations
-        if isinstance(self.optimization_metric, str):
-            if isinstance(self.optimization_metric, ModelSelectionCriteria):
-                config_dict["optimization_metric"] = self.optimization_metric.value
-            else:
-                config_dict["optimization_metric"] = self.optimization_metric
-                
+        config_dict["optimization_metric"] = self.optimization_metric.value
         # Convert nested config objects
         config_dict["preprocessing_config"] = self.preprocessing_config.to_dict()
         config_dict["batch_processing_config"] = self.batch_processing_config.to_dict()
