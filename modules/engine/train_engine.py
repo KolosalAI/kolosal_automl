@@ -2490,459 +2490,177 @@ class MLTrainingEngine:
                 self.logger.error(traceback.format_exc())
             return False, f"Prediction error: {str(e)}"
             
-    def generate_explainability(self, model_name=None, X=None, y=None, method="drop_column", 
-                            max_samples=500, n_repeats=3, random_state=None,
-                            create_plots=True, timeout=60):
-        """
-        Generate model explainability visualizations with good performance by default.
-        
-        Args:
-            model_name: Name of the model to explain (uses best model if None)
-            X: Data for explanations (uses cached data if None)
-            y: Target values for explanations (uses cached data if None, required for permutation)
-            method: Explainability method to use - options:
-                    - "drop_column": Fast column-wise importance (default)
-                    - "permutation": More accurate feature shuffling approach (medium speed)
-                    - "shap": Most detailed explanation but slowest, especially for non-tree models
-            max_samples: Maximum number of samples to use for explanations (500 by default)
-            n_repeats: Number of shuffling iterations for permutation importance
-            random_state: Random state for reproducibility (uses config.random_state if None)
-            create_plots: Whether to create and save plots
-            timeout: Maximum time in seconds for explanation methods to run (60 seconds default)
-            
-        Returns:
-            Dictionary with explainability results
-        """
+    def generate_explainability(
+        self,
+        model_name=None,
+        X=None,
+        y=None,
+        method="drop_column",
+        max_samples=500,
+        n_repeats=3,
+        random_state=None,
+        create_plots=True,
+        timeout=60
+    ):
         import time
         import numpy as np
         import os
         import traceback
-        
+        import matplotlib.pyplot as plt
+        import pandas as pd
+        from sklearn.metrics import get_scorer
+        from sklearn.inspection import permutation_importance
+
         start_time = time.time()
-        
-        # Set random state
-        if random_state is None and hasattr(self, 'config') and hasattr(self.config, 'random_state'):
-            random_state = self.config.random_state
-        elif random_state is None:
-            random_state = 42
-            
-        # Check if plotting is available and requested
-        PLOTTING_AVAILABLE = False
-        if create_plots:
-            try:
-                import matplotlib.pyplot as plt
-                PLOTTING_AVAILABLE = True
-            except ImportError:
-                self.logger.warning("Matplotlib is not installed. Plots will not be generated.")
-                
-        # Check if SHAP is available if that method is requested
-        SHAP_AVAILABLE = False
-        if method == "shap":
-            try:
-                import shap
-                SHAP_AVAILABLE = True
-            except ImportError:
-                self.logger.warning("SHAP is not installed. Please install with 'pip install shap'. Falling back to drop_column method.")
-                method = "drop_column"
-                
-        # Determine which model to use
-        if model_name is None and hasattr(self, 'best_model') and self.best_model is not None:
-            model = self.best_model["model"]
-            model_name = self.best_model_name
-            feature_names = self.best_model.get("feature_names", None)
-        elif model_name is not None and hasattr(self, 'models') and model_name in self.models:
-            model = self.models[model_name]["model"]
-            feature_names = self.models[model_name].get("feature_names", None)
-        else:
-            self.logger.error(f"Model {model_name} not found")
-            return {"error": f"Model {model_name} not found", "method": method}
-            
-        # Use provided data or fall back to cached data
-        if X is None:
-            if hasattr(self, '_last_X_train'):
-                X = self._last_X_train
-                self.logger.info("Using cached training data for explanations")
-            else:
-                self.logger.error("No data provided and no cached data available")
-                return {"error": "No data available for explanations", "method": method}
-        
-        # Get target values for methods that need them
-        if y is None and (method == "permutation" or method == "drop_column"):
-            if hasattr(self, '_last_y_train'):
-                y = self._last_y_train
-                self.logger.info("Using cached training labels for explanations")
-            else:
-                self.logger.error(f"Target values (y) are required for {method} method and no cached values available")
-                if method == "permutation" and SHAP_AVAILABLE:
-                    self.logger.info("Falling back to SHAP method which doesn't require target values")
-                    method = "shap"
-                elif SHAP_AVAILABLE:
-                    self.logger.info("Falling back to SHAP method")
-                    method = "shap"
-                else:
-                    return {"error": f"Target values (y) are required for {method} method", "method": method}
-        
-        # Sample data if it's too large (performance optimization)
-        if X.shape[0] > max_samples:
-            self.logger.info(f"Sampling {max_samples} rows from {X.shape[0]} total rows for explanations")
-            indices = np.random.RandomState(random_state).choice(X.shape[0], max_samples, replace=False)
-            X = X[indices]
-            if y is not None:
-                y = y[indices]
-                
-        # Apply preprocessing if needed
-        if hasattr(self, 'preprocessor') and self.preprocessor and hasattr(self.preprocessor, 'transform'):
-            try:
-                X = self.preprocessor.transform(X)
-                # Update feature names if they might have changed due to preprocessing
-                if hasattr(self.preprocessor, 'get_feature_names_out'):
-                    try:
-                        feature_names = list(self.preprocessor.get_feature_names_out())
-                    except Exception as e:
-                        self.logger.warning(f"Could not get feature names from preprocessor: {str(e)}")
-            except Exception as e:
-                self.logger.error(f"Preprocessing failed during explanation: {str(e)}")
-                return {"error": f"Preprocessing error: {str(e)}", "method": method}
-                
-        # Apply feature selection if needed
-        if hasattr(self, 'feature_selector') and self.feature_selector and hasattr(self.feature_selector, 'transform'):
-            try:
-                # Get selected feature indices before transformation
-                if hasattr(self.feature_selector, 'get_support'):
-                    selected_indices = self.feature_selector.get_support(indices=True)
-                    # Update feature names if we have them
-                    if feature_names is not None:
-                        feature_names = [feature_names[i] for i in selected_indices]
-                
-                X = self.feature_selector.transform(X)
-            except Exception as e:
-                self.logger.error(f"Feature selection failed during explanation: {str(e)}")
-                return {"error": f"Feature selection error: {str(e)}", "method": method}
-        
-        # Make sure feature_names is appropriate length
-        if feature_names is None or len(feature_names) != X.shape[1]:
-            feature_names = [f"feature_{i}" for i in range(X.shape[1])]
-        
-        # Create directory for plots
-        plot_dir = None
-        if PLOTTING_AVAILABLE and create_plots and hasattr(self, 'config') and hasattr(self.config, 'model_path'):
-            plot_dir = os.path.join(self.config.model_path, "explanations")
-            os.makedirs(plot_dir, exist_ok=True)
-                
-        # Check for timeout
+
         def check_timeout():
             if timeout > 0 and time.time() - start_time > timeout:
                 raise TimeoutError(f"Explanation generation exceeded timeout of {timeout} seconds")
-        
-        # FAST METHOD: Drop Column Importance (Default)
-        if method == "drop_column":
+
+        def sample_data(X, y):
+            if X.shape[0] > max_samples:
+                indices = np.random.RandomState(random_state).choice(X.shape[0], max_samples, replace=False)
+                return X[indices], y[indices] if y is not None else None
+            return X, y
+
+        def safe_get_feature_names(preprocessor):
             try:
-                from sklearn.metrics import get_scorer
-                import pandas as pd
-                
-                # Check if we have target values
-                if y is None:
-                    self.logger.error("Target values (y) are required for drop column importance")
-                    if SHAP_AVAILABLE:
-                        self.logger.info("Falling back to SHAP method which doesn't require target values")
-                        method = "shap"
-                    else:
-                        return {"error": "Target values (y) are required for drop column importance", "method": method}
-                else:
-                    # Get the scoring metric (default to accuracy for classification, r2 for regression)
-                    scorer_name = "accuracy"
-                    if hasattr(self, 'task_type') and self.task_type == "regression":
-                        scorer_name = "r2"
-                    scorer = get_scorer(scorer_name)
-                    
-                    # Get baseline score
-                    baseline_score = scorer(model, X, y)
-                    
-                    # Calculate feature importance by dropping one column at a time
-                    importance_dict = {}
-                    
-                    # Convert to pandas for easier column manipulation if not already
-                    if not isinstance(X, pd.DataFrame):
-                        X_df = pd.DataFrame(X, columns=feature_names)
-                    else:
-                        X_df = X
-                        
-                    for i, feature in enumerate(feature_names):
-                        # Check timeout periodically
-                        if i % 5 == 0:
-                            check_timeout()
-                            
-                        # Create copy without this feature
-                        X_without = X_df.copy()
-                        if feature in X_without.columns:
-                            X_without = X_without.drop(columns=[feature])
-                        else:
-                            # If column names don't match, use positional index
-                            X_without = X_without.drop(columns=[X_without.columns[i]])
-                        
-                        # Convert back to numpy if the model doesn't accept pandas
-                        if hasattr(model, "_estimator_type") and not isinstance(X, pd.DataFrame):
-                            X_without = X_without.values
-                        
-                        # Score model without this feature
-                        try:
-                            score_without = scorer(model, X_without, y)
-                            # Importance is decrease in score when feature is removed
-                            importance = baseline_score - score_without
-                            importance_dict[feature] = float(importance)
-                        except Exception as e:
-                            self.logger.warning(f"Error computing importance for feature {feature}: {str(e)}")
-                            importance_dict[feature] = 0.0
-                    
-                    # Sort features by importance
-                    importance_dict = {k: v for k, v in sorted(importance_dict.items(), key=lambda item: item[1], reverse=True)}
-                    
-                    # Create and save plot if plotting is available
-                    plot_path = None
-                    if PLOTTING_AVAILABLE and create_plots and plot_dir:
-                        try:
-                            plt.figure(figsize=(12, 8))
-                            # Limit to top 15 features for better visualization
-                            features = list(importance_dict.keys())[:15]
-                            importances = [importance_dict[f] for f in features]
-                            
-                            plt.barh(range(len(features)), importances, align='center')
-                            plt.yticks(range(len(features)), features)
-                            plt.title('Drop Column Importance')
-                            plt.xlabel(f'Decrease in {scorer_name} when feature is removed')
-                            plt.tight_layout()
-                            
-                            # Save the plot
-                            plot_path = os.path.join(plot_dir, f"drop_column_importance_{model_name}.png")
-                            plt.savefig(plot_path, dpi=150)
-                            plt.close()
-                        except Exception as e:
-                            self.logger.warning(f"Failed to create drop column importance plot: {str(e)}")
-                    
-                    execution_time = time.time() - start_time
-                    
-                    return {
-                        "method": "drop_column",
-                        "importance": importance_dict,
-                        "plot_path": plot_path,
-                        "execution_time": execution_time
-                    }
-                    
-            except TimeoutError as te:
-                self.logger.error(f"Drop column importance timed out: {str(te)}")
-                return {"error": f"Drop column importance timed out after {timeout} seconds", "method": method}
-            except Exception as e:
-                self.logger.error(f"Drop column importance calculation failed: {str(e)}")
-                if hasattr(self, 'config') and hasattr(self.config, 'debug_mode') and self.config.debug_mode:
-                    self.logger.error(traceback.format_exc())
-                # Try falling back to SHAP if available
-                if SHAP_AVAILABLE:
-                    self.logger.info("Falling back to SHAP method")
-                    method = "shap"
-                else:
-                    return {"error": f"Drop column importance failed: {str(e)}", "method": method}
-        
-        # MEDIUM SPEED METHOD: Permutation Importance
-        if method == "permutation":
-            try:
-                from sklearn.inspection import permutation_importance
-                
-                # Check if we have target values
-                if y is None:
-                    self.logger.error("Target values (y) are required for permutation importance")
-                    if SHAP_AVAILABLE:
-                        self.logger.info("Falling back to SHAP method which doesn't require target values")
-                        method = "shap"
-                    else:
-                        return {"error": "Target values (y) are required for permutation importance", "method": method}
-                else:
+                return list(preprocessor.get_feature_names_out())
+            except Exception:
+                return None
+
+        def drop_column_importance(model, X, y, feature_names, scorer):
+            baseline_score = scorer(model, X, y)
+            importance_dict = {}
+
+            X_df = pd.DataFrame(X, columns=feature_names)
+
+            for i, feature in enumerate(feature_names):
+                if i % 5 == 0:
                     check_timeout()
-                    
-                    # Calculate permutation importance with fewer repeats for performance
-                    perm_importance = permutation_importance(
-                        model, X, y,
-                        n_repeats=n_repeats,  # Reduced from default 10
-                        random_state=random_state,
-                        n_jobs=-1  # Use all available processors
-                    )
-                    
-                    check_timeout()
-                    
-                    # Create feature importance dictionary
-                    importance_dict = {}
-                    for i, name in enumerate(feature_names):
-                        if i < len(perm_importance.importances_mean):
-                            importance_dict[name] = float(perm_importance.importances_mean[i])
-                    
-                    # Sort features by importance
-                    importance_dict = {k: v for k, v in sorted(importance_dict.items(), key=lambda item: item[1], reverse=True)}
-                    
-                    # Create and save plot if plotting is available
-                    plot_path = None
-                    if PLOTTING_AVAILABLE and create_plots and plot_dir:
-                        try:
-                            plt.figure(figsize=(12, 8))
-                            # Limit to top 15 features for better visualization
-                            features = list(importance_dict.keys())[:15]
-                            importances = [importance_dict[f] for f in features]
-                            
-                            plt.barh(range(len(features)), importances, align='center')
-                            plt.yticks(range(len(features)), features)
-                            plt.title('Permutation Importance')
-                            plt.xlabel('Mean Decrease in Performance')
-                            plt.tight_layout()
-                            
-                            # Save the plot
-                            plot_path = os.path.join(plot_dir, f"permutation_importance_{model_name}.png")
-                            plt.savefig(plot_path, dpi=150)  # Lower DPI for faster saving
-                            plt.close()
-                        except Exception as e:
-                            self.logger.warning(f"Failed to create permutation importance plot: {str(e)}")
-                    
-                    execution_time = time.time() - start_time
-                    
-                    return {
-                        "method": "permutation",
-                        "importance": importance_dict,
-                        "plot_path": plot_path,
-                        "execution_time": execution_time
-                    }
-            
-            except TimeoutError as te:
-                self.logger.error(f"Permutation importance timed out: {str(te)}")
-                if SHAP_AVAILABLE:
-                    self.logger.info("Falling back to SHAP method after timeout")
-                    method = "shap"
-                else:
-                    return {"error": f"Permutation importance timed out after {timeout} seconds", "method": method}    
-            except Exception as e:
-                self.logger.error(f"Permutation importance calculation failed: {str(e)}")
-                if hasattr(self, 'config') and hasattr(self.config, 'debug_mode') and self.config.debug_mode:
-                    self.logger.error(traceback.format_exc())
-                # Try falling back to SHAP if available
-                if SHAP_AVAILABLE:
-                    self.logger.info("Falling back to SHAP method")
-                    method = "shap"
-                else:
-                    return {"error": f"Permutation importance failed: {str(e)}", "method": method}
-        
-        # SLOWEST BUT MOST DETAILED METHOD: SHAP
-        if method == "shap" and SHAP_AVAILABLE:
+
+                X_without = X_df.drop(columns=[feature])
+                try:
+                    score_without = scorer(model, X_without, y)
+                    importance = baseline_score - score_without
+                    importance_dict[feature] = float(importance)
+                except Exception:
+                    importance_dict[feature] = 0.0
+
+            return dict(sorted(importance_dict.items(), key=lambda item: item[1], reverse=True))
+
+        def permutation_feature_importance(model, X, y, feature_names):
+            check_timeout()
+            perm_importance = permutation_importance(
+                model, X, y, n_repeats=n_repeats,
+                random_state=random_state, n_jobs=-1
+            )
+            check_timeout()
+            importance_dict = {
+                name: float(perm_importance.importances_mean[i])
+                for i, name in enumerate(feature_names)
+            }
+            return dict(sorted(importance_dict.items(), key=lambda item: item[1], reverse=True))
+
+        def plot_importance(importance_dict, title, xlabel, plot_name):
+            if not create_plots or not hasattr(self.config, 'model_path'):
+                return None
+            plot_dir = os.path.join(self.config.model_path, "explanations")
+            os.makedirs(plot_dir, exist_ok=True)
+            plot_path = os.path.join(plot_dir, plot_name)
             try:
-                import shap
-                explainer = None
-                
-                # Use appropriate explainer based on model type
-                model_type = str(type(model)).lower()
-                
-                # Determine which SHAP explainer to use - prioritizing faster explainers
-                if "tree" in model_type or "forest" in model_type or "boost" in model_type or "xgb" in model_type or "lgbm" in model_type:
-                    # TreeExplainer is fast and doesn't need background data
-                    explainer = shap.TreeExplainer(model)
-                    self.logger.info("Using TreeExplainer for SHAP values (fast)")
-                elif hasattr(model, "coef_") or "linear" in model_type or "logistic" in model_type or "regression" in model_type:
-                    # LinearExplainer is relatively fast
-                    explainer = shap.LinearExplainer(model, X[:min(100, X.shape[0])])
-                    self.logger.info("Using LinearExplainer for SHAP values (medium speed)")
-                else:
-                    # KernelExplainer is very slow - use small background set
-                    self.logger.warning("Using KernelExplainer which may be slow. Consider using permutation or drop_column instead.")
-                    background_size = min(50, X.shape[0])  # Reduced for speed
-                    background_indices = np.random.RandomState(random_state).choice(X.shape[0], background_size, replace=False)
-                    background = X[background_indices]
-                    # Use a smaller sample for explanation to speed up computation
-                    sample_size = min(200, X.shape[0])
-                    sample_indices = np.random.RandomState(random_state).choice(X.shape[0], sample_size, replace=False)
-                    X_sample = X[sample_indices]
-                    # Make sure the predict function returns the right format
-                    pred_fn = getattr(model, "predict_proba", model.predict)
-                    explainer = shap.KernelExplainer(pred_fn, background)
-                    X = X_sample  # Replace X with smaller sample for the rest of the computation
-                
-                check_timeout()
-                
-                # Calculate SHAP values
-                shap_values = explainer.shap_values(X)
-                
-                check_timeout()
-                
-                # Create summary plot if plotting is available
-                plot_path = None
-                if PLOTTING_AVAILABLE and create_plots and plot_dir:
-                    try:
-                        plt.figure(figsize=(12, 8))
-                        # Limit to top 20 features for better visualization
-                        if X.shape[1] > 20:
-                            # Calculate mean abs SHAP to identify top features
-                            if isinstance(shap_values, list):
-                                mean_abs_shap = np.mean([np.abs(s).mean(0) for s in shap_values], axis=0)
-                            else:
-                                mean_abs_shap = np.abs(shap_values).mean(0)
-                            # Get indices of top features
-                            top_indices = np.argsort(mean_abs_shap)[-20:]
-                            # Extract relevant feature names
-                            top_features = [feature_names[i] for i in top_indices]
-                            # Filter X and shap_values to only include top features
-                            if isinstance(shap_values, list):
-                                # For multi-class, filter each class's values
-                                filtered_shap_values = [sv[:, top_indices] for sv in shap_values]
-                                shap.summary_plot(filtered_shap_values[0], X[:, top_indices], 
-                                            feature_names=top_features, show=False)
-                            else:
-                                # For regression or binary classification
-                                shap.summary_plot(shap_values[:, top_indices], X[:, top_indices], 
-                                            feature_names=top_features, show=False)
-                        else:
-                            # Use all features if there are 20 or fewer
-                            if isinstance(shap_values, list):
-                                shap.summary_plot(shap_values[0], X, feature_names=feature_names, show=False)
-                            else:
-                                shap.summary_plot(shap_values, X, feature_names=feature_names, show=False)
-                        
-                        # Save the plot
-                        plot_path = os.path.join(plot_dir, f"shap_summary_{model_name}.png")
-                        plt.tight_layout()
-                        plt.savefig(plot_path, dpi=150)  # Lower DPI for faster saving
-                        plt.close()
-                    except Exception as e:
-                        self.logger.warning(f"Failed to create SHAP summary plot: {str(e)}")
-                
-                # Calculate mean absolute SHAP values for feature importance
-                if isinstance(shap_values, list):
-                    # For multi-class, average across classes
-                    mean_abs_shap = np.mean([np.abs(s).mean(0) for s in shap_values], axis=0)
-                else:
-                    mean_abs_shap = np.abs(shap_values).mean(0)
-                
-                # Create feature importance dictionary
-                shap_importance = {}
-                for i, name in enumerate(feature_names):
-                    if i < len(mean_abs_shap):
-                        shap_importance[name] = float(mean_abs_shap[i])
-                
-                # Sort features by importance
-                shap_importance = {k: v for k, v in sorted(shap_importance.items(), key=lambda item: item[1], reverse=True)}
-                
-                execution_time = time.time() - start_time
-                
+                plt.figure(figsize=(12, 8))
+                features = list(importance_dict.keys())[:15]
+                importances = [importance_dict[f] for f in features]
+                plt.barh(range(len(features)), importances, align='center')
+                plt.yticks(range(len(features)), features)
+                plt.title(title)
+                plt.xlabel(xlabel)
+                plt.tight_layout()
+                plt.savefig(plot_path, dpi=150)
+                plt.close()
+                return plot_path
+            except Exception as e:
+                self.logger.warning(f"Failed to create plot: {str(e)}")
+                return None
+
+        if random_state is None:
+            random_state = getattr(getattr(self, 'config', None), 'random_state', 42)
+
+        # Determine model
+        if model_name is None and hasattr(self, 'best_model'):
+            model = self.best_model["model"]
+            model_name = self.best_model_name
+            feature_names = self.best_model.get("feature_names", None)
+        elif model_name and hasattr(self, 'models') and model_name in self.models:
+            model = self.models[model_name]["model"]
+            feature_names = self.models[model_name].get("feature_names", None)
+        else:
+            return {"error": f"Model {model_name} not found", "method": method}
+
+        if X is None:
+            X = getattr(self, '_last_X_train', None)
+        if y is None and method in ["drop_column", "permutation"]:
+            y = getattr(self, '_last_y_train', None)
+
+        if X is None or (y is None and method in ["drop_column", "permutation"]):
+            return {"error": "No data available for explanations", "method": method}
+
+        X, y = sample_data(X, y)
+
+        if hasattr(self, 'preprocessor') and self.preprocessor and hasattr(self.preprocessor, 'transform'):
+            try:
+                X = self.preprocessor.transform(X)
+                feature_names = safe_get_feature_names(self.preprocessor) or feature_names
+            except Exception as e:
+                return {"error": f"Preprocessing error: {str(e)}", "method": method}
+
+        if hasattr(self, 'feature_selector') and self.feature_selector and hasattr(self.feature_selector, 'transform'):
+            try:
+                if hasattr(self.feature_selector, 'get_support'):
+                    selected_indices = self.feature_selector.get_support(indices=True)
+                    if feature_names:
+                        feature_names = [feature_names[i] for i in selected_indices]
+                X = self.feature_selector.transform(X)
+            except Exception as e:
+                return {"error": f"Feature selection error: {str(e)}", "method": method}
+
+        if feature_names is None or len(feature_names) != X.shape[1]:
+            feature_names = [f"feature_{i}" for i in range(X.shape[1])]
+
+        try:
+            if method == "drop_column":
+                scorer_name = "accuracy" if getattr(self, 'task_type', 'regression') != 'regression' else "r2"
+                scorer = get_scorer(scorer_name)
+                importance = drop_column_importance(model, X, y, feature_names, scorer)
+                plot_path = plot_importance(importance, "Drop Column Importance", f"Decrease in {scorer_name}", f"drop_column_importance_{model_name}.png")
                 return {
-                    "method": "shap",
-                    "importance": shap_importance,
+                    "method": method,
+                    "importance": importance,
                     "plot_path": plot_path,
-                    "execution_time": execution_time
+                    "execution_time": time.time() - start_time
                 }
-                
-            except TimeoutError as te:
-                self.logger.error(f"SHAP explanation timed out: {str(te)}")
-                return {"error": f"SHAP explanation timed out after {timeout} seconds", "method": method}
-            except Exception as e:
-                self.logger.error(f"SHAP explanation failed: {str(e)}")
-                if hasattr(self, 'config') and hasattr(self.config, 'debug_mode') and self.config.debug_mode:
-                    self.logger.error(traceback.format_exc())
-                return {"error": f"SHAP explanation failed: {str(e)}", "method": method}
-        
-        # If we reach here, no method worked or was available
-        return {"error": f"No suitable explainability method available: {method}", "method": method}
+
+            elif method == "permutation":
+                importance = permutation_feature_importance(model, X, y, feature_names)
+                plot_path = plot_importance(importance, "Permutation Importance", "Mean Decrease in Performance", f"permutation_importance_{model_name}.png")
+                return {
+                    "method": method,
+                    "importance": importance,
+                    "plot_path": plot_path,
+                    "execution_time": time.time() - start_time
+                }
+
+            else:
+                return {"error": f"Unknown or unsupported method: {method}", "method": method}
+
+        except TimeoutError as te:
+            return {"error": str(te), "method": method}
+        except Exception as e:
+            if getattr(getattr(self, 'config', None), 'debug_mode', False):
+                self.logger.error(traceback.format_exc())
+            return {"error": f"Explanation generation failed: {str(e)}", "method": method}
+
     
     def get_model_summary(self, model_name=None):
         """
