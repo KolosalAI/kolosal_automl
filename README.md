@@ -238,7 +238,7 @@ pytest -vv
 * **Report Generation Speed‑ups** – Markdown & HTML reports now render up to 3× faster.
 * **Explainability Report Patch** – SHAP/feature‑importance plots now correctly embed and save.
 * **Hands‑on Tutorial Notebook** – added *Kolosal\_AutoML\_Tutorial.ipynb* with step‑by‑step examples.
-  👉 [Open the notebook on GitHub](https://github.com/Genta-Technology/kolosal_automl/blob/main/notebooks/Kolosal_AutoML_Tutorial.ipynb)
+  👉 [Open the notebook on GitHub](https://github.com/Genta-Technology/automl_tutorial)
 
 ## 🚧 Roadmap
 
