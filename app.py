@@ -534,7 +534,14 @@ def export_model(info: Dict[str, Any], name: str, fmt: str, include_preproc: boo
 # -----------------------------------------------------------------------------
 
 def main():
-    st.title("🤖 Kolosal AutoML")
+    from PIL import Image
+
+    logo_path = "assets/kolosal-logo.png"
+    if os.path.exists(logo_path):
+        logo = Image.open(logo_path)
+        st.image(logo, width=180)
+
+    st.title("Kolosal AutoML")
     st.markdown("### Low‑code ML pipeline builder")
 
     if not KOLOSAL_IMPORTS_SUCCESS:
@@ -554,6 +561,7 @@ def main():
         tab_evaluate()
     with tabs[3]:
         tab_export()
+
 
 
 if __name__ == "__main__":

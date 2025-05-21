@@ -63,7 +63,7 @@ The Advanced ML Training Engine is a sophisticated machine learning framework th
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/Genta-Technology/kolosal-automl
+git clone https://github.com/Genta-Technology/kolosal_automl
 cd kolosal-automl
 ```
 
@@ -76,8 +76,8 @@ pip install -r requirements.txt
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/Genta-Technology/kolosal-automl
-cd kolosal-automl
+git clone https://github.com/Genta-Technology/kolosal_automl
+cd kolosal_automl
 ```
 
 2. Create a virtual environment:
