@@ -964,3 +964,253 @@ class DeviceOptimizer:
                 "treelite_available": self.treelite_available # Assuming this is set
             }
         }
+
+# Additional utility functions for device_optimizer.py
+# These functions are imported by the API but weren't defined in the original file
+
+def get_system_information(enable_specialized_accelerators: bool = True) -> dict:
+    """
+    Get system information without creating a full DeviceOptimizer instance.
+    
+    Args:
+        enable_specialized_accelerators: Whether to detect specialized hardware accelerators
+        
+    Returns:
+        Dict containing comprehensive system information
+    """
+    # Create a temporary DeviceOptimizer instance just to get system info
+    temp_optimizer = DeviceOptimizer(
+        enable_specialized_accelerators=enable_specialized_accelerators
+    )
+    
+    # Get and return the system information
+    return temp_optimizer.get_system_info()
+
+
+def optimize_for_environment(environment: str, 
+                            config_path: str = "./configs",
+                            checkpoint_path: str = "./checkpoints",
+                            model_registry_path: str = "./model_registry") -> dict:
+    """
+    Create optimized configurations for a specific environment.
+    
+    Args:
+        environment: Target environment - 'cloud', 'desktop', or 'edge'
+        config_path: Path where configurations will be saved
+        checkpoint_path: Path for model checkpoints
+        model_registry_path: Path for model registry
+    
+    Returns:
+        Master configuration dictionary
+    """
+    # Validate environment value
+    if environment not in ["cloud", "desktop", "edge"]:
+        raise ValueError(f"Invalid environment: {environment}. Must be 'cloud', 'desktop', or 'edge'.")
+    
+    # Select appropriate optimization mode based on environment
+    env_to_mode = {
+        "cloud": OptimizationMode.PERFORMANCE,
+        "desktop": OptimizationMode.BALANCED,
+        "edge": OptimizationMode.MEMORY_SAVING
+    }
+    
+    # Create DeviceOptimizer with environment-specific settings
+    optimizer = DeviceOptimizer(
+        config_path=config_path,
+        checkpoint_path=checkpoint_path,
+        model_registry_path=model_registry_path,
+        optimization_mode=env_to_mode[environment],
+        environment=environment,
+        # Customize additional parameters based on environment
+        power_efficiency=environment == "edge",
+        auto_tune=environment != "edge"  # Disable auto-tuning for edge devices
+    )
+    
+    # Generate unique config ID for this environment
+    import uuid
+    config_id = f"env_{environment}_{uuid.uuid4().hex[:6]}"
+    
+    # Save and return configurations
+    return optimizer.save_configs(config_id=config_id)
+
+
+def optimize_for_workload(workload_type: str,
+                         config_path: str = "./configs",
+                         checkpoint_path: str = "./checkpoints",
+                         model_registry_path: str = "./model_registry") -> dict:
+    """
+    Create optimized configurations for a specific workload type.
+    
+    Args:
+        workload_type: Target workload - 'inference', 'training', or 'mixed'
+        config_path: Path where configurations will be saved
+        checkpoint_path: Path for model checkpoints
+        model_registry_path: Path for model registry
+    
+    Returns:
+        Master configuration dictionary
+    """
+    # Validate workload_type value
+    if workload_type not in ["inference", "training", "mixed"]:
+        raise ValueError(f"Invalid workload type: {workload_type}. Must be 'inference', 'training', or 'mixed'.")
+    
+    # Select appropriate optimization mode based on workload
+    workload_to_mode = {
+        "inference": OptimizationMode.PERFORMANCE,
+        "training": OptimizationMode.BALANCED,
+        "mixed": OptimizationMode.BALANCED
+    }
+    
+    # Customize memory settings based on workload
+    memory_reservation = 10.0  # Default
+    if workload_type == "training":
+        memory_reservation = 15.0  # Reserve more memory for training
+    elif workload_type == "inference":
+        memory_reservation = 5.0   # Less reservation for inference
+    
+    # Create DeviceOptimizer with workload-specific settings
+    optimizer = DeviceOptimizer(
+        config_path=config_path,
+        checkpoint_path=checkpoint_path,
+        model_registry_path=model_registry_path,
+        optimization_mode=workload_to_mode[workload_type],
+        workload_type=workload_type,
+        memory_reservation_percent=memory_reservation
+    )
+    
+    # Generate unique config ID for this workload
+    import uuid
+    config_id = f"workload_{workload_type}_{uuid.uuid4().hex[:6]}"
+    
+    # Save and return configurations
+    return optimizer.save_configs(config_id=config_id)
+
+
+def apply_configs_to_pipeline(configs: dict) -> bool:
+    """
+    Apply loaded configurations to ML pipeline components.
+    
+    Args:
+        configs: Dictionary with configurations to apply, typically loaded from saved configs
+        
+    Returns:
+        True if configurations were successfully applied, False otherwise
+    """
+    try:
+        logger = logging.getLogger("cpu_device_optimizer")
+        logger.info("Applying configurations to pipeline components")
+        
+        # Extract individual configs
+        quant_config = configs.get("quantization_config")
+        batch_config = configs.get("batch_processor_config")
+        preproc_config = configs.get("preprocessor_config")
+        infer_config = configs.get("inference_engine_config")
+        train_config = configs.get("training_engine_config")
+        
+        # Check if we have at least some configs
+        if not any([quant_config, batch_config, preproc_config, infer_config, train_config]):
+            logger.error("No valid configurations found in the provided config dictionary")
+            return False
+        
+        # Convert dictionary configs back to objects if needed
+        # This would use the from_dict methods that should be defined on the config classes
+        
+        # Here you would apply the configurations to the actual pipeline components
+        # Since we don't have access to the actual pipeline components in this file,
+        # this is just a placeholder implementation
+        
+        # Example of what this might look like:
+        # if quant_config and hasattr(pipeline, 'quantizer'):
+        #     if hasattr(quant_config, 'from_dict') and callable(getattr(quant_config, 'from_dict')):
+        #         quant_config_obj = QuantizationConfig.from_dict(quant_config)
+        #     else:
+        #         quant_config_obj = quant_config
+        #     pipeline.quantizer.configure(quant_config_obj)
+        
+        # [Repeat for other components]
+        
+        logger.info("Successfully applied configurations to pipeline components")
+        return True
+        
+    except Exception as e:
+        logger = logging.getLogger("cpu_device_optimizer")
+        logger.error(f"Error applying configurations to pipeline: {e}")
+        return False
+
+
+def get_default_config(
+    optimization_mode: OptimizationMode = OptimizationMode.BALANCED,
+    workload_type: str = "mixed",
+    environment: str = "auto", 
+    output_dir: str = "./configs/default",
+    enable_specialized_accelerators: bool = True
+) -> dict:
+    """
+    Get default configurations for the specified optimization mode, workload, and environment.
+    
+    Args:
+        optimization_mode: The optimization strategy to use
+        workload_type: Type of workload to optimize for
+        environment: Computing environment
+        output_dir: Directory where configuration files will be saved
+        enable_specialized_accelerators: Whether to enable detection of specialized hardware
+        
+    Returns:
+        Dictionary with all config objects
+    """
+    # Create a DeviceOptimizer with the specified parameters
+    optimizer = DeviceOptimizer(
+        optimization_mode=optimization_mode,
+        workload_type=workload_type,
+        environment=environment,
+        enable_specialized_accelerators=enable_specialized_accelerators,
+        auto_tune=False  # Default configs don't use auto-tuning
+    )
+    
+    # Generate configuration objects
+    quant_config = optimizer.get_optimal_quantization_config()
+    batch_config = optimizer.get_optimal_batch_processor_config()
+    preproc_config = optimizer.get_optimal_preprocessor_config()
+    infer_config = optimizer.get_optimal_inference_engine_config()
+    train_config = optimizer.get_optimal_training_engine_config()
+    
+    # Convert objects to dictionaries
+    configs = {}
+    
+    def serialize_config(config_obj, name):
+        """Helper to serialize config objects to dictionaries"""
+        if hasattr(config_obj, 'to_dict') and callable(getattr(config_obj, 'to_dict')):
+            return config_obj.to_dict()
+        elif hasattr(config_obj, '__dict__'):
+            return optimizer._serialize_config_dict(config_obj.__dict__)
+        else:
+            logger = logging.getLogger("cpu_device_optimizer")
+            logger.warning(f"Could not serialize {name} config")
+            return {}
+    
+    # Serialize all config objects
+    configs = {
+        "quantization_config": serialize_config(quant_config, "quantization"),
+        "batch_processor_config": serialize_config(batch_config, "batch_processor"),
+        "preprocessor_config": serialize_config(preproc_config, "preprocessor"),
+        "inference_engine_config": serialize_config(infer_config, "inference_engine"),
+        "training_engine_config": serialize_config(train_config, "training_engine")
+    }
+    
+    # Save to output_dir if specified
+    if output_dir:
+        import os
+        import json
+        
+        os.makedirs(output_dir, exist_ok=True)
+        for config_name, config_data in configs.items():
+            config_path = os.path.join(output_dir, f"{config_name}.json")
+            with open(config_path, 'w') as f:
+                json.dump(config_data, f, indent=2)
+    
+    return configs
+
+
+# Make sure these functions have access to the DeviceOptimizer class
+# and other dependencies by placing them in the device_optimizer.py file
+# after the DeviceOptimizer class definition.

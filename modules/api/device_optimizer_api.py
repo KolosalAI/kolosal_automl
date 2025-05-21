@@ -22,12 +22,19 @@ from pathlib import Path as FilePath
 
 # Import the DeviceOptimizer and related classes
 from modules.device_optimizer import (
-    DeviceOptimizer, OptimizationMode, 
-    create_optimized_configs, create_configs_for_all_modes,
-    load_saved_configs, get_system_information, optimize_for_environment,
-    optimize_for_workload, apply_configs_to_pipeline, get_default_config
+    DeviceOptimizer, get_system_information,
+    optimize_for_environment, optimize_for_workload,
+    apply_configs_to_pipeline, get_default_config
 )
-from modules.configs import QuantizationType, QuantizationMode
+# Import classes from configs module rather than from device_optimizer
+from modules.configs import (
+    OptimizationMode, QuantizationType, QuantizationMode,
+    QuantizationConfig, BatchProcessorConfig, BatchProcessingStrategy,
+    PreprocessorConfig, NormalizationType,
+    InferenceEngineConfig, MLTrainingEngineConfig, TaskType, 
+    OptimizationStrategy as TrainingOptimizationStrategy,
+    ModelSelectionCriteria, AutoMLMode, ExplainabilityConfig, MonitoringConfig
+)
 
 # Setup logging
 logging.basicConfig(
@@ -63,6 +70,7 @@ class OptimizerRequest(BaseModel):
     resilience_level: int = Field(default=1, description="Level of fault tolerance", ge=0, le=3)
     auto_tune: bool = Field(default=True, description="Whether to enable automatic parameter tuning")
     config_id: Optional[str] = Field(default=None, description="Optional identifier for the configuration set")
+    debug_mode: bool = Field(default=False, description="Enable debug mode for more verbose logging")
     
     @validator('optimization_mode')
     def validate_optimization_mode(cls, v):
@@ -169,9 +177,11 @@ async def get_system_info(
     system details to provide a complete overview of the current environment.
     """
     try:
-        system_info = get_system_information(
+        # Create a temporary DeviceOptimizer to get system info
+        optimizer = DeviceOptimizer(
             enable_specialized_accelerators=request.enable_specialized_accelerators
         )
+        system_info = optimizer.get_system_info()
         return JSONResponse(content=system_info)
     except Exception as e:
         logger.error(f"Error getting system information: {e}")
@@ -196,8 +206,8 @@ async def create_optimized_configurations(
         # Convert string to enum
         opt_mode = OptimizationMode[request.optimization_mode]
         
-        # Generate optimized configurations
-        master_config = create_optimized_configs(
+        # Create DeviceOptimizer with all parameters
+        optimizer = DeviceOptimizer(
             config_path=request.config_path,
             checkpoint_path=request.checkpoint_path,
             model_registry_path=request.model_registry_path,
@@ -209,8 +219,11 @@ async def create_optimized_configurations(
             power_efficiency=request.power_efficiency,
             resilience_level=request.resilience_level,
             auto_tune=request.auto_tune,
-            config_id=request.config_id
+            debug_mode=request.debug_mode
         )
+        
+        # Generate optimized configurations
+        master_config = optimizer.save_configs(config_id=request.config_id)
         
         return JSONResponse(content={
             "status": "success",
@@ -237,8 +250,8 @@ async def create_all_mode_configurations(
     (BALANCED, PERFORMANCE, MEMORY_SAVING, etc.) optimized for the current system.
     """
     try:
-        # Generate configurations for all modes
-        all_configs = create_configs_for_all_modes(
+        # Initialize DeviceOptimizer with parameters from request
+        optimizer = DeviceOptimizer(
             config_path=request.config_path,
             checkpoint_path=request.checkpoint_path,
             model_registry_path=request.model_registry_path,
@@ -247,8 +260,13 @@ async def create_all_mode_configurations(
             enable_specialized_accelerators=request.enable_specialized_accelerators,
             memory_reservation_percent=request.memory_reservation_percent,
             power_efficiency=request.power_efficiency,
-            resilience_level=request.resilience_level
+            resilience_level=request.resilience_level,
+            auto_tune=request.auto_tune,
+            debug_mode=request.debug_mode
         )
+        
+        # Generate configurations for all modes
+        all_configs = optimizer.create_configs_for_all_modes()
         
         return JSONResponse(content={
             "status": "success",
@@ -280,8 +298,11 @@ async def optimize_for_specific_environment(
         if environment not in ["cloud", "desktop", "edge"]:
             raise ValueError(f"Invalid environment: {environment}. Must be 'cloud', 'desktop', or 'edge'.")
         
-        # Generate optimized configurations for the environment
-        master_config = optimize_for_environment(environment)
+        # Create a DeviceOptimizer with auto-detected environment to get system info
+        optimizer = DeviceOptimizer(environment=environment)
+        
+        # Save configs with this environment setting
+        master_config = optimizer.save_configs(config_id=f"env_{environment}_{uuid.uuid4().hex[:6]}")
         
         return JSONResponse(content={
             "status": "success",
@@ -318,8 +339,11 @@ async def optimize_for_specific_workload(
         if workload_type not in ["inference", "training", "mixed"]:
             raise ValueError(f"Invalid workload type: {workload_type}. Must be 'inference', 'training', or 'mixed'.")
         
-        # Generate optimized configurations for the workload
-        master_config = optimize_for_workload(workload_type)
+        # Create DeviceOptimizer with the specified workload type
+        optimizer = DeviceOptimizer(workload_type=workload_type)
+        
+        # Save configs with this workload setting
+        master_config = optimizer.save_configs(config_id=f"workload_{workload_type}_{uuid.uuid4().hex[:6]}")
         
         return JSONResponse(content={
             "status": "success",
@@ -350,11 +374,9 @@ async def load_configurations(
     including all component configurations (quantization, batch processing, etc.).
     """
     try:
-        # Load the configurations
-        loaded_configs = load_saved_configs(
-            config_path=request.config_path,
-            config_id=request.config_id
-        )
+        # Create DeviceOptimizer and load configs
+        optimizer = DeviceOptimizer(config_path=request.config_path)
+        loaded_configs = optimizer.load_configs(request.config_id)
         
         return JSONResponse(content={
             "status": "success",
@@ -385,7 +407,7 @@ async def apply_configurations(
     ML pipeline components (quantizer, batch processor, preprocessor, etc.).
     """
     try:
-        # Apply the configurations
+        # Apply the configurations - assume this function is implemented elsewhere
         success = apply_configs_to_pipeline(request.configs)
         
         if success:
@@ -420,19 +442,42 @@ async def get_default_configurations(
         # Convert string to enum
         opt_mode = OptimizationMode[request.optimization_mode]
         
-        # Get default configurations
-        configs = get_default_config(
+        # Create DeviceOptimizer with minimal parameters
+        optimizer = DeviceOptimizer(
             optimization_mode=opt_mode,
             workload_type=request.workload_type.value,
             environment=request.environment.value,
-            output_dir=request.output_dir,
-            enable_specialized_accelerators=request.enable_specialized_accelerators
+            enable_specialized_accelerators=request.enable_specialized_accelerators,
+            auto_tune=False  # Default configs don't use auto-tuning
         )
         
+        # Generate basic configs and return them
+        quant_config = optimizer.get_optimal_quantization_config()
+        batch_config = optimizer.get_optimal_batch_processor_config()
+        preproc_config = optimizer.get_optimal_preprocessor_config()
+        infer_config = optimizer.get_optimal_inference_engine_config()
+        train_config = optimizer.get_optimal_training_engine_config()
+        
+        configs = {
+            "quantization_config": quant_config.to_dict() if hasattr(quant_config, 'to_dict') else jsonable_encoder(quant_config),
+            "batch_processor_config": batch_config.to_dict() if hasattr(batch_config, 'to_dict') else jsonable_encoder(batch_config),
+            "preprocessor_config": preproc_config.to_dict() if hasattr(preproc_config, 'to_dict') else jsonable_encoder(preproc_config),
+            "inference_engine_config": infer_config.to_dict() if hasattr(infer_config, 'to_dict') else jsonable_encoder(infer_config),
+            "training_engine_config": train_config.to_dict() if hasattr(train_config, 'to_dict') else jsonable_encoder(train_config)
+        }
+        
+        # Save to output_dir if specified
+        if request.output_dir:
+            os.makedirs(request.output_dir, exist_ok=True)
+            for config_name, config_data in configs.items():
+                config_path = os.path.join(request.output_dir, f"{config_name}.json")
+                with open(config_path, 'w') as f:
+                    json.dump(config_data, f, indent=2)
+            
         return JSONResponse(content={
             "status": "success",
             "message": "Default configurations generated successfully",
-            "configs": jsonable_encoder(configs)
+            "configs": configs
         })
     except Exception as e:
         logger.error(f"Error getting default configurations: {e}")

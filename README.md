@@ -2,275 +2,277 @@
 
 [![MIT License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![Built with UV](https://img.shields.io/badge/built%20with-uv-%23B072FF?logo=pypi)](https://github.com/astral-sh/uv)
 [![Tests](https://img.shields.io/badge/tests-partial-yellow.svg)]()
+
+---
 
 ## 📋 Overview
 
-The Advanced ML Training Engine is a sophisticated machine learning framework that streamlines the entire ML model development lifecycle. It provides an integrated suite of tools for data preprocessing, model training, hyperparameter optimization, and inference across various machine learning tasks.
+The **Advanced ML Training Engine** streamlines the entire machine‑learning lifecycle—from data ingestion to model deployment. It ships with intelligent preprocessing, state‑of‑the‑art hyper‑parameter optimisation, device‑aware acceleration, and first‑class experiment tracking.
+
+---
 
 ## 🌟 Key Features
 
 ### 🔄 Flexible Model Training
-- Support for multiple machine learning tasks (Classification, Regression, Clustering)
-- Seamless integration with popular ML libraries (scikit-learn, XGBoost, LightGBM, CatBoost)
-- Intelligent model selection and automated optimization
 
-### 🛠️ Comprehensive Model Support
+* Multi‑task support: **classification**, **regression**, **clustering**
+* Seamless integration with scikit‑learn, XGBoost, LightGBM & CatBoost
+* Automated model selection & tuning
 
-| Classification | Regression |
-|----------------|------------|
-| Logistic Regression | Linear Regression |
-| Random Forest Classifier | Random Forest Regressor |
-| Gradient Boosting Classifier | Gradient Boosting Regressor |
-| XGBoost Classifier | XGBoost Regressor |
-| LightGBM Classifier | LightGBM Regressor |
-| CatBoost Classifier | CatBoost Regressor |
-| Support Vector Classification (SVC) | Support Vector Regression (SVR) |
+### 🛠️ Supported Algorithms <sup>(partial)</sup>
 
-### 🔍 Advanced Hyperparameter Optimization
-- **Multiple optimization strategies:**
-  - Grid Search
-  - Random Search
-  - Bayesian Optimization
-  - Adaptive Surrogate-Assisted Hyperparameter Tuning (ASHT)
-  - HyperX Advanced Optimization
+| Classification               | Regression                  |
+| ---------------------------- | --------------------------- |
+| Logistic Regression          | Linear Regression           |
+| Random Forest Classifier     | Random Forest Regressor     |
+| Gradient Boosting Classifier | Gradient Boosting Regressor |
+| XGBoost Classifier           | XGBoost Regressor           |
+| LightGBM Classifier          | LightGBM Regressor          |
+| CatBoost Classifier          | CatBoost Regressor          |
+| Support Vector Classifier    | Support Vector Regressor    |
 
-### 🧠 Intelligent Preprocessing
-- Automated feature scaling
-- Sophisticated missing value handling
-- Robust outlier detection and management
-- Advanced feature selection techniques
+### 🔍 Advanced Hyper‑parameter Optimisation
 
-### ⚡ Performance Optimization
-- Device-aware configuration
-- Adaptive batching
-- Quantization support
-- Parallel processing capabilities
-- Memory-efficient operations
+* **Grid Search**, **Random Search**, **Bayesian Optimisation**
+* **ASHT** (Adaptive Surrogate‑Assisted Hyper‑parameter Tuning)
+* **HyperX** (meta‑optimiser for large search spaces)
 
-### 📊 Comprehensive Monitoring
-- Detailed performance metrics
-- Real-time learning curve tracking
-- Interactive model performance visualization
-- Experiment tracking and reporting
+### 🧠 Smart Pre‑processing
+
+* Auto‑scaling & encoding
+* Robust missing‑value & outlier handling
+* Feature selection / extraction pipelines
+
+### ⚡ Performance Optimisation
+
+* Device‑aware config & adaptive batching
+* Quantisation & parallel execution
+* Memory‑efficient data loaders
+
+### 📊 Monitoring & Reporting
+
+* Real‑time learning curves & metric dashboards
+* Built‑in experiment tracker
+* One‑click HTML / Markdown reports
+
+---
 
 ## 🚀 Installation
 
 ### Prerequisites
-- Python 3.8+
 
-### Option 1: Standard Installation
+* **Python 3.10 or newer**
 
-1. Clone the repository:
+### **Option 1 — Fast Setup with [UV](https://github.com/astral-sh/uv) 🔥 (Recommended)**
+
 ```bash
-git clone https://github.com/Genta-Technology/kolosal_automl
-cd kolosal-automl
-```
-
-2. Install dependencies:
-```bash
-pip install -r requirements.txt
-```
-
-### Option 2: Virtual Environment Installation (Recommended)
-
-1. Clone the repository:
-```bash
-git clone https://github.com/Genta-Technology/kolosal_automl
+# 1. Clone the repository
+git clone https://github.com/Genta-Technology/kolosal_automl.git
 cd kolosal_automl
-```
 
-2. Create a virtual environment:
-```bash
-# On Windows
+# 2. (Optional) create an isolated environment
 python -m venv venv
+# Windows
 venv\Scripts\activate
-
-# On macOS/Linux
-python3 -m venv venv
+# macOS/Linux
 source venv/bin/activate
+
+# 3. Install uv (one‑time)
+pip install --upgrade pip
+pip install uv   # or: pipx install uv
+
+# 4. Sync project dependencies (ultra‑fast!)
+uv pip sync requirements.lock.txt  # preferred – reproducible
+# – or –
+uv pip install -r requirements.txt # if you don’t have a lock file yet
 ```
 
-3. Install dependencies within the virtual environment:
+### Option 2 — Standard `pip`
+
 ```bash
+git clone https://github.com/Genta-Technology/kolosal_automl.git
+cd kolosal_automl
+python -m venv venv && source venv/bin/activate  # create & activate venv
 pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-4. Optional: Install additional modules for enhanced functionality:
-```bash
-# For XGBoost support
-pip install xgboost
+> **Tip:** For GPU‑accelerated algorithms (XGBoost, LightGBM, CatBoost) install the respective extras:
+>
+> ```bash
+> pip install xgboost lightgbm catboost
+> ```
 
-# For LightGBM support
-pip install lightgbm
+---
 
-# For CatBoost support
-pip install catboost
-```
-
-5. To deactivate the virtual environment when finished:
-```bash
-deactivate
-```
-
-## 💻 Quick Start Example
+## 💻 Quick Start
 
 ```python
 from modules.engine.train_engine import MLTrainingEngine
 from modules.configs import MLTrainingEngineConfig, TaskType, OptimizationStrategy
-from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
 
-# Prepare your data
+# Load your data
 # X, y = load_your_data()
 # X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-# Create configuration
+# Configure the engine
 config = MLTrainingEngineConfig(
     task_type=TaskType.CLASSIFICATION,
     optimization_strategy=OptimizationStrategy.HYPERX,
     cv_folds=5,
-    test_size=0.2
+    test_size=0.2,
 )
 
-# Initialize training engine
 engine = MLTrainingEngine(config)
 
-# Train models
 best_model, metrics = engine.train_model(
     model=RandomForestClassifier(),
-    model_name='RandomForest',
+    model_name="RandomForest",
     param_grid={
-        'n_estimators': [50, 100, 200],
-        'max_depth': [None, 5, 10]
+        "n_estimators": [50, 100, 200],
+        "max_depth": [None, 5, 10],
     },
-    X=X_train, 
-    y=y_train
+    X=X_train,
+    y=y_train,
 )
 
-# Evaluate and save
 engine.save_model(best_model)
 predictions = engine.predict(X_test)
 ```
 
-## 🛠️ Advanced Configuration
+---
 
-The framework offers extensive configuration options through `MLTrainingEngineConfig`:
+## 🧩 Advanced Configuration Example
 
 ```python
 config = MLTrainingEngineConfig(
-    task_type=TaskType.CLASSIFICATION,                    # ML task type
-    optimization_strategy=OptimizationStrategy.BAYESIAN,  # Optimization method
-    cv_folds=5,                                           # Cross-validation folds
-    test_size=0.2,                                        # Test set proportion
-    random_state=42,                                      # Random seed
-    enable_quantization=True,                             # Enable model quantization
-    batch_size=64,                                        # Processing batch size
-    n_jobs=-1                                             # Parallel jobs (-1 = all cores)
+    task_type=TaskType.CLASSIFICATION,
+    optimization_strategy=OptimizationStrategy.BAYESIAN,
+    cv_folds=5,
+    test_size=0.2,
+    random_state=42,
+    enable_quantization=True,
+    batch_size=64,
+    n_jobs=-1,
 )
 ```
 
-## 📊 Visualization and Reporting
+---
 
-The framework automatically generates:
-- Performance reports with key metrics
-- Learning curve visualizations
-- Feature importance charts
-- Model comparison dashboards
+## 📊 Visualisation & Reporting
 
-## 🔍 Project Structure
+* Performance reports + confusion / ROC / PR curves
+* Learning‑curve GIFs
+* Feature‑importance bar charts
+* HTML & Markdown experiment summaries
+
+---
+
+## 🔍 Project Structure (abridged)
 
 ```
-ml-training-engine/
-├── app.py                 # Main application entry point
-├── modules/               # Core functionality modules
-│   ├── configs.py         # Configuration classes
-│   ├── engine/            # ML engine components
-│   │   ├── train_engine.py   # Training engine
-│   │   ├── batch_processor.py # Batch processing
-│   │   └── inference_engine.py # Model inference
-│   ├── optimizer/         # Optimization strategies
-│   └── utils/             # Utility functions
-├── models/                # Directory for saved models
-├── exported_models/       # Directory for exported models
-├── tests/                 # Unit tests
-└── requirements.txt       # Project dependencies
+kolosal_automl/
+├── app.py
+├── modules/
+│   ├── configs.py
+│   ├── engine/
+│   │   ├── train_engine.py
+│   │   ├── batch_processor.py
+│   │   └── inference_engine.py
+│   ├── optimizer/
+│   └── utils/
+├── models/
+├── exported_models/
+├── tests/
+└── requirements.txt
 ```
+
+---
 
 ## 🧪 Test Status
 
 ### Functional
 
-| Test File                      | Status     |
-|-------------------------------|------------|
-| tests/functional/test_app_api.py                 | ❌ FAILED |
-| tests\functional\test_quantizer_api.py           | ❌ FAILED |
-| tests\functional\test_data_preprocessor_api.py   | ❌ FAILED |
-| tests\functional\test_device_optimizer_api.py    | ❌ FAILED |
-| tests\functional\test_inference_engine_api.py    | ❌ FAILED |
-| tests\functional\test_train_engine_api.py        | ❌ FAILED |
-| tests\functional\test_model_manager_api.py       | ❌ FAILED |
+| File                                              | Status   |
+| ------------------------------------------------- | -------- |
+| tests/functional/test\_app\_api.py                | ❌ FAILED |
+| tests/functional/test\_quantizer\_api.py          | ❌ FAILED |
+| tests/functional/test\_data\_preprocessor\_api.py | ❌ FAILED |
+| tests/functional/test\_device\_optimizer\_api.py  | ❌ FAILED |
+| tests/functional/test\_inference\_engine\_api.py  | ❌ FAILED |
+| tests/functional/test\_train\_engine\_api.py      | ❌ FAILED |
+| tests/functional/test\_model\_manager\_api.py     | ❌ FAILED |
 
 ### Unit
 
-| Test File                      | Status     |
-|-------------------------------|------------|
-| tests/unit/test_batch_processor.py       | ✅ PASSED |
-| tests/unit/test_data_preprocessor.py     | ❌ FAILED |
-| tests/unit/test_device_optimizer.py      | ❌ FAILED |
-| tests/unit/test_inference_engine.py      | ❌ FAILED |
-| tests/unit/test_lru_ttl_cache.py         | ✅ PASSED |
-| tests/unit/test_model_manager.py         | ❌ FAILED |
-| tests/unit/test_optimizer_asht.py        | ❌ FAILED |
-| tests/unit/test_optimizer_hyperx.py      | ✅ PASSED |
-| tests/unit/test_quantizer.py             | ❌ FAILED |
-| tests/unit/test_train_engine.py          | ❌ FAILED |
+| File                                   | Status   |
+| -------------------------------------- | -------- |
+| tests/unit/test\_batch\_processor.py   | ✅ PASSED |
+| tests/unit/test\_data\_preprocessor.py | ❌ FAILED |
+| tests/unit/test\_device\_optimizer.py  | ❌ FAILED |
+| tests/unit/test\_inference\_engine.py  | ❌ FAILED |
+| tests/unit/test\_lru\_ttl\_cache.py    | ✅ PASSED |
+| tests/unit/test\_model\_manager.py     | ❌ FAILED |
+| tests/unit/test\_optimizer\_asht.py    | ❌ FAILED |
+| tests/unit/test\_optimizer\_hyperx.py  | ✅ PASSED |
+| tests/unit/test\_quantizer.py          | ❌ FAILED |
+| tests/unit/test\_train\_engine.py      | ❌ FAILED |
 
-Status: 
-| ✅ PASSED | ❌ FAILED |⬜ NOT RUN | 🛑 ERROR |
+Run all tests:
 
-To run all unit tests:
 ```bash
 pytest -vv
 ```
 
-To run a specific test:
-```bash
-python -m unittest <file_path>.py
-```
+---
+
+## 🆕 What’s New in **v0.1.1**
+
+* **Training Engine Fixes** – resolved edge‑case crashes during cross‑validation & improved error messages.
+* **Device Optimiser Fixes** – correct GPU detection on hybrid CPU‑/GPU‑systems and smarter fallback logic.
+* **Hands‑on Tutorial Notebook** – added \*Kolosal\_AutoML\_Tutorial.ipynb\* with step‑by‑step examples.
+
+  * 👉 [Open the notebook on GitHub](https://github.com/Genta-Technology/kolosal_automl/blob/main/notebooks/Kolosal_AutoML_Tutorial.ipynb)
+
+---
 
 ## 🚧 Roadmap
 
-1. **Test Suite Completion**: Address and resolve failing tests
-2. **UI Enhancements**: Improve user interface and experience
-3. **Code Optimization**: Refactor and optimize codebase
-4. **Export Format Support**: Add ONNX and PMML model export
-5. **Advanced Visualization**: Enhanced model comparison tools
-6. **Time Series Support**: Extended time series forecasting functionality
-7. **Cloud Integration**: Support for cloud-based deployment and scaling
+1. **Complete Test Suite** \&ci green
+2. UI/UX enhancements for Streamlit dashboard
+3. ONNX & PMML export support
+4. Advanced comparison visualiser
+5. Time‑series & anomaly‑detection modules
+6. Cloud‑native deployment recipes
 
-## 💻 Technologies Used
+---
 
-- **Streamlit**: Interactive frontend interface
-- **Pandas & NumPy**: Efficient data processing
-- **Scikit-learn**: Core ML algorithms and pipelines
-- **XGBoost, LightGBM, CatBoost**: Advanced gradient boosting frameworks
-- **Matplotlib & Seaborn**: Data visualization
-- **Joblib**: Model serialization
+## 💻 Technology Stack
+
+| Purpose       | Library                       |
+| ------------- | ----------------------------- |
+| UI            | Streamlit                     |
+| Data Ops      | Pandas / NumPy                |
+| Core ML       | scikit‑learn                  |
+| Boosting      | XGBoost / LightGBM / CatBoost |
+| Visuals       | Matplotlib / Seaborn          |
+| Serialisation | Joblib                        |
+
+---
 
 ## 🤝 Contributing
 
-Contributions are welcome! Please follow these steps:
+1. Fork → `git checkout -b feature/foo`
+2. Make changes & add tests
+3. `pytest -q` to verify
+4. Commit → push → PR
 
-1. Fork the repository
-2. Create a new branch (`git checkout -b feature/your-feature`)
-3. Make your changes
-4. Run tests to ensure they pass
-5. Commit your changes (`git commit -m 'Add some feature'`)
-6. Push to the branch (`git push origin feature/your-feature`)
-7. Open a Pull Request
+---
 
 ## 📄 License
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+Released under the MIT License. See [`LICENSE`](LICENSE) for details.
