@@ -232,13 +232,13 @@ pytest -vv
 
 ## 🆕 What’s New in **v0.1.1**
 
+* **Training & Inference Optimisations** – faster epoch times and lower‑latency predictions.
 * **Training Engine Fixes** – resolved edge‑case crashes during cross‑validation & improved error messages.
-* **Device Optimiser Fixes** – correct GPU detection on hybrid CPU‑/GPU‑systems and smarter fallback logic.
-* **Hands‑on Tutorial Notebook** – added \*Kolosal\_AutoML\_Tutorial.ipynb\* with step‑by‑step examples.
-
-  * 👉 [Open the notebook on GitHub](https://github.com/Genta-Technology/kolosal_automl/blob/main/notebooks/Kolosal_AutoML_Tutorial.ipynb)
-
----
+* **Device Optimiser Fixes** – correct GPU detection on hybrid CPU/GPU systems and smarter fallback logic.
+* **Report Generation Speed‑ups** – Markdown & HTML reports now render up to 3× faster.
+* **Explainability Report Patch** – SHAP/feature‑importance plots now correctly embed and save.
+* **Hands‑on Tutorial Notebook** – added *Kolosal\_AutoML\_Tutorial.ipynb* with step‑by‑step examples.
+  👉 [Open the notebook on GitHub](https://github.com/Genta-Technology/kolosal_automl/blob/main/notebooks/Kolosal_AutoML_Tutorial.ipynb)
 
 ## 🚧 Roadmap
 
