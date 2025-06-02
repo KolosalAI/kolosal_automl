@@ -199,28 +199,28 @@ kolosal_automl/
 
 | File                                              | Status   |
 | ------------------------------------------------- | -------- |
-| tests/functional/test\_app\_api.py                | ❌ FAILED |
-| tests/functional/test\_quantizer\_api.py          | ❌ FAILED |
-| tests/functional/test\_data\_preprocessor\_api.py | ❌ FAILED |
-| tests/functional/test\_device\_optimizer\_api.py  | ❌ FAILED |
-| tests/functional/test\_inference\_engine\_api.py  | ❌ FAILED |
-| tests/functional/test\_train\_engine\_api.py      | ❌ FAILED |
-| tests/functional/test\_model\_manager\_api.py     | ❌ FAILED |
+| tests/functional/test/app_api.py                | ❌ FAILED |
+| tests/functional/test/quantizer_api.py          | ❌ FAILED |
+| tests/functional/test/data_preprocessor_api.py | ❌ FAILED |
+| tests/functional/test/device_optimizer_api.py  | ❌ FAILED |
+| tests/functional/test/inference_engine_api.py  | ❌ FAILED |
+| tests/functional/test/train_engine_api.py      | ❌ FAILED |
+| tests/functional/test/model_manager_api.py     | ❌ FAILED |
 
 ### Unit
 
 | File                                   | Status   |
 | -------------------------------------- | -------- |
-| tests/unit/test\_batch\_processor.py   | ✅ PASSED |
-| tests/unit/test\_data\_preprocessor.py | ❌ FAILED |
-| tests/unit/test\_device\_optimizer.py  | ❌ FAILED |
-| tests/unit/test\_inference\_engine.py  | ❌ FAILED |
-| tests/unit/test\_lru\_ttl\_cache.py    | ✅ PASSED |
-| tests/unit/test\_model\_manager.py     | ❌ FAILED |
-| tests/unit/test\_optimizer\_asht.py    | ❌ FAILED |
-| tests/unit/test\_optimizer\_hyperx.py  | ✅ PASSED |
-| tests/unit/test\_quantizer.py          | ❌ FAILED |
-| tests/unit/test\_train\_engine.py      | ❌ FAILED |
+| tests/unit/test/batch_processor.py   | ✅ PASSED |
+| tests/unit/test/data_preprocessor.py | ❌ FAILED |
+| tests/unit/test/device_optimizer.py  | ❌ FAILED |
+| tests/unit/test/inference_engine.py  | ❌ FAILED |
+| tests/unit/test/lru_ttl_cache.py    | ✅ PASSED |
+| tests/unit/test/model_manager.py     | ❌ FAILED |
+| tests/unit/test/optimizer_asht.py    | ❌ FAILED |
+| tests/unit/test/optimizer_hyperx.py  | ✅ PASSED |
+| tests/unit/test/quantizer.py          | ❌ FAILED |
+| tests/unit/test/train_engine.py      | ❌ FAILED |
 
 Run all tests:
 
