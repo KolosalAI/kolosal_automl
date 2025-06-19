@@ -28,6 +28,12 @@ from modules.engine.inference_engine import InferenceEngine
 from modules.device_optimizer import DeviceOptimizer
 from modules.model_manager import SecureModelManager
 
+import modules.engine.batch_processor as batch_processor
+import modules.engine.data_preprocessor as data_preprocessor
+import modules.engine.lru_ttl_cache as lru_ttl_cache
+import modules.engine.quantizer as quantizer
+import modules.engine.utils as engine_utils
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -931,7 +937,7 @@ Upload your data, configure training parameters, train models, and make predicti
     """
     
     with gr.Blocks(css=css, title=title, theme=gr.themes.Soft()) as interface:
-        
+        gr.Image(value="assets/logo.png", width=120, show_label=False, show_download_button=False)
         gr.Markdown(f"""
 # {title}
 

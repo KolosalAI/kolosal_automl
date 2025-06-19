@@ -1,4 +1,3 @@
-
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import cross_val_score, ParameterSampler
@@ -25,6 +24,11 @@ import heapq
 import random
 import itertools
 from typing import Dict, List, Tuple, Any, Optional, Union, Callable
+import logging
+
+
+# Set up logging
+logger = logging.getLogger(__name__)
 
 
 class HyperOptX:
@@ -481,7 +485,7 @@ class HyperOptX:
             estimator.set_params(**params)
         except Exception as e:
             if self.verbose > 1:
-                print(f"Parameter setting error: {e}")
+                logger.warning(f"Parameter setting error: {e}")
             # Return a very poor score for invalid configurations
             return -float('inf') if self.maximize else float('inf')
         
@@ -514,7 +518,7 @@ class HyperOptX:
                 
         except Exception as e:
             if self.verbose > 1:
-                print(f"Cross-validation error: {e}")
+                logger.warning(f"Cross-validation error: {e}")
             mean_score = -float('inf') if self.maximize else float('inf')
             std_score = 0
             scores = [mean_score]
@@ -851,7 +855,7 @@ class HyperOptX:
                 
             except Exception as e:
                 if self.verbose > 1:
-                    print(f"Error training {model_name} surrogate: {e}")
+                    logger.warning(f"Error training {model_name} surrogate: {e}")
         
         # Meta-model selection based on performance
         if model_errors and self.meta_learning:
@@ -960,7 +964,7 @@ class HyperOptX:
                     all_stds.append(std)
                 except Exception as e:
                     if self.verbose > 1:
-                        print(f"Error in GP acquisition prediction: {e}")
+                        logger.warning(f"Error in GP acquisition prediction: {e}")
             
             elif model_name == 'rf':
                 try:
@@ -975,7 +979,7 @@ class HyperOptX:
                     all_stds.append(std)
                 except Exception as e:
                     if self.verbose > 1:
-                        print(f"Error in RF acquisition prediction: {e}")
+                        logger.warning(f"Error in RF acquisition prediction: {e}")
             
             elif model_name == 'nn':
                 try:
@@ -992,7 +996,7 @@ class HyperOptX:
                     all_stds.append(std)
                 except Exception as e:
                     if self.verbose > 1:
-                        print(f"Error in NN acquisition prediction: {e}")
+                        logger.warning(f"Error in NN acquisition prediction: {e}")
             
             else:  # dummy or other
                 try:
@@ -1003,7 +1007,7 @@ class HyperOptX:
                     all_stds.append(std)
                 except Exception as e:
                     if self.verbose > 1:
-                        print(f"Error in dummy acquisition prediction: {e}")
+                        logger.warning(f"Error in dummy acquisition prediction: {e}")
         
         # If no models provided valid predictions, return a default value
         if not all_means:
@@ -1290,7 +1294,7 @@ class HyperOptX:
                             results.append((result.x, -result.fun))
                     except Exception as e:
                         if self.verbose > 1:
-                            print(f"L-BFGS-B optimization error: {e}")
+                            logger.warning(f"L-BFGS-B optimization error: {e}")
         else:
             # Sequential optimization
             for x0 in x0_points:
@@ -1306,7 +1310,7 @@ class HyperOptX:
                         results.append((result.x, -result.fun))
                 except Exception as e:
                     if self.verbose > 1:
-                        print(f"L-BFGS-B optimization error: {e}")
+                        logger.warning(f"L-BFGS-B optimization error: {e}")
         
         # 2. Dual annealing for global optimization (with reduced max iterations for speed)
         try:
@@ -1321,7 +1325,7 @@ class HyperOptX:
                 results.append((result.x, -result.fun))
         except Exception as e:
             if self.verbose > 1:
-                print(f"Dual annealing optimization error: {e}")
+                logger.warning(f"Dual annealing optimization error: {e}")
         
         # 3. Differential evolution with smaller population but sufficient to explore space
         try:
@@ -1339,7 +1343,7 @@ class HyperOptX:
                 results.append((result.x, -result.fun))
         except Exception as e:
             if self.verbose > 1:
-                print(f"Differential evolution optimization error: {e}")
+                logger.warning(f"Differential evolution optimization error: {e}")
         
         # 4. If all optimizations failed or found poor results, sample points and evaluate directly
         if not results or max(r[1] for r in results) < 1e-8:
@@ -1765,7 +1769,7 @@ class HyperOptX:
         if self.meta_learning:
             problem_features = self._extract_problem_features(X, y)
             if self.verbose:
-                print(f"Problem features: {problem_features}")
+                logger.info(f"Problem features: {problem_features}")
         
         # Create multi-fidelity budget schedule
         budget_schedule = self._multi_fidelity_schedule(self.max_iter)
@@ -1790,15 +1794,15 @@ class HyperOptX:
                 selected_strategy = 'hybrid'
                 
         if self.verbose:
-            print(f"Selected optimization strategy: {selected_strategy}")
-            print(f"Initializing HyperOptX with {self.max_iter} maximum iterations")
+            logger.info(f"Selected optimization strategy: {selected_strategy}")
+            logger.info(f"Initializing HyperOptX with {self.max_iter} maximum iterations")
         
         # Strict enforcement of max_iter
         # Phase 1: Initial exploration with fewer samples to stay within max_iter
         n_initial = max(1, min(self.max_iter // 4, 5))
         
         if self.verbose:
-            print(f"Phase 1: Initial exploration with {n_initial} configurations")
+            logger.info(f"Phase 1: Initial exploration with {n_initial} configurations")
         
         # Generate initial configurations
         initial_configs = self._sample_configurations(n_initial, 'mixed')
@@ -1839,7 +1843,7 @@ class HyperOptX:
         remaining_iter = self.max_iter - current_iter
         
         if remaining_iter > 0 and self.verbose:
-            print(f"Phase 2: Iterative optimization with {remaining_iter} iterations")
+            logger.info(f"Phase 2: Iterative optimization with {remaining_iter} iterations")
         
         while current_iter < self.max_iter:
             # Current budget from schedule
@@ -1890,14 +1894,14 @@ class HyperOptX:
             batch_times = []
             
             if self.verbose > 0 and (current_iter % 5 == 0 or self.verbose >= 2):
-                print(f"  Iteration {current_iter+1}/{self.max_iter}: " + 
+                logger.info(f"  Iteration {current_iter+1}/{self.max_iter}: " + 
                     f"budget={current_budget:.2f}, evaluating {len(candidates)} candidates")
             
             for config in candidates:
                 # Check for early stopping
                 if self._needs_early_stopping(current_iter, all_scores, eval_times):
                     if self.verbose:
-                        print(f"Early stopping at iteration {current_iter+1}")
+                        logger.info(f"Early stopping at iteration {current_iter+1}")
                     break
                 
                 # Check if we've reached max_iter
@@ -1938,12 +1942,12 @@ class HyperOptX:
             # Check for early stopping
             if self._needs_early_stopping(current_iter, all_scores, eval_times):
                 if self.verbose:
-                    print(f"Early stopping at iteration {current_iter}")
+                    logger.info(f"Early stopping at iteration {current_iter}")
                 break
         
         # Final evaluation of best configurations with full budget
         if current_iter >= self.max_iter and self.verbose:
-            print("Phase 3: Final evaluation of top configurations with full budget")
+            logger.info("Phase 3: Final evaluation of top configurations with full budget")
         
             # Get top configurations
             indices = np.argsort(all_scores)
@@ -1951,6 +1955,7 @@ class HyperOptX:
                 indices = indices[::-1]  # Reverse for maximization
                 
             # Take top 3 configurations
+           
             top_k = min(3, len(all_configs))
             top_configs = [all_configs[i] for i in indices[:top_k]]
             
@@ -1972,7 +1977,7 @@ class HyperOptX:
                 self.best_estimator_.fit(X, y)
             except Exception as e:
                 if self.verbose:
-                    print(f"Error fitting best estimator: {e}")
+                    logger.warning(f"Error fitting best estimator: {e}")
                 # Fallback: fit with default parameters
                 self.best_estimator_ = clone(self.estimator)
                 self.best_estimator_.fit(X, y)
@@ -1983,11 +1988,11 @@ class HyperOptX:
         
         # Display final results
         if self.verbose:
-            print("\nOptimization completed:")
-            print(f"Total iterations: {current_iter}")
-            print(f"Best score: {self.best_score_:.6f}")
-            print(f"Best parameters: {self.best_params_}")
-            print(f"Time elapsed: {time.time() - self.start_time:.2f} seconds")
+            logger.info("\nOptimization completed:")
+            logger.info(f"Total iterations: {current_iter}")
+            logger.info(f"Best score: {self.best_score_:.6f}")
+            logger.info(f"Best parameters: {self.best_params_}")
+            logger.info(f"Time elapsed: {time.time() - self.start_time:.2f} seconds")
         
         return self
     
@@ -2024,7 +2029,7 @@ class HyperOptX:
                             stds.append(std)
                         except Exception as e:
                             if self.verbose > 1:
-                                print(f"Error in GP prediction: {e}")
+                                logger.warning(f"Error in GP prediction: {e}")
                     
                     elif model_name == 'rf':
                         # Random Forest - manually calculate std from trees
@@ -2040,7 +2045,7 @@ class HyperOptX:
                             stds.append(std)
                         except Exception as e:
                             if self.verbose > 1:
-                                print(f"Error in RF prediction: {e}")
+                                logger.warning(f"Error in RF prediction: {e}")
                     
                     elif model_name == 'nn':
                         # Neural Network - use distance-based uncertainty
@@ -2058,18 +2063,7 @@ class HyperOptX:
                             stds.append(std)
                         except Exception as e:
                             if self.verbose > 1:
-                                print(f"Error in NN prediction: {e}")
-                    
-                    elif model_name == 'dummy':
-                        # Dummy model
-                        try:
-                            mean = model.predict(X_scaled)
-                            std = np.ones_like(mean) * 0.1
-                            means.append(mean)
-                            stds.append(std)
-                        except Exception as e:
-                            if self.verbose > 1:
-                                print(f"Error in dummy prediction: {e}")
+                                logger.warning(f"Error in NN prediction: {e}")
             
             # Skip ensemble calculation if no predictions available
             if not means:
@@ -2081,7 +2075,7 @@ class HyperOptX:
                 if len(self.surrogate_weights) != len(means):
                     # If mismatch, just use equal weights
                     self.surrogate_weights = np.ones(len(means)) / len(means)
-                    
+                
                 # Weighted mean and variance
                 weights = self.surrogate_weights
                 mu = np.zeros_like(means[0])
@@ -2100,7 +2094,7 @@ class HyperOptX:
                 # Between-model variance (disagreement)
                 for i, mean in enumerate(means):
                     total_var += weights[i] * ((mean - mu) ** 2)
-                    
+                
                 sigma = np.sqrt(total_var)
             else:
                 # Equal weights if no weights provided
@@ -2215,7 +2209,7 @@ class HyperOptX:
             
         except ImportError:
             if self.verbose:
-                print("pandas is required for score_cv_results()")
+                logger.warning("pandas is required for score_cv_results()")
             return None
     
     def plot_optimization_history(self, figsize=(12, 8)):
@@ -2341,7 +2335,7 @@ class HyperOptX:
             
         except ImportError:
             if self.verbose:
-                print("matplotlib and pandas are required for plotting")
+                logger.warning("matplotlib and pandas are required for plotting")
             return None
     
     def benchmark_against_alternatives(self, X, y, methods=['grid', 'random', 'bayesian'], 
@@ -2422,7 +2416,7 @@ class HyperOptX:
         # Run GridSearchCV
         if 'grid' in methods:
             try:
-                print("Running GridSearchCV...")
+                logger.info("Running GridSearchCV...")
                 start_time = time.time()
                 grid_search = GridSearchCV(
                     self.estimator,
@@ -2439,7 +2433,7 @@ class HyperOptX:
                         try:
                             future.result(timeout=time_budget)
                         except TimeoutError:
-                            print("  GridSearchCV timed out")
+                            logger.warning("  GridSearchCV timed out")
                             results['GridSearchCV'] = {
                                 'best_score': float('nan'),
                                 'best_params': None,
@@ -2464,7 +2458,7 @@ class HyperOptX:
                         'n_iters': len(grid_search.cv_results_['params'])
                     }
             except Exception as e:
-                print(f"  Error in GridSearchCV: {e}")
+                logger.warning(f"  Error in GridSearchCV: {e}")
                 results['GridSearchCV'] = {
                     'best_score': float('nan'),
                     'best_params': None,
@@ -2476,7 +2470,7 @@ class HyperOptX:
         # Run RandomizedSearchCV
         if 'random' in methods:
             try:
-                print("Running RandomizedSearchCV...")
+                logger.info("Running RandomizedSearchCV...")
                 start_time = time.time()
                 random_search = RandomizedSearchCV(
                     self.estimator,
@@ -2495,7 +2489,7 @@ class HyperOptX:
                         try:
                             future.result(timeout=time_budget)
                         except TimeoutError:
-                            print("  RandomizedSearchCV timed out")
+                            logger.warning("  RandomizedSearchCV timed out")
                             results['RandomizedSearchCV'] = {
                                 'best_score': float('nan'),
                                 'best_params': None,
@@ -2520,7 +2514,7 @@ class HyperOptX:
                         'n_iters': n_iter
                     }
             except Exception as e:
-                print(f"  Error in RandomizedSearchCV: {e}")
+                logger.warning(f"  Error in RandomizedSearchCV: {e}")
                 results['RandomizedSearchCV'] = {
                     'best_score': float('nan'),
                     'best_params': None,
@@ -2533,7 +2527,7 @@ class HyperOptX:
         if 'bayesian' in methods:
             try:
                 from skopt import BayesSearchCV
-                print("Running BayesSearchCV...")
+                logger.info("Running BayesSearchCV...")
                 start_time = time.time()
                 from skopt.space import Real, Integer, Categorical
                 skopt_space = {}
@@ -2563,7 +2557,7 @@ class HyperOptX:
                         try:
                             future.result(timeout=time_budget)
                         except TimeoutError:
-                            print("  BayesSearchCV timed out")
+                            logger.warning("  BayesSearchCV timed out")
                             results['BayesSearchCV'] = {
                                 'best_score': float('nan'),
                                 'best_params': None,
@@ -2588,9 +2582,9 @@ class HyperOptX:
                         'n_iters': n_iter
                     }
             except ImportError:
-                print("  scikit-optimize not available, skipping BayesSearchCV")
+                logger.warning("  scikit-optimize not available, skipping BayesSearchCV")
             except Exception as e:
-                print(f"  Error in BayesSearchCV: {e}")
+                logger.warning(f"  Error in BayesSearchCV: {e}")
                 results['BayesSearchCV'] = {
                     'best_score': float('nan'),
                     'best_params': None,
@@ -2623,21 +2617,21 @@ class HyperOptX:
 
         # -----------------------
         # Print table of results
-        print("\nBenchmark Results:")
-        print("-" * 80)
-        print(f"{'Method':<20} {'Best Score':<15} {'Time (s)':<15} {'Iterations':<15}")
-        print("-" * 80)
+        logger.info("\nBenchmark Results:")
+        logger.info("-" * 80)
+        logger.info(f"{'Method':<20} {'Best Score':<15} {'Time (s)':<15} {'Iterations':<15}")
+        logger.info("-" * 80)
         for method, result in results.items():
             if method != 'summary':
                 best_score = result.get('best_score', float('nan'))
                 time_val = result.get('time', float('nan'))
                 n_iters = result.get('n_iters', 'N/A')
-                print(f"{method:<20} {best_score:<15.6f} {time_val:<15.2f} {str(n_iters):<15}")
-        print("-" * 80)
+                logger.info(f"{method:<20} {best_score:<15.6f} {time_val:<15.2f} {str(n_iters):<15}")
+        logger.info("-" * 80)
         if 'summary' in results:
             summary = results['summary']
-            print(f"HyperOptX score ratio: {summary['score_ratio']:.3f}x")
-            print(f"HyperOptX speedup: {summary['speedup']:.3f}x")
+            logger.info(f"HyperOptX score ratio: {summary['score_ratio']:.3f}x")
+            logger.info(f"HyperOptX speedup: {summary['speedup']:.3f}x")
 
         return results
 
@@ -2666,7 +2660,7 @@ if __name__ == "__main__":
     }
     
     # Create and run the optimizer
-    print("\nRunning HyperOptX for Random Forest...")
+    logger.info("\nRunning HyperOptX for Random Forest...")
     start_time = time.time()
     
     optimizer = HyperOptX(
@@ -2685,17 +2679,17 @@ if __name__ == "__main__":
     optimizer.fit(X_train, y_train)
     
     # Get results
-    print(f"\nOptimization completed in {time.time() - start_time:.2f} seconds")
-    print(f"Best parameters: {optimizer.best_params_}")
-    print(f"Best CV score: {optimizer.best_score_:.4f}")
+    logger.info(f"\nOptimization completed in {time.time() - start_time:.2f} seconds")
+    logger.info(f"Best parameters: {optimizer.best_params_}")
+    logger.info(f"Best CV score: {optimizer.best_score_:.4f}")
     
     # Evaluate on test set
     y_pred = optimizer.best_estimator_.predict(X_test)
     test_mse = mean_squared_error(y_test, y_pred)
     test_r2 = r2_score(y_test, y_pred)
     
-    print(f"Test MSE: {test_mse:.4f}")
-    print(f"Test R²: {test_r2:.4f}")
+    logger.info(f"Test MSE: {test_mse:.4f}")
+    logger.info(f"Test R²: {test_r2:.4f}")
     
     # Create visualization
     try:
@@ -2703,10 +2697,10 @@ if __name__ == "__main__":
         fig = optimizer.plot_optimization_history()
         plt.show()
     except ImportError:
-        print("Matplotlib not available for visualization")
+        logger.warning("Matplotlib not available for visualization")
     
     # Compare with alternative methods
-    print("\nComparing with alternative optimization methods...")
+    logger.info("\nComparing with alternative optimization methods...")
     results = optimizer.benchmark_against_alternatives(
         X_train, 
         y_train,
@@ -2716,8 +2710,8 @@ if __name__ == "__main__":
     )
     
     # Example with ElasticNet
-    print("\n" + "="*80)
-    print("Running HyperOptX for ElasticNet...")
+    logger.info("\n" + "="*80)
+    logger.info("Running HyperOptX for ElasticNet...")
     
     # Define parameter space for ElasticNet
     en_param_space = {
@@ -2744,17 +2738,17 @@ if __name__ == "__main__":
     elasticnet_optimizer.fit(X_train, y_train)
     
     # Get results
-    print(f"\nOptimization completed in {time.time() - start_time:.2f} seconds")
-    print(f"Best parameters: {elasticnet_optimizer.best_params_}")
-    print(f"Best CV score: {elasticnet_optimizer.best_score_:.4f}")
+    logger.info(f"\nOptimization completed in {time.time() - start_time:.2f} seconds")
+    logger.info(f"Best parameters: {elasticnet_optimizer.best_params_}")
+    logger.info(f"Best CV score: {elasticnet_optimizer.best_score_:.4f}")
     
     # Evaluate on test set
     y_pred = elasticnet_optimizer.best_estimator_.predict(X_test)
     test_mse = mean_squared_error(y_test, y_pred)
     test_r2 = r2_score(y_test, y_pred)
     
-    print(f"Test MSE: {test_mse:.4f}")
-    print(f"Test R²: {test_r2:.4f}")
+    logger.info(f"Test MSE: {test_mse:.4f}")
+    logger.info(f"Test R²: {test_r2:.4f}")
     
     # Create visualization for ElasticNet
     try:
@@ -2762,4 +2756,4 @@ if __name__ == "__main__":
         fig = elasticnet_optimizer.plot_optimization_history()
         plt.show()
     except ImportError:
-        print("Matplotlib not available for visualization")
+        logger.warning("Matplotlib not available for visualization")

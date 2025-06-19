@@ -8,7 +8,6 @@ import threading
 import gc
 from typing import Dict, List, Any, Optional, Union, Tuple, Callable
 from datetime import datetime
-import traceback
 import numpy as np
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
@@ -31,12 +30,6 @@ try:
     JOBLIB_AVAILABLE = True
 except ImportError:
     JOBLIB_AVAILABLE = False
-
-try:
-    import intel
-    INTEL_PYTHON = True
-except ImportError:
-    INTEL_PYTHON = False
 
 try:
     import mkl
@@ -355,39 +348,28 @@ class MemoryPool:
         """Get a buffer of the specified shape and type from the pool or create one"""
         with self.lock:
             key = (shape, np.dtype(dtype).name)
-            
-            # Check if we have a free buffer
             if key in self.buffer_pools and self.buffer_pools[key]:
                 return self.buffer_pools[key].pop()
-            
-            # No buffer available, create a new one
-            return np.zeros(shape, dtype=dtype)
+            # Use np.empty for performance (will be overwritten)
+            return np.empty(shape, dtype=dtype)
     
     def return_buffer(self, buffer: np.ndarray):
         """Return a buffer to the pool for reuse"""
         if buffer is None:
             return
-            
         with self.lock:
             key = (buffer.shape, buffer.dtype.name)
-            
-            # Initialize pool for this shape if it doesn't exist
             if key not in self.buffer_pools:
                 self.buffer_pools[key] = []
-                
-            # Add buffer to pool if we have space
             if len(self.buffer_pools[key]) < self.max_buffers:
-                # Zero out the buffer before returning (security/consistency)
                 buffer.fill(0)
                 self.buffer_pools[key].append(buffer)
     
     def clear(self):
-        """Clear all buffers from the pool"""
         with self.lock:
             self.buffer_pools.clear()
     
     def get_stats(self) -> Dict[str, Any]:
-        """Get statistics about the memory pool"""
         with self.lock:
             total_buffers = sum(len(buffers) for buffers in self.buffer_pools.values())
             memory_usage = 0
@@ -396,7 +378,6 @@ class MemoryPool:
                     shape, dtype_name = key
                     buffer_size = np.prod(shape) * np.dtype(dtype_name).itemsize
                     memory_usage += buffer_size * len(buffers)
-                    
             return {
                 "total_buffers": total_buffers,
                 "memory_usage_bytes": memory_usage,
@@ -656,6 +637,9 @@ class InferenceEngine:
             console_handler.setFormatter(formatter)
             logger.addHandler(console_handler)
         
+        # Use lazy logging for performance
+        logger.propagate = False
+        
         return logger
     
     def _setup_resource_management(self):
@@ -679,9 +663,11 @@ class InferenceEngine:
                 if hasattr(mkl, "enable_fast_mm"):
                     mkl.enable_fast_mm(1)
                     
-                self.logger.info(f"MKL optimizations enabled with {thread_count} threads")
+                if self.logger.isEnabledFor(logging.INFO):
+                    self.logger.info(f"MKL optimizations enabled with {thread_count} threads")
             except Exception as e:
-                self.logger.warning(f"Failed to configure MKL: {str(e)}")
+                if self.logger.isEnabledFor(logging.WARNING):
+                    self.logger.warning(f"Failed to configure MKL: {str(e)}")
         
         # Setup NUMA optimization if available
         self.numa_nodes = []
@@ -702,9 +688,11 @@ class InferenceEngine:
                     if self.config.set_cpu_affinity:
                         try:
                             p.cpu_affinity(usable_cores)
-                            self.logger.info(f"CPU affinity set to cores {usable_cores}")
+                            if self.logger.isEnabledFor(logging.INFO):
+                                self.logger.info(f"CPU affinity set to cores {usable_cores}")
                         except Exception as e:
-                            self.logger.warning(f"Failed to set CPU affinity: {str(e)}")
+                            if self.logger.isEnabledFor(logging.WARNING):
+                                self.logger.warning(f"Failed to set CPU affinity: {str(e)}")
                     
                     # Detect NUMA nodes if possible
                     if hasattr(psutil, "numa_memory_info"):
@@ -717,14 +705,18 @@ class InferenceEngine:
                         self.thread_to_core_map[i] = usable_cores[i % len(usable_cores)]
                         
             except Exception as e:
-                self.logger.warning(f"Failed to setup NUMA optimization: {str(e)}")
+                if self.logger.isEnabledFor(logging.WARNING):
+                    self.logger.warning(f"Failed to setup NUMA optimization: {str(e)}")
         
-        # Configure thread pool with optimized settings
-        self.thread_pool = ThreadPoolExecutor(
-            max_workers=thread_count,
-            thread_name_prefix="InferenceWorker",
-            initializer=self._thread_pool_initializer,
-        )
+        # Use a shared thread pool if possible
+        if hasattr(self, 'shared_thread_pool') and self.shared_thread_pool:
+            self.thread_pool = self.shared_thread_pool
+        else:
+            self.thread_pool = ThreadPoolExecutor(
+                max_workers=thread_count,
+                thread_name_prefix="InferenceWorker",
+                initializer=self._thread_pool_initializer,
+            )
         
         # Large pages, if available (Linux-specific feature)
         if os.name == 'posix' and hasattr(os, 'madvise') and self.config.enable_memory_optimization:
@@ -732,12 +724,14 @@ class InferenceEngine:
                 # Attempt to enable transparent huge pages (THP)
                 with open("/sys/kernel/mm/transparent_hugepage/enabled", "w") as f:
                     f.write("always")
-                self.logger.info("Transparent huge pages enabled for better memory performance")
+                if self.logger.isEnabledFor(logging.INFO):
+                    self.logger.info("Transparent huge pages enabled for better memory performance")
             except (IOError, PermissionError):
                 # Not critical if this fails
                 pass
         
-        self.logger.info(f"Advanced resource management configured with {thread_count} threads")
+        if self.logger.isEnabledFor(logging.INFO):
+            self.logger.info(f"Advanced resource management configured with {thread_count} threads")
     
     def _thread_pool_initializer(self):
         """Initialize worker thread with optimized settings"""
@@ -756,9 +750,11 @@ class InferenceEngine:
                 p = psutil.Process()
                 p.cpu_affinity([core_id])
                 
-                self.logger.debug(f"Worker thread {threading.current_thread().name} pinned to core {core_id}")
+                if self.logger.isEnabledFor(logging.DEBUG):
+                    self.logger.debug(f"Worker thread {threading.current_thread().name} pinned to core {core_id}")
             except Exception as e:
-                self.logger.debug(f"Failed to pin thread to core: {str(e)}")
+                if self.logger.isEnabledFor(logging.DEBUG):
+                    self.logger.debug(f"Failed to pin thread to core: {str(e)}")
         
         # Limit internal parallelism of math libraries for this thread
         if THREADPOOLCTL_AVAILABLE:
@@ -969,7 +965,8 @@ class InferenceEngine:
             # Detect model type if not provided
             if model_type is None:
                 model_type = self._detect_model_type(model_path)
-                self.logger.info(f"Auto-detected model type: {model_type}")
+                if self.logger.isEnabledFor(logging.INFO):
+                    self.logger.info(f"Auto-detected model type: {model_type}")
             
             # Load the model based on type
             if model_type == ModelType.SKLEARN:
@@ -1066,10 +1063,14 @@ class InferenceEngine:
             return True
         
         except Exception as e:
-            self.logger.error(f"Failed to load model: {str(e)}")
-            if self.config.debug_mode:
-                self.logger.error(traceback.format_exc())
-            
+            if self.logger.isEnabledFor(logging.ERROR):
+                self.logger.error(f"Failed to load model: {str(e)}")
+            try:
+                import traceback
+                if self.config.debug_mode:
+                    self.logger.error(traceback.format_exc())
+            except ImportError:
+                pass
             self.state = EngineState.ERROR
             return False
     
@@ -1390,10 +1391,14 @@ class InferenceEngine:
             return True, predictions, metadata
             
         except Exception as e:
-            self.logger.error(f"Prediction error: {str(e)}")
-            if self.config.debug_mode:
-                self.logger.error(traceback.format_exc())
-            
+            if self.logger.isEnabledFor(logging.ERROR):
+                self.logger.error(f"Prediction error: {str(e)}")
+            try:
+                import traceback
+                if self.config.debug_mode:
+                    self.logger.error(traceback.format_exc())
+            except ImportError:
+                pass
             self.metrics.record_error()
             return False, None, {"error": str(e)}
             
@@ -1426,7 +1431,8 @@ class InferenceEngine:
             features = np.ascontiguousarray(features)
             
         # Choose prediction method based on model type
-        if self.model_type == ModelType.SKLEARN:
+        model_type = self.model_type
+        if model_type == ModelType.SKLEARN:
             # Scikit-learn models 
             # For batch predictions, use vectorized APIs directly
             if hasattr(self.model, 'predict_proba') and self.config.return_probabilities:
@@ -1436,138 +1442,82 @@ class InferenceEngine:
                 # Standard prediction
                 return self.model.predict(features)
                 
-        elif self.model_type == ModelType.XGBOOST:
+        elif model_type == ModelType.XGBOOST:
             try:
-                # Use optimized XGBoost prediction path
                 import xgboost as xgb
-                
-                # Create DMatrix for efficient prediction
-                # Use thread pool for vectorized operations
                 dmatrix = xgb.DMatrix(features)
-                
-                # Set prediction parameters
                 pred_params = {}
-                # Set thread limit based on size
                 if features.shape[0] <= 10:
-                    # For small batches, use single thread to avoid overhead
                     pred_params['ntree_limit'] = 0
                     pred_params['nthread'] = 1
                 else:
-                    # For larger batches, use multiple threads
                     pred_params['nthread'] = min(4, self.thread_count)
-                    
-                # Make the prediction
                 return self.model.predict(dmatrix, **pred_params)
             except Exception as e:
-                self.logger.warning(f"Optimized XGBoost prediction failed: {str(e)}, falling back to basic")
-                # Fallback to basic prediction
+                if self.logger.isEnabledFor(logging.WARNING):
+                    self.logger.warning(f"Optimized XGBoost prediction failed: {str(e)}, falling back to basic")
                 return self.model.predict(features)
-                
-        elif self.model_type == ModelType.LIGHTGBM:
+        elif model_type == ModelType.LIGHTGBM:
             try:
-                # Use optimized LightGBM prediction path
-                # LightGBM can accept numpy arrays directly
+                import lightgbm as lgb
                 pred_params = {}
-                # Set thread limit based on batch size
                 if features.shape[0] <= 10:
                     pred_params['num_threads'] = 1
                 else:
                     pred_params['num_threads'] = min(4, self.thread_count)
-                
-                # Make the prediction
                 return self.model.predict(features, **pred_params)
             except Exception as e:
-                self.logger.warning(f"Optimized LightGBM prediction failed: {str(e)}")
-                # Try basic prediction without parameters
+                if self.logger.isEnabledFor(logging.WARNING):
+                    self.logger.warning(f"Optimized LightGBM prediction failed: {str(e)}")
                 return self.model.predict(features)
-                
-        elif self.model_type == ModelType.ENSEMBLE:
-            # Ensemble prediction based on ensemble type
+        elif model_type == ModelType.ENSEMBLE:
             if hasattr(self.model, 'predict'):
-                # scikit-learn compatible ensemble
                 return self.model.predict(features)
             elif isinstance(self.model, dict) and 'models' in self.model:
-                # Custom ensemble - process with optimized path
                 return self._predict_custom_ensemble_optimized(features, self.model)
             else:
                 raise ValueError(f"Unsupported ensemble model format")
-                
-        elif self.model_type == ModelType.CUSTOM:
-            # Try common prediction interfaces
+        elif model_type == ModelType.CUSTOM:
             if hasattr(self.model, 'predict'):
                 return self.model.predict(features)
             elif callable(self.model):
                 return self.model(features)
             else:
                 raise ValueError(f"Model does not have a standard prediction interface")
-                
         else:
-            raise ValueError(f"Unsupported model type: {self.model_type}")
-    
-    def _predict_custom_ensemble_optimized(self, features: np.ndarray, ensemble_config: Dict) -> np.ndarray:
+            raise ValueError(f"Unsupported model type: {model_type}")
+
+    def _predict_compiled(self, features: np.ndarray) -> np.ndarray:
         """
-        Optimized prediction using a custom ensemble model with vectorized operations.
+        Make a prediction using the compiled model (ONNX/Treelite).
         
         Args:
             features: Input features
-            ensemble_config: Ensemble configuration
             
         Returns:
-            Ensemble prediction results
+            Prediction results
         """
-        models = ensemble_config.get('models', [])
-        weights = ensemble_config.get('weights', None)
-        method = ensemble_config.get('method', 'average')
+        if self.compiled_model is None:
+            raise RuntimeError("No compiled model available")
         
-        if not models:
-            raise ValueError("Ensemble has no models")
-        
-        # Optimize: Use parallel processing for models when worth it
-        if len(models) >= 3 and features.shape[0] > 10:
-            # Parallelize model predictions
-            with ThreadPoolExecutor(max_workers=min(len(models), self.thread_count)) as executor:
-                futures = [executor.submit(model.predict, features) for model in models]
-                predictions = [future.result() for future in futures]
+        # Handle different compiled model types
+        if hasattr(self.compiled_model, 'run'):  # ONNX Runtime
+            input_name = getattr(self, 'onnx_input_name', 'float_input')
+            onnx_inputs = {input_name: features.astype(np.float32)}
+            outputs = self.compiled_model.run(None, onnx_inputs)
+            return outputs[0]
+        elif hasattr(self.compiled_model, 'predict'):  # Treelite
+            try:
+                from treelite_runtime import Batch
+            except ImportError:
+                raise RuntimeError("treelite_runtime is not available")
+            batch = Batch.from_npy2d(features)
+            return self.compiled_model.predict(batch)
         else:
-            # Sequential processing for small workloads to avoid thread overhead
-            predictions = [model.predict(features) for model in models]
-            
-        # Stack predictions for aggregation - optimize memory layout
-        stacked = np.stack(predictions)
-        
-        # Combine predictions based on method
-        if method == 'average':
-            if weights is not None:
-                # Weights provided - use vectorized weighted average
-                weights_array = np.array(weights).reshape(-1, 1)
-                if stacked.ndim > 2:
-                    # For multi-output predictions, apply weights along first axis
-                    return np.average(stacked, axis=0, weights=weights_array)
-                else:
-                    # Single output
-                    return np.average(stacked, axis=0, weights=weights)
-            else:
-                # Simple average - use optimized mean function
-                return np.mean(stacked, axis=0)
-                
-        elif method == 'vote':
-            # Voting (classification only)
-            # Convert to class indices if probabilities
-            if stacked.ndim > 2:
-                stacked = np.argmax(stacked, axis=2)
-            
-            # Use vectorized operations for voting
-            vote_results = np.zeros((features.shape[0],), dtype=np.int64)
-            
-            # Efficient vote counting
-            for i in range(features.shape[0]):
-                vote_results[i] = np.bincount(stacked[:, i].astype(np.int64)).argmax()
-                
-            return vote_results
-        
-        else:
-            raise ValueError(f"Unsupported ensemble method: {method}")
-    
+            if self.logger.isEnabledFor(logging.WARNING):
+                self.logger.warning("Unknown compiled model type, falling back to regular prediction")
+            return self._predict_internal(features)
+
     def enqueue_prediction(self, features: np.ndarray, 
                           priority: BatchPriority = BatchPriority.NORMAL,
                           timeout_ms: Optional[float] = None) -> Any:
@@ -1669,11 +1619,14 @@ class InferenceEngine:
                 return result
             
             except Exception as e:
-                self.logger.error(f"Batch prediction error: {str(e)}")
-                if self.config.debug_mode:
-                    self.logger.error(traceback.format_exc())
-                
-                # Fall back to processing individually
+                if self.logger.isEnabledFor(logging.ERROR):
+                    self.logger.error(f"Batch prediction error: {str(e)}")
+                try:
+                    import traceback
+                    if self.config.debug_mode:
+                        self.logger.error(traceback.format_exc())
+                except ImportError:
+                    pass
                 self.logger.info("Falling back to individual processing after batch error")
         
         # If shapes are incompatible or batch processing failed, process individually
@@ -1854,15 +1807,19 @@ class InferenceEngine:
         
         try:
             if self.model_type == self.ModelType.SKLEARN:
-                # Compile scikit-learn model to ONNX if available
                 if not self.config.onnx_available:
-                    self.logger.warning("ONNX not available for model compilation")
+                    if self.logger.isEnabledFor(logging.WARNING):
+                        self.logger.warning("ONNX not available for model compilation")
                     return
-                    
-                import onnx
-                import onnxruntime
-                from skl2onnx import convert_sklearn
-                from skl2onnx.common.data_types import FloatTensorType
+                try:
+                    import onnx
+                    import onnxruntime
+                    from skl2onnx import convert_sklearn
+                    from skl2onnx.common.data_types import FloatTensorType
+                except ImportError:
+                    if self.logger.isEnabledFor(logging.WARNING):
+                        self.logger.warning("skl2onnx or onnxruntime not available")
+                    return
                 
                 # Get input shape for ONNX conversion
                 n_features = len(self.feature_names) if self.feature_names else (
@@ -1895,13 +1852,17 @@ class InferenceEngine:
                 self.logger.info("Model compiled to ONNX format successfully")
                 
             elif self.model_type in [self.ModelType.XGBOOST, self.ModelType.LIGHTGBM]:
-                # Compile tree models with Treelite if available
                 if not self.config.treelite_available:
-                    self.logger.warning("Treelite not available for model compilation")
+                    if self.logger.isEnabledFor(logging.WARNING):
+                        self.logger.warning("Treelite not available for model compilation")
                     return
-                    
-                import treelite
-                import treelite_runtime
+                try:
+                    import treelite
+                    import treelite_runtime
+                except ImportError:
+                    if self.logger.isEnabledFor(logging.WARNING):
+                        self.logger.warning("treelite or treelite_runtime not available")
+                    return
                 
                 # Handle different tree model types
                 if self.model_type == self.ModelType.XGBOOST:
@@ -1929,10 +1890,13 @@ class InferenceEngine:
                 self.logger.info(f"Model type {self.model_type.name} does not support compilation")
         
         except Exception as e:
-            self.logger.error(f"Model compilation failed: {str(e)}")
-            import traceback
-            self.logger.debug(traceback.format_exc())
-            # Reset compiled model to None on failure
+            if self.logger.isEnabledFor(logging.ERROR):
+                self.logger.error(f"Model compilation failed: {str(e)}")
+            try:
+                import traceback
+                self.logger.debug(traceback.format_exc())
+            except ImportError:
+                pass
             self.compiled_model = None
 
 
@@ -2018,19 +1982,30 @@ class InferenceEngine:
             # Load model based on type
             if model_type == self.ModelType.SKLEARN:
                 if self.config.joblib_available:
-                    import joblib
-                    model = joblib.load(model_path)
+                    try:
+                        import joblib
+                        model = joblib.load(model_path)
+                    except ImportError:
+                        with open(model_path, 'rb') as f:
+                            import pickle
+                            model = pickle.load(f)
                 else:
                     with open(model_path, 'rb') as f:
                         import pickle
                         model = pickle.load(f)
             elif model_type == self.ModelType.XGBOOST:
-                import xgboost as xgb
-                model = xgb.Booster()
-                model.load_model(model_path)
+                try:
+                    import xgboost as xgb
+                    model = xgb.Booster()
+                    model.load_model(model_path)
+                except ImportError:
+                    raise RuntimeError("xgboost is not available")
             elif model_type == self.ModelType.LIGHTGBM:
-                import lightgbm as lgb
-                model = lgb.Booster(model_file=model_path)
+                try:
+                    import lightgbm as lgb
+                    model = lgb.Booster(model_file=model_path)
+                except ImportError:
+                    raise RuntimeError("lightgbm is not available")
             else:
                 with open(model_path, 'rb') as f:
                     import pickle
@@ -2093,24 +2068,23 @@ class InferenceEngine:
         """
         if self.compiled_model is None:
             raise RuntimeError("No compiled model available")
-            
+        
         # Handle different compiled model types
         if hasattr(self.compiled_model, 'run'):  # ONNX Runtime
-            # Run ONNX model
             input_name = getattr(self, 'onnx_input_name', 'float_input')
             onnx_inputs = {input_name: features.astype(np.float32)}
             outputs = self.compiled_model.run(None, onnx_inputs)
             return outputs[0]
-            
         elif hasattr(self.compiled_model, 'predict'):  # Treelite
-            # Create DMatrix for Treelite
-            from treelite_runtime import Batch
+            try:
+                from treelite_runtime import Batch
+            except ImportError:
+                raise RuntimeError("treelite_runtime is not available")
             batch = Batch.from_npy2d(features)
             return self.compiled_model.predict(batch)
-            
         else:
-            # Unknown compiled model type, fallback to regular prediction
-            self.logger.warning("Unknown compiled model type, falling back to regular prediction")
+            if self.logger.isEnabledFor(logging.WARNING):
+                self.logger.warning("Unknown compiled model type, falling back to regular prediction")
             return self._predict_internal(features)
 
 
@@ -2153,7 +2127,7 @@ class InferenceEngine:
             validation_results['prediction_type'] = str(type(prediction))
             
             # Additional checks for specific model types
-            if self.model_type == self.ModelType.SKLEARN:
+            if self.model_type == ModelType.SKLEARN:
                 if hasattr(self.model, 'get_params'):
                     params = self.model.get_params()
                     validation_results['params'] = {k: str(v) for k, v in params.items()}

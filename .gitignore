@@ -166,3 +166,6 @@ result/
 configs/
 data/
 mlruns/
+static/
+model_registry/
+notebooks/
