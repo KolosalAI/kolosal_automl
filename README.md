@@ -3,20 +3,22 @@
 [![MIT License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Built with UV](https://img.shields.io/badge/built%20with-uv-%23B072FF?logo=pypi)](https://github.com/astral-sh/uv)
-[![Version](https://img.shields.io/badge/version-v0.1.2-green.svg)]()
+[![Version](https://img.shields.io/badge/version-v0.1.3-green.svg)]()
 [![Tests](https://img.shields.io/badge/tests-partial-yellow)]()
 
-### 🌟 **New Features**
+### 🌟 **New Features in v0.1.3**
 
+* **Advanced Batch Processing API** – Hig## 📝 Previous Releases
+* **🚀 Unified CLI Interface** – New main.py with interactive mode selection between GUI and API
+* **🔧 Enhanced API Integration** – Complete REST API server with health checks for all modules
+* **🎯 Improved Error Handling** – Robust error handling and comprehensive logging across all components
+* **📊 Better System Integration** – Seamless switching between web interface and API server modes
 * **Interactive CLI Mode** – Choose between GUI, API, or system info with simple menu
 * **Direct Mode Selection** – Launch specific modes directly via command line flags
 * **Version Display** – Easy version checking with --version flag
 * **System Analysis** – Built-in hardware and software analysis tools
 * **Enhanced Logging** – Comprehensive logging across all components
 
-## 📝 Previous Releases
-
-### **v0.1.1 Highlights**
 ---
 
 ## 📋 Overview
@@ -66,16 +68,22 @@
 * Auto‑scaling & encoding
 * Robust missing‑value & outlier handling
 * Feature selection / extraction pipelines
+* **Incremental Learning** with partial_fit support
 
 ### ⚡ Performance Optimisation
 
 * Device‑aware config & adaptive batching
+* **Advanced Batch Processing** with priority queues
+* **Dynamic Memory Management** with optimization
+* **Asynchronous Processing** for non-blocking operations
 * Quantisation & parallel execution
 * Memory‑efficient data loaders
 
 ### 📊 Monitoring & Reporting
 
 * Real‑time learning curves & metric dashboards
+* **Performance Analytics** with detailed insights
+* **Job Status Monitoring** for async operations
 * Built‑in experiment tracker
 * Performance comparison across models
 * Feature importance visualizations
@@ -236,11 +244,19 @@ uv run python modules/api/app.py
 - **Interactive Docs**: http://localhost:8000/docs
 - **API Health**: http://localhost:8000/health
 
+#### **🆕 Advanced API Features:**
+- **Batch Processing API**: `/api/batch` - High-performance batch operations with adaptive sizing
+- **Async Inference**: `/api/inference/predict/async` - Non-blocking predictions with job tracking
+- **Performance Metrics**: `/api/inference/metrics` - Real-time performance analytics
+- **Health Monitoring**: Complete health checks for all API components
+
 ### **💻 Option 3: Python API**
 
 ```python
 from modules.engine.train_engine import MLTrainingEngine
-from modules.configs import MLTrainingEngineConfig, TaskType, OptimizationStrategy
+from modules.engine.inference_engine import InferenceEngine
+from modules.engine.batch_processor import BatchProcessor
+from modules.configs import MLTrainingEngineConfig, TaskType, OptimizationStrategy, BatchProcessorConfig
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
 
@@ -248,7 +264,7 @@ from sklearn.ensemble import RandomForestClassifier
 # X, y = load_your_data()
 # X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-# Configure the engine
+# Configure the training engine
 config = MLTrainingEngineConfig(
     task_type=TaskType.CLASSIFICATION,
     optimization_strategy=OptimizationStrategy.HYPERX,
@@ -270,7 +286,21 @@ best_model, metrics = engine.train_model(
 )
 
 engine.save_model(best_model)
-predictions = engine.predict(X_test)
+
+# 🆕 Advanced Batch Processing
+batch_config = BatchProcessorConfig(
+    initial_batch_size=32,
+    max_batch_size=128,
+    enable_priority_queue=True,
+    enable_adaptive_batching=True
+)
+
+batch_processor = BatchProcessor(batch_config)
+batch_processor.start(lambda batch: best_model.predict(batch))
+
+# Async prediction with priority
+future = batch_processor.enqueue_predict(X_test[0:1], priority=BatchPriority.HIGH)
+predictions = future.result()
 ```
 
 ---
@@ -319,7 +349,10 @@ predictions = engine.predict(X_test)
 ## 🧩 Advanced Configuration Example
 
 ```python
-config = MLTrainingEngineConfig(
+from modules.configs import MLTrainingEngineConfig, BatchProcessorConfig, InferenceEngineConfig
+
+# Training Configuration
+training_config = MLTrainingEngineConfig(
     task_type=TaskType.CLASSIFICATION,
     optimization_strategy=OptimizationStrategy.BAYESIAN,
     cv_folds=5,
@@ -331,6 +364,31 @@ config = MLTrainingEngineConfig(
     feature_selection=True,
     early_stopping=True,
     early_stopping_rounds=10,
+)
+
+# 🆕 Batch Processing Configuration
+batch_config = BatchProcessorConfig(
+    initial_batch_size=16,
+    max_batch_size=256,
+    batch_timeout=0.01,
+    enable_priority_queue=True,
+    enable_adaptive_batching=True,
+    enable_monitoring=True,
+    max_retries=3,
+    processing_strategy=BatchProcessingStrategy.ADAPTIVE
+)
+
+# 🆕 Enhanced Inference Configuration
+inference_config = InferenceEngineConfig(
+    enable_batching=True,
+    max_batch_size=128,
+    batch_timeout=0.02,
+    enable_request_deduplication=True,
+    max_cache_entries=2000,
+    cache_ttl_seconds=7200,
+    enable_quantization=True,
+    max_concurrent_requests=200,
+    enable_throttling=True
 )
 ```
 
@@ -369,10 +427,11 @@ kolosal_automl/
 │   │   ├── 📄 model_manager_api.py
 │   │   ├── 📄 quantizer_api.py
 │   │   ├── 📄 train_engine_api.py
+│   │   ├── 📄 batch_processor_api.py # 🆕 Batch processing API
 │   │   └── 📄 README.md            # 🆕 API documentation
 │   ├── 📁 engine/                  # Core ML engines
 │   │   ├── 📄 __init__.py
-│   │   ├── 📄 batch_processor.py
+│   │   ├── 📄 batch_processor.py   # 🆕 Advanced batch processing
 │   │   ├── 📄 data_preprocessor.py
 │   │   ├── 📄 inference_engine.py
 │   │   ├── 📄 lru_ttl_cache.py
@@ -446,31 +505,34 @@ pytest -vv
 
 ---
 
-## 🆕 What's New in **v0.1.2**
+## 🆕 What's New in **v0.1.3**
 
 ### 🎉 **Major Updates**
 
-* **🚀 Unified CLI Interface** – New main.py with interactive mode selection between GUI and API
-* **🔧 Enhanced API Integration** – Complete REST API server with health checks for all modules
-* **🎯 Improved Error Handling** – Robust error handling and comprehensive logging across all components
-* **📊 Better System Integration** – Seamless switching between web interface and API server modes
-* **🔐 Enhanced Security** – Improved authentication and encryption support in API endpoints
+* **🚀 Advanced Batch Processing System** – High-performance batch processor with adaptive sizing, priority queues, and memory optimization
+* **⚡ Asynchronous Job Management** – Non-blocking task execution with comprehensive job tracking and status monitoring
+* **🔧 Enhanced Inference Engine** – Dynamic batching, request deduplication, comprehensive caching, and performance analytics
+* **📊 Real-time Performance Monitoring** – Detailed metrics collection with insights for optimization
+* **🧠 Memory Optimization Framework** – Advanced memory management with garbage collection and usage monitoring
+* **� Robust Error Handling** – Enhanced error recovery, retry mechanisms, and detailed error reporting
 
 ### 🔧 **Technical Improvements**
 
-* **Complete API Health Checks** – All API endpoints now have proper health monitoring
-* **Enhanced CLI Experience** – Interactive mode with clear options and helpful guidance
-* **Better Documentation** – Comprehensive CLI usage guide and API documentation
-* **System Information Display** – Built-in system analysis and optimization recommendations
-* **Streamlined Installation** – Improved UV integration with clearer setup instructions
+* **Batch Processing API** – Complete REST API for batch operations with configurable strategies
+* **Async Inference Endpoints** – Non-blocking prediction requests with job tracking
+* **Enhanced Health Monitoring** – Comprehensive health checks for all system components
+* **Performance Analytics** – Real-time metrics with detailed performance insights
+* **Memory Management** – Advanced memory optimization with automatic garbage collection
+* **Request Deduplication** – Intelligent caching to avoid redundant computations
 
 ### 🌟 **New Features**
 
-* **Interactive CLI Mode** – Choose between GUI, API, or system info with simple menu
-* **Direct Mode Selection** – Launch specific modes directly via command line flags
-* **Version Display** – Easy version checking with --version flag
-* **System Analysis** – Built-in hardware and software analysis tools
-* **Enhanced Logging** – Comprehensive logging across all components
+* **Priority-based Processing** – Handle high-priority requests with advanced queue management
+* **Adaptive Batch Sizing** – Dynamic batch size adjustment based on system load
+* **Feature Importance Analysis** – Built-in feature importance calculation for model interpretability
+* **Job Status Tracking** – Complete async job lifecycle management with status monitoring
+* **Enhanced Documentation** – Comprehensive API documentation with examples and use cases
+* **Performance Profiling** – Detailed performance metrics and optimization recommendations
 
 ## � Previous Releases
 
@@ -486,30 +548,35 @@ pytest -vv
 ## 🚧 Roadmap
 
 1. **Complete Test Suite** & CI green ✨
-2. **Enhanced API Endpoints** for advanced model management
-3. **Docker Containerization** for easy deployment
-4. **Model Monitoring** & drift detection
-5. **AutoML Pipeline** with automated feature engineering
-6. **Time‑series & anomaly‑detection** modules
-7. **Cloud‑native deployment** recipes (AWS, GCP, Azure)
-8. **MLOps Integration** with popular platforms
+2. **Enhanced Batch Processing** with distributed computing support
+3. **Advanced Async Operations** with streaming and WebSocket support
+4. **Docker Containerization** for easy deployment
+5. **Model Monitoring** & drift detection with real-time alerts
+6. **AutoML Pipeline** with automated feature engineering
+7. **Time‑series & anomaly‑detection** modules
+8. **Cloud‑native deployment** recipes (AWS, GCP, Azure)
+9. **MLOps Integration** with popular platforms
+10. **Distributed Training** with multi-node support
 
 ---
 
 ## 💻 Technology Stack
 
-| Purpose           | Library                       |
-| ----------------- | ----------------------------- |
-| **CLI Interface** | argparse / subprocess 🆕      |
-| **Web UI**        | Gradio                        |
-| **Package Mgmt**  | UV                            |
-| **API Server**    | FastAPI / Uvicorn 🆕          |
-| **Data Ops**      | Pandas / NumPy                |
-| **Core ML**       | scikit‑learn                  |
-| **Boosting**      | XGBoost / LightGBM / CatBoost |
-| **Visuals**       | Matplotlib / Seaborn          |
-| **Serialisation** | Joblib / Pickle               |
-| **Optimization**  | Optuna / Hyperopt             |
+| Purpose              | Library                       |
+| -------------------- | ----------------------------- |
+| **CLI Interface**    | argparse / subprocess 🆕      |
+| **Web UI**           | Gradio                        |
+| **Package Mgmt**     | UV                            |
+| **API Server**       | FastAPI / Uvicorn 🆕          |
+| **Batch Processing** | Custom BatchProcessor 🆕      |
+| **Async Jobs**       | asyncio / ThreadPoolExecutor 🆕 |
+| **Data Ops**         | Pandas / NumPy                |
+| **Core ML**          | scikit‑learn                  |
+| **Boosting**         | XGBoost / LightGBM / CatBoost |
+| **Visuals**          | Matplotlib / Seaborn          |
+| **Serialisation**    | Joblib / Pickle               |
+| **Optimization**     | Optuna / Hyperopt             |
+| **Memory Mgmt**      | psutil / gc 🆕                |
 
 ---
 
@@ -534,6 +601,68 @@ pytest -vv
 - Import modules directly in code
 - Maximum flexibility and control
 - Advanced customization options
+- **Batch Processing Integration** 🆕
+
+---
+
+## 🎯 Advanced Batch Processing (NEW in v0.1.3)
+
+### **High-Performance Batch Operations**
+
+The new Batch Processing system provides enterprise-grade performance for ML workloads:
+
+```python
+from modules.engine.batch_processor import BatchProcessor
+from modules.configs import BatchProcessorConfig, BatchProcessingStrategy, BatchPriority
+
+# Configure high-performance batch processing
+config = BatchProcessorConfig(
+    initial_batch_size=32,
+    max_batch_size=256,
+    enable_priority_queue=True,
+    enable_adaptive_batching=True,
+    enable_monitoring=True,
+    processing_strategy=BatchProcessingStrategy.ADAPTIVE
+)
+
+processor = BatchProcessor(config)
+
+# Start processing with your ML model
+processor.start(lambda batch: model.predict(batch))
+
+# Submit high-priority requests
+future = processor.enqueue_predict(
+    data, 
+    priority=BatchPriority.HIGH, 
+    timeout=30.0
+)
+
+result = future.result()  # Get results asynchronously
+```
+
+### **Key Features**
+- **Adaptive Batch Sizing**: Automatically adjusts batch size based on system load
+- **Priority Queues**: Handle urgent requests with configurable priorities
+- **Memory Optimization**: Intelligent memory management with garbage collection
+- **Performance Monitoring**: Real-time metrics and performance analytics
+- **Error Recovery**: Robust retry mechanisms and fault tolerance
+- **Async Processing**: Non-blocking operations with future-based results
+
+### **REST API Integration**
+```bash
+# Configure batch processor
+curl -X POST "http://localhost:8000/api/batch/configure" \
+  -H "Content-Type: application/json" \
+  -d '{"max_batch_size": 128, "enable_priority_queue": true}'
+
+# Submit batch processing job
+curl -X POST "http://localhost:8000/api/batch/process-batch" \
+  -H "Content-Type: application/json" \
+  -d '{"items": [{"data": [1,2,3], "priority": "high"}]}'
+
+# Monitor batch processor status
+curl "http://localhost:8000/api/batch/status"
+```
 
 ---
 
@@ -554,6 +683,9 @@ pytest -vv
 For comprehensive documentation and tutorials:
 - **CLI Usage Guide**: [CLI_USAGE.md](CLI_USAGE.md) 🆕
 - **API Reference**: [modules/api/README.md](modules/api/README.md) 🆕
+- **Batch Processing Guide**: [docs/engine/batch_processor_docs.md](docs/engine/batch_processor_docs.md) 🆕
+- **Inference Engine Guide**: [docs/engine/inference_engine_docs.md](docs/engine/inference_engine_docs.md) 🆕
+- **Device Optimizer Guide**: [docs/device_optimizer_docs.md](docs/device_optimizer_docs.md)
 - **Configuration Guide**: [docs/configuration.md](docs/configuration.md)
 - **Deployment Guide**: [docs/deployment.md](docs/deployment.md)
 - **Contributing Guide**: [CONTRIBUTING.md](CONTRIBUTING.md)
