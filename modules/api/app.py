@@ -10,6 +10,10 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from functools import lru_cache
 
+# Add the project root to the Python path
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
+
 
 from fastapi import FastAPI, APIRouter, Depends, HTTPException, Request, Response, status, Header
 from fastapi.middleware.cors import CORSMiddleware

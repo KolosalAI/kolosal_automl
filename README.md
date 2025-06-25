@@ -1,21 +1,34 @@
-# Advanced ML Training Engine 🤖
+# kolosal AutoML 🤖
 
 [![MIT License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Built with UV](https://img.shields.io/badge/built%20with-uv-%23B072FF?logo=pypi)](https://github.com/astral-sh/uv)
-[![Tests](https://img.shields.io/badge/tests-partial-yellow.svg)]()
+[![Version](https://img.shields.io/badge/version-v0.1.2-green.svg)]()
+[![Tests](https://img.shields.io/badge/tests-partial-yellow)]()
 
+### 🌟 **New Features**
+
+* **Interactive CLI Mode** – Choose between GUI, API, or system info with simple menu
+* **Direct Mode Selection** – Launch specific modes directly via command line flags
+* **Version Display** – Easy version checking with --version flag
+* **System Analysis** – Built-in hardware and software analysis tools
+* **Enhanced Logging** – Comprehensive logging across all components
+
+## 📝 Previous Releases
+
+### **v0.1.1 Highlights**
 ---
 
 ## 📋 Overview
 
-The **Advanced ML Training Engine** streamlines the entire machine‑learning lifecycle—from data ingestion to model deployment. Now featuring a modern **Gradio-powered web interface**, intelligent preprocessing, state‑of‑the‑art hyper‑parameter optimisation, device‑aware acceleration, and first‑class experiment tracking.
+**kolosal AutoML** streamlines the entire machine‑learning lifecycle—from data ingestion to model deployment. Now featuring a modern **Gradio-powered web interface**, intelligent preprocessing, state‑of‑the‑art hyper‑parameter optimisation, device‑aware acceleration, and first‑class experiment tracking.
 
 ---
 
 ## 🌟 Key Features
 
-### 🖥️ **Modern Web Interface (NEW in v0.1.2)**
+### 🖥️ **Modern Web Interface & CLI (NEW in v0.1.2)**
+* **Unified CLI Interface** with interactive mode selection
 * **Gradio-powered UI** with intuitive tabbed interface
 * **Real-time data visualization** and comprehensive data previews
 * **Interactive model training** with progress tracking
@@ -69,7 +82,7 @@ The **Advanced ML Training Engine** streamlines the entire machine‑learning li
 
 ---
 
-## 🚀 Installation
+## 🚀 Installation & Quick Start
 
 ### Prerequisites
 
@@ -83,15 +96,20 @@ git clone https://github.com/Genta-Technology/kolosal_automl.git
 cd kolosal_automl
 
 # 2. Install uv (if not already installed)
+# macOS/Linux:
 curl -LsSf https://astral.sh/uv/install.sh | sh
-# or on Windows: 
-# powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+
+# Windows:
+powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
 
 # 3. Create and activate virtual environment with dependencies
 uv venv
+
 # Activate virtual environment
-# Windows: .venv\Scripts\activate
-# macOS/Linux: source .venv/bin/activate
+# Windows:
+.venv\Scripts\activate
+# macOS/Linux:
+source .venv/bin/activate
 
 # 4. Install dependencies ultra-fast with uv
 uv pip install -r requirements.txt
@@ -100,7 +118,7 @@ uv pip install -r requirements.txt
 uv pip install xgboost lightgbm catboost
 ```
 
-### Option 2 — Standard `pip`
+### **Option 2 — Standard `pip`**
 
 ```bash
 git clone https://github.com/Genta-Technology/kolosal_automl.git
@@ -120,9 +138,57 @@ pip install -r requirements.txt
 
 ---
 
-## 💻 Quick Start
+## 🎯 Getting Started
 
-### **Option 1: Modern Gradio Web Interface (Recommended)**
+### **� Unified CLI Interface (NEW)**
+
+The main entry point for kolosal AutoML system:
+
+```bash
+# Interactive mode (recommended for first-time users)
+python main.py
+
+# Launch Gradio web interface directly
+python main.py --mode gui
+
+# Start API server directly  
+python main.py --mode api
+
+# Show version
+python main.py --version
+
+# Show system information
+python main.py --system-info
+
+# Show help
+python main.py --help
+```
+
+#### **Available CLI Options:**
+```
+--mode {gui,api,interactive}    Mode to run (default: interactive)
+--version                       Show version and exit
+--system-info                   Show system information and exit  
+--no-banner                     Skip the banner display
+--help                          Show help message and exit
+```
+
+#### **CLI Examples:**
+```bash
+# Interactive mode - choose what to run
+python main.py
+
+# Launch web interface in inference-only mode
+python main.py --mode gui --inference-only
+
+# Start API server with custom host/port
+python main.py --mode api --host 0.0.0.0 --port 8080
+
+# Quick system check
+python main.py --system-info --no-banner
+```
+
+### **🌐 Option 1: Gradio Web Interface**
 
 Launch the full-featured web interface:
 
@@ -143,7 +209,7 @@ uv run python app.py --host 0.0.0.0 --port 8080
 uv run python app.py --share
 ```
 
-**Available Command Line Options:**
+**Available Web Interface Options:**
 - `--inference-only`: Run in inference-only mode (no training capabilities)
 - `--model-path`: Path to pre-trained model file (for inference-only mode)
 - `--config-path`: Path to model configuration file
@@ -151,7 +217,26 @@ uv run python app.py --share
 - `--port`: Port number (default: 7860)
 - `--share`: Create a public Gradio link
 
-### **Option 2: Python API**
+### **🔧 Option 2: API Server**
+
+Start the REST API server:
+
+```bash
+# Using uv (recommended)
+uv run python start_api.py
+
+# Or using the CLI
+python main.py --mode api
+
+# Or directly
+uv run python modules/api/app.py
+```
+
+- **API Server**: http://localhost:8000
+- **Interactive Docs**: http://localhost:8000/docs
+- **API Health**: http://localhost:8000/health
+
+### **💻 Option 3: Python API**
 
 ```python
 from modules.engine.train_engine import MLTrainingEngine
@@ -268,20 +353,23 @@ The web interface includes several popular datasets for quick experimentation:
 
 ```
 kolosal_automl/
-├── 📄 main.py                      # Main application entry point
-├── 🌐 app.py                       # 🆕 Gradio web interface
+├── 📄 main.py                      # 🆕 Main CLI entry point
+├── 🌐 app.py                       # Gradio web interface
+├── 🔧 start_api.py                 # 🆕 API server launcher
+├── 🧪 test_api.py                  # 🆕 API testing script
 ├── 📁 modules/
 │   ├── 📄 __init__.py
 │   ├── 📄 configs.py               # Configuration management
-│   ├── 📁 api/                     # 🆕 API endpoints
+│   ├── 📁 api/                     # REST API endpoints
 │   │   ├── 📄 __init__.py
-│   │   ├── 📄 app.py
+│   │   ├── 📄 app.py               # Main API application
 │   │   ├── 📄 data_preprocessor_api.py
 │   │   ├── 📄 device_optimizer_api.py
 │   │   ├── 📄 inference_engine_api.py
 │   │   ├── 📄 model_manager_api.py
 │   │   ├── 📄 quantizer_api.py
-│   │   └── 📄 train_engine_api.py
+│   │   ├── 📄 train_engine_api.py
+│   │   └── 📄 README.md            # 🆕 API documentation
 │   ├── 📁 engine/                  # Core ML engines
 │   │   ├── 📄 __init__.py
 │   │   ├── 📄 batch_processor.py
@@ -293,11 +381,11 @@ kolosal_automl/
 │   ├── 📁 optimizer/               # Optimization algorithms
 │   │   ├── 📄 __init__.py
 │   │   ├── 📄 configs.py
-│   │   ├── 📄 device_optimizer.py  # 🆕 Device optimization
-│   │   └── 📄 model_manager.py     # 🆕 Secure model management
-│   ├── 📁 static/                  # 🆕 Static assets
+│   │   ├── 📄 device_optimizer.py  # Device optimization
+│   │   └── 📄 model_manager.py     # Secure model management
+│   ├── 📁 static/                  # Static assets
 │   └── 📁 utils/                   # Utility functions
-├── 📁 temp_data/                   # 🆕 Temporary data storage
+├── 📁 temp_data/                   # Temporary data storage
 ├── 📁 tests/                       # Test suites
 │   ├── 📄 .gitignore
 │   ├── 📁 env/                     # Test environments
@@ -309,11 +397,12 @@ kolosal_automl/
 │   └── 📁 unit/                    # Unit tests
 ├── 📄 .gitignore
 ├── 📄 app.py                       # Alternative app launcher
-├── 📄 compose.yaml                 # 🆕 Docker Compose configuration
-├── 📄 Dockerfile                   # 🆕 Docker containerization
-├── 📄 kolosal_apilog               # API logging
+├── 📄 compose.yaml                 # Docker Compose configuration
+├── 📄 Dockerfile                   # Docker containerization
+├── 📄 CLI_USAGE.md                 # 🆕 CLI usage documentation
+├── 📄 kolosal_api.log               # API logging
 ├── 📄 LICENSE                      # MIT License
-├── 📄 python-version               # Python version specification
+├── 📄 pyproject.toml               # 🆕 Project configuration
 ├── 📄 README.md                    # Project documentation
 └── 📄 requirements.txt             # Dependencies
 ```
@@ -361,41 +450,43 @@ pytest -vv
 
 ### 🎉 **Major Updates**
 
-* **🚀 Gradio Web Interface** – Complete redesign from Streamlit to Gradio for better performance and user experience
-* **🔧 Enhanced UV Integration** – Streamlined installation and dependency management with UV package manager
-* **🎯 Dedicated Inference Server** – Production-ready inference endpoint with minimal latency
-* **📊 Advanced Data Visualization** – Comprehensive data previews with correlation matrices and distribution plots
-* **🔐 Secure Model Management** – Enhanced model encryption and access control features
+* **🚀 Unified CLI Interface** – New main.py with interactive mode selection between GUI and API
+* **🔧 Enhanced API Integration** – Complete REST API server with health checks for all modules
+* **🎯 Improved Error Handling** – Robust error handling and comprehensive logging across all components
+* **📊 Better System Integration** – Seamless switching between web interface and API server modes
+* **🔐 Enhanced Security** – Improved authentication and encryption support in API endpoints
 
 ### 🔧 **Technical Improvements**
 
-* **Sample Dataset Integration** – Built-in access to popular ML datasets (Iris, Titanic, Boston Housing, etc.)
-* **Real-time Training Progress** – Live updates during model training with detailed metrics
-* **Performance Comparison Dashboard** – Side-by-side model evaluation and ranking
-* **Enhanced Device Optimization** – Better GPU detection and memory management
-* **Improved Error Handling** – More robust error messages and debugging information
+* **Complete API Health Checks** – All API endpoints now have proper health monitoring
+* **Enhanced CLI Experience** – Interactive mode with clear options and helpful guidance
+* **Better Documentation** – Comprehensive CLI usage guide and API documentation
+* **System Information Display** – Built-in system analysis and optimization recommendations
+* **Streamlined Installation** – Improved UV integration with clearer setup instructions
 
 ### 🌟 **New Features**
 
-* **Multiple Export Formats** – Support for Pickle, Joblib, and ONNX model exports
-* **Command Line Interface** – Flexible CLI options for different deployment scenarios
-* **Interactive Data Exploration** – In-browser data analysis with statistical summaries
-* **Feature Importance Visualization** – Automated generation of feature importance plots
-* **Model Encryption** – Secure model storage with password protection
+* **Interactive CLI Mode** – Choose between GUI, API, or system info with simple menu
+* **Direct Mode Selection** – Launch specific modes directly via command line flags
+* **Version Display** – Easy version checking with --version flag
+* **System Analysis** – Built-in hardware and software analysis tools
+* **Enhanced Logging** – Comprehensive logging across all components
 
-### 💪 **Performance Enhancements**
+## � Previous Releases
 
-* **Faster Model Loading** – Optimized model serialization and deserialization
-* **Memory Optimization** – Reduced memory footprint during training and inference
-* **Parallel Processing** – Enhanced multi-core utilization for training workflows
-* **Caching System** – Intelligent caching for faster repeated operations
+### **v0.1.2 Highlights**
+* **🚀 Gradio Web Interface** – Complete redesign from Streamlit to Gradio
+* **🔧 Enhanced UV Integration** – Streamlined installation and dependency management
+* **🎯 Dedicated Inference Server** – Production-ready inference endpoint
+* **📊 Advanced Data Visualization** – Comprehensive data previews and analysis
+* **🔐 Secure Model Management** – Enhanced model encryption and access control
 
 ---
 
 ## 🚧 Roadmap
 
 1. **Complete Test Suite** & CI green ✨
-2. **REST API Endpoints** for programmatic access
+2. **Enhanced API Endpoints** for advanced model management
 3. **Docker Containerization** for easy deployment
 4. **Model Monitoring** & drift detection
 5. **AutoML Pipeline** with automated feature engineering
@@ -409,14 +500,40 @@ pytest -vv
 
 | Purpose           | Library                       |
 | ----------------- | ----------------------------- |
-| **Web UI**        | Gradio 🆕                     |
-| **Package Mgmt**  | UV 🆕                         |
+| **CLI Interface** | argparse / subprocess 🆕      |
+| **Web UI**        | Gradio                        |
+| **Package Mgmt**  | UV                            |
+| **API Server**    | FastAPI / Uvicorn 🆕          |
 | **Data Ops**      | Pandas / NumPy                |
 | **Core ML**       | scikit‑learn                  |
 | **Boosting**      | XGBoost / LightGBM / CatBoost |
 | **Visuals**       | Matplotlib / Seaborn          |
 | **Serialisation** | Joblib / Pickle               |
 | **Optimization**  | Optuna / Hyperopt             |
+
+---
+
+## 🎯 Usage Modes
+
+### 1. **Interactive CLI Mode** 🆕
+- Menu-driven interface for mode selection
+- Perfect for first-time users
+- Built-in help and guidance
+
+### 2. **Web Interface Mode**
+- Full-featured Gradio UI
+- Visual data exploration and training
+- Real-time progress monitoring
+
+### 3. **API Server Mode** 🆕
+- Production-ready REST API
+- Programmatic access to all features
+- Comprehensive health monitoring
+
+### 4. **Direct Python Integration**
+- Import modules directly in code
+- Maximum flexibility and control
+- Advanced customization options
 
 ---
 
@@ -435,7 +552,8 @@ pytest -vv
 ## 📚 Documentation
 
 For comprehensive documentation and tutorials:
-- **API Reference**: [docs/api.md](docs/api.md)
+- **CLI Usage Guide**: [CLI_USAGE.md](CLI_USAGE.md) 🆕
+- **API Reference**: [modules/api/README.md](modules/api/README.md) 🆕
 - **Configuration Guide**: [docs/configuration.md](docs/configuration.md)
 - **Deployment Guide**: [docs/deployment.md](docs/deployment.md)
 - **Contributing Guide**: [CONTRIBUTING.md](CONTRIBUTING.md)
@@ -462,18 +580,41 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 uv venv && source .venv/bin/activate
 uv pip install -r requirements.txt
 
-# Launch the web interface
+# Launch with interactive CLI (NEW!)
+python main.py
+
+# Or directly launch the web interface
 uv run python app.py
 
 # Open http://localhost:7860 in your browser and start experimenting! 🚀
 ```
 
+### 🚀 Three Ways to Get Started:
+
+1. **🎯 Interactive CLI** (Recommended)
+   ```bash
+   python main.py
+   # Choose from menu: Web Interface, API Server, or System Info
+   ```
+
+2. **🌐 Direct Web Interface**
+   ```bash
+   python main.py --mode gui
+   # or: uv run python app.py
+   ```
+
+3. **🔧 API Server**
+   ```bash
+   python main.py --mode api
+   # or: uv run python start_api.py
+   ```
+
 ---
 
 <div align="center">
 
-**Built with ❤️ by the Kolosal AI Team**
+**Built with ❤️ by the kolosal AI Team**
 
-[🌟 Star us on GitHub](https://github.com/Genta-Technology/kolosal_automl) | [📖 Documentation](docs/) | [🐛 Report Issues](https://github.com/Genta-Technology/kolosal_automl/issues)
+[🌟 Star us on GitHub](https://github.com/Genta-Technology/kolosal_automl) | [📖 Documentation](docs/) | [🐛 Report Issues](https://github.com/Genta-Technology/kolosal_automl/issues) | [📝 CLI Guide](CLI_USAGE.md)
 
 </div>

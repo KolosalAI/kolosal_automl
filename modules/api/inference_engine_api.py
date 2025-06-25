@@ -10,6 +10,7 @@ Date: 2025-04-28
 """
 
 import os
+import sys
 import time
 import uuid
 import json
@@ -21,6 +22,26 @@ from pathlib import Path
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
+
+# Add the project root to the Python path
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
+
+# Utility function for parsing boolean environment variables
+def parse_bool_env(env_var: str, default: str = "False") -> bool:
+    """Parse boolean environment variable safely."""
+    value = os.environ.get(env_var, default).lower()
+    return value in ("true", "1", "t", "yes", "on")
+
+# Utility function to safely get the engine
+def get_engine():
+    """Get the inference engine, raising appropriate HTTP exception if not available."""
+    if not hasattr(app.state, 'engine') or app.state.engine is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Inference engine is not initialized. Please try again later."
+        )
+    return app.state.engine
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Request, Depends, Header, Query, Body, Response, status
 from fastapi.responses import JSONResponse
@@ -179,6 +200,37 @@ class PerformanceMetricsResponse(BaseModel):
     metrics: Dict[str, Any] = Field(..., description="Engine performance metrics")
     timestamp: str = Field(..., description="Timestamp of the response")
 
+class CacheStatsResponse(BaseModel):
+    """Response model for cache statistics"""
+    cache_stats: Dict[str, Any] = Field(..., description="Cache statistics")
+    timestamp: str = Field(..., description="Timestamp of the response")
+
+class BatcherStatsResponse(BaseModel):
+    """Response model for batcher statistics"""
+    batcher_stats: Dict[str, Any] = Field(..., description="Dynamic batcher statistics")
+    timestamp: str = Field(..., description="Timestamp of the response")
+
+class MemoryPoolStatsResponse(BaseModel):
+    """Response model for memory pool statistics"""
+    memory_stats: Dict[str, Any] = Field(..., description="Memory pool statistics")
+    timestamp: str = Field(..., description="Timestamp of the response")
+
+class ModelCompileRequest(BaseModel):
+    """Request model for compiling a model"""
+    compile_format: Optional[str] = Field("auto", description="Format to compile to (onnx, treelite, auto)")
+    optimization_level: Optional[int] = Field(2, description="Optimization level (0-3)")
+
+class WarmupRequest(BaseModel):
+    """Request model for model warmup"""
+    warmup_samples: Optional[int] = Field(100, description="Number of samples for warmup")
+    warmup_batches: Optional[int] = Field(3, description="Number of batches for warmup")
+
+class QuantizationRequest(BaseModel):
+    """Request model for model quantization"""
+    quantization_type: Optional[str] = Field("int8", description="Type of quantization (int8, uint8, int16, float16)")
+    quantization_mode: Optional[str] = Field("dynamic", description="Quantization mode (dynamic, static)")
+    calibration_data: Optional[List[List[float]]] = Field(None, description="Optional calibration data for static quantization")
+
 # --- API Configuration ---
 
 # Create configuration
@@ -189,12 +241,12 @@ api_config = {
     "default_model_dir": os.environ.get("MODEL_DIR", "./models"),
     "api_keys": os.environ.get("API_KEYS", "").split(","),
     "max_workers": int(os.environ.get("MAX_WORKERS", "4")),
-    "enable_async": bool(int(os.environ.get("ENABLE_ASYNC", "1"))),
+    "enable_async": parse_bool_env("ENABLE_ASYNC", "1"),
     "host": os.environ.get("API_HOST", "0.0.0.0"),
     "port": int(os.environ.get("API_PORT", "8000")),
-    "debug": bool(int(os.environ.get("API_DEBUG", "0"))),
+    "debug": parse_bool_env("API_DEBUG", "0"),
     "job_ttl_seconds": int(os.environ.get("JOB_TTL_SECONDS", "3600")),
-    "require_api_key": bool(int(os.environ.get("REQUIRE_API_KEY", "0")))
+    "require_api_key": parse_bool_env("REQUIRE_API_KEY", "0")
 }
 
 # Create global variables for engine and job tracking
@@ -215,16 +267,16 @@ async def lifespan(app: FastAPI):
     
     # Create engine config (using environment variables or defaults)
     engine_config = InferenceEngineConfig(
-        enable_batching=bool(int(os.environ.get("ENGINE_ENABLE_BATCHING", "1"))),
+        enable_batching=parse_bool_env("ENGINE_ENABLE_BATCHING", "1"),
         max_batch_size=int(os.environ.get("ENGINE_MAX_BATCH_SIZE", "64")),
         batch_timeout=float(os.environ.get("ENGINE_BATCH_TIMEOUT", "0.01")),
         max_concurrent_requests=int(os.environ.get("ENGINE_MAX_CONCURRENT_REQUESTS", "100")),
-        enable_request_deduplication=bool(int(os.environ.get("ENGINE_ENABLE_CACHE", "1"))),
+        enable_request_deduplication=parse_bool_env("ENGINE_ENABLE_CACHE", "1"),
         max_cache_entries=int(os.environ.get("ENGINE_MAX_CACHE_ENTRIES", "1000")),
         cache_ttl_seconds=int(os.environ.get("ENGINE_CACHE_TTL_SECONDS", "3600")),
-        enable_quantization=bool(int(os.environ.get("ENGINE_ENABLE_QUANTIZATION", "0"))),
+        enable_quantization=parse_bool_env("ENGINE_ENABLE_QUANTIZATION", "0"),
         num_threads=int(os.environ.get("ENGINE_NUM_THREADS", "4")),
-        enable_throttling=bool(int(os.environ.get("ENGINE_ENABLE_THROTTLING", "0"))),
+        enable_throttling=parse_bool_env("ENGINE_ENABLE_THROTTLING", "0"),
         enable_monitoring=True,
         debug_mode=api_config["debug"]
     )
@@ -252,7 +304,7 @@ async def lifespan(app: FastAPI):
             app.state.engine.load_model(
                 model_path=default_model_path,
                 model_type=model_type,
-                compile_model=bool(int(os.environ.get("DEFAULT_COMPILE_MODEL", "0")))
+                compile_model=parse_bool_env("DEFAULT_COMPILE_MODEL", "0")
             )
             logger.info("Model loaded successfully")
         except Exception as e:
@@ -402,28 +454,53 @@ async def root():
 @app.get("/health", response_model=EngineHealthResponse)
 async def health_check():
     """Health check endpoint"""
-    engine = app.state.engine
-    
-    # Get basic engine info
-    response = {
-        "status": "healthy" if engine.state in (EngineState.READY, EngineState.RUNNING) else "unhealthy",
-        "state": engine.state.name if hasattr(engine.state, "name") else str(engine.state),
-        "uptime_seconds": time.time() - engine_start_time,
-        "model_loaded": engine.model is not None,
-        "active_requests": engine.active_requests,
-        "timestamp": datetime.now().isoformat()
-    }
-    
-    # Add model info if available
-    if engine.model is not None and hasattr(engine, "model_info"):
-        response["model_info"] = engine.model_info
-    
-    return response
+    try:
+        # Check if engine is initialized
+        if not hasattr(app.state, 'engine') or app.state.engine is None:
+            return {
+                "status": "initializing",
+                "state": "NOT_READY",
+                "uptime_seconds": time.time() - engine_start_time,
+                "model_loaded": False,
+                "active_requests": 0,
+                "timestamp": datetime.now().isoformat(),
+                "message": "Engine not yet initialized"
+            }
+        
+        engine = get_engine()
+        
+        # Get basic engine info
+        response = {
+            "status": "healthy" if engine.state in (EngineState.READY, EngineState.RUNNING) else "unhealthy",
+            "state": engine.state.name if hasattr(engine.state, "name") else str(engine.state),
+            "uptime_seconds": time.time() - engine_start_time,
+            "model_loaded": engine.model is not None,
+            "active_requests": engine.active_requests,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        # Add model info if available
+        if engine.model is not None and hasattr(engine, "model_info"):
+            response["model_info"] = engine.model_info
+        
+        return response
+        
+    except Exception as e:
+        # Return error response if health check fails
+        return {
+            "status": "error",
+            "state": "ERROR",
+            "uptime_seconds": time.time() - engine_start_time,
+            "model_loaded": False,
+            "active_requests": 0,
+            "timestamp": datetime.now().isoformat(),
+            "error": str(e)
+        }
 
 @app.post("/models/load", response_class=JSONResponse, dependencies=[Depends(verify_api_key)])
 async def load_model(request: ModelLoadRequest):
     """Load a model into the inference engine"""
-    engine = app.state.engine
+    engine = get_engine()
     
     # Check if path exists
     model_path = request.model_path
@@ -471,7 +548,7 @@ async def load_model(request: ModelLoadRequest):
 @app.post("/predict", response_model=InferenceResponse, dependencies=[Depends(verify_api_key)])
 async def predict(request: InferenceRequest):
     """Make a prediction using the loaded model"""
-    engine = app.state.engine
+    engine = get_engine()
     
     # Check if engine is ready
     if engine.state not in (EngineState.READY, EngineState.RUNNING):
@@ -522,7 +599,7 @@ async def predict(request: InferenceRequest):
 @app.post("/predict/batch", response_model=BatchInferenceResponse, dependencies=[Depends(verify_api_key)])
 async def predict_batch(request: BatchInferenceRequest):
     """Process a batch of prediction requests"""
-    engine = app.state.engine
+    engine = get_engine()
     
     # Check if engine is ready
     if engine.state not in (EngineState.READY, EngineState.RUNNING):
@@ -597,7 +674,7 @@ async def predict_async(request: AsyncInferenceRequest, background_tasks: Backgr
             detail="Asynchronous processing is disabled"
         )
     
-    engine = app.state.engine
+    engine = get_engine()
     
     # Check if engine is ready
     if engine.state not in (EngineState.READY, EngineState.RUNNING):
@@ -720,15 +797,20 @@ async def get_job_status(job_id: str):
         # Job is still pending
         # Calculate ETA if possible
         eta_seconds = None
-        if hasattr(app.state.engine, "metrics"):
-            metrics = app.state.engine.metrics.get_metrics()
-            if "avg_inference_time_ms" in metrics:
-                # Rough estimate based on current load and average inference time
-                if hasattr(app.state.engine, "dynamic_batcher") and hasattr(app.state.engine.dynamic_batcher, "get_stats"):
-                    batcher_stats = app.state.engine.dynamic_batcher.get_stats()
-                    queue_size = batcher_stats.get("current_queue_size", 0)
-                    avg_time = metrics["avg_inference_time_ms"] / 1000  # convert to seconds
-                    eta_seconds = avg_time * queue_size
+        try:
+            engine = get_engine()
+            if hasattr(engine, "metrics"):
+                metrics = engine.metrics.get_metrics()
+                if "avg_inference_time_ms" in metrics:
+                    # Rough estimate based on current load and average inference time
+                    if hasattr(engine, "dynamic_batcher") and hasattr(engine.dynamic_batcher, "get_stats"):
+                        batcher_stats = engine.dynamic_batcher.get_stats()
+                        queue_size = batcher_stats.get("current_queue_size", 0)
+                        avg_time = metrics["avg_inference_time_ms"] / 1000  # convert to seconds
+                        eta_seconds = avg_time * queue_size
+        except HTTPException:
+            # Engine not available, skip ETA calculation
+            pass
         
         return {
             "job_id": job_id,
@@ -740,7 +822,7 @@ async def get_job_status(job_id: str):
 @app.get("/metrics", response_model=PerformanceMetricsResponse, dependencies=[Depends(verify_api_key)])
 async def get_metrics():
     """Get engine performance metrics"""
-    engine = app.state.engine
+    engine = get_engine()
     
     try:
         metrics = engine.get_performance_metrics()
@@ -758,7 +840,7 @@ async def get_metrics():
 @app.post("/config", response_class=JSONResponse, dependencies=[Depends(verify_api_key)])
 async def update_config(request: EngineConfigRequest):
     """Update engine configuration parameters"""
-    engine = app.state.engine
+    engine = get_engine()
     
     # Track which parameters are being updated
     updated_params = {}
@@ -835,7 +917,7 @@ async def update_config(request: EngineConfigRequest):
 @app.post("/validate", response_class=JSONResponse, dependencies=[Depends(verify_api_key)])
 async def validate_model():
     """Validate the loaded model to ensure it's functioning correctly"""
-    engine = app.state.engine
+    engine = get_engine()
     
     # Check if model is loaded
     if engine.model is None:
@@ -863,7 +945,7 @@ async def validate_model():
 @app.delete("/models", response_class=JSONResponse, dependencies=[Depends(verify_api_key)])
 async def unload_model():
     """Unload the current model from the engine"""
-    engine = app.state.engine
+    engine = get_engine()
     
     # Check if model is loaded
     if engine.model is None:
@@ -904,7 +986,7 @@ async def unload_model():
 @app.post("/cache/clear", response_class=JSONResponse, dependencies=[Depends(verify_api_key)])
 async def clear_cache():
     """Clear the prediction and feature caches"""
-    engine = app.state.engine
+    engine = get_engine()
     
     cache_cleared = False
     feature_cache_cleared = False
@@ -938,7 +1020,7 @@ async def restart_engine():
     """Restart the inference engine with current configuration"""
     try:
         # Get current configuration
-        old_engine = app.state.engine
+        old_engine = get_engine()
         config = old_engine.config
         
         # Create a new engine with the same configuration
@@ -952,10 +1034,11 @@ async def restart_engine():
         import gc
         gc.collect()
         
+        new_engine = get_engine()
         return {
             "success": True,
             "message": "Engine restarted successfully",
-            "state": app.state.engine.state.name if hasattr(app.state.engine.state, "name") else str(app.state.engine.state)
+            "state": new_engine.state.name if hasattr(new_engine.state, "name") else str(new_engine.state)
         }
     except Exception as e:
         logger.error(f"Error restarting engine: {str(e)}")
@@ -967,7 +1050,7 @@ async def restart_engine():
 @app.get("/cache/stats", response_class=JSONResponse, dependencies=[Depends(verify_api_key)])
 async def cache_stats():
     """Get statistics about cache usage"""
-    engine = app.state.engine
+    engine = get_engine()
     
     stats = {
         "result_cache": None,
@@ -1027,7 +1110,7 @@ async def list_jobs(limit: int = Query(20, ge=1, le=100), status: Optional[str] 
 @app.post("/feature-importance", response_class=JSONResponse, dependencies=[Depends(verify_api_key)])
 async def feature_importance(request: InferenceRequest):
     """Calculate feature importance for a specific input"""
-    engine = app.state.engine
+    engine = get_engine()
     
     # Check if model is loaded
     if engine.model is None:
@@ -1117,6 +1200,312 @@ async def feature_importance(request: InferenceRequest):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to calculate feature importance: {str(e)}"
+        )
+
+# --- Advanced Engine Features ---
+
+@app.post("/engine/compile", dependencies=[Depends(verify_api_key)])
+async def compile_model(request: ModelCompileRequest):
+    """Compile the loaded model for faster inference"""
+    engine = get_engine()
+    
+    if engine.model is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No model loaded"
+        )
+    
+    try:
+        # Compile the model
+        success = engine._compile_model(
+            compile_format=request.compile_format,
+            optimization_level=request.optimization_level
+        )
+        
+        return {
+            "success": success,
+            "message": "Model compiled successfully" if success else "Model compilation failed",
+            "compiled_model_available": engine.compiled_model is not None,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Model compilation error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to compile model: {str(e)}"
+        )
+
+@app.post("/engine/warmup", dependencies=[Depends(verify_api_key)])
+async def warmup_model(request: WarmupRequest):
+    """Warm up the model for better performance"""
+    engine = get_engine()
+    
+    if engine.model is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No model loaded"
+        )
+    
+    try:
+        # Perform warmup
+        engine._warmup_model(
+            warmup_samples=request.warmup_samples,
+            warmup_batches=request.warmup_batches
+        )
+        
+        return {
+            "success": True,
+            "message": "Model warmed up successfully",
+            "warmup_samples": request.warmup_samples,
+            "warmup_batches": request.warmup_batches,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Model warmup error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to warm up model: {str(e)}"
+        )
+
+@app.post("/engine/quantize", dependencies=[Depends(verify_api_key)])
+async def quantize_model(request: QuantizationRequest):
+    """Quantize the model for reduced memory usage"""
+    engine = get_engine()
+    
+    if engine.model is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No model loaded"
+        )
+    
+    try:
+        # Setup quantization config
+        from modules.configs import QuantizationConfig, QuantizationType, QuantizationMode
+        
+        # Convert string to enum
+        q_type = getattr(QuantizationType, request.quantization_type.upper())
+        q_mode = getattr(QuantizationMode, request.quantization_mode.upper())
+        
+        # Create quantization config
+        quant_config = QuantizationConfig(
+            quantization_type=q_type,
+            quantization_mode=q_mode,
+            enable_cache=True
+        )
+        
+        # Initialize quantizer if not already present
+        if engine.quantizer is None:
+            from modules.engine.quantizer import Quantizer
+            engine.quantizer = Quantizer(quant_config)
+        
+        # Quantize the model
+        engine._quantize_model()
+        
+        return {
+            "success": True,
+            "message": "Model quantized successfully",
+            "quantization_type": request.quantization_type,
+            "quantization_mode": request.quantization_mode,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Model quantization error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to quantize model: {str(e)}"
+        )
+
+@app.get("/engine/cache-stats", response_model=CacheStatsResponse, dependencies=[Depends(verify_api_key)])
+async def get_cache_stats():
+    """Get cache statistics"""
+    engine = get_engine()
+    
+    try:
+        cache_stats = {}
+        
+        # Get result cache stats
+        if engine.result_cache is not None:
+            cache_stats["result_cache"] = {
+                "size": engine.result_cache.size(),
+                "max_size": engine.result_cache.max_size,
+                "hit_rate": engine.result_cache.hit_rate(),
+                "hits": engine.result_cache.hits,
+                "misses": engine.result_cache.misses
+            }
+        
+        # Get feature cache stats
+        if engine.feature_cache is not None:
+            cache_stats["feature_cache"] = {
+                "size": engine.feature_cache.size(),
+                "max_size": engine.feature_cache.max_size,
+                "hit_rate": engine.feature_cache.hit_rate(),
+                "hits": engine.feature_cache.hits,
+                "misses": engine.feature_cache.misses
+            }
+        
+        return {
+            "cache_stats": cache_stats,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Cache stats error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get cache stats: {str(e)}"
+        )
+
+@app.get("/engine/batcher-stats", response_model=BatcherStatsResponse, dependencies=[Depends(verify_api_key)])
+async def get_batcher_stats():
+    """Get dynamic batcher statistics"""
+    engine = get_engine()
+    
+    try:
+        batcher_stats = {}
+        
+        if engine.dynamic_batcher is not None:
+            batcher_stats = engine.dynamic_batcher.get_stats()
+        
+        return {
+            "batcher_stats": batcher_stats,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Batcher stats error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get batcher stats: {str(e)}"
+        )
+
+@app.get("/engine/memory-stats", response_model=MemoryPoolStatsResponse, dependencies=[Depends(verify_api_key)])
+async def get_memory_stats():
+    """Get memory pool statistics"""
+    engine = get_engine()
+    
+    try:
+        memory_stats = {}
+        
+        if engine.memory_pool is not None:
+            memory_stats = engine.memory_pool.get_stats()
+        
+        return {
+            "memory_stats": memory_stats,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Memory stats error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get memory stats: {str(e)}"
+        )
+
+@app.post("/engine/clear-cache", dependencies=[Depends(verify_api_key)])
+async def clear_cache():
+    """Clear all caches"""
+    engine = get_engine()
+    
+    try:
+        cleared_caches = []
+        
+        if engine.result_cache is not None:
+            engine.result_cache.clear()
+            cleared_caches.append("result_cache")
+        
+        if engine.feature_cache is not None:
+            engine.feature_cache.clear()
+            cleared_caches.append("feature_cache")
+        
+        if engine.memory_pool is not None:
+            engine.memory_pool.clear()
+            cleared_caches.append("memory_pool")
+        
+        return {
+            "success": True,
+            "message": "Caches cleared successfully",
+            "cleared_caches": cleared_caches,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Clear cache error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to clear cache: {str(e)}"
+        )
+
+@app.post("/engine/pause", dependencies=[Depends(verify_api_key)])
+async def pause_engine():
+    """Pause the inference engine"""
+    engine = get_engine()
+    
+    try:
+        if engine.dynamic_batcher is not None:
+            engine.dynamic_batcher.stop()
+        
+        return {
+            "success": True,
+            "message": "Engine paused successfully",
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Pause engine error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to pause engine: {str(e)}"
+        )
+
+@app.post("/engine/resume", dependencies=[Depends(verify_api_key)])
+async def resume_engine():
+    """Resume the inference engine"""
+    engine = get_engine()
+    
+    try:
+        if engine.dynamic_batcher is not None:
+            engine.dynamic_batcher.start()
+        
+        return {
+            "success": True,
+            "message": "Engine resumed successfully",
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Resume engine error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to resume engine: {str(e)}"
+        )
+
+@app.get("/engine/model-info", dependencies=[Depends(verify_api_key)])
+async def get_model_info():
+    """Get detailed information about the loaded model"""
+    engine = get_engine()
+    
+    try:
+        if engine.model is None:
+            return {
+                "success": False,
+                "message": "No model loaded",
+                "timestamp": datetime.now().isoformat()
+            }
+        
+        model_info = {
+            "model_type": str(engine.model_type),
+            "model_info": engine.model_info,
+            "feature_names": engine.feature_names,
+            "compiled_model_available": engine.compiled_model is not None,
+            "quantized": engine.quantizer is not None,
+            "preprocessor_fitted": engine.preprocessor is not None and engine.preprocessor._fitted,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        return {
+            "success": True,
+            "model_info": model_info,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Model info error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get model info: {str(e)}"
         )
 
 # --- Main Entry Point ---

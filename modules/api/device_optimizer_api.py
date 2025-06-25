@@ -14,11 +14,16 @@ from enum import Enum
 from typing import Dict, Any, Optional, Union, List, Set
 import json
 import os
+import sys
 import shutil
 import datetime
 import uuid
 import logging
 from pathlib import Path as FilePath
+
+# Add the project root to the Python path
+project_root = FilePath(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
 
 # Import the DeviceOptimizer and related classes
 from modules.device_optimizer import (
@@ -581,6 +586,29 @@ async def delete_configuration(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to delete configuration: {str(e)}"
         )
+
+@app.get("/health", tags=["Health"])
+async def health_check():
+    """Health check endpoint for the device optimizer service."""
+    try:
+        # Try to get basic system info to verify the service is working
+        system_info = get_system_information()
+        return {
+            "status": "healthy",
+            "service": "CPU Device Optimizer API",
+            "version": "1.0.0",
+            "cpu_count": system_info.get("cpu_count", 0),
+            "memory_gb": system_info.get("memory", {}).get("total_gb", 0),
+            "timestamp": datetime.datetime.now().isoformat()
+        }
+    except Exception as e:
+        return {
+            "status": "degraded",
+            "service": "CPU Device Optimizer API",
+            "version": "1.0.0",
+            "error": str(e),
+            "timestamp": datetime.datetime.now().isoformat()
+        }
 
 # ------------------ Background Tasks ------------------
 

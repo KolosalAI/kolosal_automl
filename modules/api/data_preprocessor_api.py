@@ -1,15 +1,17 @@
 """
 Data Preprocessor API Module
 
-This module provides a RESTful API for the DataPreprocessor class, allowing for:
-- Creating and configuring preprocessors
-- Training (fitting) preprocessors on data
-- Transforming data using fitted preprocessors
-- Managing preprocessor models (saving/loading)
-- Retrieving preprocessor statistics and metrics
+Enhanced API for the DataPreprocessor class with comprehensive features:
+- Advanced configuration management
+- Multiple data format support (JSON, CSV, NumPy)
+- Batch and streaming processing
+- Performance monitoring and statistics
+- Memory optimization controls
+- Caching and persistence
+- Real-time metrics and health monitoring
 
-The API is designed to handle JSON and CSV data formats, with proper validation,
-error handling, and documentation.
+Author: AI Assistant  
+Date: 2025-06-25
 """
 
 import os
@@ -17,56 +19,86 @@ import io
 import uuid
 import logging
 import tempfile
+import pickle
+import json
+import asyncio
+import csv
 import numpy as np
 import pandas as pd
+import sys
 from typing import Dict, List, Optional, Any, Union, Tuple
-from fastapi import FastAPI, File, UploadFile, HTTPException, Query, BackgroundTasks, Depends, Body, status
+from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import asynccontextmanager
+from dataclasses import asdict
+from pathlib import Path
+
+# Add the project root to the Python path
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
+
+from fastapi import FastAPI, File, UploadFile, HTTPException, Query, BackgroundTasks, Depends, Body, status, Request
 from fastapi.responses import JSONResponse, FileResponse, StreamingResponse
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.security import APIKeyHeader
 from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel, Field, validator, root_validator
 from enum import Enum
-import json
-from datetime import datetime
-import csv
-from dataclasses import asdict
 
 # Import the DataPreprocessor and related classes
 from modules.engine.data_preprocessor import (
     DataPreprocessor,
-    PreprocessorConfig,
-    NormalizationType,
     PreprocessingError,
     InputValidationError,
     StatisticsError,
     SerializationError
 )
+from modules.configs import (
+    PreprocessorConfig,
+    NormalizationType
+)
 
 # Set up logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler("data_preprocessor_api.log")
+    ]
 )
 logger = logging.getLogger("data_preprocessor_api")
 
-# Create FastAPI application
-app = FastAPI(
-    title="Data Preprocessor API",
-    description="API for advanced data preprocessing operations including normalization, outlier detection, and more",
-    version="1.0.0"
-)
+# --- Configuration ---
 
-# Define model storage directory
+api_config = {
+    "title": "Data Preprocessor API",
+    "description": "Enhanced API for advanced data preprocessing operations",
+    "version": "1.0.0",
+    "host": os.environ.get("PREPROCESSOR_API_HOST", "0.0.0.0"),
+    "port": int(os.environ.get("PREPROCESSOR_API_PORT", "8002")),
+    "debug": os.environ.get("PREPROCESSOR_API_DEBUG", "False").lower() in ("true", "1", "t"),
+    "require_api_key": os.environ.get("REQUIRE_API_KEY", "False").lower() in ("true", "1", "t"),
+    "api_keys": os.environ.get("API_KEYS", "").split(","),
+    "max_workers": int(os.environ.get("MAX_WORKERS", "4"))
+}
+
+# Storage directories
 MODEL_DIR = os.environ.get("MODEL_DIR", "./models")
-os.makedirs(MODEL_DIR, exist_ok=True)
-
-# Define temporary data directory
 TEMP_DATA_DIR = os.environ.get("TEMP_DATA_DIR", "./temp_data")
+os.makedirs(MODEL_DIR, exist_ok=True)
 os.makedirs(TEMP_DATA_DIR, exist_ok=True)
 
-# In-memory storage for active preprocessor instances
-active_preprocessors: Dict[str, DataPreprocessor] = {}
+# Security
+api_security = APIKeyHeader(name="X-API-Key", auto_error=False)
 
-# Response models and enums
+# Global storage
+active_preprocessors: Dict[str, DataPreprocessor] = {}
+thread_pool: Optional[ThreadPoolExecutor] = None
+
+# --- Enhanced Pydantic Models ---
+
 class NormalizationTypeEnum(str, Enum):
     NONE = "NONE"
     STANDARD = "STANDARD"
@@ -87,6 +119,7 @@ class OutlierHandlingEnum(str, Enum):
     REMOVE = "REMOVE"
     WINSORIZE = "WINSORIZE"
     MEAN = "MEAN"
+    MEDIAN = "MEDIAN"
 
 class NanStrategyEnum(str, Enum):
     MEAN = "MEAN"
@@ -331,6 +364,57 @@ def create_preprocessor_config(config_dict: Dict[str, Any]) -> PreprocessorConfi
         cleaned_config['normalization'] = getattr(NormalizationType, cleaned_config['normalization'])
     
     return PreprocessorConfig(**cleaned_config)
+
+# --- Lifecycle Management ---
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Handle startup and shutdown"""
+    global thread_pool
+    
+    logger.info("Initializing Data Preprocessor API...")
+    
+    # Initialize thread pool
+    thread_pool = ThreadPoolExecutor(max_workers=api_config["max_workers"])
+    
+    logger.info("Data Preprocessor API initialized")
+    yield
+    
+    # Cleanup
+    logger.info("Shutting down Data Preprocessor API...")
+    if thread_pool:
+        thread_pool.shutdown(wait=False)
+    logger.info("Data Preprocessor API shutdown complete")
+
+# Create FastAPI app
+app = FastAPI(
+    title=api_config["title"],
+    description=api_config["description"],
+    version=api_config["version"],
+    lifespan=lifespan
+)
+
+# Add middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+# --- Security Functions ---
+
+async def verify_api_key(api_key: str = Depends(api_security)):
+    """Verify API key if required"""
+    if not api_config["require_api_key"]:
+        return True
+    
+    if not api_key or api_key not in api_config["api_keys"]:
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
+    
+    return True
 
 # Exception handlers
 @app.exception_handler(PreprocessingError)

@@ -12,6 +12,7 @@ import os
 import sys
 import json
 import time
+import uuid
 import logging
 import traceback
 import numpy as np
@@ -21,6 +22,11 @@ from enum import Enum
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from datetime import datetime
+from dataclasses import asdict
+
+# Add the project root to the Python path
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
 
 from fastapi import FastAPI, File, UploadFile, HTTPException, Query, Body, BackgroundTasks, Depends, Form
 from fastapi.middleware.cors import CORSMiddleware
@@ -411,6 +417,40 @@ def load_data_from_file(file_path: str, columns: List[str] = None) -> pd.DataFra
         return df[columns]
     
     return df
+
+async def save_uploaded_file(file: UploadFile, upload_dir: Path = None) -> str:
+    """Save an uploaded file and return the file path."""
+    if upload_dir is None:
+        upload_dir = UPLOADS_DIR
+    
+    # Ensure upload directory exists
+    upload_dir.mkdir(exist_ok=True, parents=True)
+    
+    # Generate unique filename to avoid conflicts
+    timestamp = int(time.time())
+    unique_id = str(uuid.uuid4())[:8]
+    file_extension = Path(file.filename).suffix if file.filename else ""
+    unique_filename = f"{timestamp}_{unique_id}{file_extension}"
+    
+    file_path = upload_dir / unique_filename
+    
+    try:
+        # Save the file
+        with open(file_path, "wb") as buffer:
+            content = await file.read()
+            buffer.write(content)
+        
+        logger.info(f"Saved uploaded file: {file_path}")
+        return str(file_path)
+        
+    except Exception as e:
+        # Clean up if there was an error
+        if file_path.exists():
+            file_path.unlink()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to save uploaded file: {str(e)}"
+        )
 
 def train_model_task(request: TrainModelRequest, task_id: str):
     """Background task for model training."""
@@ -1245,6 +1285,414 @@ async def evaluate_model(model_name: str, request: EvaluateModelRequest):
         logger.error(f"Evaluation error: {str(e)}")
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Evaluation failed: {str(e)}")
+
+# --- Advanced Training Features ---
+
+@app.post("/api/hyperparameter-optimization")
+async def optimize_hyperparameters(
+    model_type: str = Body(...),
+    data_file: UploadFile = File(...),
+    target_column: str = Body(...),
+    feature_columns: Optional[List[str]] = Body(None),
+    optimization_strategy: OptimizationStrategyEnum = Body(OptimizationStrategyEnum.RANDOM_SEARCH),
+    optimization_iterations: int = Body(50),
+    cv_folds: int = Body(5),
+    param_grid: Optional[Dict[str, Any]] = Body(None),
+    background_tasks: BackgroundTasks = BackgroundTasks()
+):
+    """Run hyperparameter optimization for a specific model type."""
+    if not ml_engine:
+        raise HTTPException(status_code=400, detail="Engine not initialized")
+    
+    try:
+        # Save uploaded file
+        file_path = save_uploaded_file(data_file)
+        df = load_data_from_file(file_path)
+        
+        # Prepare data
+        if target_column not in df.columns:
+            raise HTTPException(status_code=400, detail=f"Target column '{target_column}' not found")
+        
+        y = df[target_column]
+        X = df[feature_columns] if feature_columns else df.drop(target_column, axis=1)
+        
+        # Create task ID for tracking
+        task_id = str(uuid.uuid4())
+        training_tasks[task_id] = {
+            "task_id": task_id,
+            "task_type": "hyperparameter_optimization",
+            "status": "running",
+            "progress": 0.0,
+            "created_at": datetime.now().isoformat(),
+            "model_type": model_type,
+            "optimization_strategy": optimization_strategy
+        }
+        
+        # Run optimization in background
+        def run_optimization():
+            try:
+                # Perform hyperparameter optimization
+                result = ml_engine.optimize_hyperparameters(
+                    X=X, y=y,
+                    model_type=model_type,
+                    optimization_strategy=optimization_strategy,
+                    optimization_iterations=optimization_iterations,
+                    cv_folds=cv_folds,
+                    param_grid=param_grid
+                )
+                
+                training_tasks[task_id]["status"] = "completed"
+                training_tasks[task_id]["progress"] = 1.0
+                training_tasks[task_id]["result"] = result
+                training_tasks[task_id]["completed_at"] = datetime.now().isoformat()
+                
+            except Exception as e:
+                logger.error(f"Optimization error: {str(e)}")
+                training_tasks[task_id]["status"] = "failed"
+                training_tasks[task_id]["error"] = str(e)
+                training_tasks[task_id]["completed_at"] = datetime.now().isoformat()
+        
+        background_tasks.add_task(run_optimization)
+        
+        return {
+            "task_id": task_id,
+            "status": "started",
+            "message": "Hyperparameter optimization started",
+            "check_status_url": f"/api/task-status/{task_id}"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error starting optimization: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/feature-selection")
+async def run_feature_selection(
+    data_file: UploadFile = File(...),
+    target_column: str = Body(...),
+    feature_selection_method: str = Body("mutual_info"),
+    feature_selection_k: Optional[int] = Body(None),
+    background_tasks: BackgroundTasks = BackgroundTasks()
+):
+    """Run feature selection on the provided dataset."""
+    if not ml_engine:
+        raise HTTPException(status_code=400, detail="Engine not initialized")
+    
+    try:
+        # Save and load data
+        file_path = save_uploaded_file(data_file)
+        df = load_data_from_file(file_path)
+        
+        # Prepare data
+        if target_column not in df.columns:
+            raise HTTPException(status_code=400, detail=f"Target column '{target_column}' not found")
+        
+        y = df[target_column]
+        X = df.drop(target_column, axis=1)
+        
+        # Create task ID
+        task_id = str(uuid.uuid4())
+        training_tasks[task_id] = {
+            "task_id": task_id,
+            "task_type": "feature_selection",
+            "status": "running",
+            "progress": 0.0,
+            "created_at": datetime.now().isoformat(),
+            "method": feature_selection_method
+        }
+        
+        def run_feature_selection():
+            try:
+                # Perform feature selection
+                result = ml_engine.select_features(
+                    X=X, y=y,
+                    method=feature_selection_method,
+                    k=feature_selection_k
+                )
+                
+                training_tasks[task_id]["status"] = "completed"
+                training_tasks[task_id]["progress"] = 1.0
+                training_tasks[task_id]["result"] = result
+                training_tasks[task_id]["completed_at"] = datetime.now().isoformat()
+                
+            except Exception as e:
+                logger.error(f"Feature selection error: {str(e)}")
+                training_tasks[task_id]["status"] = "failed"
+                training_tasks[task_id]["error"] = str(e)
+                training_tasks[task_id]["completed_at"] = datetime.now().isoformat()
+        
+        background_tasks.add_task(run_feature_selection)
+        
+        return {
+            "task_id": task_id,
+            "status": "started",
+            "message": "Feature selection started",
+            "check_status_url": f"/api/task-status/{task_id}"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error starting feature selection: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/ensemble-training")
+async def train_ensemble(
+    data_file: UploadFile = File(...),
+    target_column: str = Body(...),
+    feature_columns: Optional[List[str]] = Body(None),
+    ensemble_methods: List[str] = Body(["random_forest", "gradient_boosting", "svm"]),
+    ensemble_strategy: str = Body("voting"),
+    background_tasks: BackgroundTasks = BackgroundTasks()
+):
+    """Train an ensemble of models."""
+    if not ml_engine:
+        raise HTTPException(status_code=400, detail="Engine not initialized")
+    
+    try:
+        # Save and load data
+        file_path = save_uploaded_file(data_file)
+        df = load_data_from_file(file_path)
+        
+        # Prepare data
+        if target_column not in df.columns:
+            raise HTTPException(status_code=400, detail=f"Target column '{target_column}' not found")
+        
+        y = df[target_column]
+        X = df[feature_columns] if feature_columns else df.drop(target_column, axis=1)
+        
+        # Create task ID
+        task_id = str(uuid.uuid4())
+        training_tasks[task_id] = {
+            "task_id": task_id,
+            "task_type": "ensemble_training",
+            "status": "running",
+            "progress": 0.0,
+            "created_at": datetime.now().isoformat(),
+            "ensemble_methods": ensemble_methods,
+            "ensemble_strategy": ensemble_strategy
+        }
+        
+        def run_ensemble_training():
+            try:
+                # Train ensemble
+                result = ml_engine.train_ensemble(
+                    X=X, y=y,
+                    methods=ensemble_methods,
+                    strategy=ensemble_strategy
+                )
+                
+                training_tasks[task_id]["status"] = "completed"
+                training_tasks[task_id]["progress"] = 1.0
+                training_tasks[task_id]["result"] = result
+                training_tasks[task_id]["completed_at"] = datetime.now().isoformat()
+                
+            except Exception as e:
+                logger.error(f"Ensemble training error: {str(e)}")
+                training_tasks[task_id]["status"] = "failed"
+                training_tasks[task_id]["error"] = str(e)
+                training_tasks[task_id]["completed_at"] = datetime.now().isoformat()
+        
+        background_tasks.add_task(run_ensemble_training)
+        
+        return {
+            "task_id": task_id,
+            "status": "started",
+            "message": "Ensemble training started",
+            "check_status_url": f"/api/task-status/{task_id}"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error starting ensemble training: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/cross-validation")
+async def perform_cross_validation(
+    model_name: str = Body(...),
+    data_file: UploadFile = File(...),
+    target_column: str = Body(...),
+    feature_columns: Optional[List[str]] = Body(None),
+    cv_folds: int = Body(5),
+    scoring: Optional[str] = Body(None)
+):
+    """Perform cross-validation on a trained model."""
+    if not ml_engine:
+        raise HTTPException(status_code=400, detail="Engine not initialized")
+    
+    try:
+        # Save and load data
+        file_path = save_uploaded_file(data_file)
+        df = load_data_from_file(file_path)
+        
+        # Prepare data
+        if target_column not in df.columns:
+            raise HTTPException(status_code=400, detail=f"Target column '{target_column}' not found")
+        
+        y = df[target_column]
+        X = df[feature_columns] if feature_columns else df.drop(target_column, axis=1)
+        
+        # Perform cross-validation
+        result = ml_engine.cross_validate_model(
+            model_name=model_name,
+            X=X, y=y,
+            cv_folds=cv_folds,
+            scoring=scoring
+        )
+        
+        return {
+            "model_name": model_name,
+            "cv_results": result,
+            "cv_folds": cv_folds,
+            "scoring": scoring,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Cross-validation error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/model-explainability/{model_name}")
+async def get_model_explainability(
+    model_name: str,
+    data_file: UploadFile = File(...),
+    target_column: str = Body(...),
+    feature_columns: Optional[List[str]] = Body(None),
+    explainer_type: str = Body("shap"),
+    num_samples: int = Body(100)
+):
+    """Generate model explainability results."""
+    if not ml_engine:
+        raise HTTPException(status_code=400, detail="Engine not initialized")
+    
+    try:
+        # Save and load data
+        file_path = save_uploaded_file(data_file)
+        df = load_data_from_file(file_path)
+        
+        # Prepare data
+        if target_column not in df.columns:
+            raise HTTPException(status_code=400, detail=f"Target column '{target_column}' not found")
+        
+        y = df[target_column]
+        X = df[feature_columns] if feature_columns else df.drop(target_column, axis=1)
+        
+        # Sample data if requested
+        if num_samples < len(X):
+            sample_indices = np.random.choice(len(X), num_samples, replace=False)
+            X = X.iloc[sample_indices]
+            y = y.iloc[sample_indices]
+        
+        # Generate explainability
+        result = ml_engine.explain_model(
+            model_name=model_name,
+            X=X, y=y,
+            explainer_type=explainer_type
+        )
+        
+        return {
+            "model_name": model_name,
+            "explainability": result,
+            "explainer_type": explainer_type,
+            "num_samples": len(X),
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Explainability error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/engine-stats")
+async def get_engine_statistics():
+    """Get comprehensive engine statistics."""
+    if not ml_engine:
+        raise HTTPException(status_code=400, detail="Engine not initialized")
+    
+    try:
+        stats = {
+            "engine_version": ml_engine.VERSION,
+            "config": asdict(ml_engine.config) if hasattr(ml_engine.config, '__dict__') else str(ml_engine.config),
+            "trained_models": list(ml_engine.models.keys()) if hasattr(ml_engine, 'models') else [],
+            "best_model": ml_engine.best_model_name if hasattr(ml_engine, 'best_model_name') else None,
+            "best_score": ml_engine.best_score if hasattr(ml_engine, 'best_score') else None,
+            "training_complete": getattr(ml_engine, 'training_complete', False),
+            "active_tasks": len([t for t in training_tasks.values() if t["status"] == "running"]),
+            "completed_tasks": len([t for t in training_tasks.values() if t["status"] == "completed"]),
+            "failed_tasks": len([t for t in training_tasks.values() if t["status"] == "failed"]),
+            "total_tasks": len(training_tasks),
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        # Add preprocessing stats if available
+        if hasattr(ml_engine, 'preprocessor') and ml_engine.preprocessor:
+            if hasattr(ml_engine.preprocessor, '_metrics'):
+                stats["preprocessing_metrics"] = ml_engine.preprocessor._metrics
+        
+        return stats
+        
+    except Exception as e:
+        logger.error(f"Error getting engine stats: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/save-experiment")
+async def save_experiment(
+    experiment_name: str = Body(...),
+    include_models: bool = Body(True),
+    include_data: bool = Body(False)
+):
+    """Save the current experiment state."""
+    if not ml_engine:
+        raise HTTPException(status_code=400, detail="Engine not initialized")
+    
+    try:
+        # Generate experiment package
+        experiment_path = ml_engine.save_experiment(
+            experiment_name=experiment_name,
+            include_models=include_models,
+            include_data=include_data
+        )
+        
+        return {
+            "experiment_name": experiment_name,
+            "experiment_path": experiment_path,
+            "include_models": include_models,
+            "include_data": include_data,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error saving experiment: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/load-experiment")
+async def load_experiment(experiment_file: UploadFile = File(...)):
+    """Load a previously saved experiment."""
+    global ml_engine
+    
+    try:
+        # Save uploaded experiment file
+        experiment_path = save_uploaded_file(experiment_file)
+        
+        # Load experiment
+        ml_engine = MLTrainingEngine.load_experiment(experiment_path)
+        
+        return {
+            "message": "Experiment loaded successfully",
+            "experiment_file": experiment_file.filename,
+            "models_loaded": list(ml_engine.models.keys()) if hasattr(ml_engine, 'models') else [],
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error loading experiment: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for the training engine."""
+    return {
+        "status": "healthy",
+        "service": "ML Training Engine API",
+        "version": "1.0.0",
+        "engine_initialized": ml_engine is not None,
+        "timestamp": datetime.now().isoformat()
+    }
 
 if __name__ == "__main__":
     import uvicorn

@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, validator
 from typing import Optional, Dict, Any, List, Union
 import os
+import sys
 import time
 import hashlib
 import logging
@@ -13,6 +14,10 @@ import json
 import enum
 import uuid
 from pathlib import Path as FilePath
+
+# Add the project root to the Python path
+project_root = FilePath(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
 
 # Import the SecureModelManager class
 from modules.model_manager import SecureModelManager

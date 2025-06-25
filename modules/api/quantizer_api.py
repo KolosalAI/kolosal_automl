@@ -6,11 +6,18 @@ from pydantic import BaseModel, Field
 from enum import Enum
 import numpy as np
 import logging
+import sys
 import time
 import uvicorn
 import io
 import json
 from contextlib import asynccontextmanager
+from pathlib import Path
+from datetime import datetime
+
+# Add the project root to the Python path
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
 
 # Import the Quantizer and related classes
 from modules.configs import QuantizationConfig, QuantizationType, QuantizationMode
@@ -139,6 +146,18 @@ def list_to_numpy(data, dtype=np.float32):
 async def root():
     """Health check endpoint."""
     return {"status": "healthy", "service": "Quantizer API"}
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for the quantizer service."""
+    return {
+        "status": "healthy",
+        "service": "Quantizer API",
+        "version": "1.0.0",
+        "active_instances": len(quantizer_instances),
+        "instance_ids": list(quantizer_instances.keys()),
+        "timestamp": datetime.now().isoformat()
+    }
 
 @app.get("/instances", response_model=List[str])
 async def get_instances():
