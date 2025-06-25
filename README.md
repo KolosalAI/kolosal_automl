@@ -100,7 +100,7 @@
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/Genta-Technology/kolosal_automl.git
+git clone https://github.com/KolosalAI/kolosal_automl.git
 cd kolosal_automl
 
 # 2. Install uv (if not already installed)
@@ -129,7 +129,7 @@ uv pip install xgboost lightgbm catboost
 ### **Option 2 — Standard `pip`**
 
 ```bash
-git clone https://github.com/Genta-Technology/kolosal_automl.git
+git clone https://github.com/KolosalAI/kolosal_automl.git
 cd kolosal_automl
 python -m venv venv && source venv/bin/activate  # create & activate venv
 pip install --upgrade pip
@@ -704,7 +704,7 @@ Ready to explore advanced machine learning? Try our quickstart:
 
 ```bash
 # Clone and setup
-git clone https://github.com/Genta-Technology/kolosal_automl.git
+git clone https://github.com/KolosalAI/kolosal_automl.git
 cd kolosal_automl
 
 # Quick install with UV
@@ -747,6 +747,6 @@ uv run python app.py
 
 **Built with ❤️ by the kolosal AI Team**
 
-[🌟 Star us on GitHub](https://github.com/Genta-Technology/kolosal_automl) | [📖 Documentation](docs/) | [🐛 Report Issues](https://github.com/Genta-Technology/kolosal_automl/issues) | [📝 CLI Guide](CLI_USAGE.md)
+[🌟 Star us on GitHub](https://github.com/KolosalAI/kolosal_automl) | [📖 Documentation](docs/) | [🐛 Report Issues](https://github.com/KolosalAI/kolosal_automl/issues) | [📝 CLI Guide](CLI_USAGE.md)
 
 </div>
