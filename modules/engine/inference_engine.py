@@ -65,421 +65,40 @@ from .batch_processor import BatchProcessor
 from .data_preprocessor import DataPreprocessor
 from .quantizer import Quantizer
 from .lru_ttl_cache import LRUTTLCache
+from .simd_optimizer import SIMDOptimizer
+from .multi_level_cache import MultiLevelCache
+from .prediction_request import PredictionRequest
+from .dynamic_batcher import DynamicBatcher
+from .memory_pool import MemoryPool
+from .performance_metrics import PerformanceMetrics
 from ..configs import (
     QuantizationConfig, BatchProcessorConfig, BatchProcessingStrategy,
     BatchPriority, PreprocessorConfig, NormalizationType, 
     QuantizationMode, ModelType, EngineState, InferenceEngineConfig
 )
 
-@dataclass
-class PredictionRequest:
-    """Container for a prediction request with metadata"""
-    id: str
-    features: np.ndarray
-    priority: int = 0  # Lower value = higher priority
-    timestamp: float = 0.0
-    future: Optional[Any] = None
-    timeout_ms: Optional[float] = None
-    
-    def __lt__(self, other):
-        """Comparison for priority queue (lower value = higher priority)"""
-        if self.priority != other.priority:
-            return self.priority < other.priority
-        return self.timestamp < other.timestamp
+# SIMD Optimizations for vectorized operations
+try:
+    import numba
+    from numba import njit, prange
+    NUMBA_AVAILABLE = True
+except ImportError:
+    NUMBA_AVAILABLE = False
 
 
-class DynamicBatcher:
-    """
-    Improved dynamic batching system that efficiently groups requests
-    and processes them together to maximize hardware utilization.
-    """
-    
-    def __init__(
-        self, 
-        batch_processor: Callable,
-        max_batch_size: int = 64, 
-        max_wait_time_ms: float = 10.0,
-        max_queue_size: int = 1000
-    ):
-        self.batch_processor = batch_processor
-        self.max_batch_size = max_batch_size
-        self.max_wait_time_ms = max_wait_time_ms
-        
-        # Priority queue for requests (min heap based on priority)
-        self.request_queue = []
-        self.queue_lock = threading.RLock()
-        
-        # Batch formation trigger
-        self.batch_trigger = threading.Event()
-        
-        # Control flags
-        self.running = False
-        self.stop_event = threading.Event()
-        
-        # Worker thread
-        self.worker_thread = None
-        
-        # Stats
-        self.processed_batches = 0
-        self.processed_requests = 0
-        self.max_observed_queue_size = 0
-        self.batch_sizes = deque(maxlen=100)
-        self.batch_wait_times = deque(maxlen=100)
-        self.max_queue_size = max_queue_size
-        
-    def start(self):
-        """Start the batcher worker thread"""
-        if self.running:
-            return
-            
-        self.running = True
-        self.stop_event.clear()
-        self.worker_thread = threading.Thread(
-            target=self._worker_loop,
-            daemon=True,
-            name="DynamicBatcherWorker"
-        )
-        self.worker_thread.start()
-        
-    def stop(self, timeout: float = 2.0):
-        """Stop the batcher worker thread"""
-        if not self.running:
-            return
-            
-        self.running = False
-        self.stop_event.set()
-        self.batch_trigger.set()  # Wake up worker if it's waiting
-        
-        if self.worker_thread and self.worker_thread.is_alive():
-            self.worker_thread.join(timeout=timeout)
-            
-    def enqueue(self, request: PredictionRequest) -> bool:
-        """Add a request to the batch queue"""
-        with self.queue_lock:
-            # Check if queue is full
-            if len(self.request_queue) >= self.max_queue_size:
-                return False
-                
-            # Set timestamp if not already set
-            if request.timestamp == 0.0:
-                request.timestamp = time.monotonic()
-                
-            # Add to priority queue
-            heapq.heappush(self.request_queue, request)
-            
-            # Update stats
-            current_size = len(self.request_queue)
-            if current_size > self.max_observed_queue_size:
-                self.max_observed_queue_size = current_size
-                
-            # Signal worker if we have enough items to form a batch
-            # or if this is a high-priority request
-            if current_size >= self.max_batch_size or request.priority <= 1:
-                self.batch_trigger.set()
-                
-            return True
-                
-    def _worker_loop(self):
-        """Main batcher worker loop that forms and processes batches"""
-        last_batch_time = time.monotonic()
-        
-        while not self.stop_event.is_set():
-            current_time = time.monotonic()
-            
-            # Batch formation criteria:
-            # 1. Either max batch size is reached
-            # 2. Or max wait time has elapsed since last batch
-            # 3. Or high priority item is waiting
-            should_process = False
-            batch_wait_time = 0
-            
-            with self.queue_lock:
-                queue_size = len(self.request_queue)
-                
-                # Check if we have items and should form a batch
-                if queue_size > 0:
-                    batch_wait_time = (current_time - last_batch_time) * 1000  # ms
-                    
-                    # Case 1: Queue has reached max batch size
-                    if queue_size >= self.max_batch_size:
-                        should_process = True
-                    
-                    # Case 2: Wait time exceeded and we have at least one item
-                    elif batch_wait_time >= self.max_wait_time_ms:
-                        should_process = True
-                    
-                    # Case 3: High priority request is waiting
-                    elif queue_size > 0 and self.request_queue[0].priority <= 1:
-                        should_process = True
-            
-            if should_process:
-                self._process_batch()
-                last_batch_time = time.monotonic()
-            else:
-                # Wait for signal or timeout
-                timeout = max(0, (self.max_wait_time_ms / 1000) - batch_wait_time / 1000)
-                self.batch_trigger.wait(timeout=timeout)
-                self.batch_trigger.clear()
-                
-    def _process_batch(self):
-        """Form a batch from the queue and process it"""
-        batch_items = []
-        request_futures = []
-        start_time = time.monotonic()
-        
-        # Extract items for this batch
-        with self.queue_lock:
-            batch_size = min(len(self.request_queue), self.max_batch_size)
-            
-            if batch_size == 0:
-                return
-                
-            batch_items = []
-            for _ in range(batch_size):
-                request = heapq.heappop(self.request_queue)
-                batch_items.append(request)
-                if request.future is not None:
-                    request_futures.append(request.future)
-        
-        try:
-            # Group requests with same shapes for efficient batching
-            batch_groups = self._group_compatible_requests(batch_items)
-            
-            # Process each group
-            for group in batch_groups:
-                if not group:
-                    continue
-                
-                # Stack features into a batch
-                features = np.vstack([req.features for req in group])
-                
-                # Process batch
-                results = self.batch_processor(features)
-                
-                # Distribute results back to requesters
-                self._distribute_results(group, results)
-            
-            # Update stats
-            batch_time = (time.monotonic() - start_time) * 1000  # ms
-            with self.queue_lock:
-                self.processed_batches += 1
-                self.processed_requests += len(batch_items)
-                self.batch_sizes.append(len(batch_items))
-                self.batch_wait_times.append(batch_time)
-                
-        except Exception as e:
-            # Mark all futures as failed
-            for request in batch_items:
-                if request.future and not request.future.done():
-                    request.future.set_exception(e)
-    
-    def _group_compatible_requests(self, requests: List[PredictionRequest]) -> List[List[PredictionRequest]]:
-        """Group requests with compatible shapes for efficient batching"""
-        if not requests:
-            return []
-            
-        # Group by feature shape (excluding batch dimension)
-        groups = {}
-        for req in requests:
-            # Get shape key (tuple of dimensions except first)
-            if hasattr(req.features, 'shape') and len(req.features.shape) > 1:
-                shape_key = tuple(req.features.shape[1:])
-            else:
-                shape_key = (1,)  # Default for 1D arrays
-                
-            if shape_key not in groups:
-                groups[shape_key] = []
-            groups[shape_key].append(req)
-            
-        return list(groups.values())
-    
-    def _distribute_results(self, requests: List[PredictionRequest], batch_results: np.ndarray):
-        """Distribute batch results back to individual requesters"""
-        if batch_results is None:
-            # Handle error case
-            for req in requests:
-                if req.future and not req.future.done():
-                    req.future.set_exception(RuntimeError("Batch processing returned None"))
-            return
-            
-        # Calculate result slices
-        start_idx = 0
-        for i, req in enumerate(requests):
-            # Get number of rows for this request
-            n_rows = req.features.shape[0] if hasattr(req.features, 'shape') else 1
-            
-            # Extract result slice
-            end_idx = start_idx + n_rows
-            result_slice = batch_results[start_idx:end_idx]
-            
-            # Set future result if available
-            if req.future and not req.future.done():
-                req.future.set_result(result_slice)
-                
-            start_idx = end_idx
-    
-    def get_stats(self) -> Dict[str, Any]:
-        """Get batcher statistics"""
-        with self.queue_lock:
-            stats = {
-                "processed_batches": self.processed_batches,
-                "processed_requests": self.processed_requests,
-                "current_queue_size": len(self.request_queue),
-                "max_observed_queue_size": self.max_observed_queue_size,
-                "avg_batch_size": np.mean(self.batch_sizes) if self.batch_sizes else 0,
-                "avg_batch_wait_time_ms": np.mean(self.batch_wait_times) if self.batch_wait_times else 0,
-                "max_batch_wait_time_ms": max(self.batch_wait_times) if self.batch_wait_times else 0,
-            }
-            return stats
 
 
-class MemoryPool:
-    """
-    Manages a pool of pre-allocated memory buffers to reduce allocation overhead
-    and improve memory reuse for better CPU cache utilization.
-    """
-    
-    def __init__(self, max_buffers: int = 32):
-        self.max_buffers = max_buffers
-        self.buffer_pools = {}  # Shape -> List of free buffers
-        self.lock = threading.RLock()
-    
-    def get_buffer(self, shape: Tuple[int, ...], dtype=np.float32) -> np.ndarray:
-        """Get a buffer of the specified shape and type from the pool or create one"""
-        with self.lock:
-            key = (shape, np.dtype(dtype).name)
-            if key in self.buffer_pools and self.buffer_pools[key]:
-                return self.buffer_pools[key].pop()
-            # Use np.empty for performance (will be overwritten)
-            return np.empty(shape, dtype=dtype)
-    
-    def return_buffer(self, buffer: np.ndarray):
-        """Return a buffer to the pool for reuse"""
-        if buffer is None:
-            return
-        with self.lock:
-            key = (buffer.shape, buffer.dtype.name)
-            if key not in self.buffer_pools:
-                self.buffer_pools[key] = []
-            if len(self.buffer_pools[key]) < self.max_buffers:
-                buffer.fill(0)
-                self.buffer_pools[key].append(buffer)
-    
-    def clear(self):
-        with self.lock:
-            self.buffer_pools.clear()
-    
-    def get_stats(self) -> Dict[str, Any]:
-        with self.lock:
-            total_buffers = sum(len(buffers) for buffers in self.buffer_pools.values())
-            memory_usage = 0
-            for key, buffers in self.buffer_pools.items():
-                if buffers:
-                    shape, dtype_name = key
-                    buffer_size = np.prod(shape) * np.dtype(dtype_name).itemsize
-                    memory_usage += buffer_size * len(buffers)
-            return {
-                "total_buffers": total_buffers,
-                "memory_usage_bytes": memory_usage,
-                "memory_usage_mb": memory_usage / (1024 * 1024),
-                "shape_counts": {str(k): len(v) for k, v in self.buffer_pools.items()}
-            }
 
 
-class PerformanceMetrics:
-    """Thread-safe container for tracking performance metrics"""
-    
-    def __init__(self, window_size: int = 100):
-        self.window_size = window_size
-        self.lock = threading.RLock()
-        
-        # Initialize metrics storage
-        self.inference_times = []
-        self.batch_sizes = []
-        self.preprocessing_times = []
-        self.quantization_times = []
-        self.total_requests = 0
-        self.total_errors = 0
-        self.total_cache_hits = 0
-        self.total_cache_misses = 0
-        self.last_updated = time.time()
-    
-    def update_inference(self, inference_time: float, batch_size: int, 
-                         preprocessing_time: float = 0.0, quantization_time: float = 0.0):
-        """Update inference metrics with thread safety"""
-        with self.lock:
-            # Keep fixed window of metrics
-            if len(self.inference_times) >= self.window_size:
-                self.inference_times.pop(0)
-                self.batch_sizes.pop(0)
-                self.preprocessing_times.pop(0)
-                self.quantization_times.pop(0)
-            
-            self.inference_times.append(inference_time)
-            self.batch_sizes.append(batch_size)
-            self.preprocessing_times.append(preprocessing_time)
-            self.quantization_times.append(quantization_time)
-            self.total_requests += batch_size
-            self.last_updated = time.time()
-    
-    def record_error(self):
-        """Record an inference error"""
-        with self.lock:
-            self.total_errors += 1
-    
-    def record_cache_hit(self):
-        """Record a cache hit"""
-        with self.lock:
-            self.total_cache_hits += 1
-    
-    def record_cache_miss(self):
-        """Record a cache miss"""
-        with self.lock:
-            self.total_cache_misses += 1
-    
-    def get_metrics(self) -> Dict[str, Any]:
-        """Get current performance metrics as a dictionary"""
-        with self.lock:
-            metrics = {
-                "total_requests": self.total_requests,
-                "total_errors": self.total_errors,
-                "error_rate": self.total_errors / max(1, self.total_requests),
-                "cache_hit_rate": self.total_cache_hits / max(1, self.total_cache_hits + self.total_cache_misses),
-                "last_updated": self.last_updated
-            }
-            
-            # Add time-based metrics if we have data
-            if self.inference_times:
-                metrics.update({
-                    "avg_inference_time_ms": np.mean(self.inference_times) * 1000,
-                    "p95_inference_time_ms": np.percentile(self.inference_times, 95) * 1000,
-                    "p99_inference_time_ms": np.percentile(self.inference_times, 99) * 1000,
-                    "max_inference_time_ms": np.max(self.inference_times) * 1000,
-                })
-            
-            if self.batch_sizes:
-                metrics.update({
-                    "avg_batch_size": np.mean(self.batch_sizes),
-                    "max_batch_size": np.max(self.batch_sizes),
-                })
-            
-            if self.preprocessing_times:
-                metrics.update({
-                    "avg_preprocessing_time_ms": np.mean(self.preprocessing_times) * 1000,
-                })
-            
-            if self.quantization_times:
-                metrics.update({
-                    "avg_quantization_time_ms": np.mean(self.quantization_times) * 1000,
-                })
-                
-            # Calculate throughput
-            if self.inference_times:
-                total_time = sum(self.inference_times)
-                if total_time > 0:
-                    metrics["throughput_requests_per_second"] = sum(self.batch_sizes) / total_time
-            
-            return metrics
+
+
+
+
+
+
+
+
+
 
 
 class InferenceEngine:
@@ -536,10 +155,26 @@ class InferenceEngine:
         # Set up resource management and thread pool
         self._setup_resource_management()
         
-        # Initialize memory pool for buffer reuse
-        self.memory_pool = MemoryPool(max_buffers=32)
+        # Initialize memory pool for buffer reuse with NUMA awareness
+        self.memory_pool = MemoryPool(max_buffers=64, numa_aware=True)
         
-        # Feature transformation cache (separate from result cache)
+        # Initialize multi-level caching system
+        self.advanced_cache = MultiLevelCache(
+            l1_size=100,
+            l2_size=500, 
+            l3_size=1000,
+            enable_prediction=True
+        ) if self.config.enable_request_deduplication else None
+        
+        # Initialize SIMD optimizer for vectorized operations  
+        try:
+            self.simd_optimizer = SIMDOptimizer()
+            self.logger.info(f"SIMD optimizer initialized")
+        except Exception as e:
+            self.logger.warning(f"SIMD optimizer not available, using numpy fallback: {str(e)}")
+            self.simd_optimizer = None
+        
+        # Feature transformation cache (separate from result cache) - kept for backward compatibility
         self.feature_cache = LRUTTLCache(
             max_size=min(1000, self.config.max_cache_entries),
             ttl_seconds=self.config.cache_ttl_seconds
@@ -1262,16 +897,26 @@ class InferenceEngine:
                     self.logger.warning(error_msg)
                     return False, None, {"error": error_msg, "throttled": True}
         
-        # Check cache for identical input if enabled - FAST PATH
-        if self.result_cache is not None:
+        # Check cache using advanced multi-level cache if available - FAST PATH
+        cache_key = None
+        if self.advanced_cache is not None or self.result_cache is not None:
             cache_key = self._create_cache_key(features)
-            hit, cached_result = self.result_cache.get(cache_key)
             
-            if hit:
-                self.metrics.record_cache_hit()
-                return True, cached_result, {"cached": True, "cache_hit": True}
-            else:
-                self.metrics.record_cache_miss()
+            # Try advanced cache first
+            if self.advanced_cache is not None:
+                hit, cached_result = self.advanced_cache.get(cache_key, data_type='result')
+                if hit:
+                    self.metrics.record_cache_hit()
+                    return True, cached_result, {"cached": True, "cache_hit": True, "cache_level": "advanced"}
+            
+            # Fallback to simple cache
+            elif self.result_cache is not None:
+                hit, cached_result = self.result_cache.get(cache_key)
+                if hit:
+                    self.metrics.record_cache_hit()
+                    return True, cached_result, {"cached": True, "cache_hit": True, "cache_level": "simple"}
+            
+            self.metrics.record_cache_miss()
         
         # Increment active request counter
         with self.active_requests_lock:
@@ -1339,14 +984,9 @@ class InferenceEngine:
             # Make prediction with timing
             predict_start = time.time()
             
-            # Use the appropriate prediction method based on compilation status
+            # Use optimized prediction with all enhancements
             with self._control_threading(1):  # Limit threads during prediction
-                if self.compiled_model is not None:
-                    # Use compiled model (ONNX/Treelite)
-                    predictions = self._predict_compiled(features)
-                else:
-                    # Use regular model
-                    predictions = self._predict_internal(features)
+                predictions = self._predict_with_optimizations(features)
                     
             inference_time = time.time() - predict_start
             
@@ -1362,10 +1002,12 @@ class InferenceEngine:
                 quantization_time=quantization_time
             )
             
-            # Cache result if enabled
-            if self.result_cache is not None:
-                cache_key = self._create_cache_key(features)
-                self.result_cache.set(cache_key, predictions)
+            # Cache result using advanced cache if available
+            if cache_key:
+                if self.advanced_cache is not None:
+                    self.advanced_cache.set(cache_key, predictions, data_type='result', priority='high')
+                elif self.result_cache is not None:
+                    self.result_cache.set(cache_key, predictions)
             
             # Create response metadata
             metadata = {
@@ -1912,7 +1554,7 @@ class InferenceEngine:
             
         try:
             # Model-specific optimizations
-            if self.model_type == self.ModelType.SKLEARN:
+            if self.model_type == ModelType.SKLEARN:
                 # For linear models, precompute common dot products
                 if hasattr(self.model, 'coef_') and hasattr(self.model, 'intercept_'):
                     # Store coef and intercept in contiguous memory for better cache locality
@@ -1933,7 +1575,7 @@ class InferenceEngine:
                         
                     self.logger.debug("Precomputed model coefficients for faster inference")
                     
-            elif self.model_type in [self.ModelType.XGBOOST, self.ModelType.LIGHTGBM]:
+            elif self.model_type in [ModelType.XGBOOST, ModelType.LIGHTGBM]:
                 # For tree models, we can precompute common paths for fast features
                 # This is a placeholder - real implementation would analyze the model
                 # to identify and cache common decision paths
@@ -2087,84 +1729,54 @@ class InferenceEngine:
                 self.logger.warning("Unknown compiled model type, falling back to regular prediction")
             return self._predict_internal(features)
 
-
-    # Additional improvement: Add a method for model verification and validation
-    def validate_model(self) -> Dict[str, Any]:
-        """
-        Perform validation checks on the loaded model to ensure it can
-        make predictions correctly.
+    def _predict_with_optimizations(self, features_batch: np.ndarray) -> np.ndarray:
+        """Enhanced prediction method using all optimizations"""
+        # Use SIMD optimizations for linear operations if available
+        if self.simd_optimizer and hasattr(self.model, 'coef_') and hasattr(self.model, 'intercept_'):
+            # For linear models, use optimized forward pass
+            try:
+                return self.simd_optimizer.optimized_linear_forward(
+                    features_batch, 
+                    self.model.coef_, 
+                    self.model.intercept_
+                )
+            except Exception as e:
+                self.logger.debug(f"SIMD optimization failed, falling back to standard: {str(e)}")
         
-        Returns:
-            Dictionary with validation results
-        """
-        if self.model is None:
-            return {'valid': False, 'error': 'No model loaded'}
+        # Enhanced batch processing with memory pooling
+        input_buffer = self.memory_pool.get_buffer(features_batch.shape, features_batch.dtype)
+        try:
+            # Copy to buffer for memory alignment
+            np.copyto(input_buffer, features_batch)
             
-        validation_results = {
-            'valid': True,
-            'model_type': self.model_type.name if self.model_type else 'Unknown',
-            'compiled': self.compiled_model is not None,
-            'feature_count': len(self.feature_names) if self.feature_names else 'Unknown'
+            # Use compiled model if available
+            if self.compiled_model is not None:
+                result = self._predict_compiled(input_buffer)
+            else:
+                result = self._predict_internal(input_buffer)
+                
+            return result
+        finally:
+            # Return buffer to pool
+            self.memory_pool.return_buffer(input_buffer)
+    
+    def get_comprehensive_performance_stats(self) -> Dict[str, Any]:
+        """Get detailed performance statistics from all optimization components"""
+        stats = {
+            "inference_engine": self.get_performance_metrics(),
+            "memory_pool": self.memory_pool.get_stats(),
         }
         
-        try:
-            # Create test data for validation
-            feature_count = len(self.feature_names) if self.feature_names else (
-                self.model.n_features_in_ if hasattr(self.model, 'n_features_in_') else 10
-            )
-            
-            test_data = np.random.rand(1, feature_count).astype(np.float32)
-            
-            # Try to predict with the model
-            with self._control_threading(1):
-                if self.compiled_model is not None:
-                    prediction = self._predict_compiled(test_data)
-                else:
-                    prediction = self._predict_internal(test_data)
-            
-            # Record prediction shape and type
-            validation_results['prediction_shape'] = prediction.shape if hasattr(prediction, 'shape') else 'Unknown'
-            validation_results['prediction_type'] = str(type(prediction))
-            
-            # Additional checks for specific model types
-            if self.model_type == ModelType.SKLEARN:
-                if hasattr(self.model, 'get_params'):
-                    params = self.model.get_params()
-                    validation_results['params'] = {k: str(v) for k, v in params.items()}
-            
-            return validation_results
+        # Add advanced cache stats if available
+        if self.advanced_cache:
+            stats["advanced_cache"] = self.advanced_cache.get_comprehensive_stats()
         
-        except Exception as e:
-            validation_results['valid'] = False
-            validation_results['error'] = str(e)
-            return validation_results
-
-
-    # Additional improvement: Add efficient batch processing for _process_batch method
-    def _process_batch(self, features_batch: np.ndarray) -> np.ndarray:
-        """
-        Process a batch of feature vectors efficiently.
-        Used by the dynamic batcher for optimized batch processing.
+        # Add dynamic batcher stats if available
+        if self.dynamic_batcher:
+            stats["dynamic_batcher"] = self.dynamic_batcher.get_stats()
         
-        Args:
-            features_batch: Batch of input features
-            
-        Returns:
-            Batch prediction results
-        """
-        if self.model is None:
-            raise RuntimeError("No model loaded for batch processing")
+        # Add SIMD optimizer info if available
+        if self.simd_optimizer:
+            stats["simd_optimizer"] = self.simd_optimizer.get_optimization_info()
         
-        # Run preprocessing if needed
-        if self.preprocessor is not None:
-            features_batch = self.preprocessor.transform(features_batch)
-        
-        # Apply quantization if enabled
-        if self.config.enable_input_quantization and self.quantizer is not None:
-            features_batch, _ = self.quantizer.quantize(features_batch)
-        
-        # Use compiled model if available
-        if self.compiled_model is not None:
-            return self._predict_compiled(features_batch)
-        else:
-            return self._predict_internal(features_batch)
+        return stats

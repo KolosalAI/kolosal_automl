@@ -13,25 +13,10 @@ from dataclasses import asdict
 import time
 
 from ..configs import PreprocessorConfig, NormalizationType
-
-class PreprocessingError(Exception):
-    """Base class for all preprocessing exceptions."""
-    pass
-
-
-class InputValidationError(PreprocessingError):
-    """Exception raised for input validation errors."""
-    pass
-
-
-class StatisticsError(PreprocessingError):
-    """Exception raised for errors in computing statistics."""
-    pass
-
-
-class SerializationError(PreprocessingError):
-    """Exception raised for errors in serialization/deserialization."""
-    pass
+from .preprocessing_exceptions import (
+    PreprocessingError, InputValidationError, 
+    StatisticsError, SerializationError
+)
 
 
 def log_operation(func):
