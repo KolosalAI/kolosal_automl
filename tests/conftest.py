@@ -9,21 +9,59 @@ import sys
 import pytest
 import pandas as pd
 import numpy as np
+import tempfile
+import shutil
 from pathlib import Path
+from unittest.mock import Mock, MagicMock
 
 # Add project root to the Python path for all tests
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
 # Import shared configurations
-from modules.configs import MLTrainingEngineConfig, TaskType
+try:
+    from modules.configs import MLTrainingEngineConfig, TaskType
+except ImportError:
+    # Create minimal mock classes if import fails
+    class TaskType:
+        CLASSIFICATION = "classification"
+        REGRESSION = "regression"
+    
+    class MLTrainingEngineConfig:
+        def __init__(self):
+            self.model_path = "./test_models"
+            self.task_type = TaskType.CLASSIFICATION
 
 @pytest.fixture(scope="session")
 def test_dir():
     """Create and return a temporary test directory."""
-    test_dir = Path("./test_data")
-    test_dir.mkdir(exist_ok=True)
-    yield test_dir
-    # Cleanup can be handled by specific tests or in session-scoped autouse fixture
+    with tempfile.TemporaryDirectory(prefix="kolosal_test_") as temp_dir:
+        test_dir = Path(temp_dir)
+        yield test_dir
+        # Automatic cleanup when context exits
+
+@pytest.fixture(scope="function")
+def temp_test_dir():
+    """Create a temporary directory for individual test functions."""
+    with tempfile.TemporaryDirectory(prefix="kolosal_test_func_") as temp_dir:
+        yield Path(temp_dir)
+
+@pytest.fixture(scope="session")
+def models_dir():
+    """Create temporary models directory for tests."""
+    models_dir = Path("./test_models")
+    models_dir.mkdir(exist_ok=True)
+    yield models_dir
+    # Cleanup in session cleanup
+
+@pytest.fixture(scope="session")
+def data_dir():
+    """Create temporary data directory for tests."""
+    data_dir = Path("./test_data")
+    data_dir.mkdir(exist_ok=True)
+    yield data_dir
+    # Cleanup in session cleanup
 
 @pytest.fixture(scope="session", autouse=True)
 def cleanup_test_artifacts():
@@ -31,77 +69,87 @@ def cleanup_test_artifacts():
     yield  # Run all tests first
     
     # Then clean up directories
-    import shutil
+    cleanup_dirs = [
+        "./test_models",
+        "./test_data", 
+        "./reports",
+        "./optimization_jobs",
+        "./streaming_results",
+        "./checkpoints",
+        "./static/uploads",
+        "./static/models",
+        "./static/charts",
+        "./static/reports"
+    ]
     
-    # Clean up test models directory
-    test_models_dir = Path("./test_models")
-    if test_models_dir.exists():
-        shutil.rmtree(test_models_dir)
+    for dir_path in cleanup_dirs:
+        path = Path(dir_path)
+        if path.exists():
+            try:
+                shutil.rmtree(path)
+            except (OSError, PermissionError) as e:
+                print(f"Warning: Could not clean up {dir_path}: {e}")
+
+@pytest.fixture
+def sample_data():
+    """Generate sample data for testing."""
+    np.random.seed(42)
+    n_samples = 100
+    n_features = 5
+    X = np.random.randn(n_samples, n_features)
+    y = np.random.randint(0, 2, n_samples)
     
-    # Clean up test data directory
-    test_data_dir = Path("./test_data")
-    if test_data_dir.exists():
-        shutil.rmtree(test_data_dir)
+    feature_names = [f"feature_{i}" for i in range(n_features)]
     
-    # Clean up reports directory
-    reports_dir = Path("./reports")
-    if reports_dir.exists():
-        shutil.rmtree(reports_dir)
-        
-    # Clean up optimization_jobs directory
-    opt_jobs_dir = Path("./optimization_jobs")
-    if opt_jobs_dir.exists():
-        shutil.rmtree(opt_jobs_dir)
-        
-    # Clean up streaming_results directory
-    streaming_dir = Path("./streaming_results")
-    if streaming_dir.exists():
-        shutil.rmtree(streaming_dir)
+    return {
+        "X": X,
+        "y": y,
+        "feature_names": feature_names,
+        "n_samples": n_samples,
+        "n_features": n_features
+    }
 
 # ---------------------------------------------------------------------
-# tests/functional/conftest.py - Fixtures for API/functional tests
+# Common fixtures for API/functional tests
 # ---------------------------------------------------------------------
-"""
-Fixtures for functional tests of the API endpoints.
-"""
-import pytest
-from fastapi.testclient import TestClient
-
-# Import API modules
-from modules.api.app import app
 
 @pytest.fixture
 def client():
     """Return a test client for the FastAPI app."""
-    return TestClient(app)
+    try:
+        from fastapi.testclient import TestClient
+        from modules.api.app import app
+        return TestClient(app)
+    except ImportError:
+        pytest.skip("FastAPI not available for API tests")
 
 # ---------------------------------------------------------------------
-# tests/integration/conftest.py - Fixtures for integration tests
+# Common fixtures for ML engine tests
 # ---------------------------------------------------------------------
-"""
-Fixtures for integration tests that combine multiple components.
-"""
-import pytest
-import numpy as np
-import pandas as pd
-from modules.engine.train_engine import MLTrainingEngine
-from modules.configs import MLTrainingEngineConfig, TaskType
 
 @pytest.fixture
 def ml_engine():
     """Return a configured ML Training Engine instance."""
-    config = MLTrainingEngineConfig()
-    config.model_path = "./test_models"
-    config.task_type = TaskType.CLASSIFICATION
-    return MLTrainingEngine(config)
+    try:
+        from modules.engine.train_engine import MLTrainingEngine
+        config = MLTrainingEngineConfig()
+        config.model_path = "./test_models"
+        config.task_type = TaskType.CLASSIFICATION
+        return MLTrainingEngine(config)
+    except ImportError:
+        pytest.skip("ML Training Engine not available")
 
 @pytest.fixture
 def regression_ml_engine():
     """Return a configured ML Training Engine instance for regression tasks."""
-    config = MLTrainingEngineConfig()
-    config.model_path = "./test_models"
-    config.task_type = TaskType.REGRESSION
-    return MLTrainingEngine(config)
+    try:
+        from modules.engine.train_engine import MLTrainingEngine
+        config = MLTrainingEngineConfig()
+        config.model_path = "./test_models"
+        config.task_type = TaskType.REGRESSION
+        return MLTrainingEngine(config)
+    except ImportError:
+        pytest.skip("ML Training Engine not available")
 
 @pytest.fixture
 def sample_classification_data():

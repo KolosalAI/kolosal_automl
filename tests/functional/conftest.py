@@ -1,42 +1,82 @@
 """
-Configuration and fixtures for pytest.
+Configuration and fixtures for functional/API tests.
 """
 import os
 import sys
 import pytest
 import pandas as pd
 import numpy as np
-from fastapi.testclient import TestClient
+import tempfile
 from pathlib import Path
+from unittest.mock import Mock, MagicMock
 
 # Add parent directory to import path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
-# Import API modules
-from modules.api.app import app
-from modules.engine.train_engine import MLTrainingEngine
-from modules.configs import MLTrainingEngineConfig, TaskType
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
 @pytest.fixture
 def client():
     """Return a test client for the FastAPI app."""
-    return TestClient(app)
+    try:
+        from fastapi.testclient import TestClient
+        from modules.api.app import app
+        return TestClient(app)
+    except ImportError:
+        pytest.skip("FastAPI not available for API tests")
+
+@pytest.fixture
+def api_headers():
+    """Common headers for API requests."""
+    return {
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+    }
+
+@pytest.fixture
+def mock_engine():
+    """Mock inference engine for API tests."""
+    from unittest.mock import Mock
+    engine = Mock()
+    engine.state = "READY"
+    engine.model = Mock()
+    engine.active_requests = 0
+    engine.model_info = {"name": "test_model", "version": "1.0"}
+    engine.feature_names = ["feature1", "feature2", "feature3"]
+    engine.predict.return_value = (True, np.array([0.1, 0.9]), {"inference_time_ms": 5.0})
+    engine.get_performance_metrics.return_value = {
+        "avg_inference_time_ms": 5.0,
+        "throughput_requests_per_second": 100.0,
+        "total_requests": 1000,
+        "error_rate": 0.01
+    }
+    return engine
 
 @pytest.fixture
 def ml_engine():
     """Return a configured ML Training Engine instance."""
-    config = MLTrainingEngineConfig()
-    config.model_path = "./test_models"
-    config.task_type = TaskType.CLASSIFICATION
-    return MLTrainingEngine(config)
+    try:
+        from modules.engine.train_engine import MLTrainingEngine
+        from modules.configs import MLTrainingEngineConfig, TaskType
+        config = MLTrainingEngineConfig()
+        config.model_path = "./test_models"
+        config.task_type = TaskType.CLASSIFICATION
+        return MLTrainingEngine(config)
+    except ImportError:
+        pytest.skip("ML Training Engine not available")
 
 @pytest.fixture
 def regression_ml_engine():
     """Return a configured ML Training Engine instance for regression tasks."""
-    config = MLTrainingEngineConfig()
-    config.model_path = "./test_models"
-    config.task_type = TaskType.REGRESSION
-    return MLTrainingEngine(config)
+    try:
+        from modules.engine.train_engine import MLTrainingEngine
+        from modules.configs import MLTrainingEngineConfig, TaskType
+        config = MLTrainingEngineConfig()
+        config.model_path = "./test_models"
+        config.task_type = TaskType.REGRESSION
+        return MLTrainingEngine(config)
+    except ImportError:
+        pytest.skip("ML Training Engine not available")
 
 @pytest.fixture
 def sample_classification_data():

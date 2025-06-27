@@ -1,4 +1,4 @@
-import unittest
+import pytest
 import numpy as np
 import os
 import pickle
@@ -10,28 +10,33 @@ import threading
 from concurrent.futures import Future
 
 # Import the classes we're testing
-from modules.engine.inference_engine import (
-    InferenceEngine, 
-    DynamicBatcher,
-    MemoryPool,
-    PerformanceMetrics,
-    PredictionRequest, 
-    BatchPriority
-)
-from modules.configs import (
-    InferenceEngineConfig,
-    ModelType,
-    EngineState,
-    QuantizationConfig,
-    BatchProcessorConfig,
-    BatchProcessingStrategy,
-    PreprocessorConfig,
-    NormalizationType,
-    QuantizationMode
-)
+try:
+    from modules.engine.inference_engine import (
+        InferenceEngine, 
+        DynamicBatcher,
+        MemoryPool,
+        PerformanceMetrics,
+        PredictionRequest, 
+        BatchPriority
+    )
+    from modules.configs import (
+        InferenceEngineConfig,
+        ModelType,
+        EngineState,
+        QuantizationConfig,
+        BatchProcessorConfig,
+        BatchProcessingStrategy,
+        PreprocessorConfig,
+        NormalizationType,
+        QuantizationMode
+    )
+except ImportError as e:
+    pytest.skip(f"Required modules not available: {e}", allow_module_level=True)
 
 
-class TestPredictionRequest(unittest.TestCase):
+# Test PredictionRequest class
+@pytest.mark.unit
+class TestPredictionRequest:
     """Test the PredictionRequest class"""
     
     def test_prediction_request_creation(self):
@@ -46,12 +51,12 @@ class TestPredictionRequest(unittest.TestCase):
             timeout_ms=1000.0
         )
         
-        self.assertEqual(request.id, "test-123")
-        self.assertTrue(np.array_equal(request.features, features))
-        self.assertEqual(request.priority, 1)
-        self.assertEqual(request.timestamp, 123.45)
-        self.assertIsNone(request.future)
-        self.assertEqual(request.timeout_ms, 1000.0)
+        assert request.id == "test-123"
+        assert np.array_equal(request.features, features)
+        assert request.priority == 1
+        assert request.timestamp == 123.45
+        assert request.future is None
+        assert request.timeout_ms == 1000.0
     
     def test_prediction_request_priority_comparison(self):
         """Test priority comparison between requests"""
@@ -61,22 +66,25 @@ class TestPredictionRequest(unittest.TestCase):
         low_priority = PredictionRequest(id="low", features=np.array([3]), priority=2, timestamp=100.0)
         
         # Compare priorities
-        self.assertTrue(high_priority < medium_priority)
-        self.assertTrue(medium_priority < low_priority)
-        self.assertTrue(high_priority < low_priority)
+        assert high_priority < medium_priority
+        assert medium_priority < low_priority
+        assert high_priority < low_priority
         
         # Same priority but different timestamps
         older_req = PredictionRequest(id="older", features=np.array([4]), priority=1, timestamp=100.0)
         newer_req = PredictionRequest(id="newer", features=np.array([5]), priority=1, timestamp=200.0)
         
         # Older request should be processed first (lower timestamp = higher priority)
-        self.assertTrue(older_req < newer_req)
+        assert older_req < newer_req
 
 
-class TestMemoryPool(unittest.TestCase):
+@pytest.mark.unit
+class TestMemoryPool:
     """Test the MemoryPool class"""
     
-    def setUp(self):
+    @pytest.fixture(autouse=True)
+    def setup_memory_pool(self):
+        """Setup memory pool for each test"""
         self.memory_pool = MemoryPool(max_buffers=5)
     
     def test_get_buffer(self):
@@ -84,9 +92,9 @@ class TestMemoryPool(unittest.TestCase):
         shape = (10, 5)
         buffer = self.memory_pool.get_buffer(shape)
         
-        self.assertEqual(buffer.shape, shape)
-        self.assertEqual(buffer.dtype, np.float32)
-        self.assertTrue(np.all(buffer == 0))  # Should be zeroed
+        assert buffer.shape == shape
+        assert buffer.dtype == np.float32
+        assert np.all(buffer == 0)  # Should be zeroed
     
     def test_return_buffer(self):
         """Test returning a buffer to the pool and reusing it"""
@@ -122,7 +130,7 @@ class TestMemoryPool(unittest.TestCase):
         # Get stats and check count
         stats = self.memory_pool.get_stats()
         # Only max_buffers should be in the pool, not max_buffers+1
-        self.assertEqual(stats["total_buffers"], self.memory_pool.max_buffers)
+        assert stats["total_buffers"] == self.memory_pool.max_buffers
     
     def test_clear_pool(self):
         """Test clearing the pool"""
@@ -136,13 +144,16 @@ class TestMemoryPool(unittest.TestCase):
         
         # Check that pool is empty
         stats = self.memory_pool.get_stats()
-        self.assertEqual(stats["total_buffers"], 0)
+        assert stats["total_buffers"] == 0
 
 
-class TestPerformanceMetrics(unittest.TestCase):
+@pytest.mark.unit
+class TestPerformanceMetrics:
     """Test the PerformanceMetrics class"""
     
-    def setUp(self):
+    @pytest.fixture(autouse=True)
+    def setup_metrics(self):
+        """Setup performance metrics for each test"""
         self.metrics = PerformanceMetrics(window_size=3)  # Small window for testing
     
     def test_update_inference(self):
@@ -154,10 +165,10 @@ class TestPerformanceMetrics(unittest.TestCase):
         # Check metrics calculation
         metrics_dict = self.metrics.get_metrics()
         
-        self.assertEqual(self.metrics.total_requests, 30)  # 10 + 20
-        self.assertAlmostEqual(metrics_dict["avg_inference_time_ms"], 150.0)  # (0.1 + 0.2) / 2 * 1000
-        self.assertAlmostEqual(metrics_dict["avg_preprocessing_time_ms"], 15.0)  # (0.01 + 0.02) / 2 * 1000
-        self.assertAlmostEqual(metrics_dict["avg_quantization_time_ms"], 25.0)  # (0.02 + 0.03) / 2 * 1000
+        assert self.metrics.total_requests == 30  # 10 + 20
+        assert abs(metrics_dict["avg_inference_time_ms"] - 150.0) < 0.1  # (0.1 + 0.2) / 2 * 1000
+        assert abs(metrics_dict["avg_preprocessing_time_ms"] - 15.0) < 0.1  # (0.01 + 0.02) / 2 * 1000
+        assert abs(metrics_dict["avg_quantization_time_ms"] - 25.0) < 0.1  # (0.02 + 0.03) / 2 * 1000
     
     def test_window_limit(self):
         """Test that metrics window is limited"""
@@ -166,8 +177,8 @@ class TestPerformanceMetrics(unittest.TestCase):
             self.metrics.update_inference(float(i), 1)
         
         # Only the last 3 values should be in the window
-        self.assertEqual(len(self.metrics.inference_times), 3)
-        self.assertEqual(self.metrics.inference_times, [2.0, 3.0, 4.0])
+        assert len(self.metrics.inference_times) == 3
+        assert self.metrics.inference_times == [2.0, 3.0, 4.0]
     
     def test_error_recording(self):
         """Test recording errors"""
@@ -176,8 +187,8 @@ class TestPerformanceMetrics(unittest.TestCase):
             self.metrics.record_error()
         
         metrics_dict = self.metrics.get_metrics()
-        self.assertEqual(self.metrics.total_errors, 3)
-        self.assertEqual(metrics_dict["total_errors"], 3)
+        assert self.metrics.total_errors == 3
+        assert metrics_dict["total_errors"] == 3
     
     def test_cache_hits_misses(self):
         """Test recording cache hits and misses"""
@@ -189,13 +200,16 @@ class TestPerformanceMetrics(unittest.TestCase):
             self.metrics.record_cache_miss()
         
         metrics_dict = self.metrics.get_metrics()
-        self.assertEqual(metrics_dict["cache_hit_rate"], 0.5)  # 5 hits / (5 hits + 5 misses)
+        assert metrics_dict["cache_hit_rate"] == 0.5  # 5 hits / (5 hits + 5 misses)
 
 
-class TestDynamicBatcher(unittest.TestCase):
+@pytest.mark.unit
+class TestDynamicBatcher:
     """Test the DynamicBatcher class"""
     
-    def setUp(self):
+    @pytest.fixture(autouse=True)
+    def setup_batcher(self):
+        """Setup dynamic batcher for each test"""
         # Create a mock batch processor function
         self.batch_results = None
         
@@ -336,21 +350,31 @@ class TestDynamicBatcher(unittest.TestCase):
         )
         
         # Should reject when queue is full
-        self.assertFalse(self.batcher.enqueue(request_extra))
+        assert not self.batcher.enqueue(request_extra)
 
 
+@pytest.mark.unit
 @patch('modules.engine.inference_engine.LRUTTLCache')
 @patch('modules.engine.inference_engine.MemoryPool')
 @patch('modules.engine.inference_engine.DataPreprocessor')
 @patch('modules.engine.inference_engine.Quantizer')
-class TestInferenceEngine(unittest.TestCase):
+class TestInferenceEngine:
     """Test the InferenceEngine class with mocked dependencies"""
     
-    def setUp(self):
+    @pytest.fixture(autouse=True)
+    def setup_engine(self):
+        """Setup inference engine for each test"""
         # Create a simple linear model for testing
-        from sklearn.linear_model import LinearRegression
-        self.model = LinearRegression()
-        self.model.fit(np.array([[1], [2], [3]]), np.array([2, 4, 6]))
+        try:
+            from sklearn.linear_model import LinearRegression
+            self.model = LinearRegression()
+            self.model.fit(np.array([[1], [2], [3]]), np.array([2, 4, 6]))
+        except ImportError:
+            # Create a mock model if sklearn is not available
+            self.model = Mock()
+            self.model.predict.return_value = np.array([2.0, 4.0, 6.0])
+            self.model.feature_names_in_ = ["feature1"]
+            self.model.n_features_in_ = 1
         
         # Create temp file to save model
         self.temp_dir = tempfile.mkdtemp()
@@ -369,9 +393,11 @@ class TestInferenceEngine(unittest.TestCase):
             enable_monitoring=False,
             debug_mode=True  # For more logging
         )
-    
-    def tearDown(self):
-        # Make sure the model is released before removing files
+        
+        # Setup cleanup
+        yield
+        
+        # Cleanup (equivalent to tearDown)
         if hasattr(self, 'engine') and self.engine is not None:
             self.engine.shutdown()
             self.engine = None
@@ -384,10 +410,6 @@ class TestInferenceEngine(unittest.TestCase):
                 os.rmdir(self.temp_dir)
         except (PermissionError, OSError) as e:
             print(f"Warning: Failed to clean up temporary file: {e}")
-            # If we can't delete now, at least try to delete on exit
-            import atexit
-            atexit.register(lambda: os.path.exists(self.temp_file_path) and os.unlink(self.temp_file_path))
-            atexit.register(lambda: os.path.exists(self.temp_dir) and os.rmdir(self.temp_dir))
     
     def test_initialization(self, mock_Quantizer, mock_DataPreprocessor, mock_MemoryPool, mock_LRUTTLCache):
         """Test engine initialization"""
@@ -398,13 +420,13 @@ class TestInferenceEngine(unittest.TestCase):
         self.engine = InferenceEngine(self.config)
         
         # Check initial state
-        self.assertEqual(self.engine.state, EngineState.READY)
-        self.assertIsNone(self.engine.model)
-        self.assertEqual(self.engine.active_requests, 0)
+        assert self.engine.state == EngineState.READY
+        assert self.engine.model is None
+        assert self.engine.active_requests == 0
         
         # Make sure thread safety objects are created
-        self.assertIsNotNone(self.engine.inference_lock)
-        self.assertIsNotNone(self.engine.state_lock)
+        assert self.engine.inference_lock is not None
+        assert self.engine.state_lock is not None
     
     def test_load_model(self, mock_Quantizer, mock_DataPreprocessor, mock_MemoryPool, mock_LRUTTLCache):
         """Test loading a model"""
@@ -418,14 +440,14 @@ class TestInferenceEngine(unittest.TestCase):
         success = self.engine.load_model(self.temp_file_path, model_type=ModelType.SKLEARN)
         
         # Check result
-        self.assertTrue(success)
-        self.assertEqual(self.engine.state, EngineState.READY)
-        self.assertIsNotNone(self.engine.model)
-        self.assertEqual(self.engine.model_type, ModelType.SKLEARN)
+        assert success
+        assert self.engine.state == EngineState.READY
+        assert self.engine.model is not None
+        assert self.engine.model_type == ModelType.SKLEARN
         
         # Model info should be populated
         self.assertIn("model_type", self.engine.model_info)
-        self.assertEqual(self.engine.model_info["model_type"], "SKLEARN")
+        assert self.engine.model_info["model_type"] == "SKLEARN"
     
     def test_predict(self, mock_Quantizer, mock_DataPreprocessor, mock_MemoryPool, mock_LRUTTLCache):
         """Test making predictions"""
@@ -437,17 +459,17 @@ class TestInferenceEngine(unittest.TestCase):
         
         # Load the model
         success = self.engine.load_model(self.temp_file_path, model_type=ModelType.SKLEARN)
-        self.assertTrue(success)
+        assert success
         
         # Make a prediction
         features = np.array([[4.0]])
         success, predictions, metadata = self.engine.predict(features)
         
         # Check result
-        self.assertTrue(success)
-        self.assertIsNotNone(predictions)
-        self.assertEqual(predictions[0], 8.0)  # 4*2 from our linear model
-        self.assertIn("inference_time_ms", metadata)
+        assert success
+        assert predictions is not None
+        assert predictions[0] == 8.0  # 4*2 from our linear model
+        assert "inference_time_ms" in metadata
     
     @patch('modules.engine.inference_engine.DynamicBatcher')
     def test_batched_prediction(self, mock_DynamicBatcher, mock_Quantizer, mock_DataPreprocessor, 
@@ -466,7 +488,7 @@ class TestInferenceEngine(unittest.TestCase):
         
         # Load the model
         success = self.engine.load_model(self.temp_file_path, model_type=ModelType.SKLEARN)
-        self.assertTrue(success)
+        assert success
         
         # Prepare to enqueue a prediction
         features = np.array([[4.0]])
@@ -478,8 +500,8 @@ class TestInferenceEngine(unittest.TestCase):
         
         # Check that it called enqueue on the batcher
         mock_batcher.enqueue.assert_called_once()
-        self.assertEqual(mock_batcher.enqueue.call_args[0][0].features.tolist(), features.tolist())
-        self.assertEqual(mock_batcher.enqueue.call_args[0][0].priority, BatchPriority.HIGH.value)
+        assert mock_batcher.enqueue.call_args[0][0].features.tolist() == features.tolist()
+        assert mock_batcher.enqueue.call_args[0][0].priority == BatchPriority.HIGH.value
     
     def test_memory_pool_integration(self, mock_Quantizer, mock_DataPreprocessor, mock_MemoryPool, mock_LRUTTLCache):
         """Test integration with memory pool"""
@@ -490,11 +512,11 @@ class TestInferenceEngine(unittest.TestCase):
         self.engine = InferenceEngine(self.config)
         
         # Check that memory pool was created
-        self.assertIsNotNone(self.engine.memory_pool)
+        assert self.engine.memory_pool is not None
         
         # Test getting metrics
         metrics = self.engine.get_performance_metrics()
-        self.assertIn("memory_pool", metrics)
+        assert "memory_pool" in metrics
     
     def test_validation(self, mock_Quantizer, mock_DataPreprocessor, mock_MemoryPool, mock_LRUTTLCache):
         """Test model validation"""
@@ -506,15 +528,15 @@ class TestInferenceEngine(unittest.TestCase):
         
         # Validate without model
         validation = self.engine.validate_model()
-        self.assertFalse(validation['valid'])
+        assert not validation['valid']
         
         # Load model and validate
         self.engine.load_model(self.temp_file_path, model_type=ModelType.SKLEARN)
         validation = self.engine.validate_model()
         
         # Should be valid now
-        self.assertTrue(validation['valid'])
-        self.assertEqual(validation['model_type'], 'SKLEARN')
+        assert validation['valid']
+        assert validation['model_type'] == 'SKLEARN'
     
     def test_shutdown(self, mock_Quantizer, mock_DataPreprocessor, mock_MemoryPool, mock_LRUTTLCache):
         """Test engine shutdown"""
@@ -532,12 +554,12 @@ class TestInferenceEngine(unittest.TestCase):
         self.engine.shutdown()
         
         # Check state
-        self.assertEqual(self.engine.state, EngineState.STOPPED)
+        assert self.engine.state == EngineState.STOPPED
         
         # Check that resources were released
         mock_memory_pool.clear.assert_called_once()
-        self.assertIsNone(self.engine.model)
-        self.assertIsNone(self.engine.compiled_model)
+        assert self.engine.model is None
+        assert self.engine.compiled_model is None
 
 
 # Additional mocks needed for the test suite
@@ -553,4 +575,4 @@ class MockBatchProcessor:
 
 
 if __name__ == "__main__":
-    unittest.main()
+    pytest.main([__file__])

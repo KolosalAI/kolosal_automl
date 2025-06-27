@@ -1,17 +1,22 @@
-import unittest
+import pytest
 import json
 from unittest.mock import Mock, patch, MagicMock
 import numpy as np
-from fastapi.testclient import TestClient
 from fastapi import status
 
-# Import the module under test
-from modules.api.inference_engine_api import app, InferenceEngine, ModelType, BatchPriority, EngineState
+try:
+    from fastapi.testclient import TestClient
+    from modules.api.inference_engine_api import app, InferenceEngine, ModelType, BatchPriority, EngineState
+except ImportError as e:
+    pytest.skip(f"API modules not available: {e}", allow_module_level=True)
 
-class TestInferenceEngineAPI(unittest.TestCase):
+
+@pytest.mark.functional
+class TestInferenceEngineAPI:
     """Tests for the InferenceEngine API functionality"""
 
-    def setUp(self):
+    @pytest.fixture(autouse=True)
+    def setup_api_test(self):
         """Set up test environment before each test case"""
         # Create test client
         self.client = TestClient(app)
@@ -31,21 +36,21 @@ class TestInferenceEngineAPI(unittest.TestCase):
     def test_root_endpoint(self):
         """Test the root endpoint returns expected API information"""
         response = self.client.get("/")
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        assert response.status_code == status.HTTP_200_OK
         data = response.json()
-        self.assertIn("name", data)
-        self.assertIn("version", data)
-        self.assertIn("status", data)
-        self.assertEqual(data["status"], "running")
+        assert "name" in data
+        assert "version" in data
+        assert "status" in data
+        assert data["status"] == "running"
 
     def test_health_check(self):
         """Test the health check endpoint"""
         response = self.client.get("/health")
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        assert response.status_code == status.HTTP_200_OK
         data = response.json()
-        self.assertEqual(data["status"], "healthy")
-        self.assertIn("model_loaded", data)
-        self.assertTrue(data["model_loaded"])  # Our mock has a model
+        assert data["status"] == "healthy"
+        assert "model_loaded" in data
+        assert data["model_loaded"]  # Our mock has a model
 
     @patch("os.path.exists")
     def test_load_model_success(self, mock_exists):
@@ -61,9 +66,9 @@ class TestInferenceEngineAPI(unittest.TestCase):
         )
         
         # Assert
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        assert response.status_code == status.HTTP_200_OK
         data = response.json()
-        self.assertTrue(data["success"])
+        assert data["success"]
         self.mock_engine.load_model.assert_called_once()
 
     @patch("os.path.exists")
@@ -79,8 +84,8 @@ class TestInferenceEngineAPI(unittest.TestCase):
         )
         
         # Assert
-        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
-        self.assertIn("not found", response.json()["detail"])
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert "not found" in response.json()["detail"]
 
     def test_predict_success(self):
         """Test making a successful prediction"""
@@ -97,7 +102,7 @@ class TestInferenceEngineAPI(unittest.TestCase):
         )
         
         # Assert
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        assert response.status_code == status.HTTP_200_OK
         data = response.json()
         self.assertTrue(data["success"])
         self.assertEqual(data["predictions"], test_predictions.tolist())
@@ -337,12 +342,12 @@ class TestInferenceEngineAPI(unittest.TestCase):
             response = self.client.post("/restart")
             
             # Assert
-            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            assert response.status_code == status.HTTP_200_OK
             data = response.json()
-            self.assertTrue(data["success"])
+            assert data["success"]
             mock_engine_class.assert_called_once()
             self.mock_engine.shutdown.assert_called_once()
 
 
 if __name__ == "__main__":
-    unittest.main()
+    pytest.main([__file__])

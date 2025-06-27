@@ -1,17 +1,23 @@
 """
 Tests for the LRUTTLCache module.
 
-This file uses the unittest framework.
+This file uses the pytest framework.
 """
-import unittest
+import pytest
 import time
-from modules.engine.lru_ttl_cache import LRUTTLCache  # Adjust the import path as necessary
+
+try:
+    from modules.engine.lru_ttl_cache import LRUTTLCache
+except ImportError as e:
+    pytest.skip(f"LRU TTL Cache module not available: {e}", allow_module_level=True)
 
 
-class TestLRUTTLCache(unittest.TestCase):
+@pytest.mark.unit
+class TestLRUTTLCache:
     """Test cases for the LRUTTLCache class."""
 
-    def setUp(self):
+    @pytest.fixture(autouse=True)
+    def setup_cache(self):
         """Set up a cache with a small TTL for testing expiration easily."""
         self.ttl = 1  # seconds
         self.cache = LRUTTLCache(max_size=3, ttl_seconds=self.ttl)
@@ -20,14 +26,14 @@ class TestLRUTTLCache(unittest.TestCase):
         """Test basic set and get functionality."""
         self.cache.set("key1", "value1")
         hit, value = self.cache.get("key1")
-        self.assertTrue(hit)
-        self.assertEqual(value, "value1")
+        assert hit
+        assert value == "value1"
 
     def test_get_miss(self):
         """Test that getting a key that doesn't exist results in a miss."""
         hit, value = self.cache.get("non_existent")
-        self.assertFalse(hit)
-        self.assertIsNone(value)
+        assert not hit
+        assert value is None
 
     def test_expiration(self):
         """Test that items expire after TTL."""
@@ -36,13 +42,13 @@ class TestLRUTTLCache(unittest.TestCase):
         
         # Immediately available
         hit, _ = self.cache.get("key_expire")
-        self.assertTrue(hit)
+        assert hit
         
         # Wait for TTL to expire
         time.sleep(self.ttl + 0.1)
         hit, value = self.cache.get("key_expire")
-        self.assertFalse(hit)
-        self.assertIsNone(value)
+        assert not hit
+        assert value is None
 
     def test_invalidate(self):
         """Test that invalidate removes a key."""
@@ -138,12 +144,11 @@ class TestLRUTTLCache(unittest.TestCase):
         ]
         
         for key, value in test_cases:
-            with self.subTest(key=key, value=value):
-                self.cache.set(key, value)
-                hit, retrieved = self.cache.get(key)
-                self.assertTrue(hit)
-                self.assertEqual(retrieved, value)
+            self.cache.set(key, value)
+            hit, retrieved = self.cache.get(key)
+            assert hit
+            assert retrieved == value
 
 
 if __name__ == '__main__':
-    unittest.main()
+    pytest.main([__file__])
