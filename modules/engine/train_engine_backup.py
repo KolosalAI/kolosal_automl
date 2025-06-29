@@ -1451,7 +1451,7 @@ class MLTrainingEngine:
             self.logger.error(f"Failed to load model from {model_path}: {str(e)}")
             return False
 
-    def _init_optimization_components(self):
+    def _compare_metrics(self, new_metric, current_best):
         """
         Compare metrics to determine if new model is better.
         

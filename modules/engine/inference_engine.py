@@ -6,9 +6,10 @@ import hashlib
 import json
 import threading
 import gc
-from typing import Dict, List, Any, Optional, Union, Tuple, Callable
+from typing import Dict, List, Any, Optional, Union, Tuple, Callable, Iterator
 from datetime import datetime
 import numpy as np
+import pandas as pd
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 import queue
@@ -17,6 +18,11 @@ import functools
 from collections import deque
 import heapq
 from contextlib import contextmanager
+
+# Import optimization modules
+from .jit_compiler import get_global_jit_compiler
+from .mixed_precision import get_global_mixed_precision_manager
+from .streaming_pipeline import get_global_streaming_pipeline
 
 # Try to import optimization libraries
 try:
@@ -200,6 +206,9 @@ class InferenceEngine:
         # Initialize threadpoolctl for controlling nested parallelism
         if THREADPOOLCTL_AVAILABLE:
             self._threadpool_controllers = threadpoolctl.threadpool_info()
+        
+        # Initialize optimization components
+        self._init_optimization_components()
         
         # Monitor resources if enabled
         if self.config.enable_monitoring:
@@ -929,6 +938,10 @@ class InferenceEngine:
         feature_extraction_time = 0
         
         try:
+            # Apply mixed precision optimization for numerical features
+            if hasattr(self, 'mixed_precision_manager') and hasattr(self.config, 'enable_mixed_precision') and self.config.enable_mixed_precision:
+                features = self.mixed_precision_manager.optimize_numpy_precision(features, target_precision='auto')
+            
             # Ensure features is a numpy array with correct shape
             if not isinstance(features, np.ndarray):
                 features = np.array(features, dtype=np.float32)
@@ -1067,6 +1080,16 @@ class InferenceEngine:
         if self.model is None:
             raise RuntimeError("No model loaded")
         
+        # Apply JIT compilation for frequently called prediction methods
+        if hasattr(self, 'jit_compiler') and hasattr(self.config, 'enable_jit_compilation') and self.config.enable_jit_compilation:
+            # Use JIT compiler for model prediction if supported
+            if model_type == ModelType.SKLEARN:
+                # JIT compile prediction for sklearn models
+                if hasattr(self.model, 'predict_proba') and self.config.return_probabilities:
+                    return self.jit_compiler.compile_if_hot(self.model.predict_proba, features)
+                else:
+                    return self.jit_compiler.compile_if_hot(self.model.predict, features)
+        
         # Create a clean, contiguous copy of features if needed
         # This improves memory access patterns for vectorized operations
         if not features.flags.c_contiguous:
@@ -1199,584 +1222,322 @@ class InferenceEngine:
             
         return future
     
-    def predict_batch(self, features_list: List[np.ndarray], 
-                     timeout: Optional[float] = None) -> List[Tuple[bool, np.ndarray, Dict[str, Any]]]:
+    def _process_batch(self, batch_requests):
         """
-        Optimized batch prediction for multiple inputs with vectorized operations.
+        Process a batch of prediction requests.
         
         Args:
-            features_list: List of feature arrays
-            timeout: Optional timeout in seconds
+            batch_requests: List of request dictionaries
             
         Returns:
-            List of (success, predictions, metadata) tuples
+            List of prediction results
         """
-        # Early exit for empty list
-        if not features_list:
-            return []
+        try:
+            # Extract features from batch requests
+            features_list = []
+            request_ids = []
             
-        # Start timing
-        start_time = time.time()
-        
-        # Check if shapes are compatible for batching
-        shapes = [features.shape[1:] if features.ndim > 1 else (features.shape[0],)
-                 for features in features_list]
-        
-        if all(shape == shapes[0] for shape in shapes):
-            # All shapes match - can use efficient batching
-            try:
-                # Stack features into a single batch
-                if all(isinstance(f, np.ndarray) for f in features_list):
-                    # Use numpy vstack for efficient stacking
-                    stacked_features = np.vstack(features_list)
+            for request in batch_requests:
+                if isinstance(request, dict):
+                    features_list.append(request.get('features'))
+                    request_ids.append(request.get('id', None))
                 else:
-                    # Convert to numpy arrays first
-                    stacked_features = np.vstack([np.array(f) for f in features_list])
-                    
-                # Make a single prediction on the batch
-                success, predictions, metadata = self.predict(stacked_features)
+                    # Assume request is features directly
+                    features_list.append(request)
+                    request_ids.append(None)
+            
+            # Stack features into batch
+            if features_list:
+                batch_features = np.vstack(features_list)
+                
+                # Run batch prediction
+                success, predictions, metadata = self.predict(batch_features)
+                
+                # Package results
+                results = []
+                if success and predictions is not None:
+                    for i, (pred, req_id) in enumerate(zip(predictions, request_ids)):
+                        result = {
+                            'success': True,
+                            'prediction': pred,
+                            'metadata': metadata,
+                            'request_id': req_id
+                        }
+                        results.append(result)
+                else:
+                    # All requests failed
+                    for req_id in request_ids:
+                        result = {
+                            'success': False,
+                            'prediction': None,
+                            'metadata': metadata,
+                            'request_id': req_id
+                        }
+                        results.append(result)
+                
+                return results
+            else:
+                return []
+                
+        except Exception as e:
+            self.logger.error(f"Batch processing failed: {str(e)}")
+            # Return error results for all requests
+            results = []
+            for i, request in enumerate(batch_requests):
+                req_id = request.get('id', None) if isinstance(request, dict) else None
+                result = {
+                    'success': False,
+                    'prediction': None,
+                    'metadata': {'error': str(e)},
+                    'request_id': req_id
+                }
+                results.append(result)
+            return results
+
+    def _init_optimization_components(self):
+        """Initialize high-impact optimization components for inference."""
+        try:
+            # Initialize JIT compiler for hot inference paths
+            self.jit_compiler = get_global_jit_compiler()
+            if hasattr(self.config, 'enable_jit_compilation') and self.config.enable_jit_compilation:
+                self.jit_compiler.enable_compilation = True
+                self.logger.info("JIT compiler enabled for inference optimization")
+            
+            # Initialize mixed precision manager for inference
+            self.mixed_precision_manager = get_global_mixed_precision_manager()
+            if hasattr(self.config, 'enable_mixed_precision') and self.config.enable_mixed_precision:
+                self.mixed_precision_manager.enable_mixed_precision()
+                self.logger.info("Mixed precision enabled for inference")
+            
+            # Initialize streaming pipeline for batch inference
+            self.streaming_pipeline = get_global_streaming_pipeline()
+            if hasattr(self.config, 'enable_streaming') and self.config.enable_streaming:
+                self.logger.info("Streaming pipeline available for batch inference")
+                
+        except Exception as e:
+            self.logger.warning(f"Some optimization components could not be initialized: {str(e)}")
+
+    def predict_batch_streaming(self, features_df: pd.DataFrame, 
+                               batch_size: Optional[int] = None,
+                               output_path: Optional[str] = None) -> Iterator[Tuple[bool, np.ndarray, Dict[str, Any]]]:
+        """
+        Streaming batch prediction for large datasets using streaming pipeline.
+        
+        Args:
+            features_df: Input features as DataFrame
+            batch_size: Batch size for streaming (uses config default if None)
+            output_path: Optional path to save predictions
+            
+        Yields:
+            Prediction results for each chunk
+        """
+        if not hasattr(self, 'streaming_pipeline'):
+            raise RuntimeError("Streaming pipeline not available")
+        
+        batch_size = batch_size or getattr(self.config, 'streaming_batch_size', 1000)
+        
+        # Update streaming pipeline chunk size
+        original_chunk_size = self.streaming_pipeline.chunk_size
+        self.streaming_pipeline.chunk_size = batch_size
+        
+        try:
+            def predict_chunk(chunk: pd.DataFrame) -> pd.DataFrame:
+                """Predict on a single chunk."""
+                features_array = chunk.values
+                success, predictions, metadata = self.predict(features_array)
                 
                 if not success:
-                    # Return error for all inputs
-                    return [(False, None, metadata) for _ in features_list]
+                    raise RuntimeError(f"Prediction failed: {metadata.get('error', 'Unknown error')}")
                 
-                # Split predictions back to individual results
-                result = []
-                start_idx = 0
-                for i, features in enumerate(features_list):
-                    n_samples = features.shape[0] if hasattr(features, 'shape') else 1
-                    end_idx = start_idx + n_samples
-                    
-                    # Extract slice for this input
-                    pred_slice = predictions[start_idx:end_idx]
-                    
-                    # Create individual metadata (copy shared and add specifics)
-                    item_metadata = metadata.copy()
-                    item_metadata['batch_index'] = i
-                    item_metadata['batch_size'] = len(features_list)
-                    
-                    result.append((True, pred_slice, item_metadata))
-                    start_idx = end_idx
-                    
-                return result
-            
-            except Exception as e:
-                if self.logger.isEnabledFor(logging.ERROR):
-                    self.logger.error(f"Batch prediction error: {str(e)}")
-                try:
-                    import traceback
-                    if self.config.debug_mode:
-                        self.logger.error(traceback.format_exc())
-                except ImportError:
-                    pass
-                self.logger.info("Falling back to individual processing after batch error")
-        
-        # If shapes are incompatible or batch processing failed, process individually
-        return [self.predict(features) for features in features_list]
-    
-    def get_performance_metrics(self) -> Dict[str, Any]:
-        """
-        Get comprehensive performance metrics from all components.
-        
-        Returns:
-            Dictionary of performance metrics
-        """
-        metrics = self.metrics.get_metrics()
-        
-        # Add memory pool stats
-        memory_stats = self.memory_pool.get_stats()
-        metrics["memory_pool"] = memory_stats
-        
-        # Add dynamic batcher stats if available
-        if self.dynamic_batcher:
-            batcher_stats = self.dynamic_batcher.get_stats()
-            metrics["dynamic_batcher"] = batcher_stats
-            
-        # Add cache stats
-        if self.result_cache:
-            metrics["result_cache"] = self.result_cache.get_stats()
-            
-        # Add feature cache stats if enabled
-        if self.feature_cache:
-            metrics["feature_cache"] = self.feature_cache.get_stats()
-            
-        # Add system metrics if psutil is available
-        if PSUTIL_AVAILABLE:
-            try:
-                process = psutil.Process()
+                # Create result DataFrame
+                result_df = chunk.copy()
+                if predictions.ndim == 1:
+                    result_df['prediction'] = predictions
+                else:
+                    # Multi-output predictions
+                    for i, pred_col in enumerate(predictions.T):
+                        result_df[f'prediction_{i}'] = pred_col
                 
-                # Get CPU and memory usage
-                metrics["system"] = {
-                    "cpu_percent": process.cpu_percent(),
-                    "memory_usage_mb": process.memory_info().rss / (1024 * 1024),
-                    "threads_count": process.num_threads(),
-                    "open_files": len(process.open_files()),
-                }
-                
-                # Add NUMA stats if available
-                if hasattr(process, "numa_memory_info"):
-                    numa_info = process.numa_memory_info()
-                    metrics["system"]["numa_info"] = numa_info
-            except Exception as e:
-                self.logger.debug(f"Error collecting system metrics: {str(e)}")
-                
-        # Add GC stats
-        metrics["gc"] = {
-            "enabled": gc.isenabled(),
-            "threshold": gc.get_threshold(),
-            "count": gc.get_count(),
-        }
-        
-        if hasattr(self.metrics, 'gc_pauses'):
-            metrics["gc"]["avg_pause_ms"] = np.mean(self.metrics.gc_pauses) * 1000 if self.metrics.gc_pauses else 0
-            metrics["gc"]["max_pause_ms"] = np.max(self.metrics.gc_pauses) * 1000 if self.metrics.gc_pauses else 0
+                result_df['prediction_metadata'] = str(metadata)
+                return result_df
             
-        return metrics
+            # Process using streaming pipeline
+            with self.streaming_pipeline.monitoring_context():
+                for chunk_result in self.streaming_pipeline.process_dataframe_stream(
+                    features_df, predict_chunk, output_path
+                ):
+                    # Extract predictions from chunk result
+                    prediction_columns = [col for col in chunk_result.columns if col.startswith('prediction')]
+                    if len(prediction_columns) == 1:
+                        predictions = chunk_result['prediction'].values
+                    else:
+                        predictions = chunk_result[prediction_columns].values
+                    
+                    yield True, predictions, {"streaming": True, "chunk_size": len(chunk_result)}
+                    
+        except Exception as e:
+            self.logger.error(f"Streaming batch prediction failed: {str(e)}")
+            yield False, None, {"error": str(e), "streaming": True}
+        
+        finally:
+            # Restore original chunk size
+            self.streaming_pipeline.chunk_size = original_chunk_size
     
     def shutdown(self):
-        """
-        Shutdown the engine and release resources with proper cleanup.
-        """
-        self.logger.info("Shutting down inference engine")
-        
-        with self.state_lock:
-            self.state = EngineState.STOPPING
-            
-        # Stop monitoring
-        if hasattr(self, 'monitor_stop_event'):
-            self.monitor_stop_event.set()
-            if hasattr(self, 'monitor_thread') and self.monitor_thread.is_alive():
-                self.monitor_thread.join(timeout=1.0)
-                
-        # Stop dynamic batcher
-        if self.dynamic_batcher:
-            self.dynamic_batcher.stop()
-            
-        # Clear caches
-        if self.result_cache:
-            self.result_cache.clear()
-            
-        if self.feature_cache:
-            self.feature_cache.clear()
-            
-        # Clear memory pool
-        self.memory_pool.clear()
-        
-        # Shutdown thread pool
-        if hasattr(self, 'thread_pool'):
-            self.thread_pool.shutdown(wait=False)
-            
-        # Remove GC callback
-        if gc.callbacks and self._gc_callback in gc.callbacks:
-            gc.callbacks.remove(self._gc_callback)
-            
-        # Unload model references to free memory
-        self.model = None
-        self.compiled_model = None
-            
-        # Update state
-        with self.state_lock:
-            self.state = EngineState.STOPPED
-            
-        self.logger.info("Inference engine shutdown complete")
-        
-    def __del__(self):
-        """Clean up resources when the object is garbage collected."""
+        """Shutdown the inference engine and clean up resources."""
         try:
-            # Only call shutdown if not already stopped
-            if hasattr(self, 'state') and self.state not in (EngineState.STOPPING, EngineState.STOPPED):
-                self.shutdown()
-        except:
-            # Ignore errors during garbage collection
-            pass
-
-    # Fix 1: Add missing _control_threading method - contextmanager for controlling thread counts
-    @contextmanager
-    def _control_threading(self, num_threads: int):
-        """
-        Context manager to temporarily control thread limits for numerical libraries.
-        
-        Args:
-            num_threads: Number of threads to use for computations
-        """
-        original_settings = {}
-        
-        try:
-            # Save original settings
-            if hasattr(os, 'environ'):
-                for env_var in ['OMP_NUM_THREADS', 'MKL_NUM_THREADS', 'OPENBLAS_NUM_THREADS', 
-                            'VECLIB_MAXIMUM_THREADS', 'NUMEXPR_NUM_THREADS']:
-                    if env_var in os.environ:
-                        original_settings[env_var] = os.environ[env_var]
+            self.logger.info("Shutting down inference engine")
             
-            # Set thread count temporarily
-            thread_count = str(num_threads)
-            os.environ["OMP_NUM_THREADS"] = thread_count
-            os.environ["MKL_NUM_THREADS"] = thread_count
-            os.environ["OPENBLAS_NUM_THREADS"] = thread_count
-            os.environ["VECLIB_MAXIMUM_THREADS"] = thread_count
-            os.environ["NUMEXPR_NUM_THREADS"] = thread_count
+            # Stop monitoring
+            if hasattr(self, '_monitoring_active'):
+                self._monitoring_active = False
             
-            # Apply threadpoolctl if available
-            if hasattr(self, '_threadpool_controllers') and self.config.threadpoolctl_available:
-                import threadpoolctl
-                self._threadpool_limit = threadpoolctl.threadpool_limits(limits=num_threads)
-                
-            # Yield control back to the caller
-            yield
+            # Stop dynamic batcher
+            if hasattr(self, 'dynamic_batcher') and self.dynamic_batcher:
+                self.dynamic_batcher.stop()
             
-        finally:
-            # Restore original settings
-            for env_var, value in original_settings.items():
-                os.environ[env_var] = value
-                
-            # Release threadpoolctl limit if it was applied
-            if hasattr(self, '_threadpool_limit'):
-                del self._threadpool_limit
-
-    # Fix 2: Add missing _compile_model method
-    def _compile_model(self):
-        """
-        Compile model to optimized format for faster inference if supported.
-        For ONNX: Converts scikit-learn/XGBoost models to ONNX format.
-        For Treelite: Converts tree ensemble models to compiled format.
-        """
-        if self.model is None:
-            self.logger.warning("Cannot compile: no model loaded")
-            return
+            # Clear caches
+            if hasattr(self, 'result_cache') and self.result_cache:
+                self.result_cache.clear()
+            if hasattr(self, 'feature_cache') and self.feature_cache:
+                self.feature_cache.clear()
             
-        self.logger.info(f"Compiling model of type {self.model_type.name}")
-        
-        try:
-            if self.model_type == self.ModelType.SKLEARN:
-                if not self.config.onnx_available:
-                    if self.logger.isEnabledFor(logging.WARNING):
-                        self.logger.warning("ONNX not available for model compilation")
-                    return
-                try:
-                    import onnx
-                    import onnxruntime
-                    from skl2onnx import convert_sklearn
-                    from skl2onnx.common.data_types import FloatTensorType
-                except ImportError:
-                    if self.logger.isEnabledFor(logging.WARNING):
-                        self.logger.warning("skl2onnx or onnxruntime not available")
-                    return
-                
-                # Get input shape for ONNX conversion
-                n_features = len(self.feature_names) if self.feature_names else (
-                    self.model.n_features_in_ if hasattr(self.model, 'n_features_in_') else None
-                )
-                
-                if n_features is None:
-                    self.logger.warning("Could not determine feature count for ONNX conversion")
-                    return
-                    
-                # Define input type
-                input_type = [('float_input', FloatTensorType([None, n_features]))]
-                
-                # Convert model to ONNX
-                onnx_model = convert_sklearn(self.model, initial_types=input_type)
-                
-                # Save ONNX model to temporary file
-                import tempfile
-                with tempfile.NamedTemporaryFile(suffix='.onnx', delete=False) as f:
-                    onnx_path = f.name
-                    f.write(onnx_model.SerializeToString())
-                
-                # Load ONNX model with runtime
-                self.onnx_input_name = 'float_input'  # Store for prediction
-                self.compiled_model = onnxruntime.InferenceSession(onnx_path)
-                
-                # Remove temporary file
-                os.unlink(onnx_path)
-                
-                self.logger.info("Model compiled to ONNX format successfully")
-                
-            elif self.model_type in [self.ModelType.XGBOOST, self.ModelType.LIGHTGBM]:
-                if not self.config.treelite_available:
-                    if self.logger.isEnabledFor(logging.WARNING):
-                        self.logger.warning("Treelite not available for model compilation")
-                    return
-                try:
-                    import treelite
-                    import treelite_runtime
-                except ImportError:
-                    if self.logger.isEnabledFor(logging.WARNING):
-                        self.logger.warning("treelite or treelite_runtime not available")
-                    return
-                
-                # Handle different tree model types
-                if self.model_type == self.ModelType.XGBOOST:
-                    # Export to treelite model
-                    treelite_model = treelite.Model.from_xgboost(self.model)
-                else:  # LightGBM
-                    # Export LightGBM model to temporary file for treelite
-                    import tempfile
-                    with tempfile.NamedTemporaryFile(suffix='.txt', delete=False) as f:
-                        lgb_path = f.name
-                        self.model.save_model(lgb_path)
-                    
-                    # Load into treelite
-                    treelite_model = treelite.Model.load(lgb_path, model_format='lightgbm')
-                    os.unlink(lgb_path)  # Remove temp file
-                
-                # Compile model - optimize for current architecture
-                libpath = treelite_model.compile(dirpath='.', params={'parallel_comp': self.thread_count})
-                
-                # Load compiled model
-                self.compiled_model = treelite_runtime.Predictor(libpath)
-                
-                self.logger.info("Tree model compiled with Treelite successfully")
-            else:
-                self.logger.info(f"Model type {self.model_type.name} does not support compilation")
-        
+            # Cleanup models
+            if hasattr(self, 'model'):
+                self.model = None
+            
+            self.logger.info("Inference engine shutdown complete")
+            
         except Exception as e:
-            if self.logger.isEnabledFor(logging.ERROR):
-                self.logger.error(f"Model compilation failed: {str(e)}")
-            try:
-                import traceback
-                self.logger.debug(traceback.format_exc())
-            except ImportError:
-                pass
-            self.compiled_model = None
-
-
-    # Fix 3: Add missing _precompute_common_values method
-    def _precompute_common_values(self):
-        """
-        Pre-compute and cache common values to avoid redundant calculations
-        during inference. This can improve cache efficiency and reduce
-        computation time for frequent patterns.
-        """
-        if self.model is None:
-            return
-            
-        try:
-            # Model-specific optimizations
-            if self.model_type == ModelType.SKLEARN:
-                # For linear models, precompute common dot products
-                if hasattr(self.model, 'coef_') and hasattr(self.model, 'intercept_'):
-                    # Store coef and intercept in contiguous memory for better cache locality
-                    if not hasattr(self, '_optimized_model_params'):
-                        self._optimized_model_params = {}
-                        
-                    # Convert to float32 if precision allows for faster computation
-                    if self.config.enable_fp16_optimization:
-                        self._optimized_model_params['coef'] = np.ascontiguousarray(
-                            self.model.coef_.astype(np.float32)
-                        )
-                        self._optimized_model_params['intercept'] = np.ascontiguousarray(
-                            self.model.intercept_.astype(np.float32)
-                        )
-                    else:
-                        self._optimized_model_params['coef'] = np.ascontiguousarray(self.model.coef_)
-                        self._optimized_model_params['intercept'] = np.ascontiguousarray(self.model.intercept_)
-                        
-                    self.logger.debug("Precomputed model coefficients for faster inference")
-                    
-            elif self.model_type in [ModelType.XGBOOST, ModelType.LIGHTGBM]:
-                # For tree models, we can precompute common paths for fast features
-                # This is a placeholder - real implementation would analyze the model
-                # to identify and cache common decision paths
-                pass
-                
-            # Precompute common input transformations if preprocessing is enabled
-            if self.preprocessor is not None and hasattr(self.preprocessor, 'precompute_transforms'):
-                self.preprocessor.precompute_transforms()
-                
-            self.logger.info("Precomputed common values for optimized inference")
-        
-        except Exception as e:
-            self.logger.warning(f"Error in precomputing values: {str(e)}")
-
-
-    # Fix 4: Add missing _load_ensemble_model method
-    def _load_ensemble_model(self, ensemble_config: Dict[str, Any]):
-        """
-        Load an ensemble model from configuration.
-        
-        Args:
-            ensemble_config: Dictionary with ensemble configuration
-            
-        Returns:
-            Loaded ensemble model
-        """
-        if 'models' not in ensemble_config:
-            raise ValueError("Invalid ensemble config: 'models' key not found")
-            
-        # Get model paths and load models
-        model_paths = ensemble_config.get('model_paths', [])
-        weights = ensemble_config.get('weights', None)
-        method = ensemble_config.get('method', 'average')
-        
-        # Dictionary to store loaded models
-        loaded_models = []
-        
-        # Load each model in the ensemble
-        for model_path in model_paths:
-            if not os.path.exists(model_path):
-                raise FileNotFoundError(f"Model file not found: {model_path}")
-            
-            # Detect model type from file extension
-            model_type = self._detect_model_type(model_path)
-            
-            # Load model based on type
-            if model_type == self.ModelType.SKLEARN:
-                if self.config.joblib_available:
-                    try:
-                        import joblib
-                        model = joblib.load(model_path)
-                    except ImportError:
-                        with open(model_path, 'rb') as f:
-                            import pickle
-                            model = pickle.load(f)
-                else:
-                    with open(model_path, 'rb') as f:
-                        import pickle
-                        model = pickle.load(f)
-            elif model_type == self.ModelType.XGBOOST:
-                try:
-                    import xgboost as xgb
-                    model = xgb.Booster()
-                    model.load_model(model_path)
-                except ImportError:
-                    raise RuntimeError("xgboost is not available")
-            elif model_type == self.ModelType.LIGHTGBM:
-                try:
-                    import lightgbm as lgb
-                    model = lgb.Booster(model_file=model_path)
-                except ImportError:
-                    raise RuntimeError("lightgbm is not available")
-            else:
-                with open(model_path, 'rb') as f:
-                    import pickle
-                    model = pickle.load(f)
-            
-            loaded_models.append(model)
-        
-        # Create and return ensemble container
-        ensemble = {
-            'models': loaded_models,
-            'weights': weights,
-            'method': method
-        }
-        
-        self.logger.info(f"Loaded ensemble with {len(loaded_models)} models using {method} method")
-        return ensemble
-
-    # Fix 5: Add missing _create_cache_key method
-    def _create_cache_key(self, features: np.ndarray) -> str:
-        """
-        Create a unique cache key for the input features.
-        
-        Args:
-            features: Input feature array
-            
-        Returns:
-            Cache key string
-        """
-        # For small feature sets, use direct hashing
-        if features.size <= 1000:  # Arbitrary threshold
-            # Convert features to bytes and hash
-            feature_bytes = features.tobytes()
-            return hashlib.md5(feature_bytes).hexdigest()
-        else:
-            # For larger feature sets, use a combination of shape, dtype, and statistical properties
-            # This is faster but has a small chance of collisions
-            hash_components = [
-                str(features.shape),
-                str(features.dtype),
-                str(hash(features.data.tobytes()[:1000])),  # Hash first 1000 bytes
-                f"{np.sum(features):.6f}",  # Sum with limited precision
-                f"{np.mean(features):.6f}",  # Mean with limited precision
-                f"{np.std(features):.6f}" if features.size > 1 else "0"  # Std with limited precision
-            ]
-            
-            key_string = "_".join(hash_components)
-            return hashlib.md5(key_string.encode()).hexdigest()
-
-
-    # Fix 6: Fixed _predict_compiled method (removing duplicate code)
-    def _predict_compiled(self, features: np.ndarray) -> np.ndarray:
-        """
-        Make a prediction using the compiled model (ONNX/Treelite).
-        
-        Args:
-            features: Input features
-            
-        Returns:
-            Prediction results
-        """
-        if self.compiled_model is None:
-            raise RuntimeError("No compiled model available")
-        
-        # Handle different compiled model types
-        if hasattr(self.compiled_model, 'run'):  # ONNX Runtime
-            input_name = getattr(self, 'onnx_input_name', 'float_input')
-            onnx_inputs = {input_name: features.astype(np.float32)}
-            outputs = self.compiled_model.run(None, onnx_inputs)
-            return outputs[0]
-        elif hasattr(self.compiled_model, 'predict'):  # Treelite
-            try:
-                from treelite_runtime import Batch
-            except ImportError:
-                raise RuntimeError("treelite_runtime is not available")
-            batch = Batch.from_npy2d(features)
-            return self.compiled_model.predict(batch)
-        else:
-            if self.logger.isEnabledFor(logging.WARNING):
-                self.logger.warning("Unknown compiled model type, falling back to regular prediction")
-            return self._predict_internal(features)
-
-    def _predict_with_optimizations(self, features_batch: np.ndarray) -> np.ndarray:
-        """Enhanced prediction method using all optimizations"""
-        # Use SIMD optimizations for linear operations if available
-        if self.simd_optimizer and hasattr(self.model, 'coef_') and hasattr(self.model, 'intercept_'):
-            # For linear models, use optimized forward pass
-            try:
-                return self.simd_optimizer.optimized_linear_forward(
-                    features_batch, 
-                    self.model.coef_, 
-                    self.model.intercept_
-                )
-            except Exception as e:
-                self.logger.debug(f"SIMD optimization failed, falling back to standard: {str(e)}")
-        
-        # Enhanced batch processing with memory pooling
-        input_buffer = self.memory_pool.get_buffer(features_batch.shape, features_batch.dtype)
-        try:
-            # Copy to buffer for memory alignment
-            np.copyto(input_buffer, features_batch)
-            
-            # Use compiled model if available
-            if self.compiled_model is not None:
-                result = self._predict_compiled(input_buffer)
-            else:
-                result = self._predict_internal(input_buffer)
-                
-            return result
-        finally:
-            # Return buffer to pool
-            self.memory_pool.return_buffer(input_buffer)
+            self.logger.error(f"Error during shutdown: {str(e)}")
     
-    def get_comprehensive_performance_stats(self) -> Dict[str, Any]:
-        """Get detailed performance statistics from all optimization components"""
-        stats = {
-            "inference_engine": self.get_performance_metrics(),
-            "memory_pool": self.memory_pool.get_stats(),
-        }
+    def _compile_model(self):
+        """Compile the model for faster inference if supported."""
+        if self.model is None:
+            return
         
-        # Add advanced cache stats if available
-        if self.advanced_cache:
-            stats["advanced_cache"] = self.advanced_cache.get_comprehensive_stats()
-        
-        # Add dynamic batcher stats if available
-        if self.dynamic_batcher:
-            stats["dynamic_batcher"] = self.dynamic_batcher.get_stats()
-        
-        # Add SIMD optimizer info if available
-        if self.simd_optimizer:
-            stats["simd_optimizer"] = self.simd_optimizer.get_optimization_info()
-        
-        return stats
+        try:
+            # Check if ONNX compilation is available and enabled
+            if self.config.enable_onnx and hasattr(self.config, 'onnx_available') and self.config.onnx_available:
+                self._compile_with_onnx()
+            # Check if Treelite compilation is available for tree models  
+            elif hasattr(self.config, 'treelite_available') and self.config.treelite_available:
+                self._compile_with_treelite()
+            else:
+                # Use JIT compilation for supported models
+                if hasattr(self, 'jit_compiler') and self.jit_compiler:
+                    self.logger.info("Using JIT compilation for model acceleration")
+                    # JIT compilation happens dynamically during prediction
+                else:
+                    self.logger.info("Model compilation not available, using standard inference")
+        except Exception as e:
+            self.logger.warning(f"Failed to compile model: {str(e)}. Using standard inference.")
+    
+    def _compile_with_onnx(self):
+        """Compile model using ONNX Runtime."""
+        try:
+            import onnx
+            import onnxruntime as ort
+            from sklearn import __version__ as sklearn_version
+            
+            # Only support sklearn models for now
+            if self.model_type != ModelType.SKLEARN:
+                raise ValueError(f"ONNX compilation not supported for {self.model_type}")
+            
+            # Convert sklearn model to ONNX
+            from skl2onnx import convert_sklearn
+            from skl2onnx.common.data_types import FloatTensorType
+            
+            # Define input shape
+            feature_count = len(self.feature_names) if self.feature_names else 10
+            initial_type = [('float_input', FloatTensorType([None, feature_count]))]
+            
+            # Convert to ONNX
+            onnx_model = convert_sklearn(self.model, initial_types=initial_type)
+            
+            # Create ONNX Runtime session
+            self.compiled_model = ort.InferenceSession(onnx_model.SerializeToString())
+            self.onnx_input_name = 'float_input'
+            
+            self.logger.info("Model successfully compiled with ONNX Runtime")
+        except Exception as e:
+            self.logger.warning(f"ONNX compilation failed: {str(e)}")
+            raise
+    
+    def _compile_with_treelite(self):
+        """Compile tree-based models using Treelite."""
+        try:
+            import treelite
+            import treelite_runtime
+            
+            # Only support tree-based models
+            if self.model_type not in (ModelType.XGBOOST, ModelType.LIGHTGBM):
+                # Check if sklearn model is tree-based
+                if self.model_type == ModelType.SKLEARN:
+                    model_name = self.model.__class__.__name__.lower()
+                    if 'forest' not in model_name and 'tree' not in model_name:
+                        raise ValueError(f"Treelite compilation not supported for {model_name}")
+                else:
+                    raise ValueError(f"Treelite compilation not supported for {self.model_type}")
+            
+            # Convert model to Treelite
+            if self.model_type == ModelType.XGBOOST:
+                tl_model = treelite.Model.from_xgboost(self.model)
+            elif self.model_type == ModelType.LIGHTGBM:
+                tl_model = treelite.Model.from_lightgbm(self.model)
+            elif self.model_type == ModelType.SKLEARN:
+                tl_model = treelite.Model.from_sklearn(self.model)
+            
+            # Compile the model
+            tl_model.compile(dirpath='./temp_treelite_model', verbose=False)
+            
+            # Load compiled model
+            self.compiled_model = treelite_runtime.Predictor('./temp_treelite_model')
+            
+            self.logger.info("Model successfully compiled with Treelite")
+        except Exception as e:
+            self.logger.warning(f"Treelite compilation failed: {str(e)}")
+            raise
+    
+    def _precompute_common_values(self):
+        """Pre-compute common values for cache optimization."""
+        try:
+            # Pre-allocate common array shapes in memory pool
+            if hasattr(self, 'memory_pool') and self.memory_pool:
+                common_shapes = [
+                    (1, len(self.feature_names)) if self.feature_names else (1, 10),
+                    (32, len(self.feature_names)) if self.feature_names else (32, 10),
+                    (64, len(self.feature_names)) if self.feature_names else (64, 10),
+                ]
+                
+                for shape in common_shapes:
+                    try:
+                        buffer = self.memory_pool.get_buffer(shape=shape, dtype=np.float32)
+                        # Return buffer to pool for reuse
+                        self.memory_pool.return_buffer(buffer)
+                    except Exception:
+                        pass  # Non-critical optimization
+            
+            # Pre-warm any caches
+            if hasattr(self, 'result_cache') and self.result_cache:
+                # Cache is already initialized, no pre-warming needed
+                pass
+            
+            self.logger.debug("Common values pre-computed for optimization")
+        except Exception as e:
+            self.logger.debug(f"Pre-computation optimization failed: {str(e)}")
+    
+    def _create_cache_key(self, features):
+        """Create a cache key for features."""
+        if isinstance(features, np.ndarray):
+            # For numpy arrays, create a hash of the values
+            return hash(features.tobytes())
+        elif isinstance(features, (list, tuple)):
+            # For lists/tuples, convert to tuple and hash
+            return hash(tuple(features))
+        elif hasattr(features, 'values'):
+            # For DataFrames, use the underlying values
+            return hash(features.values.tobytes())
+        else:
+            # Fallback: convert to string and hash
+            return hash(str(features))

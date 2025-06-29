@@ -496,6 +496,12 @@ class InferenceEngineConfig:
     enable_quantization_aware_inference: bool = False
     enable_throttling: bool = False
     
+    # High-impact optimization settings
+    enable_jit_compilation: bool = True
+    enable_mixed_precision: bool = True
+    enable_streaming: bool = True
+    streaming_batch_size: int = 1000
+    
     # New fields aligned with the inference engine implementation
     optimization_mode: OptimizationMode = OptimizationMode.BALANCED
     enable_fp16_optimization: bool = False  # Enable FP16 for models that support it
@@ -595,6 +601,12 @@ class InferenceEngineConfig:
             "enable_warmup": self.enable_warmup,
             "enable_quantization_aware_inference": self.enable_quantization_aware_inference,
             "enable_throttling": self.enable_throttling,
+            
+            # High-impact optimization settings
+            "enable_jit_compilation": self.enable_jit_compilation,
+            "enable_mixed_precision": self.enable_mixed_precision,
+            "enable_streaming": self.enable_streaming,
+            "streaming_batch_size": self.streaming_batch_size,
             
             # New fields
             "optimization_mode": self.optimization_mode.value,
@@ -743,6 +755,7 @@ class OptimizationStrategy(Enum):
     OPTUNA = "optuna"  # Added popular Optuna framework
     SUCCESSIVE_HALVING = "successive_halving"  # Added ASHA variant
     BOHB = "bayesian_optimization_hyperband"  # Added BOHB combination
+    ADAPTIVE = "adaptive"  # Adaptive hyperparameter optimization with dynamic search space
 
 class ModelSelectionCriteria(Enum):
     ACCURACY = "accuracy"
@@ -987,7 +1000,21 @@ class MLTrainingEngineConfig:
         enable_data_validation: bool = True,
         enable_security: bool = False,
         security_config: Dict = None,
-        metadata: Dict = None
+        metadata: Dict = None,
+        
+        # High-impact optimization settings
+        enable_jit_compilation: bool = True,
+        jit_min_calls: int = 10,
+        jit_cache_size: int = 128,
+        enable_mixed_precision: bool = True,
+        use_fp16: bool = True,
+        enable_adaptive_hyperopt: bool = True,
+        hyperopt_backend: str = 'optuna',
+        max_trials: int = 100,
+        enable_streaming: bool = True,
+        streaming_batch_size: int = 1000,
+        streaming_chunk_size: int = 1000,
+        streaming_threshold: int = 5000
     ):
         # Handle task_type as string or enum
         if isinstance(task_type, str):
@@ -1129,11 +1156,26 @@ class MLTrainingEngineConfig:
         self.enable_telemetry = enable_telemetry
         self.backend = backend
         self.custom_callbacks = custom_callbacks or []
+        
+        # High-impact optimization settings
+        self.enable_jit_compilation = enable_jit_compilation
+        self.jit_min_calls = jit_min_calls
+        self.jit_cache_size = jit_cache_size
+        self.enable_mixed_precision = enable_mixed_precision
+        self.use_fp16 = use_fp16
+        self.enable_adaptive_hyperopt = enable_adaptive_hyperopt
+        self.hyperopt_backend = hyperopt_backend
+        self.max_trials = max_trials
+        self.enable_streaming = enable_streaming
+        self.streaming_batch_size = streaming_batch_size
+        self.streaming_chunk_size = streaming_chunk_size
+        self.streaming_threshold = streaming_threshold
+        
         self.enable_data_validation = enable_data_validation
         self.enable_security = enable_security
         self.security_config = security_config or {}
         self.metadata = metadata or {}
-        
+    
     def to_dict(self) -> Dict:
         """Convert the full configuration to a dictionary for serialization"""
         config_dict = {
@@ -1214,4 +1256,3 @@ class MLTrainingEngineConfig:
         config_dict["monitoring_config"] = self.monitoring_config.to_dict()
         
         return config_dict
-    
