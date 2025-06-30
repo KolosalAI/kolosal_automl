@@ -1452,32 +1452,38 @@ class MLTrainingEngine:
             return False
 
     def _init_optimization_components(self):
-        """
-        Compare metrics to determine if new model is better.
+        """Initialize high-impact optimization components."""
+        # Initialize all components to defaults first
+        self.jit_compiler = get_global_jit_compiler()
+        self.mixed_precision_manager = get_global_mixed_precision_manager()
+        self.adaptive_optimizer = get_global_adaptive_optimizer()
+        self.streaming_pipeline = get_global_streaming_pipeline()
         
-        Args:
-            new_metric: Metric value of new model
-            current_best: Current best metric value
+        try:
+            # Initialize JIT compiler for hot path compilation
+            if hasattr(self.config, 'enable_jit_compilation') and self.config.enable_jit_compilation:
+                self.jit_compiler.initialize()
+            else:
+                self.jit_compiler = None
             
-        Returns:
-            True if new model is better, False otherwise
-        """
-        # Handle regression metrics that are better when lower
-        if self.config.task_type == TaskType.REGRESSION:
-            if hasattr(self.config, 'model_selection_criteria'):
-                criteria = self.config.model_selection_criteria
+            # Initialize mixed precision manager
+            if hasattr(self.config, 'enable_mixed_precision') and self.config.enable_mixed_precision:
+                self.mixed_precision_manager.initialize()
+            else:
+                self.mixed_precision_manager = None
+            
+            # Initialize adaptive hyperparameter optimizer
+            if hasattr(self.config, 'enable_adaptive_hyperopt') and self.config.enable_adaptive_hyperopt:
+                self.adaptive_optimizer.initialize()
+            else:
+                self.adaptive_optimizer = None
                 
-                if isinstance(criteria, ModelSelectionCriteria):
-                    key = criteria.value
-                else:
-                    key = criteria
-                    
-                # For these metrics, lower is better
-                if key in ["rmse", "mse", "mae", "mape", "median_absolute_error"]:
-                    return new_metric < current_best
-        
-        # For most metrics, higher is better
-        return new_metric > current_best
+        except Exception as e:
+            self.logger.error(f"Error initializing optimization components: {str(e)}")
+            # Fallback to None values
+            self.jit_compiler = None
+            self.mixed_precision_manager = None
+            self.adaptive_optimizer = None
     
     def _get_best_metric_value(self, metrics):
         """Extract the best metric value based on task type."""
@@ -1843,6 +1849,8 @@ class MLTrainingEngine:
                 except Exception as e:
                     self.logger.warning(f"Failed to generate model report: {str(e)}")
 
+
+
         self.training_complete = True
         total_time = time.time() - start_time
         self.logger.info(f"Model training completed in {total_time:.2f} seconds")
@@ -1856,122 +1864,340 @@ class MLTrainingEngine:
             "training_time": total_time
         }
     
-    def _init_optimization_components(self):
-        """Initialize high-impact optimization components."""
-        # Initialize all components to defaults first
-        self.jit_compiler = get_global_jit_compiler()
-        self.mixed_precision_manager = get_global_mixed_precision_manager()
-        self.adaptive_optimizer = get_global_adaptive_optimizer()
-        self.streaming_pipeline = get_global_streaming_pipeline()
+    def get_performance_comparison(self) -> Dict[str, Any]:
+        """
+        Compare performance across all trained models.
         
+        Returns:
+            Dictionary with model comparisons and best model information
+        """
         try:
-            # Initialize JIT compiler for hot path compilation
-            if hasattr(self.config, 'enable_jit_compilation') and self.config.enable_jit_compilation:
-                self.jit_compiler = JITCompiler(
-                    enable_compilation=True,
-                    min_calls_for_compilation=getattr(self.config, 'jit_min_calls', 10),
-                    cache_size=getattr(self.config, 'jit_cache_size', 50)
-                )
-                self.logger.info("JIT compiler initialized for hot path optimization")
-            else:
-                self.logger.info("Using global JIT compiler")
+            if not self.models:
+                return {
+                    "models": [],
+                    "best_model": None,
+                    "primary_metric": None,
+                    "total_models": 0,
+                    "error": "No models trained yet"
+                }
             
-            # Initialize mixed precision manager
-            if hasattr(self.config, 'enable_mixed_precision') and self.config.enable_mixed_precision:
-                from .mixed_precision import MixedPrecisionConfig
-                mp_config = MixedPrecisionConfig(
-                    enable_fp16=getattr(self.config, 'use_fp16', True),
-                    enable_automatic_scaling=getattr(self.config, 'auto_scale_loss', True)
-                )
-                self.mixed_precision_manager = MixedPrecisionManager(mp_config)
-                self.logger.info("Mixed precision manager initialized")
-            else:
-                self.logger.info("Using global mixed precision manager")
+            models_list = []
+            best_model_name = self.best_model_name
+            primary_metric = None
             
-            # Initialize adaptive hyperparameter optimizer
-            if hasattr(self.config, 'enable_adaptive_hyperopt') and self.config.enable_adaptive_hyperopt:
+            for model_name, model_info in self.models.items():
                 try:
-                    self.adaptive_optimizer = AdaptiveHyperparameterOptimizer(
-                        optimization_backend=getattr(self.config, 'hyperopt_backend', 'optuna'),
-                        n_trials=getattr(self.config, 'max_trials', 100),
-                        enable_adaptive_search=getattr(self.config, 'adaptive_search_space', True),
-                        cache_dir=os.path.join(self.config.model_path, "hyperopt_cache")
-                    )
-                    self.logger.info(f"Adaptive hyperparameter optimizer initialized with {self.adaptive_optimizer.optimization_backend} backend")
-                except Exception as e:
-                    self.logger.warning(f"Failed to initialize adaptive optimizer: {str(e)}. Trying global instance.")
-                    try:
-                        self.adaptive_optimizer = get_global_adaptive_optimizer()
-                        self.logger.info("Global adaptive optimizer instance successfully created")
-                    except Exception as global_error:
-                        self.logger.warning(f"Failed to initialize global adaptive optimizer: {str(global_error)}. Disabling adaptive optimization.")
-                        self.adaptive_optimizer = None
-            else:
-                self.logger.info("Using global adaptive hyperparameter optimizer")
-                try:
-                    self.adaptive_optimizer = get_global_adaptive_optimizer()
-                except Exception as global_error:
-                    self.logger.warning(f"Failed to initialize global adaptive optimizer: {str(global_error)}. Disabling adaptive optimization.")
-                    self.adaptive_optimizer = None
+                    # Extract model type safely
+                    model_type = "Unknown"
+                    model_obj = model_info.get("model", None)
+                    if model_obj and hasattr(model_obj, '__class__'):
+                        model_type = model_obj.__class__.__name__
+                    
+                    # Get metrics safely
+                    metrics = model_info.get("metrics", {})
+                    if not isinstance(metrics, dict):
+                        metrics = {}
+                    
+                    # Get training time safely
+                    training_time = model_info.get("training_time", 0)
+                    if not isinstance(training_time, (int, float)):
+                        training_time = 0
+                    
+                    # Determine if this is the best model
+                    is_best = (model_name == self.best_model_name)
+                    
+                    # Determine primary metric from the best model
+                    if is_best and not primary_metric:
+                        if hasattr(self.config, 'model_selection_criteria'):
+                            criteria = self.config.model_selection_criteria
+                            if hasattr(criteria, 'value'):
+                                primary_metric = criteria.value
+                            else:
+                                primary_metric = str(criteria)
+                        else:
+                            # Default primary metrics by task
+                            task_type = getattr(self.config.task_type, 'value', 'unknown')
+                            if task_type == "classification":
+                                primary_metric = "f1"
+                            elif task_type == "regression":
+                                primary_metric = "r2"
+                            else:
+                                primary_metric = list(metrics.keys())[0] if metrics else "score"
+                    
+                    models_list.append({
+                        "name": model_name,
+                        "type": model_type,
+                        "training_time": training_time,
+                        "is_best": is_best,
+                        "metrics": metrics
+                    })
+                    
+                except Exception as model_error:
+                    self.logger.warning(f"Error processing model {model_name}: {str(model_error)}")
+                    # Add a minimal entry for the problematic model
+                    models_list.append({
+                        "name": model_name,
+                        "type": "Error",
+                        "training_time": 0,
+                        "is_best": False,
+                        "metrics": {}
+                    })
             
-            # Initialize streaming pipeline for large datasets
-            if hasattr(self.config, 'enable_streaming') and self.config.enable_streaming:
-                try:
-                    self.streaming_pipeline = StreamingDataPipeline(
-                        chunk_size=getattr(self.config, 'streaming_chunk_size', 1000),
-                        max_memory_mb=getattr(self.config, 'streaming_max_memory_mb', 1000),
-                        enable_parallel=getattr(self.config, 'streaming_parallel', True),
-                        enable_distributed=getattr(self.config, 'streaming_distributed', False)
-                    )
-                    self.logger.info("Streaming data pipeline initialized")
-                except Exception as e:
-                    self.logger.warning(f"Failed to initialize streaming pipeline: {str(e)}. Trying global instance.")
-                    try:
-                        self.streaming_pipeline = get_global_streaming_pipeline()
-                        self.logger.info("Global streaming pipeline instance successfully created")
-                    except Exception as global_error:
-                        self.logger.warning(f"Failed to initialize global streaming pipeline: {str(global_error)}. Disabling streaming.")
-                        self.streaming_pipeline = None
+            return {
+                "models": models_list,
+                "best_model": best_model_name,
+                "primary_metric": primary_metric,
+                "total_models": len(models_list)
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error in get_performance_comparison: {str(e)}")
+            # Always return a valid structure even on error
+            return {
+                "models": [],
+                "best_model": None,
+                "primary_metric": None,
+                "total_models": 0,
+                "error": str(e)
+            }
+    
+    def evaluate_model(self, model_name: str = None, X_test=None, y_test=None, detailed: bool = False) -> Dict[str, Any]:
+        """
+        Evaluate a model with comprehensive metrics.
+        
+        Args:
+            model_name: Name of the model to evaluate (uses best model if None)
+            X_test: Test features
+            y_test: Test targets  
+            detailed: Whether to compute additional detailed metrics
+            
+        Returns:
+            Dictionary of evaluation metrics
+        """
+        try:
+            # Determine which model to use
+            if model_name is None or model_name == "best":
+                if self.best_model is None:
+                    return {"error": "No best model available"}
+                model = self.best_model.get("model") if isinstance(self.best_model, dict) else self.best_model
+                actual_model_name = self.best_model_name
             else:
-                self.logger.info("Using global streaming pipeline")
+                if model_name not in self.models:
+                    return {"error": f"Model '{model_name}' not found"}
+                model = self.models[model_name]["model"]
+                actual_model_name = model_name
+            
+            if X_test is None or y_test is None:
+                return {"error": "Test data (X_test, y_test) must be provided"}
+            
+            # Perform evaluation
+            start_time = time.time()
+            metrics = self._evaluate_model(model, None, None, X_test, y_test)
+            prediction_time = time.time() - start_time
+            metrics["prediction_time"] = prediction_time
+            
+            # Add detailed metrics if requested
+            if detailed:
                 try:
-                    self.streaming_pipeline = get_global_streaming_pipeline()
-                except Exception as global_error:
-                    self.logger.warning(f"Failed to initialize global streaming pipeline: {str(global_error)}. Disabling streaming.")
-                    self.streaming_pipeline = None
+                    y_pred = model.predict(X_test)
+                    
+                    if self.config.task_type.value == "classification":
+                        # Confusion matrix
+                        cm = confusion_matrix(y_test, y_pred)
+                        metrics["confusion_matrix"] = cm.tolist()
+                        
+                        # Classification report
+                        report = classification_report(y_test, y_pred, output_dict=True)
+                        metrics["detailed_report"] = report
+                        
+                    elif self.config.task_type.value == "regression":
+                        # Additional regression metrics
+                        explained_var = explained_variance_score(y_test, y_pred)
+                        metrics["explained_variance"] = explained_var
+                        
+                        # Add residual statistics
+                        residuals = y_test - y_pred
+                        metrics["residual_stats"] = {
+                            "mean": float(np.mean(residuals)),
+                            "std": float(np.std(residuals)),
+                            "min": float(np.min(residuals)),
+                            "max": float(np.max(residuals))
+                        }
+                        
+                except Exception as detail_error:
+                    self.logger.warning(f"Error computing detailed metrics: {str(detail_error)}")
+                    metrics["detailed_error"] = str(detail_error)
+            
+            return {
+                "model_name": actual_model_name,
+                "metrics": metrics,
+                "detailed": detailed
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error evaluating model: {str(e)}")
+            return {"error": str(e)}
+    
+    def get_best_model(self) -> Tuple[Optional[str], Optional[Dict]]:
+        """
+        Get the current best model and its information.
+        
+        Returns:
+            Tuple of (model_name, model_info)
+        """
+        if self.best_model_name and self.best_model_name in self.models:
+            return self.best_model_name, self.models[self.best_model_name]
+        return None, None
+    
+    def generate_report(self, output_file: Optional[str] = None) -> Optional[str]:
+        """
+        Generate a comprehensive report of all models.
+        
+        Args:
+            output_file: Path to save the report
+            
+        Returns:
+            Path to the generated report or None if failed
+        """
+        try:
+            if not self.models:
+                self.logger.warning("No models to report on")
+                return None
+            
+            # Generate timestamp
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
+            # Start building the report
+            report = f"# ML Training Engine Report\n\n"
+            report += f"**Generated**: {timestamp}\n\n"
+            report += f"**Total Models Trained**: {len(self.models)}\n"
+            report += f"**Best Model**: {self.best_model_name or 'None'}\n\n"
+            
+            # Add configuration summary
+            report += "## Configuration\n\n"
+            report += f"- **Task Type**: {self.config.task_type.value}\n"
+            report += f"- **Random State**: {getattr(self.config, 'random_state', 'Not set')}\n"
+            report += f"- **CV Folds**: {getattr(self.config, 'cv_folds', 'Not set')}\n"
+            report += f"- **Optimization Strategy**: {getattr(self.config, 'optimization_strategy', 'Not set')}\n\n"
+            
+            # Add model comparison
+            comparison = self.get_performance_comparison()
+            if "error" not in comparison:
+                report += "## Model Performance Comparison\n\n"
+                report += "| Model Name | Type | Training Time (s) | Best | Metrics |\n"
+                report += "|------------|------|------------------|------|----------|\n"
+                
+                for model in comparison["models"]:
+                    metrics_str = ""
+                    if model["metrics"]:
+                        # Show top 3 metrics
+                        metric_items = list(model["metrics"].items())[:3]
+                        metrics_str = ", ".join([f"{k}: {v:.4f}" if isinstance(v, (int, float)) else f"{k}: {v}" 
+                                               for k, v in metric_items])
+                    
+                    best_indicator = "✅" if model["is_best"] else ""
+                    report += f"| {model['name']} | {model['type']} | {model['training_time']:.2f} | {best_indicator} | {metrics_str} |\n"
+                
+                report += "\n"
+            
+            # Add detailed model information
+            report += "## Detailed Model Information\n\n"
+            for model_name, model_info in self.models.items():
+                report += f"### {model_name}\n\n"
+                
+                # Model details
+                model = model_info.get("model")
+                if model:
+                    report += f"**Model Type**: {model.__class__.__name__}\n\n"
+                
+                # Parameters
+                params = model_info.get("params", {})
+                if params:
+                    report += "**Parameters**:\n"
+                    for param, value in params.items():
+                        report += f"- {param}: {value}\n"
+                    report += "\n"
+                
+                # Metrics
+                metrics = model_info.get("metrics", {})
+                if metrics:
+                    report += "**Performance Metrics**:\n"
+                    for metric, value in metrics.items():
+                        if isinstance(value, (int, float)):
+                            report += f"- {metric}: {value:.6f}\n"
+                        else:
+                            report += f"- {metric}: {value}\n"
+                    report += "\n"
+                
+                # Feature importance
+                feature_importance = model_info.get("feature_importance")
+                feature_names = model_info.get("feature_names")
+                if feature_importance is not None and feature_names:
+                    report += "**Top 10 Feature Importance**:\n"
+                    # Create feature importance pairs and sort
+                    importance_pairs = list(zip(feature_names, feature_importance))
+                    importance_pairs.sort(key=lambda x: x[1], reverse=True)
+                    
+                    for i, (feature, importance) in enumerate(importance_pairs[:10]):
+                        report += f"{i+1}. {feature}: {importance:.4f}\n"
+                    report += "\n"
+                
+                report += "---\n\n"
+            
+            # Save to file if specified
+            if output_file:
+                os.makedirs(os.path.dirname(output_file), exist_ok=True)
+                with open(output_file, 'w', encoding='utf-8') as f:
+                    f.write(report)
+                self.logger.info(f"Report saved to {output_file}")
+                return str(output_file)
+            else:
+                # Return the report content
+                return report
                 
         except Exception as e:
-            self.logger.warning(f"Some optimization components could not be initialized: {str(e)}")
-            if hasattr(self.config, 'debug_mode') and self.config.debug_mode:
-                self.logger.error(traceback.format_exc())
-            
-            # Ensure fallback to global instances if initialization fails
-            if not hasattr(self, 'jit_compiler') or self.jit_compiler is None:
-                try:
-                    self.jit_compiler = get_global_jit_compiler()
-                except Exception:
-                    self.jit_compiler = None
-                    
-            if not hasattr(self, 'mixed_precision_manager') or self.mixed_precision_manager is None:
-                try:
-                    self.mixed_precision_manager = get_global_mixed_precision_manager()
-                except Exception:
-                    self.mixed_precision_manager = None
-                    
-            if not hasattr(self, 'adaptive_optimizer') or self.adaptive_optimizer is None:
-                try:
-                    self.adaptive_optimizer = get_global_adaptive_optimizer()
-                except Exception:
-                    self.adaptive_optimizer = None
-                    
-            if not hasattr(self, 'streaming_pipeline') or self.streaming_pipeline is None:
-                try:
-                    self.streaming_pipeline = get_global_streaming_pipeline()
-                except Exception:
-                    self.streaming_pipeline = None
-                    
-            self.logger.info("Fallback to global optimization components completed")
+            self.logger.error(f"Error generating report: {str(e)}")
+            return None
     
+    def shutdown(self):
+        """Explicitly shut down the engine and release resources."""
+        try:
+            self.logger.info("Shutting down ML Training Engine...")
+            
+            # Clear models to free memory
+            self.models.clear()
+            self.best_model = None
+            self.best_model_name = None
+            
+            # Clean up optimization components
+            if hasattr(self, 'jit_compiler') and self.jit_compiler:
+                try:
+                    self.jit_compiler.clear_cache()
+                except:
+                    pass
+                    
+            if hasattr(self, 'streaming_pipeline') and self.streaming_pipeline:
+                try:
+                    self.streaming_pipeline.shutdown()
+                except:
+                    pass
+            
+            # Clear any cached data
+            if hasattr(self, '_current_X'):
+                delattr(self, '_current_X')
+            if hasattr(self, '_current_y'):
+                delattr(self, '_current_y')
+            if hasattr(self, '_last_feature_names'):
+                delattr(self, '_last_feature_names')
+                
+            # Force garbage collection
+            gc.collect()
+            
+            self.logger.info("ML Training Engine shutdown complete")
+            
+        except Exception as e:
+            self.logger.error(f"Error during shutdown: {str(e)}")
+
     def _evaluate_model(self, model, X_train=None, y_train=None, X_test=None, y_test=None):
         """Evaluate model performance on test data."""
         if X_test is None or y_test is None:

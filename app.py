@@ -1103,21 +1103,37 @@ class MLSystemUI:
             # Get performance from training engine if available
             comparison_text = ""
             if self.training_engine:
-                comparison = self.training_engine.get_performance_comparison()
-                
-                if 'error' not in comparison:
-                    comparison_text += "**Training Engine Model Comparison:**\n\n"
-                    for model in comparison['models']:
-                        comparison_text += f"### {model['name']} {'👑' if model['is_best'] else ''}\n"
-                        comparison_text += f"- **Type**: {model['type']}\n"
-                        comparison_text += f"- **Training Time**: {model['training_time']:.2f}s\n"
+                try:
+                    comparison = self.training_engine.get_performance_comparison()
+                    
+                    # Check if we have a valid comparison response
+                    if isinstance(comparison, dict) and 'models' in comparison and 'error' not in comparison:
+                        models = comparison.get('models', [])
+                        if isinstance(models, list) and models:
+                            comparison_text += "**Training Engine Model Comparison:**\n\n"
+                            for model in models:
+                                if isinstance(model, dict):
+                                    model_name = model.get('name', 'Unknown')
+                                    model_type = model.get('type', 'Unknown')
+                                    training_time = model.get('training_time', 0)
+                                    is_best = model.get('is_best', False)
+                                    metrics = model.get('metrics', {})
+                                    
+                                    comparison_text += f"### {model_name} {'👑' if is_best else ''}\n"
+                                    comparison_text += f"- **Type**: {model_type}\n"
+                                    comparison_text += f"- **Training Time**: {training_time:.2f}s\n"
+                                    
+                                    if isinstance(metrics, dict) and metrics:
+                                        comparison_text += "- **Metrics**:\n"
+                                        for metric, value in metrics.items():
+                                            if isinstance(value, (int, float)):
+                                                comparison_text += f"  - {metric}: {value:.4f}\n"
+                                    comparison_text += "\n"
+                    elif isinstance(comparison, dict) and 'error' in comparison:
+                        comparison_text += f"**Training Engine Error**: {comparison['error']}\n\n"
                         
-                        if model['metrics']:
-                            comparison_text += "- **Metrics**:\n"
-                            for metric, value in model['metrics'].items():
-                                if isinstance(value, (int, float)):
-                                    comparison_text += f"  - {metric}: {value:.4f}\n"
-                        comparison_text += "\n"
+                except Exception as comparison_error:
+                    comparison_text += f"**Error getting model comparison**: {str(comparison_error)}\n\n"
             
             # Add stored model information
             if self.trained_models:
