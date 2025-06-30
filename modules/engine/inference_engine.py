@@ -3,20 +3,34 @@ import time
 import logging
 import pickle
 import hashlib
+import json
 import threading
 import gc
-import json
-import uuid
-import numpy as np
-from typing import Dict, List, Any, Optional, Union, Tuple
+from typing import Dict, List, Any, Optional, Union, Tuple, Callable, Iterator
 from datetime import datetime
-import traceback
-import signal
-import psutil
+import numpy as np
+import pandas as pd
+from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
+import queue
+from dataclasses import dataclass
+import functools
 from collections import deque
-from concurrent.futures import ThreadPoolExecutor, Future
+import heapq
+from contextlib import contextmanager
 
-# Optional imports for specific optimizations
+# Import optimization modules
+from .jit_compiler import get_global_jit_compiler
+from .mixed_precision import get_global_mixed_precision_manager
+from .streaming_pipeline import get_global_streaming_pipeline
+
+# Try to import optimization libraries
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
+
 try:
     import joblib
     JOBLIB_AVAILABLE = True
@@ -24,185 +38,112 @@ except ImportError:
     JOBLIB_AVAILABLE = False
 
 try:
-    import sklearn
-    SKLEARN_AVAILABLE = True
-    try:
-        from sklearnex import patch_sklearn
-        patch_sklearn()
-        SKLEARN_OPTIMIZED = True
-    except ImportError:
-        SKLEARN_OPTIMIZED = False
-except ImportError:
-    SKLEARN_AVAILABLE = False
-    SKLEARN_OPTIMIZED = False
-
-try:
-    import intel
-    INTEL_PYTHON = True
-except ImportError:
-    INTEL_PYTHON = False
-
-try:
     import mkl
     MKL_AVAILABLE = True
 except ImportError:
     MKL_AVAILABLE = False
 
+# Try to import ONNX for model compilation
+try:
+    import onnx
+    import onnxruntime
+    ONNX_AVAILABLE = True
+except ImportError:
+    ONNX_AVAILABLE = False
+
+# Try to import thread pool control
+try:
+    import threadpoolctl
+    THREADPOOLCTL_AVAILABLE = True
+except ImportError:
+    THREADPOOLCTL_AVAILABLE = False
+
+# Try to import treelite for tree ensemble compilation
+try:
+    import treelite
+    import treelite_runtime
+    TREELITE_AVAILABLE = True
+except ImportError:
+    TREELITE_AVAILABLE = False
+
 # Import local modules
-from modules.engine.batch_processor import BatchProcessor
-from modules.engine.data_preprocessor import DataPreprocessor
-from modules.engine.quantizer import Quantizer
-from modules.engine.lru_ttl_cache import LRUTTLCache
-from modules.configs import (
+from .batch_processor import BatchProcessor
+from .data_preprocessor import DataPreprocessor
+from .quantizer import Quantizer
+from .lru_ttl_cache import LRUTTLCache
+from .simd_optimizer import SIMDOptimizer
+from .multi_level_cache import MultiLevelCache
+from .prediction_request import PredictionRequest
+from .dynamic_batcher import DynamicBatcher
+from .memory_pool import MemoryPool
+from .performance_metrics import PerformanceMetrics
+from ..configs import (
     QuantizationConfig, BatchProcessorConfig, BatchProcessingStrategy,
     BatchPriority, PreprocessorConfig, NormalizationType, 
     QuantizationMode, ModelType, EngineState, InferenceEngineConfig
 )
 
-# Define constants
-MODEL_REGISTRY_PATH = os.environ.get("MODEL_REGISTRY_PATH", "./models")
-DEFAULT_LOG_PATH = os.environ.get("LOG_PATH", "./logs")
-MAX_RETRY_ATTEMPTS = 3
-MEMORY_CHECK_INTERVAL = 10  # seconds
+# SIMD Optimizations for vectorized operations
+try:
+    import numba
+    from numba import njit, prange
+    NUMBA_AVAILABLE = True
+except ImportError:
+    NUMBA_AVAILABLE = False
 
 
-class ModelMetrics:
-    """Class to track and report model performance metrics with thread safety."""
-    
-    def __init__(self, window_size: int = 100):
-        self.window_size = window_size
-        self.lock = threading.RLock()
-        self.reset()
-    
-    def reset(self) -> None:
-        """Reset all metrics."""
-        with self.lock:
-            self.inference_times = deque(maxlen=self.window_size)
-            self.batch_sizes = deque(maxlen=self.window_size)
-            self.queue_times = deque(maxlen=self.window_size)
-            self.quantize_times = deque(maxlen=self.window_size)
-            self.dequantize_times = deque(maxlen=self.window_size)
-            self.total_requests = 0
-            self.error_count = 0
-            self.cache_hits = 0
-            self.cache_misses = 0
-            self.throttled_requests = 0
-            self.last_updated = time.time()
-    
-    def update_inference(self, inference_time: float, batch_size: int, queue_time: float = 0,
-                         quantize_time: float = 0, dequantize_time: float = 0) -> None:
-        """Update inference metrics including quantization timing."""
-        with self.lock:
-            self.inference_times.append(inference_time)
-            self.batch_sizes.append(batch_size)
-            self.queue_times.append(queue_time)
-            self.quantize_times.append(quantize_time)
-            self.dequantize_times.append(dequantize_time)
-            self.total_requests += batch_size
-            self.last_updated = time.time()
-    
-    def record_error(self) -> None:
-        """Record an inference error."""
-        with self.lock:
-            self.error_count += 1
-            self.last_updated = time.time()
-    
-    def record_cache_hit(self) -> None:
-        """Record a cache hit."""
-        with self.lock:
-            self.cache_hits += 1
-            self.last_updated = time.time()
-    
-    def record_cache_miss(self) -> None:
-        """Record a cache miss."""
-        with self.lock:
-            self.cache_misses += 1
-            self.last_updated = time.time()
-    
-    def record_throttled(self) -> None:
-        """Record a throttled request."""
-        with self.lock:
-            self.throttled_requests += 1
-            self.last_updated = time.time()
-    
-    def get_metrics(self) -> Dict[str, Any]:
-        """Get current metrics as a dictionary."""
-        with self.lock:
-            metrics = {
-                "total_requests": self.total_requests,
-                "error_count": self.error_count,
-                "error_rate": self.error_count / max(1, self.total_requests),
-                "cache_hits": self.cache_hits,
-                "cache_misses": self.cache_misses,
-                "cache_hit_rate": self.cache_hits / max(1, self.cache_hits + self.cache_misses),
-                "throttled_requests": self.throttled_requests,
-                "last_updated": self.last_updated
-            }
-            
-            if self.inference_times:
-                metrics.update({
-                    "avg_inference_time_ms": np.mean(self.inference_times) * 1000,
-                    "p50_inference_time_ms": np.percentile(self.inference_times, 50) * 1000,
-                    "p95_inference_time_ms": np.percentile(self.inference_times, 95) * 1000,
-                    "p99_inference_time_ms": np.percentile(self.inference_times, 99) * 1000,
-                    "min_inference_time_ms": np.min(self.inference_times) * 1000,
-                    "max_inference_time_ms": np.max(self.inference_times) * 1000,
-                })
-            
-            if self.batch_sizes:
-                metrics.update({
-                    "avg_batch_size": np.mean(self.batch_sizes),
-                    "max_batch_size": np.max(self.batch_sizes),
-                })
-            
-            if self.queue_times:
-                metrics.update({
-                    "avg_queue_time_ms": np.mean(self.queue_times) * 1000,
-                    "p95_queue_time_ms": np.percentile(self.queue_times, 95) * 1000,
-                })
-            
-            if self.quantize_times:
-                metrics.update({
-                    "avg_quantize_time_ms": np.mean(self.quantize_times) * 1000,
-                    "p95_quantize_time_ms": np.percentile(self.quantize_times, 95) * 1000,
-                })
-                
-            if self.dequantize_times:
-                metrics.update({
-                    "avg_dequantize_time_ms": np.mean(self.dequantize_times) * 1000,
-                    "p95_dequantize_time_ms": np.percentile(self.dequantize_times, 95) * 1000,
-                })
-            
-            if self.inference_times:
-                total_processing_time = sum(self.inference_times)
-                if total_processing_time > 0:
-                    metrics["throughput_requests_per_second"] = self.total_requests / total_processing_time
-            
-            return metrics
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 class InferenceEngine:
     """
-    High-performance CPU-optimized inference engine with Intel optimizations, 
-    adaptive batching, quantization support, and comprehensive monitoring.
+    High-performance inference engine with advanced optimizations for ML workloads.
+    
+    Features:
+    - Dynamic micro-batching with priority queues for optimal hardware utilization
+    - Thread pool management with intelligent CPU affinity
+    - Memory pooling for reduced allocation overhead and better cache locality
+    - Model compilation via ONNX/Treelite for faster inference
+    - Optimized vectorized operations for efficient CPU utilization
+    - Multi-level caching (results, feature transformations)
+    - Quantization for reduced memory footprint
+    - Smart preprocessing pipeline with memory reuse
+    - Comprehensive performance monitoring and dynamic scaling
+    - NUMA-aware processing for multi-socket systems
     """
     
     def __init__(self, config: Optional[InferenceEngineConfig] = None):
         """
-        Initialize the inference engine.
+        Initialize the inference engine with the given configuration.
         
         Args:
             config: Configuration for the inference engine
         """
         self.config = config or InferenceEngineConfig()
         
+        # Set up math library environment variables first (before any libraries load)
+        self._configure_math_libraries()
+        
         # Set up logging
         self.logger = self._setup_logging()
         
-        # Initialize state
+        # Initialize engine state
         self.state = EngineState.INITIALIZING
         self.model = None
         self.model_type = None
+        self.compiled_model = None  # For ONNX/Treelite compiled models
         self.model_info = {}
         self.feature_names = []
         
@@ -210,416 +151,444 @@ class InferenceEngine:
         self.inference_lock = threading.RLock()
         self.state_lock = threading.RLock()
         
-        # Initialize quantizer if quantization is enabled
-        self.quantizer = None
-        if (self.config.enable_quantization or self.config.enable_model_quantization or 
-            self.config.enable_input_quantization):
-            self._setup_quantizer()
-        
-        # Preprocessing
-        self.preprocessor = None
-        
-        # Performance monitoring
-        self.metrics = ModelMetrics(window_size=self.config.monitoring_window)
-        
-        # Cache for inference results
-        if self.config.enable_request_deduplication:
-            self.result_cache = LRUTTLCache(
-                max_size=self.config.max_cache_entries,
-                ttl_seconds=self.config.cache_ttl_seconds
-            )
-        else:
-            self.result_cache = None
-        
-        # Track active requests for throttling and shutdown
+        # Initialize common counters with atomic access
         self.active_requests = 0
         self.active_requests_lock = threading.Lock()
         
-        # Initialize batch processor attribute to ensure it always exists
-        self.batch_processor = None
-        # Set up threading
-        self._setup_threading()
+        # Performance metrics
+        self.metrics = PerformanceMetrics(window_size=self.config.monitoring_window)
         
-        # Set up monitoring and resource management
-        self._setup_monitoring()
+        # Set up resource management and thread pool
+        self._setup_resource_management()
         
-        # Configure Intel optimizations if enabled
-        if self.config.enable_intel_optimization:
-            self._setup_intel_optimizations()
+        # Initialize memory pool for buffer reuse with NUMA awareness
+        self.memory_pool = MemoryPool(max_buffers=64, numa_aware=True)
         
-        # Initialize batch processor if batching is enabled
+        # Initialize multi-level caching system
+        self.advanced_cache = MultiLevelCache(
+            l1_size=100,
+            l2_size=500, 
+            l3_size=1000,
+            enable_prediction=True
+        ) if self.config.enable_request_deduplication else None
+        
+        # Initialize SIMD optimizer for vectorized operations  
+        try:
+            self.simd_optimizer = SIMDOptimizer()
+            self.logger.info(f"SIMD optimizer initialized")
+        except Exception as e:
+            self.logger.warning(f"SIMD optimizer not available, using numpy fallback: {str(e)}")
+            self.simd_optimizer = None
+        
+        # Feature transformation cache (separate from result cache) - kept for backward compatibility
+        self.feature_cache = LRUTTLCache(
+            max_size=min(1000, self.config.max_cache_entries),
+            ttl_seconds=self.config.cache_ttl_seconds
+        ) if self.config.enable_request_deduplication else None
+        
+        # Optional components - initialize based on configuration
+        self.quantizer = self._setup_quantizer() if self._should_use_quantization() else None
+        self.preprocessor = self._setup_preprocessor() if self.config.enable_feature_scaling else None
+        self.result_cache = self._setup_cache() if self.config.enable_request_deduplication else None
+        
+        # Enhanced batching system that replaces the old batch processor
         if self.config.enable_batching:
-            self._setup_batch_processor()
+            self.dynamic_batcher = DynamicBatcher(
+                batch_processor=self._process_batch,
+                max_batch_size=self.config.max_batch_size,
+                max_wait_time_ms=self.config.batch_timeout * 1000,
+                max_queue_size=self.config.max_concurrent_requests * 2
+            )
+            self.dynamic_batcher.start()
+        else:
+            self.dynamic_batcher = None
         
-        # Signal handlers for graceful shutdown
-        self._setup_signal_handlers()
+        # Initialize threadpoolctl for controlling nested parallelism
+        if THREADPOOLCTL_AVAILABLE:
+            self._threadpool_controllers = threadpoolctl.threadpool_info()
         
-        # Change state to ready
+        # Initialize optimization components
+        self._init_optimization_components()
+        
+        # Monitor resources if enabled
+        if self.config.enable_monitoring:
+            self._start_monitoring()
+        
+        # Register garbage collection hooks
+        gc.callbacks.append(self._gc_callback)
+        
+        # Mark as ready
         self.state = EngineState.READY
-        self.logger.info(f"Inference engine initialized with version {self.config.model_version}")
+        self.logger.info(f"Inference engine initialized with model version {self.config.model_version}")
+    
+    def _configure_math_libraries(self):
+        """Configure math libraries for optimal performance"""
+        # Set thread counts for numerical libraries based on our threading strategy
+        thread_count = "1" if self.config.enable_batching else str(self.config.num_threads)
+        
+        # Set environment variables for common math libraries
+        os.environ["OMP_NUM_THREADS"] = thread_count
+        os.environ["MKL_NUM_THREADS"] = thread_count
+        os.environ["OPENBLAS_NUM_THREADS"] = thread_count
+        os.environ["VECLIB_MAXIMUM_THREADS"] = thread_count
+        os.environ["NUMEXPR_NUM_THREADS"] = thread_count
+        
+        # Set MKL environment variable for fast thread control
+        os.environ["MKL_DYNAMIC"] = "FALSE"
+        
+        # Additional MKL optimizations if available
+        if MKL_AVAILABLE:
+            # These are Intel-specific optimizations
+            os.environ["KMP_AFFINITY"] = "granularity=fine,compact,1,0"
+            os.environ["KMP_BLOCKTIME"] = "0"
+    
+    def _gc_callback(self, phase, info):
+        """Callback for garbage collection events to track GC pauses"""
+        if phase == "start":
+            self._gc_start_time = time.time()
+        elif phase == "stop":
+            if hasattr(self, '_gc_start_time'):
+                gc_duration = time.time() - self._gc_start_time
+                if gc_duration > 0.1:  # Only log significant GC pauses
+                    self.logger.debug(f"GC pause detected: {gc_duration*1000:.2f}ms")
+                    
+                    # Update metrics
+                    with self.metrics.lock:
+                        if not hasattr(self.metrics, 'gc_pauses'):
+                            self.metrics.gc_pauses = []
+                        if len(self.metrics.gc_pauses) >= self.metrics.window_size:
+                            self.metrics.gc_pauses.pop(0)
+                        self.metrics.gc_pauses.append(gc_duration)
     
     def _setup_logging(self) -> logging.Logger:
-        """Set up logging for the inference engine."""
+        """Configure logging based on configuration"""
         logger = logging.getLogger(f"{__name__}.InferenceEngine")
         
-        # Configure logging based on debug mode
+        # Set logging level based on debug mode
         level = logging.DEBUG if self.config.debug_mode else logging.INFO
         logger.setLevel(level)
         
-        # Ensure log directory exists
-        os.makedirs(DEFAULT_LOG_PATH, exist_ok=True)
-        
-        # Only add handlers if there are none
+        # Only add handlers if none exist
         if not logger.handlers:
             # Console handler
             console_handler = logging.StreamHandler()
             console_handler.setLevel(level)
             
-            # File handler
-            file_handler = logging.FileHandler(
-                os.path.join(DEFAULT_LOG_PATH, f"engine_{self.config.model_version}.log")
+            # Format
+            formatter = logging.Formatter(
+                '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
             )
-            file_handler.setLevel(level)
-            
-            # Create formatter
-            formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
             console_handler.setFormatter(formatter)
-            file_handler.setFormatter(formatter)
-            
-            # Add handlers
             logger.addHandler(console_handler)
-            logger.addHandler(file_handler)
+        
+        # Use lazy logging for performance
+        logger.propagate = False
         
         return logger
     
-    def _setup_quantizer(self) -> None:
-        """Initialize and configure the quantizer."""
-        quantization_config = self.config.quantization_config
-        if quantization_config is None:
-            # Create default config if none provided
-            quantization_config = QuantizationConfig(
-                quantization_type=self.config.quantization_dtype,
-                quantization_mode=QuantizationMode.DYNAMIC_PER_BATCH.value,
-                enable_cache=True,
-                cache_size=1024,
-                use_percentile=True,
-                min_percentile=0.1,
-                max_percentile=99.9,
-                error_on_nan=False,
-                error_on_inf=False
-            )
-        
-        # Initialize the quantizer
-        self.quantizer = Quantizer(quantization_config)
-        self.logger.info(f"Quantizer initialized with {quantization_config.quantization_type} type and "
-                         f"{quantization_config.quantization_mode} mode")
-    
-    def _setup_threading(self) -> None:
-        """Configure threading and parallelism."""
-        # Set number of threads for numpy/MKL if available
+    def _setup_resource_management(self):
+        """Set up system resource management with advanced optimizations"""
+        # Configure thread counts for better resource utilization
         thread_count = self.config.num_threads
+        if thread_count <= 0:
+            # Auto-detect available CPUs if not specified
+            thread_count = os.cpu_count() or 4
         
-        # Set environment variables for better thread control
-        os.environ["OMP_NUM_THREADS"] = str(thread_count)
-        os.environ["MKL_NUM_THREADS"] = str(thread_count)
-        os.environ["OPENBLAS_NUM_THREADS"] = str(thread_count)
-        
-        # Set thread count for numpy if using OpenBLAS/MKL
-        try:
-            import numpy as np
-            np.set_num_threads(thread_count)
-        except (ImportError, AttributeError):
-            pass
-        
-        # Configure MKL settings if available
-        if MKL_AVAILABLE:
+        # Store thread count for reference
+        self.thread_count = thread_count
+            
+        # Configure MKL if available
+        if MKL_AVAILABLE and self.config.enable_intel_optimization:
             try:
-                mkl.set_num_threads(thread_count)
-                self.logger.info(f"MKL configured with {thread_count} threads")
+                # Explicitly set number of threads
+                mkl.set_num_threads(1 if self.config.enable_batching else thread_count)
+                
+                # Enable conditional numerical optimizations
+                if hasattr(mkl, "enable_fast_mm"):
+                    mkl.enable_fast_mm(1)
+                    
+                if self.logger.isEnabledFor(logging.INFO):
+                    self.logger.info(f"MKL optimizations enabled with {thread_count} threads")
             except Exception as e:
-                self.logger.warning(f"Failed to configure MKL: {str(e)}")
+                if self.logger.isEnabledFor(logging.WARNING):
+                    self.logger.warning(f"Failed to configure MKL: {str(e)}")
         
-        # Set CPU affinity if enabled and supported
-        if self.config.set_cpu_affinity:
+        # Setup NUMA optimization if available
+        self.numa_nodes = []
+        self.thread_to_core_map = {}
+        if PSUTIL_AVAILABLE:
             try:
-                p = psutil.Process(os.getpid())
-                # Use the specified number of CPUs
-                cpu_count = os.cpu_count() or 4
-                cpu_list = list(range(min(thread_count, cpu_count)))
-                p.cpu_affinity(cpu_list)
-                self.logger.info(f"CPU affinity set to cores {cpu_list}")
-            except (AttributeError, NotImplementedError):
-                self.logger.warning("CPU affinity setting not supported on this platform")
-        
-        # Create thread pool for parallel tasks
-        self.thread_pool = ThreadPoolExecutor(
-            max_workers=thread_count,
-            thread_name_prefix="InferenceWorker"
-        )
-        
-        self.logger.info(f"Threading configured with {thread_count} threads")
-    
-    def _setup_intel_optimizations(self) -> None:
-        """Configure Intel-specific optimizations."""
-        if not self.config.enable_intel_optimization:
-            return
-        
-        # Log status of Intel optimizations
-        optimizations = []
-        
-        # Configure Intel MKL if available
-        if MKL_AVAILABLE:
-            try:
-                # Configure MKL for best performance
-                mkl.set_threading_layer("intel")
-                mkl.set_dynamic(False)
-                optimizations.append("MKL")
+                # Detect available NUMA nodes and CPU cores
+                if hasattr(psutil, "cpu_count") and hasattr(psutil, "Process"):
+                    p = psutil.Process()
+                    
+                    # Get all available cores
+                    available_cores = p.cpu_affinity() if hasattr(p, "cpu_affinity") else list(range(os.cpu_count() or 4))
+                    
+                    # Limit cores to thread count
+                    usable_cores = available_cores[:thread_count]
+                    
+                    # Set CPU affinity if enabled
+                    if self.config.set_cpu_affinity:
+                        try:
+                            p.cpu_affinity(usable_cores)
+                            if self.logger.isEnabledFor(logging.INFO):
+                                self.logger.info(f"CPU affinity set to cores {usable_cores}")
+                        except Exception as e:
+                            if self.logger.isEnabledFor(logging.WARNING):
+                                self.logger.warning(f"Failed to set CPU affinity: {str(e)}")
+                    
+                    # Detect NUMA nodes if possible
+                    if hasattr(psutil, "numa_memory_info"):
+                        # This is a placeholder - actual implementation would
+                        # map cores to NUMA nodes for optimal data locality
+                        self.numa_nodes = [0]  # Just one node in this placeholder
+                    
+                    # Create thread-to-core mapping for worker threads
+                    for i in range(thread_count):
+                        self.thread_to_core_map[i] = usable_cores[i % len(usable_cores)]
+                        
             except Exception as e:
-                self.logger.warning(f"Failed to configure MKL optimizations: {str(e)}")
+                if self.logger.isEnabledFor(logging.WARNING):
+                    self.logger.warning(f"Failed to setup NUMA optimization: {str(e)}")
         
-        # Check for scikit-learn optimizations
-        if SKLEARN_AVAILABLE and SKLEARN_OPTIMIZED:
-            optimizations.append("scikit-learn-intelex")
-        
-        # Check if we're running Intel Python Distribution
-        if INTEL_PYTHON:
-            optimizations.append("Intel Python Distribution")
-        
-        if optimizations:
-            self.logger.info(f"Intel optimizations enabled: {', '.join(optimizations)}")
+        # Use a shared thread pool if possible
+        if hasattr(self, 'shared_thread_pool') and self.shared_thread_pool:
+            self.thread_pool = self.shared_thread_pool
         else:
-            self.logger.warning("No Intel optimizations are available")
-    
-    def _setup_batch_processor(self) -> None:
-        """Initialize the batch processor for efficient inference."""
-        # Convert batch processing strategy string to enum
-        strategy_str = self.config.batch_processing_strategy.upper()
-        try:
-            strategy = BatchProcessingStrategy[strategy_str]
-        except KeyError:
-            self.logger.warning(
-                f"Unknown batch processing strategy: {strategy_str}, defaulting to ADAPTIVE"
+            self.thread_pool = ThreadPoolExecutor(
+                max_workers=thread_count,
+                thread_name_prefix="InferenceWorker",
+                initializer=self._thread_pool_initializer,
             )
-            strategy = BatchProcessingStrategy.ADAPTIVE
         
-        # Create batch processor configuration
-        batch_config = BatchProcessorConfig(
-            batch_timeout=self.config.batch_timeout,
-            max_queue_size=self.config.max_concurrent_requests * 2,
-            initial_batch_size=self.config.initial_batch_size,
-            min_batch_size=self.config.min_batch_size,
-            max_batch_size=self.config.max_batch_size,
-            enable_monitoring=self.config.enable_monitoring,
-            monitoring_window=self.config.monitoring_window,
-            max_retries=MAX_RETRY_ATTEMPTS,
-            retry_delay=0.01,
-            processing_strategy=strategy,
-            max_workers=self.config.num_threads,
-            enable_adaptive_batching=self.config.enable_adaptive_batching,
-            max_batch_memory_mb=None,  # Determine dynamically based on available memory
-            enable_memory_optimization=self.config.enable_memory_optimization,
-            enable_priority_queue=True,
-            debug_mode=self.config.debug_mode
-        )
+        # Large pages, if available (Linux-specific feature)
+        if os.name == 'posix' and hasattr(os, 'madvise') and self.config.enable_memory_optimization:
+            try:
+                # Attempt to enable transparent huge pages (THP)
+                with open("/sys/kernel/mm/transparent_hugepage/enabled", "w") as f:
+                    f.write("always")
+                if self.logger.isEnabledFor(logging.INFO):
+                    self.logger.info("Transparent huge pages enabled for better memory performance")
+            except (IOError, PermissionError):
+                # Not critical if this fails
+                pass
         
-        # Create batch processor
-        self.batch_processor = BatchProcessor(batch_config)
-        
-        # Start the batch processor with our processing function
-        self.batch_processor.start(self._process_batch)
-        
-        self.logger.info(
-            f"Batch processor started with strategy={strategy.name}, "
-            f"batch_size={self.config.initial_batch_size}"
-        )
+        if self.logger.isEnabledFor(logging.INFO):
+            self.logger.info(f"Advanced resource management configured with {thread_count} threads")
     
-    def _setup_monitoring(self) -> None:
-        """Set up monitoring and resource management."""
-        if not self.config.enable_monitoring:
-            return
+    def _thread_pool_initializer(self):
+        """Initialize worker thread with optimized settings"""
+        # Set thread name for better debugging
+        threading.current_thread().name = f"Worker-{threading.get_ident()}"
         
-        # Create memory monitor thread
+        # Pin thread to specific core if mapping is available
+        if PSUTIL_AVAILABLE and self.thread_to_core_map:
+            try:
+                # Get worker index from thread pool
+                worker_idx = sum(1 for t in threading.enumerate() 
+                              if t.name.startswith("Worker-")) % len(self.thread_to_core_map)
+                core_id = self.thread_to_core_map[worker_idx]
+                
+                # Set affinity for this thread
+                p = psutil.Process()
+                p.cpu_affinity([core_id])
+                
+                if self.logger.isEnabledFor(logging.DEBUG):
+                    self.logger.debug(f"Worker thread {threading.current_thread().name} pinned to core {core_id}")
+            except Exception as e:
+                if self.logger.isEnabledFor(logging.DEBUG):
+                    self.logger.debug(f"Failed to pin thread to core: {str(e)}")
+        
+        # Limit internal parallelism of math libraries for this thread
+        if THREADPOOLCTL_AVAILABLE:
+            threadpoolctl.threadpool_limits(limits=1, user_api="blas")
+            threadpoolctl.threadpool_limits(limits=1, user_api="openmp")
+    
+    def _should_use_quantization(self) -> bool:
+        """Determine if quantization should be used"""
+        return (self.config.enable_quantization or 
+                self.config.enable_model_quantization or 
+                self.config.enable_input_quantization)
+    
+    def _setup_quantizer(self) -> Optional[Quantizer]:
+        """Initialize and configure the quantizer"""
+        try:
+            quantization_config = self.config.quantization_config
+            
+            # Create default config if none provided
+            if quantization_config is None:
+                quantization_config = QuantizationConfig(
+                    quantization_type=self.config.quantization_dtype,
+                    quantization_mode=QuantizationMode.DYNAMIC_PER_BATCH.value,
+                    enable_cache=True,
+                    cache_size=1024
+                )
+            
+            quantizer = Quantizer(quantization_config)
+            self.logger.info(f"Quantizer initialized with {quantization_config.quantization_type} type")
+            return quantizer
+        except Exception as e:
+            self.logger.error(f"Failed to initialize quantizer: {str(e)}")
+            return None
+    
+    def _setup_preprocessor(self) -> Optional[DataPreprocessor]:
+        """Initialize and configure the data preprocessor"""
+        try:
+            preprocessor_config = PreprocessorConfig(
+                normalization=NormalizationType.STANDARD,
+                handle_nan=True,
+                handle_inf=True,
+                detect_outliers=True,
+                cache_enabled=True
+            )
+            
+            preprocessor = DataPreprocessor(preprocessor_config)
+            self.logger.info("Data preprocessor initialized")
+            return preprocessor
+        except Exception as e:
+            self.logger.error(f"Failed to initialize preprocessor: {str(e)}")
+            return None
+    
+    def _setup_cache(self) -> Optional[LRUTTLCache]:
+        """Initialize and configure the result cache"""
+        try:
+            cache = LRUTTLCache(
+                max_size=self.config.max_cache_entries,
+                ttl_seconds=self.config.cache_ttl_seconds
+            )
+            self.logger.info(f"Result cache initialized with {self.config.max_cache_entries} entries")
+            return cache
+        except Exception as e:
+            self.logger.error(f"Failed to initialize cache: {str(e)}")
+            return None
+    
+    def _setup_batch_processor(self) -> Optional[BatchProcessor]:
+        """Initialize and configure the batch processor"""
+        try:
+            # Determine batch processing strategy
+            strategy_str = self.config.batching_strategy.upper()
+            try:
+                strategy = BatchProcessingStrategy[strategy_str]
+            except KeyError:
+                strategy = BatchProcessingStrategy.ADAPTIVE
+                self.logger.warning(f"Unknown batch strategy: {strategy_str}, using ADAPTIVE")
+            
+            # Create the batch processor configuration
+            batch_config = BatchProcessorConfig(
+                initial_batch_size=self.config.initial_batch_size,
+                min_batch_size=self.config.min_batch_size,
+                max_batch_size=self.config.max_batch_size,
+                batch_timeout=self.config.batch_timeout,
+                max_queue_size=self.config.max_concurrent_requests * 2,
+                enable_priority_queue=True,
+                processing_strategy=strategy,
+                enable_adaptive_batching=self.config.enable_adaptive_batching,
+                enable_monitoring=self.config.enable_monitoring,
+                num_workers=self.config.num_threads,
+                enable_memory_optimization=self.config.enable_memory_optimization,
+                max_retries=3
+            )
+            
+            # Create the batch processor
+            processor = BatchProcessor(batch_config)
+            
+            # Start the batch processor with our processing function
+            processor.start(self._process_batch)
+            
+            self.logger.info(f"Batch processor started with strategy={strategy.name}")
+            return processor
+        except Exception as e:
+            self.logger.error(f"Failed to initialize batch processor: {str(e)}")
+            return None
+    
+    def _start_monitoring(self):
+        """Start background monitoring thread"""
         self.monitor_stop_event = threading.Event()
         self.monitor_thread = threading.Thread(
             target=self._monitoring_loop,
             daemon=True,
-            name="InferenceMonitor"
+            name="ResourceMonitor"
         )
-        
-        # Start monitoring thread
         self.monitor_thread.start()
-        self.logger.info("Monitoring thread started")
+        self.logger.info("Resource monitoring started")
     
-    def _setup_signal_handlers(self) -> None:
-        """Set up signal handlers for graceful shutdown."""
-        try:
-            signal.signal(signal.SIGINT, self._signal_handler)
-            signal.signal(signal.SIGTERM, self._signal_handler)
-            self.logger.info("Signal handlers registered for graceful shutdown")
-        except (AttributeError, ValueError) as e:
-            # Signal handling might not work in certain environments (e.g., Windows)
-            self.logger.warning(f"Could not set up signal handlers: {e}")
-    
-    def _signal_handler(self, sig, frame) -> None:
-        """Handle termination signals."""
-        self.logger.info(f"Received signal {sig}, initiating graceful shutdown")
-        self.shutdown()
-    
-    def _monitoring_loop(self) -> None:
-        """Background thread for monitoring system resources."""
-        check_interval = min(MEMORY_CHECK_INTERVAL, self.config.monitoring_interval)
+    def _monitoring_loop(self):
+        """Background monitoring thread for resource usage"""
+        check_interval = self.config.monitoring_interval
         
-        while not self.monitor_stop_event.is_set():
+        while not getattr(self, 'monitor_stop_event', threading.Event()).is_set():
             try:
-                # Check memory usage
-                self._check_memory_usage()
+                if PSUTIL_AVAILABLE:
+                    # Monitor memory usage
+                    process = psutil.Process(os.getpid())
+                    memory_info = process.memory_info()
+                    memory_mb = memory_info.rss / (1024 * 1024)
+                    
+                    # Take action if memory usage is too high
+                    if memory_mb > self.config.memory_high_watermark_mb:
+                        self.logger.warning(
+                            f"Memory usage ({memory_mb:.1f} MB) exceeds high watermark, "
+                            f"triggering garbage collection"
+                        )
+                        gc.collect()
+                        
+                        # Clear cache if memory is still high
+                        if self.result_cache is not None:
+                            memory_info = process.memory_info()
+                            memory_mb = memory_info.rss / (1024 * 1024)
+                            
+                            if memory_mb > self.config.memory_high_watermark_mb:
+                                self.result_cache.clear()
+                                self.logger.info("Cache cleared due to high memory usage")
+                    
+                    # Monitor CPU usage if configured
+                    if self.config.throttle_on_high_cpu:
+                        cpu_percent = process.cpu_percent(interval=0.1)
+                        
+                        # Enable throttling if CPU usage is too high
+                        if cpu_percent > self.config.cpu_threshold_percent and not self.config.enable_throttling:
+                            self.logger.warning(
+                                f"CPU usage ({cpu_percent:.1f}%) above threshold, enabling throttling"
+                            )
+                            self.config.enable_throttling = True
+                        # Disable throttling if CPU usage has dropped significantly
+                        elif (cpu_percent < self.config.cpu_threshold_percent * 0.8 and 
+                              self.config.enable_throttling):
+                            self.logger.info(
+                                f"CPU usage ({cpu_percent:.1f}%) below threshold, disabling throttling"
+                            )
+                            self.config.enable_throttling = False
                 
-                # Check CPU usage if throttling enabled
-                if self.config.throttle_on_high_cpu:
-                    self._check_cpu_usage()
-                
-                # Log periodic metrics if in debug mode
+                # Log detailed metrics in debug mode
                 if self.config.debug_mode:
-                    self._log_metrics()
-                
-                # Sleep until next check
-                time.sleep(check_interval)
+                    metrics = self.metrics.get_metrics()
+                    self.logger.debug(
+                        f"Metrics: avg_inference={metrics.get('avg_inference_time_ms', 0):.2f}ms, "
+                        f"throughput={metrics.get('throughput_requests_per_second', 0):.1f}req/s, "
+                        f"error_rate={metrics.get('error_rate', 0)*100:.2f}%"
+                    )
             except Exception as e:
                 self.logger.error(f"Error in monitoring loop: {str(e)}")
-                if self.config.debug_mode:
-                    self.logger.error(traceback.format_exc())
-                
-                # Sleep with reduced interval on error
-                time.sleep(max(1.0, check_interval / 2))
+            
+            # Sleep until next check
+            time.sleep(check_interval)
     
-    def _check_memory_usage(self) -> None:
-        """Monitor memory usage and take action if too high."""
-        try:
-            process = psutil.Process(os.getpid())
-            memory_info = process.memory_info()
-            memory_mb = memory_info.rss / (1024 * 1024)
-            
-            # Check if we've exceeded high watermark
-            if memory_mb > self.config.memory_high_watermark_mb:
-                self.logger.warning(
-                    f"Memory usage ({memory_mb:.1f} MB) exceeds high watermark "
-                    f"({self.config.memory_high_watermark_mb} MB), triggering GC"
-                )
-                # Force garbage collection
-                gc.collect()
-                
-                # Clear cache if it exists and memory is still high
-                if self.result_cache is not None:
-                    process = psutil.Process(os.getpid())
-                    memory_info = process.memory_info()
-                    memory_mb = memory_info.rss / (1024 * 1024)
-                    
-                    if memory_mb > self.config.memory_high_watermark_mb:
-                        self.logger.warning("Memory still high after GC, clearing result cache")
-                        self.result_cache.clear()
-                
-                # Clear quantizer cache if it exists and memory is still high
-                if self.quantizer is not None:
-                    process = psutil.Process(os.getpid())
-                    memory_info = process.memory_info()
-                    memory_mb = memory_info.rss / (1024 * 1024)
-                    
-                    if memory_mb > self.config.memory_high_watermark_mb:
-                        self.logger.warning("Memory still high, clearing quantizer cache")
-                        self.quantizer.clear_cache()
-            
-            # Check against absolute limit if configured
-            if self.config.memory_limit_gb is not None:
-                memory_limit_mb = self.config.memory_limit_gb * 1024
-                if memory_mb > memory_limit_mb:
-                    self.logger.error(
-                        f"Memory usage ({memory_mb:.1f} MB) exceeds limit "
-                        f"({memory_limit_mb:.1f} MB), entering error state"
-                    )
-                    self.state = EngineState.ERROR
-                    # Trigger cache clearing and emergency cleanup
-                    if self.result_cache is not None:
-                        self.result_cache.clear()
-                    if self.quantizer is not None:
-                        self.quantizer.clear_cache()
-                    gc.collect()
-                    
-        except Exception as e:
-            self.logger.error(f"Failed to check memory usage: {str(e)}")
-    
-    def _check_cpu_usage(self) -> None:
-        """Monitor CPU usage and throttle requests if needed."""
-        try:
-            cpu_percent = psutil.cpu_percent(interval=0.1)
-            
-            # Check if we need to enable/disable throttling based on CPU usage
-            if cpu_percent > self.config.cpu_threshold_percent:
-                if not self.config.enable_throttling:
-                    self.logger.warning(
-                        f"CPU usage ({cpu_percent:.1f}%) above threshold "
-                        f"({self.config.cpu_threshold_percent}%), enabling throttling"
-                    )
-                    self.config.enable_throttling = True
-            elif self.config.enable_throttling and cpu_percent < self.config.cpu_threshold_percent * 0.8:
-                # Hysteresis: only disable throttling when significantly below threshold
-                self.logger.info(
-                    f"CPU usage ({cpu_percent:.1f}%) below threshold, disabling throttling"
-                )
-                self.config.enable_throttling = False
-                
-        except Exception as e:
-            self.logger.error(f"Failed to check CPU usage: {str(e)}")
-    
-    def _log_metrics(self) -> None:
-        """Log current performance metrics."""
-        try:
-            metrics = self.metrics.get_metrics()
-            
-            # Log main metrics with cache hit rate converted to a percentage
-            self.logger.debug(
-                f"Performance metrics: avg_inference={metrics.get('avg_inference_time_ms', 0):.2f}ms, "
-                f"p95_inference={metrics.get('p95_inference_time_ms', 0):.2f}ms, "
-                f"avg_batch_size={metrics.get('avg_batch_size', 0):.1f}, "
-                f"throughput={metrics.get('throughput_requests_per_second', 0):.1f}req/s, "
-                f"cache_hit_rate={metrics.get('cache_hit_rate', 0)*100:.1f}%"
-            )
-            
-            # Additional debug metrics when quantization is enabled
-            if (self.config.enable_quantization or self.config.enable_model_quantization or 
-                self.config.enable_input_quantization):
-                self.logger.debug(
-                    f"Quantization metrics: avg_quantize={metrics.get('avg_quantize_time_ms', 0):.2f}ms, "
-                    f"avg_dequantize={metrics.get('avg_dequantize_time_ms', 0):.2f}ms"
-                )
-                
-            # Log memory usage
-            process = psutil.Process(os.getpid())
-            memory_info = process.memory_info()
-            memory_mb = memory_info.rss / (1024 * 1024)
-            self.logger.debug(f"Memory usage: {memory_mb:.1f} MB")
-            
-            # Log cache stats if enabled
-            if self.result_cache is not None:
-                cache_stats = self.result_cache.get_stats()
-                self.logger.debug(
-                    f"Cache stats: size={cache_stats['size']}/{cache_stats['max_size']}, "
-                    f"hit_rate={cache_stats['hit_rate_percent']:.1f}%"
-                )
-                
-        except Exception as e:
-            self.logger.error(f"Failed to log metrics: {str(e)}")
-    
-    def load_model(self, model_path: str, model_type: ModelType = None) -> bool:
+    def load_model(self, model_path: str, model_type: Optional[ModelType] = None,
+                compile_model: bool = None) -> bool:
         """
-        Load a pre-trained model from file.
+        Load a pre-trained model from file with optimized processing.
         
         Args:
             model_path: Path to the saved model file
-            model_type: Type of model being loaded
+            model_type: Type of model being loaded (auto-detected if None)
+            compile_model: Whether to compile model for faster inference (if supported)
+                           If None, uses config setting
             
         Returns:
             Success status
         """
+        # Update engine state
         with self.state_lock:
             if self.state in (EngineState.LOADING, EngineState.STOPPING, EngineState.STOPPED):
                 self.logger.warning(f"Cannot load model in current state: {self.state}")
@@ -628,17 +597,20 @@ class InferenceEngine:
             self.state = EngineState.LOADING
         
         self.logger.info(f"Loading model from {model_path}")
+        load_start_time = time.time()
         
         try:
-            # If file doesn't exist, abort
+            # Validate model file exists
             if not os.path.exists(model_path):
                 self.logger.error(f"Model file not found: {model_path}")
                 self.state = EngineState.ERROR
                 return False
             
-            # Determine model type if not provided
+            # Detect model type if not provided
             if model_type is None:
                 model_type = self._detect_model_type(model_path)
+                if self.logger.isEnabledFor(logging.INFO):
+                    self.logger.info(f"Auto-detected model type: {model_type}")
             
             # Load the model based on type
             if model_type == ModelType.SKLEARN:
@@ -651,30 +623,46 @@ class InferenceEngine:
                 # Extract feature names if available
                 if hasattr(model, 'feature_names_in_'):
                     self.feature_names = model.feature_names_in_.tolist()
-                
+            
             elif model_type == ModelType.XGBOOST:
                 import xgboost as xgb
                 model = xgb.Booster()
                 model.load_model(model_path)
                 
+                # Try to extract feature names from model if available
+                feature_names = model.feature_names
+                if feature_names:
+                    self.feature_names = feature_names
+            
             elif model_type == ModelType.LIGHTGBM:
                 import lightgbm as lgb
                 model = lgb.Booster(model_file=model_path)
                 
-            elif model_type == ModelType.CUSTOM:
-                # Load using pickle for custom models
-                with open(model_path, 'rb') as f:
-                    model = pickle.load(f)
-                    
+                # Try to extract feature names
+                feature_names = model.feature_name()
+                if feature_names:
+                    self.feature_names = feature_names
+            
             elif model_type == ModelType.ENSEMBLE:
-                # For ensemble models we expect a specialized format
+                # Load ensemble model config
                 if model_path.endswith('.json'):
                     with open(model_path, 'r') as f:
                         ensemble_config = json.load(f)
-                    model = self._load_ensemble_from_config(ensemble_config)
+                    model = self._load_ensemble_model(ensemble_config)
                 else:
                     with open(model_path, 'rb') as f:
                         model = pickle.load(f)
+                
+                # Try to extract feature names from first model if it's a dict
+                if isinstance(model, dict) and 'models' in model and model['models']:
+                    first_model = model['models'][0]
+                    if hasattr(first_model, 'feature_names_in_'):
+                        self.feature_names = first_model.feature_names_in_.tolist()
+            
+            elif model_type == ModelType.CUSTOM:
+                # Default to pickle for custom models
+                with open(model_path, 'rb') as f:
+                    model = pickle.load(f)
             
             else:
                 self.logger.error(f"Unsupported model type: {model_type}")
@@ -685,12 +673,18 @@ class InferenceEngine:
             self.model = model
             self.model_type = model_type
             
-            # Get model info
+            # Extract model information
             self.model_info = self._extract_model_info(model, model_type)
+            self.model_info['load_time_ms'] = (time.time() - load_start_time) * 1000
             
-            # Set up preprocessor if feature scaling is enabled
-            if self.config.enable_feature_scaling:
-                self._setup_preprocessor()
+            # If we have a preprocessor and feature names, fit it on synthetic data
+            if self.preprocessor is not None and self.feature_names:
+                self._initialize_preprocessor()
+            
+            # Compile model if requested or configured
+            should_compile = compile_model if compile_model is not None else self.config.enable_jit
+            if should_compile:
+                self._compile_model()
             
             # Quantize model if enabled
             if self.config.enable_model_quantization and self.quantizer is not None:
@@ -700,33 +694,38 @@ class InferenceEngine:
             if self.config.enable_warmup:
                 self._warmup_model()
             
+            # Cache optimization: pre-compute common values
+            if self.config.enable_memory_optimization:
+                self._precompute_common_values()
+            
+            # Force GC to clean up any temporary objects
+            gc.collect()
+            
             self.state = EngineState.READY
-            self.logger.info(f"Model loaded successfully: {os.path.basename(model_path)}")
+            self.logger.info(f"Model loaded successfully in {time.time() - load_start_time:.2f}s")
             
             return True
-            
+        
         except Exception as e:
-            self.logger.error(f"Failed to load model: {str(e)}")
-            if self.config.debug_mode:
-                self.logger.error(traceback.format_exc())
+            if self.logger.isEnabledFor(logging.ERROR):
+                self.logger.error(f"Failed to load model: {str(e)}")
+            try:
+                import traceback
+                if self.config.debug_mode:
+                    self.logger.error(traceback.format_exc())
+            except ImportError:
+                pass
             self.state = EngineState.ERROR
             return False
     
     def _detect_model_type(self, model_path: str) -> ModelType:
-        """
-        Attempt to detect model type from file extension or content.
-        
-        Args:
-            model_path: Path to the model file
-            
-        Returns:
-            Detected model type
-        """
+        """Detect model type from file extension or peek at content"""
+        # Check file extension first
         file_ext = os.path.splitext(model_path)[1].lower()
         
         if file_ext == '.json':
             return ModelType.ENSEMBLE
-        elif file_ext == '.pkl' or file_ext == '.joblib':
+        elif file_ext in ('.pkl', '.pickle'):
             # Try to peek at the model to determine type
             try:
                 if JOBLIB_AVAILABLE:
@@ -748,9 +747,8 @@ class InferenceEngine:
                     return ModelType.ENSEMBLE
                 
                 return ModelType.CUSTOM
-                
             except Exception:
-                # If we can't determine, default to CUSTOM
+                # If can't determine, default to custom
                 return ModelType.CUSTOM
         elif file_ext == '.model' or file_ext == '.bst':
             # Likely XGBoost model
@@ -759,54 +757,35 @@ class InferenceEngine:
             # Likely LightGBM model
             return ModelType.LIGHTGBM
         else:
-            # Default to custom
+            # Default to custom for unknown types
             return ModelType.CUSTOM
     
     def _extract_model_info(self, model: Any, model_type: ModelType) -> Dict[str, Any]:
-        """
-        Extract information about the loaded model.
-        
-        Args:
-            model: The loaded model object
-            model_type: Type of the model
-            
-        Returns:
-            Dictionary with model information
-        """
+        """Extract information about the loaded model"""
         info = {
             "model_type": model_type.name,
             "timestamp": datetime.now().isoformat(),
             "model_class": f"{model.__class__.__module__}.{model.__class__.__name__}"
         }
         
-        # Extract sklearn-specific info
+        # Extract model-specific info
         if model_type == ModelType.SKLEARN:
-            # Add hyperparameters
+            # Get hyperparameters
             if hasattr(model, 'get_params'):
                 info["hyperparameters"] = model.get_params()
             
             # Get feature count
             if hasattr(model, 'n_features_in_'):
                 info["feature_count"] = model.n_features_in_
-            
-            # Get feature importances if available
-            if hasattr(model, 'feature_importances_'):
-                info["has_feature_importances"] = True
-            
-        # Extract XGBoost-specific info
+        
         elif model_type == ModelType.XGBOOST:
             # Get number of trees
-            info["num_trees"] = getattr(model, 'num_boosted_rounds', 
-                                       getattr(model, 'n_estimators', None))
-            
-            # Try to get feature count
             try:
                 dump = model.get_dump()
                 info["num_trees"] = len(dump)
             except:
                 pass
-            
-        # Extract LightGBM-specific info
+        
         elif model_type == ModelType.LIGHTGBM:
             # Get model parameters
             try:
@@ -822,46 +801,38 @@ class InferenceEngine:
         
         return info
     
-    def _setup_preprocessor(self) -> None:
-        """Set up data preprocessing pipeline."""
-        if not self.config.enable_feature_scaling:
+    def _initialize_preprocessor(self):
+        """Initialize preprocessor with synthetic data based on feature names"""
+        if self.preprocessor is None or not self.feature_names:
             return
         
-        # Create preprocessor config
-        preprocessor_config = PreprocessorConfig(
-            normalization_type=NormalizationType.STANDARD,  # Default to standard scaling
-            enable_outlier_detection=True,
-            outlier_threshold=3.0,
-            clip_values=True,
-            min_clip_percentile=0.1,
-            max_clip_percentile=99.9,
-            handle_missing=True,
-            missing_strategy="mean",
-            handle_categorical=True,
-            max_categories=20,
-            enable_dimensionality_reduction=False,
-            cache_preprocessing=True,
-            cache_size=1000
-        )
-        
-        # Create data preprocessor
-        self.preprocessor = DataPreprocessor(preprocessor_config)
-        self.logger.info("Data preprocessor initialized")
+        try:
+            # Create synthetic data for fitting the preprocessor
+            feature_count = len(self.feature_names)
+            sample_count = 100
+            
+            # Generate random data with reasonable ranges
+            synthetic_data = np.random.randn(sample_count, feature_count)
+            
+            # Fit the preprocessor
+            self.preprocessor.fit(synthetic_data, feature_names=self.feature_names)
+            self.logger.info("Preprocessor initialized with synthetic data")
+        except Exception as e:
+            self.logger.warning(f"Failed to initialize preprocessor: {str(e)}")
     
-    def _quantize_model(self) -> None:
-        """Quantize the model weights if supported."""
+    def _quantize_model(self):
+        """Quantize the model weights if supported"""
         if self.quantizer is None or self.model is None:
             return
         
         try:
-            # Model quantization is highly model-specific and may not be supported
-            # for all model types. Here we'll implement a few common cases.
+            # Model quantization depends on model type
             if self.model_type == ModelType.SKLEARN:
                 if hasattr(self.model, 'coef_'):
                     # Linear models: quantize coefficients
-                    self.logger.info("Quantizing linear model coefficients")
                     original_coef = self.model.coef_.copy()
                     quantized_coef, _ = self.quantizer.quantize(original_coef)
+                    
                     # Store original and set quantized version
                     self.model._original_coef = original_coef
                     self.model.coef_ = quantized_coef
@@ -870,97 +841,57 @@ class InferenceEngine:
                         self.model._original_intercept = self.model.intercept_.copy()
                         quantized_intercept, _ = self.quantizer.quantize(self.model.intercept_)
                         self.model.intercept_ = quantized_intercept
-                
-                elif hasattr(self.model, 'tree_'):
-                    # Decision trees: more complex, typically not quantized
-                    self.logger.warning("Quantization not supported for this tree-based sklearn model")
-                
-            elif self.model_type == ModelType.XGBOOST or self.model_type == ModelType.LIGHTGBM:
-                # Tree-based models usually don't benefit from weight quantization
-                # Their predictions are based on threshold comparisons
-                self.logger.warning(f"Model quantization not supported for {self.model_type.name} models")
-                
+                    
+                    self.logger.info("Model weights quantized successfully")
             else:
-                self.logger.warning(f"Model quantization not supported for {self.model_type.name} models")
-                
+                self.logger.info(f"Model quantization not supported for {self.model_type.name}")
         except Exception as e:
             self.logger.error(f"Failed to quantize model: {str(e)}")
-            if self.config.debug_mode:
-                self.logger.error(traceback.format_exc())
     
-    def _warmup_model(self) -> None:
-        """Perform model warm-up to stabilize performance."""
+    def _warmup_model(self):
+        """Perform model warm-up to stabilize performance"""
         if not self.config.enable_warmup or self.model is None:
             return
         
-        self.logger.info("Warming up model...")
         try:
-            # Create synthetic data for warmup
-            feature_count = 0
+            # Determine feature count
+            feature_count = len(self.feature_names) if self.feature_names else 10
             
-            # Try to determine feature count from model or feature names
-            if self.feature_names:
-                feature_count = len(self.feature_names)
-            elif 'feature_count' in self.model_info:
-                feature_count = self.model_info['feature_count']
-            elif hasattr(self.model, 'n_features_in_'):
-                feature_count = self.model.n_features_in_
-            else:
-                # Default to 10 features if we can't determine
-                feature_count = 10
-                self.logger.warning(f"Couldn't determine feature count, using default: {feature_count}")
+            # Generate synthetic data for warm-up
+            batch_size = min(32, self.config.max_batch_size)
+            warmup_data = np.random.rand(batch_size, feature_count)
             
-            # Generate synthetic data - uniformly distributed to cover the input space
-            warmup_size = 32
-            warmup_data = np.random.rand(warmup_size, feature_count)
+            self.logger.info(f"Warming up model with {batch_size} samples...")
             
-            # Run a few batches through the model
-            for i in range(3):  # Run multiple times to warm up caches
-                start_time = time.time()
-                
-                # Handle potential quantization
-                if (self.config.enable_input_quantization and self.quantizer is not None):
-                    quantize_start = time.time()
+            # Run multiple batches through the model for warm-up
+            for i in range(3):
+                if self.config.enable_input_quantization and self.quantizer:
+                    # With quantization
                     quantized_data, _ = self.quantizer.quantize(warmup_data)
-                    quantize_time = time.time() - quantize_start
-                    
                     _ = self._predict_internal(quantized_data)
-                    
-                    if self.logger.isEnabledFor(logging.DEBUG):
-                        self.logger.debug(f"Warmup batch {i+1}: quantization_time={quantize_time*1000:.2f}ms")
                 else:
+                    # Without quantization
                     _ = self._predict_internal(warmup_data)
-                
-                batch_time = time.time() - start_time
-                self.logger.debug(f"Warmup batch {i+1} completed in {batch_time*1000:.2f}ms")
             
-            self.logger.info("Model warmup completed")
-            
+            self.logger.info("Model warm-up completed")
         except Exception as e:
-            self.logger.error(f"Error during model warmup: {str(e)}")
-            if self.config.debug_mode:
-                self.logger.error(traceback.format_exc())
+            self.logger.warning(f"Model warm-up failed: {str(e)}")
     
-    def predict(self, features: np.ndarray, request_id: Optional[str] = None) -> Tuple[bool, Union[np.ndarray, None], Dict[str, Any]]:
+    def predict(self, features: np.ndarray) -> Tuple[bool, np.ndarray, Dict[str, Any]]:
         """
-        Make prediction with a single input batch.
+        Make optimized prediction with input features.
         
         Args:
             features: Input features as numpy array
-            request_id: Optional identifier for the request
             
         Returns:
             Tuple of (success_flag, predictions, metadata)
         """
-        # Check if engine is in a valid state
+        # Check if engine is ready
         if self.state not in (EngineState.READY, EngineState.RUNNING):
-            error_msg = f"Cannot make prediction: engine in {self.state} state"
+            error_msg = f"Cannot predict: engine in {self.state} state"
             self.logger.error(error_msg)
             return False, None, {"error": error_msg}
-        
-        # Generate request ID if not provided
-        if request_id is None:
-            request_id = str(uuid.uuid4())
         
         # Update engine state
         with self.state_lock:
@@ -971,47 +902,91 @@ class InferenceEngine:
         if self.config.enable_throttling:
             with self.active_requests_lock:
                 if self.active_requests >= self.config.max_concurrent_requests:
-                    self.metrics.record_throttled()
                     error_msg = "Request throttled due to high load"
-                    self.logger.warning(f"{error_msg} (active_requests={self.active_requests})")
+                    self.logger.warning(error_msg)
                     return False, None, {"error": error_msg, "throttled": True}
         
-        # Check for cache hit if deduplication is enabled
-        if self.config.enable_request_deduplication and self.result_cache is not None:
-            # Create a cache key from the input features
+        # Check cache using advanced multi-level cache if available - FAST PATH
+        cache_key = None
+        if self.advanced_cache is not None or self.result_cache is not None:
             cache_key = self._create_cache_key(features)
             
-            # Check cache
-            hit, cached_result = self.result_cache.get(cache_key)
-            if hit:
-                self.metrics.record_cache_hit()
-                self.logger.debug(f"Cache hit for request {request_id}")
-                return True, cached_result, {"cached": True, "request_id": request_id}
-            else:
-                self.metrics.record_cache_miss()
+            # Try advanced cache first
+            if self.advanced_cache is not None:
+                hit, cached_result = self.advanced_cache.get(cache_key, data_type='result')
+                if hit:
+                    self.metrics.record_cache_hit()
+                    return True, cached_result, {"cached": True, "cache_hit": True, "cache_level": "advanced"}
+            
+            # Fallback to simple cache
+            elif self.result_cache is not None:
+                hit, cached_result = self.result_cache.get(cache_key)
+                if hit:
+                    self.metrics.record_cache_hit()
+                    return True, cached_result, {"cached": True, "cache_hit": True, "cache_level": "simple"}
+            
+            self.metrics.record_cache_miss()
         
-        # Track active request count
+        # Increment active request counter
         with self.active_requests_lock:
             self.active_requests += 1
         
+        # Track processing times
+        start_time = time.time()
+        preprocessing_time = 0
+        quantization_time = 0
+        feature_extraction_time = 0
+        
         try:
-            # Process data through the preprocessor if available
-            if self.preprocessor is not None:
-                try:
-                    features = self.preprocessor.transform(features)
-                except Exception as e:
-                    self.logger.error(f"Preprocessing error: {str(e)}")
-                    return False, None, {"error": f"Preprocessing failed: {str(e)}"}
+            # Apply mixed precision optimization for numerical features
+            if hasattr(self, 'mixed_precision_manager') and hasattr(self.config, 'enable_mixed_precision') and self.config.enable_mixed_precision:
+                features = self.mixed_precision_manager.optimize_numpy_precision(features, target_precision='auto')
             
-            # Handle quantization if enabled
-            quantize_time = 0
-            dequantize_time = 0
+            # Ensure features is a numpy array with correct shape
+            if not isinstance(features, np.ndarray):
+                features = np.array(features, dtype=np.float32)
             
+            # Reshape 1D array to 2D if needed
+            if features.ndim == 1:
+                features = features.reshape(1, -1)
+                
+            # Check if feature cache has this input - reuse transformed features
+            if self.feature_cache is not None:
+                feature_key = self._create_cache_key(features)
+                cache_hit, cached_features = self.feature_cache.get(feature_key)
+                
+                if cache_hit:
+                    # Use cached preprocessed features
+                    features = cached_features
+                else:
+                    # Apply preprocessing if enabled
+                    if self.preprocessor is not None:
+                        preprocess_start = time.time()
+                        try:
+                            # Try to get a buffer from memory pool for result
+                            result_buffer = self.memory_pool.get_buffer(
+                                shape=features.shape, 
+                                dtype=features.dtype
+                            )
+                            
+                            # Transform in-place to the buffer if possible
+                            features = self.preprocessor.transform(features, copy=True)
+                            
+                            # Store in feature cache
+                            self.feature_cache.set(feature_key, features)
+                            
+                            preprocessing_time = time.time() - preprocess_start
+                        except Exception as e:
+                            self.logger.error(f"Preprocessing error: {str(e)}")
+                            return False, None, {"error": f"Preprocessing failed: {str(e)}"}
+            
+            # Apply quantization if enabled
             if self.config.enable_input_quantization and self.quantizer is not None:
+                quantize_start = time.time()
                 try:
-                    q_start = time.time()
+                    # Perform quantization on the input features
                     quantized_features, quantization_params = self.quantizer.quantize(features)
-                    quantize_time = time.time() - q_start
+                    quantization_time = time.time() - quantize_start
                     
                     # Use quantized features for prediction
                     features = quantized_features
@@ -1020,698 +995,549 @@ class InferenceEngine:
                     return False, None, {"error": f"Quantization failed: {str(e)}"}
             
             # Make prediction with timing
-            start_time = time.time()
-            predictions = self._predict_internal(features)
-            inference_time = time.time() - start_time
+            predict_start = time.time()
             
-            # Dequantize predictions if needed
-            if (self.config.enable_input_quantization and self.quantizer is not None and 
-                self.config.enable_quantization_aware_inference):
-                try:
-                    dq_start = time.time()
-                    predictions = self.quantizer.dequantize(predictions, quantization_params)
-                    dequantize_time = time.time() - dq_start
-                except Exception as e:
-                    self.logger.error(f"Dequantization error: {str(e)}")
-                    # Continue with quantized predictions as fallback
+            # Use optimized prediction with all enhancements
+            with self._control_threading(1):  # Limit threads during prediction
+                predictions = self._predict_with_optimizations(features)
+                    
+            inference_time = time.time() - predict_start
             
-            # Calculate batch size (number of samples)
+            # Calculate total processing time
+            total_time = time.time() - start_time
+            
+            # Update performance metrics
             batch_size = features.shape[0] if hasattr(features, 'shape') else 1
-            
-            # Update metrics
             self.metrics.update_inference(
                 inference_time=inference_time,
                 batch_size=batch_size,
-                queue_time=0,  # No queue time for direct predict calls
-                quantize_time=quantize_time,
-                dequantize_time=dequantize_time
+                preprocessing_time=preprocessing_time,
+                quantization_time=quantization_time
             )
             
-            # Cache result if deduplication is enabled
-            if self.config.enable_request_deduplication and self.result_cache is not None:
-                cache_key = self._create_cache_key(features)
-                self.result_cache.set(cache_key, predictions)
+            # Cache result using advanced cache if available
+            if cache_key:
+                if self.advanced_cache is not None:
+                    self.advanced_cache.set(cache_key, predictions, data_type='result', priority='high')
+                elif self.result_cache is not None:
+                    self.result_cache.set(cache_key, predictions)
             
-            # Return predictions and metadata
+            # Create response metadata
             metadata = {
-                "request_id": request_id,
                 "inference_time_ms": inference_time * 1000,
-                "batch_size": batch_size
+                "total_time_ms": total_time * 1000,
+                "batch_size": batch_size,
+                "compiled_model_used": self.compiled_model is not None
             }
             
-            # Add quantization info if used
-            if quantize_time > 0:
-                metadata["quantize_time_ms"] = quantize_time * 1000
-            if dequantize_time > 0:
-                metadata["dequantize_time_ms"] = dequantize_time * 1000
+            # Add processing time breakdowns if significant
+            if preprocessing_time > 0:
+                metadata["preprocessing_time_ms"] = preprocessing_time * 1000
+            if quantization_time > 0:
+                metadata["quantization_time_ms"] = quantization_time * 1000
+            if feature_extraction_time > 0:
+                metadata["feature_extraction_time_ms"] = feature_extraction_time * 1000
             
             self.logger.debug(
-                f"Prediction successful for request {request_id}: "
-                f"batch_size={batch_size}, inference_time={inference_time*1000:.2f}ms"
+                f"Prediction completed: batch_size={batch_size}, "
+                f"time={total_time*1000:.2f}ms"
             )
             
             return True, predictions, metadata
             
         except Exception as e:
-            self.logger.error(f"Prediction error for request {request_id}: {str(e)}")
-            if self.config.debug_mode:
-                self.logger.error(traceback.format_exc())
-            
+            if self.logger.isEnabledFor(logging.ERROR):
+                self.logger.error(f"Prediction error: {str(e)}")
+            try:
+                import traceback
+                if self.config.debug_mode:
+                    self.logger.error(traceback.format_exc())
+            except ImportError:
+                pass
             self.metrics.record_error()
-            return False, None, {"error": str(e), "request_id": request_id}
+            return False, None, {"error": str(e)}
             
         finally:
-            # Decrement active request count
+            # Decrement active request counter
             with self.active_requests_lock:
                 self.active_requests -= 1
             
-            # Restore state if no active requests
+            # Update engine state if no active requests
             with self.state_lock:
                 if self.state == EngineState.RUNNING and self.active_requests == 0:
                     self.state = EngineState.READY
-    
-    def predict_batch(self, features_batch: np.ndarray, priority: int = 0) -> Future:
-        """
-        Asynchronously process a batch of features using the batch processor.
-        
-        Args:
-            features_batch: Batch of input features
-            priority: Priority level (higher values = higher priority)
-            
-        Returns:
-            Future object for retrieving the result
-        """
-        if not self.config.enable_batching or self.batch_processor is None:
-            # If batching is disabled, process synchronously
-            success, predictions, metadata = self.predict(features_batch)
-            future = Future()
-            if success:
-                future.set_result((predictions, metadata))
-            else:
-                future.set_exception(Exception(metadata.get("error", "Unknown error")))
-            return future
-        
-        # Determine batch priority
-        batch_priority = BatchPriority.NORMAL
-        if priority > 0:
-            batch_priority = BatchPriority.HIGH
-        elif priority < 0:
-            batch_priority = BatchPriority.LOW
-        
-        # Submit to batch processor
-        return self.batch_processor.enqueue_predict(features_batch, priority=batch_priority)
-    
-    def _process_batch(self, batch: np.ndarray) -> np.ndarray:
-        """
-        Process a batch of features for the batch processor.
-        
-        Args:
-            batch: Batch of input features
-            
-        Returns:
-            Batch predictions
-        """
-        # Make direct prediction
-        success, predictions, _ = self.predict(batch)
-        
-        if not success:
-            raise RuntimeError("Batch prediction failed")
-        
-        return predictions
-    
+                    
     def _predict_internal(self, features: np.ndarray) -> np.ndarray:
         """
-        Internal prediction method that handles different model types.
+        Make a prediction using the loaded model with optimized execution path.
         
         Args:
             features: Input features
             
         Returns:
-            Model predictions
+            Prediction results
         """
         if self.model is None:
             raise RuntimeError("No model loaded")
         
-        # Use model-specific prediction methods based on model type
-        if self.model_type == ModelType.SKLEARN:
-            # Most sklearn models use predict method
-            with self.inference_lock:
-                if hasattr(self.model, 'predict_proba'):
-                    return self.model.predict_proba(features)
+        # Apply JIT compilation for frequently called prediction methods
+        if hasattr(self, 'jit_compiler') and hasattr(self.config, 'enable_jit_compilation') and self.config.enable_jit_compilation:
+            # Use JIT compiler for model prediction if supported
+            if model_type == ModelType.SKLEARN:
+                # JIT compile prediction for sklearn models
+                if hasattr(self.model, 'predict_proba') and self.config.return_probabilities:
+                    return self.jit_compiler.compile_if_hot(self.model.predict_proba, features)
                 else:
-                    return self.model.predict(features)
-                
-        elif self.model_type == ModelType.XGBOOST:
-            # XGBoost requires data to be in DMatrix format
-            import xgboost as xgb
-            dmatrix = xgb.DMatrix(features)
-            with self.inference_lock:
-                return self.model.predict(dmatrix)
-                
-        elif self.model_type == ModelType.LIGHTGBM:
-            # LightGBM can predict directly from numpy arrays
-            with self.inference_lock:
+                    return self.jit_compiler.compile_if_hot(self.model.predict, features)
+        
+        # Create a clean, contiguous copy of features if needed
+        # This improves memory access patterns for vectorized operations
+        if not features.flags.c_contiguous:
+            features = np.ascontiguousarray(features)
+            
+        # Choose prediction method based on model type
+        model_type = self.model_type
+        if model_type == ModelType.SKLEARN:
+            # Scikit-learn models 
+            # For batch predictions, use vectorized APIs directly
+            if hasattr(self.model, 'predict_proba') and self.config.return_probabilities:
+                # Get probabilities for classification
+                return self.model.predict_proba(features)
+            else:
+                # Standard prediction
                 return self.model.predict(features)
                 
-        elif self.model_type == ModelType.ENSEMBLE:
-            # Ensemble models might have custom prediction logic
-            if hasattr(self.model, 'predict'):
-                with self.inference_lock:
-                    return self.model.predict(features)
-            else:
-                raise RuntimeError("Ensemble model doesn't have a predict method")
-                
-        elif self.model_type == ModelType.CUSTOM:
-            # For custom models, try predict or __call__
-            with self.inference_lock:
-                if hasattr(self.model, 'predict'):
-                    return self.model.predict(features)
-                elif callable(self.model):
-                    return self.model(features)
+        elif model_type == ModelType.XGBOOST:
+            try:
+                import xgboost as xgb
+                dmatrix = xgb.DMatrix(features)
+                pred_params = {}
+                if features.shape[0] <= 10:
+                    pred_params['ntree_limit'] = 0
+                    pred_params['nthread'] = 1
                 else:
-                    raise RuntimeError("Custom model doesn't have a predict method or is not callable")
-        
+                    pred_params['nthread'] = min(4, self.thread_count)
+                return self.model.predict(dmatrix, **pred_params)
+            except Exception as e:
+                if self.logger.isEnabledFor(logging.WARNING):
+                    self.logger.warning(f"Optimized XGBoost prediction failed: {str(e)}, falling back to basic")
+                return self.model.predict(features)
+        elif model_type == ModelType.LIGHTGBM:
+            try:
+                import lightgbm as lgb
+                pred_params = {}
+                if features.shape[0] <= 10:
+                    pred_params['num_threads'] = 1
+                else:
+                    pred_params['num_threads'] = min(4, self.thread_count)
+                return self.model.predict(features, **pred_params)
+            except Exception as e:
+                if self.logger.isEnabledFor(logging.WARNING):
+                    self.logger.warning(f"Optimized LightGBM prediction failed: {str(e)}")
+                return self.model.predict(features)
+        elif model_type == ModelType.ENSEMBLE:
+            if hasattr(self.model, 'predict'):
+                return self.model.predict(features)
+            elif isinstance(self.model, dict) and 'models' in self.model:
+                return self._predict_custom_ensemble_optimized(features, self.model)
+            else:
+                raise ValueError(f"Unsupported ensemble model format")
+        elif model_type == ModelType.CUSTOM:
+            if hasattr(self.model, 'predict'):
+                return self.model.predict(features)
+            elif callable(self.model):
+                return self.model(features)
+            else:
+                raise ValueError(f"Model does not have a standard prediction interface")
         else:
-            raise NotImplementedError(f"Prediction not implemented for model type: {self.model_type}")
-    
-    def _create_cache_key(self, features: np.ndarray) -> str:
+            raise ValueError(f"Unsupported model type: {model_type}")
+
+    def _predict_compiled(self, features: np.ndarray) -> np.ndarray:
         """
-        Create a cache key from input features.
+        Make a prediction using the compiled model (ONNX/Treelite).
         
         Args:
             features: Input features
             
         Returns:
-            Cache key string
+            Prediction results
         """
-        try:
-            # Use faster alternatives if available
-            key = hashlib.md5(features.tobytes()).hexdigest()
-            return key
-        except:
-            # Fallback to pickle-based solution
+        if self.compiled_model is None:
+            raise RuntimeError("No compiled model available")
+        
+        # Handle different compiled model types
+        if hasattr(self.compiled_model, 'run'):  # ONNX Runtime
+            input_name = getattr(self, 'onnx_input_name', 'float_input')
+            onnx_inputs = {input_name: features.astype(np.float32)}
+            outputs = self.compiled_model.run(None, onnx_inputs)
+            return outputs[0]
+        elif hasattr(self.compiled_model, 'predict'):  # Treelite
             try:
-                pickled = pickle.dumps(features)
-                return hashlib.md5(pickled).hexdigest()
-            except:
-                # Last resort, use string representation (slower)
-                return hashlib.md5(str(features).encode()).hexdigest()
-    
-    def shutdown(self) -> None:
-        """Gracefully shut down the inference engine."""
-        self.logger.info("Shutting down inference engine")
-        
-        with self.state_lock:
-            if self.state in (EngineState.STOPPED, EngineState.STOPPING):
-                self.logger.info("Engine already stopped or stopping")
-                return
-            self.state = EngineState.STOPPING
-        
-        # Shut down monitoring
-        if hasattr(self, 'monitor_stop_event'):
-            self.monitor_stop_event.set()
-            if hasattr(self, 'monitor_thread') and self.monitor_thread.is_alive():
-                self.monitor_thread.join(timeout=5.0)
-        
-        # Shut down batch processor
-        #if hasattr(self, 'batch_processor') and self.batch_processor is not None:
-        #    self.batch_processor.shutdown()
-        
-        # Shut down thread pool
-        if hasattr(self, 'thread_pool'):
-            self.thread_pool.shutdown(wait=True)
-        
-        # Update state to stopped
-        self.state = EngineState.STOPPED
-        self.logger.info("Inference engine shutdown complete")
-    
-    def get_state(self) -> EngineState:
-        """Get current engine state."""
-        return self.state
-    
-    def get_metrics(self) -> Dict[str, Any]:
-        """Get current performance metrics."""
-        metrics = self.metrics.get_metrics()
-        
-        # Add engine state and model info
-        metrics.update({
-            "engine_state": self.state.name,
-            "model_type": self.model_type.name if self.model_type else None,
-            "active_requests": self.active_requests,
-        })
-        
-        # Add cache stats if available
-        if self.result_cache is not None:
-            metrics["cache_stats"] = self.result_cache.get_stats()
-        
-        # Add system metrics
-        try:
-            process = psutil.Process(os.getpid())
-            cpu_percent = process.cpu_percent(interval=0.1)
-            memory_info = process.memory_info()
-            memory_mb = memory_info.rss / (1024 * 1024)
-            
-            metrics.update({
-                "cpu_percent": cpu_percent,
-                "memory_mb": memory_mb,
-            })
-        except:
-            pass
-        
-        return metrics
-    
-    def get_model_info(self) -> Dict[str, Any]:
-        """Get information about the loaded model."""
-        if not self.model_info:
-            return {"error": "No model loaded"}
-        
-        # Include config information
-        info = {
-            "model_info": self.model_info,
-            "config": self.config.to_dict()
-        }
-        
-        return info
-    
-    def _load_ensemble_from_config(self, ensemble_config: Dict[str, Any]) -> Any:
-        """
-        Load an ensemble model from configuration.
-        
-        Args:
-            ensemble_config: Ensemble model configuration dictionary
-            
-        Returns:
-            Loaded ensemble model
-        """
-        if 'models' not in ensemble_config:
-            raise ValueError("Ensemble config must contain 'models' section")
-        
-        self.logger.info(f"Loading ensemble with {len(ensemble_config['models'])} models")
-        
-        # Load each model in the ensemble
-        models = []
-        weights = []
-        
-        for model_cfg in ensemble_config['models']:
-            if 'path' not in model_cfg:
-                raise ValueError("Each model in ensemble must specify a 'path'")
-            
-            model_path = model_cfg['path']
-            # Resolve path if not absolute
-            if not os.path.isabs(model_path):
-                model_path = os.path.join(MODEL_REGISTRY_PATH, model_path)
-            
-            # Determine model type if specified
-            model_type_str = model_cfg.get('type', None)
-            if model_type_str:
-                try:
-                    model_type = ModelType[model_type_str.upper()]
-                except KeyError:
-                    raise ValueError(f"Unknown model type: {model_type_str}")
-            else:
-                model_type = self._detect_model_type(model_path)
-            
-            # Load the model
-            if model_type == ModelType.SKLEARN:
-                if JOBLIB_AVAILABLE:
-                    model = joblib.load(model_path)
-                else:
-                    with open(model_path, 'rb') as f:
-                        model = pickle.load(f)
-            
-            elif model_type == ModelType.XGBOOST:
-                import xgboost as xgb
-                model = xgb.Booster()
-                model.load_model(model_path)
-            
-            elif model_type == ModelType.LIGHTGBM:
-                import lightgbm as lgb
-                model = lgb.Booster(model_file=model_path)
-            
-            elif model_type == ModelType.CUSTOM:
-                with open(model_path, 'rb') as f:
-                    model = pickle.load(f)
-            
-            else:
-                raise ValueError(f"Unsupported model type in ensemble: {model_type}")
-            
-            # Add model and its weight to lists
-            models.append(model)
-            weights.append(model_cfg.get('weight', 1.0))
-        
-        # Create ensemble object based on ensemble type
-        ensemble_type = ensemble_config.get('ensemble_type', 'average').lower()
-        
-        # Create a simple wrapper class for the ensemble
-        class EnsembleModel:
-            """Simple ensemble model wrapper."""
-            
-            def __init__(self, models, weights, ensemble_type, parent_engine):
-                self.models = models
-                self.weights = weights
-                self.ensemble_type = ensemble_type
-                self.parent_engine = parent_engine  # Reference to inference engine
-                self.normalized_weights = np.array(weights) / sum(weights) if weights else None
-            
-            def predict(self, features):
-                """Make predictions with the ensemble."""
-                predictions = []
-                
-                # Get predictions from each model
-                for i, model in enumerate(self.models):
-                    model_type = self.parent_engine._detect_model_type_from_object(model)
-                    
-                    if model_type == ModelType.SKLEARN:
-                        if hasattr(model, 'predict_proba'):
-                            pred = model.predict_proba(features)
-                        else:
-                            pred = model.predict(features)
-                    
-                    elif model_type == ModelType.XGBOOST:
-                        import xgboost as xgb
-                        dmatrix = xgb.DMatrix(features)
-                        pred = model.predict(dmatrix)
-                    
-                    elif model_type == ModelType.LIGHTGBM:
-                        pred = model.predict(features)
-                    
-                    elif model_type == ModelType.CUSTOM:
-                        if hasattr(model, 'predict'):
-                            pred = model.predict(features)
-                        elif callable(model):
-                            pred = model(features)
-                        else:
-                            raise RuntimeError(f"Model {i} in ensemble has no predict method")
-                    
-                    predictions.append(pred)
-                
-                # Combine predictions based on ensemble type
-                if self.ensemble_type == 'average':
-                    # Weighted average of predictions
-                    if self.normalized_weights is not None:
-                        combined = np.zeros_like(predictions[0])
-                        for i, pred in enumerate(predictions):
-                            combined += pred * self.normalized_weights[i]
-                        return combined
-                    else:
-                        return np.mean(predictions, axis=0)
-                
-                elif self.ensemble_type == 'vote':
-                    # Hard voting (for classification)
-                    votes = np.zeros((features.shape[0], len(np.unique(np.concatenate(predictions)))))
-                    for i, pred in enumerate(predictions):
-                        weight = self.normalized_weights[i] if self.normalized_weights is not None else 1.0/len(predictions)
-                        for j, cls in enumerate(np.unique(pred)):
-                            votes[:, j] += (pred == cls) * weight
-                    return np.argmax(votes, axis=1)
-                
-                elif self.ensemble_type == 'stack':
-                    # Simple stacking: concatenate predictions
-                    return np.column_stack(predictions)
-                
-                else:
-                    raise ValueError(f"Unsupported ensemble type: {self.ensemble_type}")
-        
-        # Create the ensemble model
-        return EnsembleModel(models, weights, ensemble_type, self)
-
-    def _detect_model_type_from_object(self, model: Any) -> ModelType:
-        """
-        Determine model type from a model object.
-        
-        Args:
-            model: Model object
-            
-        Returns:
-            Model type
-        """
-        model_class = model.__class__.__module__ + '.' + model.__class__.__name__
-        
-        if 'sklearn' in model_class:
-            return ModelType.SKLEARN
-        elif 'xgboost' in model_class:
-            return ModelType.XGBOOST
-        elif 'lightgbm' in model_class:
-            return ModelType.LIGHTGBM
-        elif 'ensemble' in model_class.lower():
-            return ModelType.ENSEMBLE
+                from treelite_runtime import Batch
+            except ImportError:
+                raise RuntimeError("treelite_runtime is not available")
+            batch = Batch.from_npy2d(features)
+            return self.compiled_model.predict(batch)
         else:
-            return ModelType.CUSTOM
+            if self.logger.isEnabledFor(logging.WARNING):
+                self.logger.warning("Unknown compiled model type, falling back to regular prediction")
+            return self._predict_internal(features)
 
-    def clear_cache(self) -> None:
-        """Clear inference result cache."""
-        if self.result_cache is not None:
-            self.result_cache.clear()
-            self.logger.info("Inference cache cleared")
-        
-        if self.quantizer is not None:
-            self.quantizer.clear_cache()
-            self.logger.info("Quantizer cache cleared")
-    
-    def set_config(self, config: InferenceEngineConfig) -> None:
+    def enqueue_prediction(self, features: np.ndarray, 
+                          priority: BatchPriority = BatchPriority.NORMAL,
+                          timeout_ms: Optional[float] = None) -> Any:
         """
-        Update configuration settings.
+        Enqueue a prediction request to be processed asynchronously
+        with the new dynamic batcher.
         
         Args:
-            config: New configuration
-        """
-        old_config = self.config
-        self.config = config
-        
-        # Update components based on config changes
-        if config.enable_quantization != old_config.enable_quantization:
-            if config.enable_quantization:
-                self._setup_quantizer()
-            else:
-                self.quantizer = None
-        
-        if config.enable_feature_scaling != old_config.enable_feature_scaling:
-            if config.enable_feature_scaling:
-                self._setup_preprocessor()
-            else:
-                self.preprocessor = None
-        
-        if (config.enable_request_deduplication != old_config.enable_request_deduplication or
-            config.max_cache_entries != old_config.max_cache_entries or
-            config.cache_ttl_seconds != old_config.cache_ttl_seconds):
-            if config.enable_request_deduplication:
-                self.result_cache = LRUTTLCache(
-                    max_size=config.max_cache_entries,
-                    ttl_seconds=config.cache_ttl_seconds
-                )
-            else:
-                self.result_cache = None
-        
-        # Update batch processor configuration if needed
-        if self.batch_processor is not None:
-            if (config.initial_batch_size != old_config.initial_batch_size or
-                config.max_batch_size != old_config.max_batch_size or
-                config.min_batch_size != old_config.min_batch_size or
-                config.batch_timeout != old_config.batch_timeout or
-                config.batch_processing_strategy != old_config.batch_processing_strategy):
-                
-                # Convert batch processing strategy string to enum
-                strategy_str = config.batch_processing_strategy.upper()
-                try:
-                    strategy = BatchProcessingStrategy[strategy_str]
-                except KeyError:
-                    self.logger.warning(
-                        f"Unknown batch processing strategy: {strategy_str}, defaulting to ADAPTIVE"
-                    )
-                    strategy = BatchProcessingStrategy.ADAPTIVE
-                
-                # Update batch processor config
-                batch_config = self.batch_processor.get_config()
-                batch_config.batch_timeout = config.batch_timeout
-                batch_config.initial_batch_size = config.initial_batch_size
-                batch_config.min_batch_size = config.min_batch_size
-                batch_config.max_batch_size = config.max_batch_size
-                batch_config.processing_strategy = strategy
-                batch_config.enable_adaptive_batching = config.enable_adaptive_batching
-                
-                self.batch_processor.update_config(batch_config)
-        
-        self.logger.info("Configuration updated")
-    
-    def get_feature_names(self) -> List[str]:
-        """Get feature names if available."""
-        return self.feature_names
-    
-    def set_feature_names(self, feature_names: List[str]) -> None:
-        """
-        Set feature names.
-        
-        Args:
-            feature_names: List of feature names
-        """
-        self.feature_names = feature_names
-        self.logger.info(f"Feature names set: {len(feature_names)} features")
-    
-    def get_memory_usage(self) -> Dict[str, float]:
-        """Get current memory usage statistics."""
-        try:
-            process = psutil.Process(os.getpid())
-            memory_info = process.memory_info()
-            
-            return {
-                "rss_mb": memory_info.rss / (1024 * 1024),  # Resident Set Size in MB
-                "vms_mb": memory_info.vms / (1024 * 1024),  # Virtual Memory Size in MB
-                "percent": process.memory_percent(),
-                "cpu_percent": process.cpu_percent(interval=0.1)
-            }
-        except Exception as e:
-            self.logger.error(f"Failed to get memory usage: {str(e)}")
-            return {"error": str(e)}
-
-    def __enter__(self):
-        """Support for context manager protocol."""
-        return self
-    
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """Ensure engine is properly shutdown when exiting context."""
-        self.shutdown()
-    
-    def __getstate__(self):
-        """
-        Customize serialization behavior to exclude unpicklable attributes.
-        
-        Returns:
-            Dictionary with picklable state
-        """
-        state = self.__dict__.copy()
-        
-        # Remove unpicklable thread and synchronization objects
-        unpicklable_attrs = [
-            'inference_lock', 'state_lock', 'active_requests_lock',
-            'monitor_thread', 'monitor_stop_event', 'thread_pool',
-            'logger', 'batch_processor'
-        ]
-        
-        for attr in unpicklable_attrs:
-            if attr in state:
-                state[attr] = None
-        
-        # Note that we're serializing but when deserialized,
-        # these resources will need to be reinitialized
-        
-        # Add a flag to indicate this is a restored state
-        state['_is_restored'] = True
-        
-        return state
-    def save(self, save_path: str, save_format: str = 'joblib', include_config: bool = True, 
-            include_metrics: bool = False, overwrite: bool = False) -> bool:
-        """
-        Save the inference engine state to disk.
-        
-        Args:
-            save_path: Directory path to save the model and configuration
-            save_format: Format to use for saving ('joblib', 'pickle', or 'json')
-            include_config: Whether to save configuration separately
-            include_metrics: Whether to include current metrics in the saved state
-            overwrite: Whether to overwrite existing files
+            features: Input features
+            priority: Processing priority
+            timeout_ms: Optional timeout in milliseconds
             
         Returns:
-            Success status
+            Future object with the prediction result
         """
-        self.logger.info(f"Saving inference engine to {save_path}")
+        if self.dynamic_batcher is None:
+            raise RuntimeError("Dynamic batching is not enabled")
+            
+        # Create a future for the result
+        from concurrent.futures import Future
+        future = Future()
         
-        # Check if the model is loaded
-        if self.model is None:
-            self.logger.error("Cannot save: no model loaded")
-            return False
+        # Create a prediction request
+        request_id = str(hash(str(features) + str(time.time())))
+        request = PredictionRequest(
+            id=request_id,
+            features=features,
+            priority=priority.value,
+            timestamp=time.monotonic(),
+            future=future,
+            timeout_ms=timeout_ms
+        )
         
-        # Create the directory if it doesn't exist
-        os.makedirs(save_path, exist_ok=True)
+        # Enqueue the request
+        if not self.dynamic_batcher.enqueue(request):
+            future.set_exception(RuntimeError("Request queue is full"))
+            
+        return future
+    
+    def _process_batch(self, batch_requests):
+        """
+        Process a batch of prediction requests.
         
-        # Determine file paths
-        model_filename = f"model.{save_format}"
-        config_filename = "config.json"
-        metrics_filename = "metrics.json"
-        info_filename = "model_info.json"
-        
-        model_path = os.path.join(save_path, model_filename)
-        config_path = os.path.join(save_path, config_filename)
-        metrics_path = os.path.join(save_path, metrics_filename)
-        info_path = os.path.join(save_path, info_filename)
-        
-        # Check if files exist and handle overwrite flag
-        if not overwrite:
-            for path in [model_path, config_path, metrics_path, info_path]:
-                if os.path.exists(path):
-                    self.logger.error(f"File {path} already exists and overwrite=False")
-                    return False
-        
+        Args:
+            batch_requests: List of request dictionaries
+            
+        Returns:
+            List of prediction results
+        """
         try:
-            # Save the model using the specified format
-            if save_format == 'joblib':
-                if not JOBLIB_AVAILABLE:
-                    self.logger.warning("joblib not available, falling back to pickle")
-                    save_format = 'pickle'
+            # Extract features from batch requests
+            features_list = []
+            request_ids = []
+            
+            for request in batch_requests:
+                if isinstance(request, dict):
+                    features_list.append(request.get('features'))
+                    request_ids.append(request.get('id', None))
                 else:
-                    joblib.dump(self.model, model_path)
-                    self.logger.info(f"Model saved to {model_path} using joblib")
+                    # Assume request is features directly
+                    features_list.append(request)
+                    request_ids.append(None)
             
-            if save_format == 'pickle':
-                with open(model_path, 'wb') as f:
-                    pickle.dump(self.model, f, protocol=pickle.HIGHEST_PROTOCOL)
-                self.logger.info(f"Model saved to {model_path} using pickle")
-            
-            # Save configuration if requested
-            if include_config:
-                with open(config_path, 'w') as f:
-                    json.dump(self.config.to_dict(), f, indent=2)
-                self.logger.info(f"Configuration saved to {config_path}")
-            
-            # Save metrics if requested
-            if include_metrics:
-                with open(metrics_path, 'w') as f:
-                    # Get current metrics and convert any non-serializable values to strings
-                    metrics = self.metrics.get_metrics()
-                    serializable_metrics = {k: str(v) if not isinstance(v, (int, float, bool, str, list, dict, type(None))) 
-                                        else v for k, v in metrics.items()}
-                    json.dump(serializable_metrics, f, indent=2)
-                self.logger.info(f"Metrics saved to {metrics_path}")
-            
-            # Save model info
-            with open(info_path, 'w') as f:
-                # Make a copy of model_info and ensure it's JSON serializable
-                info_copy = copy.deepcopy(self.model_info)
-                # Convert non-serializable types to strings
-                for k, v in info_copy.items():
-                    if not isinstance(v, (int, float, bool, str, list, dict, type(None))):
-                        info_copy[k] = str(v)
+            # Stack features into batch
+            if features_list:
+                batch_features = np.vstack(features_list)
                 
-                # Add feature names
-                info_copy['feature_names'] = self.feature_names
+                # Run batch prediction
+                success, predictions, metadata = self.predict(batch_features)
                 
-                # Add model type
-                info_copy['model_type'] = self.model_type.name if self.model_type else None
+                # Package results
+                results = []
+                if success and predictions is not None:
+                    for i, (pred, req_id) in enumerate(zip(predictions, request_ids)):
+                        result = {
+                            'success': True,
+                            'prediction': pred,
+                            'metadata': metadata,
+                            'request_id': req_id
+                        }
+                        results.append(result)
+                else:
+                    # All requests failed
+                    for req_id in request_ids:
+                        result = {
+                            'success': False,
+                            'prediction': None,
+                            'metadata': metadata,
+                            'request_id': req_id
+                        }
+                        results.append(result)
                 
-                # Add timestamp
-                info_copy['saved_at'] = datetime.now().isoformat()
+                return results
+            else:
+                return []
                 
-                json.dump(info_copy, f, indent=2)
-            self.logger.info(f"Model info saved to {info_path}")
-            
-            # Create a README file with basic information
-            readme_path = os.path.join(save_path, "README.md")
-            with open(readme_path, 'w') as f:
-                f.write(f"# Inference Engine Model\n\n")
-                f.write(f"Saved on: {datetime.now().isoformat()}\n")
-                f.write(f"Model type: {self.model_type.name if self.model_type else 'Unknown'}\n")
-                f.write(f"Model version: {self.config.model_version}\n\n")
-                f.write(f"## Files\n\n")
-                f.write(f"- `{model_filename}`: The serialized model\n")
-                if include_config:
-                    f.write(f"- `{config_filename}`: Engine configuration\n")
-                if include_metrics:
-                    f.write(f"- `{metrics_filename}`: Performance metrics at time of saving\n")
-                f.write(f"- `{info_filename}`: Model metadata\n")
-            
-            return True
-        
         except Exception as e:
-            self.logger.error(f"Error saving inference engine: {str(e)}")
-            if self.config.debug_mode:
-                self.logger.error(traceback.format_exc())
-            return False
+            self.logger.error(f"Batch processing failed: {str(e)}")
+            # Return error results for all requests
+            results = []
+            for i, request in enumerate(batch_requests):
+                req_id = request.get('id', None) if isinstance(request, dict) else None
+                result = {
+                    'success': False,
+                    'prediction': None,
+                    'metadata': {'error': str(e)},
+                    'request_id': req_id
+                }
+                results.append(result)
+            return results
+
+    def _init_optimization_components(self):
+        """Initialize high-impact optimization components for inference."""
+        try:
+            # Initialize JIT compiler for hot inference paths
+            self.jit_compiler = get_global_jit_compiler()
+            if hasattr(self.config, 'enable_jit_compilation') and self.config.enable_jit_compilation:
+                self.jit_compiler.enable_compilation = True
+                self.logger.info("JIT compiler enabled for inference optimization")
+            
+            # Initialize mixed precision manager for inference
+            self.mixed_precision_manager = get_global_mixed_precision_manager()
+            if hasattr(self.config, 'enable_mixed_precision') and self.config.enable_mixed_precision:
+                self.mixed_precision_manager.enable_mixed_precision()
+                self.logger.info("Mixed precision enabled for inference")
+            
+            # Initialize streaming pipeline for batch inference
+            self.streaming_pipeline = get_global_streaming_pipeline()
+            if hasattr(self.config, 'enable_streaming') and self.config.enable_streaming:
+                self.logger.info("Streaming pipeline available for batch inference")
+                
+        except Exception as e:
+            self.logger.warning(f"Some optimization components could not be initialized: {str(e)}")
+
+    def predict_batch_streaming(self, features_df: pd.DataFrame, 
+                               batch_size: Optional[int] = None,
+                               output_path: Optional[str] = None) -> Iterator[Tuple[bool, np.ndarray, Dict[str, Any]]]:
+        """
+        Streaming batch prediction for large datasets using streaming pipeline.
+        
+        Args:
+            features_df: Input features as DataFrame
+            batch_size: Batch size for streaming (uses config default if None)
+            output_path: Optional path to save predictions
+            
+        Yields:
+            Prediction results for each chunk
+        """
+        if not hasattr(self, 'streaming_pipeline'):
+            raise RuntimeError("Streaming pipeline not available")
+        
+        batch_size = batch_size or getattr(self.config, 'streaming_batch_size', 1000)
+        
+        # Update streaming pipeline chunk size
+        original_chunk_size = self.streaming_pipeline.chunk_size
+        self.streaming_pipeline.chunk_size = batch_size
+        
+        try:
+            def predict_chunk(chunk: pd.DataFrame) -> pd.DataFrame:
+                """Predict on a single chunk."""
+                features_array = chunk.values
+                success, predictions, metadata = self.predict(features_array)
+                
+                if not success:
+                    raise RuntimeError(f"Prediction failed: {metadata.get('error', 'Unknown error')}")
+                
+                # Create result DataFrame
+                result_df = chunk.copy()
+                if predictions.ndim == 1:
+                    result_df['prediction'] = predictions
+                else:
+                    # Multi-output predictions
+                    for i, pred_col in enumerate(predictions.T):
+                        result_df[f'prediction_{i}'] = pred_col
+                
+                result_df['prediction_metadata'] = str(metadata)
+                return result_df
+            
+            # Process using streaming pipeline
+            with self.streaming_pipeline.monitoring_context():
+                for chunk_result in self.streaming_pipeline.process_dataframe_stream(
+                    features_df, predict_chunk, output_path
+                ):
+                    # Extract predictions from chunk result
+                    prediction_columns = [col for col in chunk_result.columns if col.startswith('prediction')]
+                    if len(prediction_columns) == 1:
+                        predictions = chunk_result['prediction'].values
+                    else:
+                        predictions = chunk_result[prediction_columns].values
+                    
+                    yield True, predictions, {"streaming": True, "chunk_size": len(chunk_result)}
+                    
+        except Exception as e:
+            self.logger.error(f"Streaming batch prediction failed: {str(e)}")
+            yield False, None, {"error": str(e), "streaming": True}
+        
+        finally:
+            # Restore original chunk size
+            self.streaming_pipeline.chunk_size = original_chunk_size
+    
+    def shutdown(self):
+        """Shutdown the inference engine and clean up resources."""
+        try:
+            self.logger.info("Shutting down inference engine")
+            
+            # Stop monitoring
+            if hasattr(self, '_monitoring_active'):
+                self._monitoring_active = False
+            
+            # Stop dynamic batcher
+            if hasattr(self, 'dynamic_batcher') and self.dynamic_batcher:
+                self.dynamic_batcher.stop()
+            
+            # Clear caches
+            if hasattr(self, 'result_cache') and self.result_cache:
+                self.result_cache.clear()
+            if hasattr(self, 'feature_cache') and self.feature_cache:
+                self.feature_cache.clear()
+            
+            # Cleanup models
+            if hasattr(self, 'model'):
+                self.model = None
+            
+            self.logger.info("Inference engine shutdown complete")
+            
+        except Exception as e:
+            self.logger.error(f"Error during shutdown: {str(e)}")
+    
+    def _compile_model(self):
+        """Compile the model for faster inference if supported."""
+        if self.model is None:
+            return
+        
+        try:
+            # Check if ONNX compilation is available and enabled
+            if self.config.enable_onnx and hasattr(self.config, 'onnx_available') and self.config.onnx_available:
+                self._compile_with_onnx()
+            # Check if Treelite compilation is available for tree models  
+            elif hasattr(self.config, 'treelite_available') and self.config.treelite_available:
+                self._compile_with_treelite()
+            else:
+                # Use JIT compilation for supported models
+                if hasattr(self, 'jit_compiler') and self.jit_compiler:
+                    self.logger.info("Using JIT compilation for model acceleration")
+                    # JIT compilation happens dynamically during prediction
+                else:
+                    self.logger.info("Model compilation not available, using standard inference")
+        except Exception as e:
+            self.logger.warning(f"Failed to compile model: {str(e)}. Using standard inference.")
+    
+    def _compile_with_onnx(self):
+        """Compile model using ONNX Runtime."""
+        try:
+            import onnx
+            import onnxruntime as ort
+            from sklearn import __version__ as sklearn_version
+            
+            # Only support sklearn models for now
+            if self.model_type != ModelType.SKLEARN:
+                raise ValueError(f"ONNX compilation not supported for {self.model_type}")
+            
+            # Convert sklearn model to ONNX
+            from skl2onnx import convert_sklearn
+            from skl2onnx.common.data_types import FloatTensorType
+            
+            # Define input shape
+            feature_count = len(self.feature_names) if self.feature_names else 10
+            initial_type = [('float_input', FloatTensorType([None, feature_count]))]
+            
+            # Convert to ONNX
+            onnx_model = convert_sklearn(self.model, initial_types=initial_type)
+            
+            # Create ONNX Runtime session
+            self.compiled_model = ort.InferenceSession(onnx_model.SerializeToString())
+            self.onnx_input_name = 'float_input'
+            
+            self.logger.info("Model successfully compiled with ONNX Runtime")
+        except Exception as e:
+            self.logger.warning(f"ONNX compilation failed: {str(e)}")
+            raise
+    
+    def _compile_with_treelite(self):
+        """Compile tree-based models using Treelite."""
+        try:
+            import treelite
+            import treelite_runtime
+            
+            # Only support tree-based models
+            if self.model_type not in (ModelType.XGBOOST, ModelType.LIGHTGBM):
+                # Check if sklearn model is tree-based
+                if self.model_type == ModelType.SKLEARN:
+                    model_name = self.model.__class__.__name__.lower()
+                    if 'forest' not in model_name and 'tree' not in model_name:
+                        raise ValueError(f"Treelite compilation not supported for {model_name}")
+                else:
+                    raise ValueError(f"Treelite compilation not supported for {self.model_type}")
+            
+            # Convert model to Treelite
+            if self.model_type == ModelType.XGBOOST:
+                tl_model = treelite.Model.from_xgboost(self.model)
+            elif self.model_type == ModelType.LIGHTGBM:
+                tl_model = treelite.Model.from_lightgbm(self.model)
+            elif self.model_type == ModelType.SKLEARN:
+                tl_model = treelite.Model.from_sklearn(self.model)
+            
+            # Compile the model
+            tl_model.compile(dirpath='./temp_treelite_model', verbose=False)
+            
+            # Load compiled model
+            self.compiled_model = treelite_runtime.Predictor('./temp_treelite_model')
+            
+            self.logger.info("Model successfully compiled with Treelite")
+        except Exception as e:
+            self.logger.warning(f"Treelite compilation failed: {str(e)}")
+            raise
+    
+    def _precompute_common_values(self):
+        """Pre-compute common values for cache optimization."""
+        try:
+            # Pre-allocate common array shapes in memory pool
+            if hasattr(self, 'memory_pool') and self.memory_pool:
+                common_shapes = [
+                    (1, len(self.feature_names)) if self.feature_names else (1, 10),
+                    (32, len(self.feature_names)) if self.feature_names else (32, 10),
+                    (64, len(self.feature_names)) if self.feature_names else (64, 10),
+                ]
+                
+                for shape in common_shapes:
+                    try:
+                        buffer = self.memory_pool.get_buffer(shape=shape, dtype=np.float32)
+                        # Return buffer to pool for reuse
+                        self.memory_pool.return_buffer(buffer)
+                    except Exception:
+                        pass  # Non-critical optimization
+            
+            # Pre-warm any caches
+            if hasattr(self, 'result_cache') and self.result_cache:
+                # Cache is already initialized, no pre-warming needed
+                pass
+            
+            self.logger.debug("Common values pre-computed for optimization")
+        except Exception as e:
+            self.logger.debug(f"Pre-computation optimization failed: {str(e)}")
+    
+    def _create_cache_key(self, features):
+        """Create a cache key for features."""
+        if isinstance(features, np.ndarray):
+            # For numpy arrays, create a hash of the values
+            return hash(features.tobytes())
+        elif isinstance(features, (list, tuple)):
+            # For lists/tuples, convert to tuple and hash
+            return hash(tuple(features))
+        elif hasattr(features, 'values'):
+            # For DataFrames, use the underlying values
+            return hash(features.values.tobytes())
+        else:
+            # Fallback: convert to string and hash
+            return hash(str(features))

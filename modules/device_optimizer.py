@@ -5,638 +5,1189 @@ import json
 import logging
 import numpy as np
 from pathlib import Path
-from typing import Dict, Any, Optional, Union
+from typing import Dict, Any, Optional, Union, List, Tuple # Removed TypeVar
 import multiprocessing
 import socket
 import uuid
+import datetime
+import sys
+import shutil
+import tempfile
+import re
+from enum import Enum, auto # Keep for HardwareAccelerator
+from dataclasses import asdict, is_dataclass # Keep for generic dataclass handling
 
-# Import the configuration classes from your module
-from dataclasses import asdict
-from enum import Enum
+from .configs import (
+    QuantizationType, QuantizationMode, QuantizationConfig,
+    BatchProcessorConfig, BatchProcessingStrategy,
+    PreprocessorConfig, NormalizationType,
+    InferenceEngineConfig, OptimizationMode, # Using OptimizationMode from new configs
+    MLTrainingEngineConfig, TaskType, OptimizationStrategy as TrainingOptimizationStrategy,
+    ModelSelectionCriteria, AutoMLMode, ExplainabilityConfig, MonitoringConfig
+    # SecurityConfig is handled as a Dict in MLTrainingEngineConfig
+)
 
-from modules.configs import *
-
-# Setup logging
+# Setup logging - (assuming this is already correctly set up as per previous)
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
-logger = logging.getLogger("config_optimizer")
+logger = logging.getLogger("cpu_device_optimizer")
+
+
+class HardwareAccelerator(Enum):
+    NONE = auto()
+    INTEL_IPEX = auto()
+    INTEL_MKL = auto()
+    ARM_NEON = auto()
+
 
 class DeviceOptimizer:
-    """
-    Automatically configures ML pipeline settings based on the device capabilities.
-    Optimizes configurations for:
-    - Quantization
-    - Batch processing
-    - Preprocessing
-    - Inference engine
-    - Training engine
-    """
-    
-    def __init__(self, 
+    def __init__(self,
                  config_path: str = "./configs",
                  checkpoint_path: str = "./checkpoints",
-                 model_registry_path: str = "./model_registry"):
-        """
-        Initialize the device optimizer.
-        
-        Args:
-            config_path: Path to save configuration files
-            checkpoint_path: Path for model checkpoints
-            model_registry_path: Path for model registry
-        """
+                 model_registry_path: str = "./model_registry",
+                 optimization_mode: OptimizationMode = OptimizationMode.BALANCED,
+                 workload_type: str = "mixed",
+                 environment: str = "auto",
+                 enable_specialized_accelerators: bool = True,
+                 memory_reservation_percent: float = 10.0,
+                 power_efficiency: bool = False,
+                 resilience_level: int = 1,
+                 auto_tune: bool = True,
+                 debug_mode: bool = False):
         self.config_path = Path(config_path)
         self.checkpoint_path = Path(checkpoint_path)
         self.model_registry_path = Path(model_registry_path)
         
-        # Create directories if they don't exist
-        for path in [self.config_path, self.checkpoint_path, self.model_registry_path]:
-            path.mkdir(parents=True, exist_ok=True)
+        # Ensure optimization_mode is an instance of the imported OptimizationMode enum
+        if isinstance(optimization_mode, str):
+            self.optimization_mode = OptimizationMode(optimization_mode)
+        else:
+            self.optimization_mode = optimization_mode
+
+        self.workload_type = workload_type.lower()
+        self.power_efficiency = power_efficiency
+        self.resilience_level = min(max(resilience_level, 0), 3)
+        self.auto_tune = auto_tune
+        self.memory_reservation_percent = min(max(memory_reservation_percent, 0), 50)
+        self.needs_feature_scaling = False # Placeholder
         
-        # System information
-        self.cpu_count = multiprocessing.cpu_count()
-        self.total_memory_gb = psutil.virtual_memory().total / (1024 ** 3)
+        self.onnx_available = False
+        try:
+            import onnxruntime
+            self.onnx_available = True
+        except ImportError:
+            pass
+
+        self.threadpoolctl_available = False
+        try:
+            import threadpoolctl
+            self.threadpoolctl_available = True
+        except ImportError:
+            pass
+        self.treelite_available = False # Placeholder
+
+        self.has_gpu = False # CPU-only optimizer
+        self.debug_mode = debug_mode
+
+        for path_dir in [self.config_path, self.checkpoint_path, self.model_registry_path]:
+            path_dir.mkdir(parents=True, exist_ok=True)
+
+        self._detect_system_info()
+        self._detect_cpu_capabilities()
+        self._detect_memory_info()
+        self._detect_disk_info()
+        self.accelerators = []
+        if enable_specialized_accelerators:
+            self._detect_specialized_accelerators()
+        if environment == "auto":
+            self.environment = self._detect_environment()
+        else:
+            self.environment = environment
+        self._log_system_overview()
+
+    def _detect_system_info(self):
         self.system = platform.system()
+        self.release = platform.release()
         self.machine = platform.machine()
         self.processor = platform.processor()
+        if not self.processor and self.system == "Darwin":
+             try:
+                self.processor = subprocess.check_output(['sysctl', "-n", "machdep.cpu.brand_string"]).strip().decode()
+             except Exception:
+                self.processor = "N/A"
         self.hostname = socket.gethostname()
-        
-        # Check for Intel CPU
-        self.is_intel_cpu = "Intel" in self.processor
-        
-        # Check for AVX/AVX2 support on x86 processors
+        self.python_version = platform.python_version()
+
+    def _detect_cpu_capabilities(self):
+        self.cpu_count_physical = psutil.cpu_count(logical=False) or 1
+        self.cpu_count_logical = psutil.cpu_count(logical=True) or 1
+        self.cpu_freq = self._get_cpu_frequency()
         self.has_avx = False
         self.has_avx2 = False
-        
+        self.has_avx512 = False
+        self.has_sse4 = False
+        self.has_fma = False
         if self.system == "Linux" and (self.machine == "x86_64" or self.machine == "AMD64"):
             try:
                 with open("/proc/cpuinfo", "r") as f:
-                    cpuinfo = f.read()
-                    self.has_avx = "avx" in cpuinfo.lower()
-                    self.has_avx2 = "avx2" in cpuinfo.lower()
+                    cpuinfo = f.read().lower()
+                    self.has_avx = "avx " in cpuinfo
+                    self.has_avx2 = "avx2 " in cpuinfo
+                    self.has_avx512 = "avx512f " in cpuinfo # Common AVX512 flag
+                    self.has_sse4 = "sse4_1 " in cpuinfo or "sse4_2 " in cpuinfo
+                    self.has_fma = "fma " in cpuinfo
             except Exception as e:
-                logger.warning(f"Failed to check AVX support: {e}")
-        
-        # Log system information
-        logger.info(f"System: {self.system} {self.machine}")
-        logger.info(f"Processor: {self.processor}")
-        logger.info(f"CPU Count: {self.cpu_count}")
-        logger.info(f"Total Memory: {self.total_memory_gb:.2f} GB")
-        logger.info(f"Intel CPU: {self.is_intel_cpu}")
-        logger.info(f"AVX Support: {self.has_avx}")
-        logger.info(f"AVX2 Support: {self.has_avx2}")
-    
-    # Add this helper function to handle Enum serialization
-    def _serialize_config_dict(self, config_dict):
-        """
-        Convert Enum values to strings for JSON serialization.
-        
-        Args:
-            config_dict: Dictionary that may contain Enum values
-            
-        Returns:
-            Dictionary with Enum values converted to strings
-        """
+                logger.warning(f"Failed to check advanced CPU features on Linux: {e}")
+        elif self.system == "Windows":
+            try:
+                import subprocess
+                result = subprocess.check_output("wmic cpu get Name", shell=True, text=True)
+                cpu_name = result.strip().split("\n")[-1].lower() # Get the last non-empty line
+                self.has_avx = "avx" in cpu_name
+                self.has_avx2 = "avx2" in cpu_name
+                self.has_avx512 = "xeon" in cpu_name and "avx-512" in cpu_name # More specific check
+                self.has_sse4 = True # Assume modern CPUs
+                self.has_fma = "fma" in cpu_name or ("intel" in cpu_name and "core" in cpu_name) # Broad assumption
+            except Exception as e:
+                logger.warning(f"Failed to check advanced CPU features on Windows: {e}")
+        elif self.system == "Darwin":  # macOS
+            try:
+                import subprocess
+                result = subprocess.check_output(['sysctl', "-a"], text=True)
+                features = result.lower()
+                self.has_avx = "machdep.cpu.features: avx1.0" in features or "avx" in features # Broader check
+                self.has_avx2 = "machdep.cpu.features: avx2" in features
+                self.has_avx512 = "machdep.cpu.features: avx512" in features # Check for various AVX512 flags
+                self.has_sse4 = "machdep.cpu.features: sse4.1" in features or "machdep.cpu.features: sse4.2" in features
+                self.has_fma = "machdep.cpu.features: fma" in features
+            except Exception as e:
+                logger.warning(f"Failed to check advanced CPU features on macOS: {e}")
+
+        self.is_intel_cpu = "intel" in (self.processor.lower() if self.processor else "")
+        self.is_amd_cpu = "amd" in (self.processor.lower() if self.processor else "")
+        self.is_arm_cpu = "arm" in self.machine.lower() or "aarch64" in self.machine.lower()
+        self.has_neon = self.is_arm_cpu # Simplified assumption, NEON is common on ARMv7+
+
+    def _get_cpu_frequency(self) -> Dict[str, float]:
+        try:
+            freq = psutil.cpu_freq()
+            if freq: # freq can be None or fields can be 0
+                return {
+                    "current": freq.current if freq.current else 0,
+                    "min": freq.min if freq.min else 0,
+                    "max": freq.max if freq.max else 0
+                }
+        except (AttributeError, NotImplementedError, Exception) as e: # Catch specific errors if psutil.cpu_freq() is not supported
+            logger.warning(f"Failed to get CPU frequency: {e}")
+        return {"current": 0, "min": 0, "max": 0}
+
+    def _detect_memory_info(self):
+        mem = psutil.virtual_memory()
+        self.total_memory_gb = mem.total / (1024 ** 3)
+        self.available_memory_gb = mem.available / (1024 ** 3)
+        reservation = self.memory_reservation_percent / 100.0
+        self.usable_memory_gb = self.total_memory_gb * (1 - reservation)
+        try:
+            swap = psutil.swap_memory()
+            self.swap_memory_gb = swap.total / (1024 ** 3)
+        except Exception: # psutil.swap_memory() can fail on some systems (e.g. no swap)
+            self.swap_memory_gb = 0
+
+    def _detect_disk_info(self):
+        try:
+            disk_path = Path.home() # Check home directory's disk by default
+            if not disk_path.exists(): # Fallback if home dir is weird
+                disk_path = Path("/") if self.system != "Windows" else Path("C:\\")
+            usage = psutil.disk_usage(str(disk_path))
+            self.disk_total_gb = usage.total / (1024 ** 3)
+            self.disk_free_gb = usage.free / (1024 ** 3)
+        except Exception as e:
+            logger.warning(f"Failed to get disk information for '{disk_path}': {e}")
+            self.disk_total_gb = 0
+            self.disk_free_gb = 0
+        self.is_ssd = self._check_if_ssd()
+
+    def _check_if_ssd(self) -> bool:
+        if self.system == "Linux":
+            try:
+                # Try to find the root mount point's device
+                mount_point = "/"
+                device_name = None
+                partitions = psutil.disk_partitions()
+                for p in partitions:
+                    if p.mountpoint == mount_point:
+                        # device path is like /dev/sda1, we need sda
+                        device_name = os.path.basename(p.device).rstrip('0123456789')
+                        break
+                
+                if device_name and device_name.startswith('nvme'): # NVMe drives are SSDs
+                    return True
+                if device_name:
+                    rotational_path = f"/sys/block/{device_name}/queue/rotational"
+                    if os.path.exists(rotational_path):
+                        with open(rotational_path, 'r') as f:
+                            return f.read().strip() == '0'
+            except Exception as e:
+                logger.debug(f"SSD detection failed on Linux: {e}")
+        elif self.system == "Darwin": # macOS
+            try:
+                import subprocess
+                # Check for non-rotational media for the root device
+                result = subprocess.check_output(['diskutil', 'info', '/'], text=True)
+                if "Solid State" in result or "APPLE SSD" in result: # Common indicators
+                    return True
+                if "Rotational Rate:" in result and "Solid State" not in result: # Explicitly check for non-rotational
+                     # This part is tricky, as "Not Applicable" can mean SSD or other non-HDD
+                     pass # Could add more checks here
+            except Exception as e:
+                logger.debug(f"SSD detection failed on macOS: {e}")
+        # Windows SSD detection is more complex, often relying on PowerShell or WMI
+        # For simplicity, we'll default to False if not Linux/macOS with clear indication
+        return False
+
+    def _find_mount_point(self, path_to_check): # Not directly used by _check_if_ssd anymore
+        path_to_check = os.path.abspath(path_to_check)
+        while not os.path.ismount(path_to_check):
+            parent = os.path.dirname(path_to_check)
+            if parent == path_to_check:
+                break
+            path_to_check = parent
+        return path_to_check
+
+    def _get_device_for_mount_point(self, mount_point): # Not directly used by _check_if_ssd anymore
+        try:
+            partitions = psutil.disk_partitions()
+            for p in partitions:
+                if p.mountpoint == mount_point:
+                    return p.device
+        except Exception:
+            pass
+        return None
+
+    def _detect_specialized_accelerators(self):
+        self.accelerators = []
+        if self.is_intel_cpu: # MKL is primarily for Intel CPUs
+            try:
+                # Check for MKL by trying to import a common symbol or library
+                # This is a heuristic and might not be foolproof
+                import ctypes
+                # Try common MKL library names
+                lib_names = ["libmkl_rt.so", "mkl_rt.dll", "libmkl_rt.dylib", "mkl_rt"]
+                mkl_found = False
+                for lib_name in lib_names:
+                    try:
+                        ctypes.CDLL(lib_name)
+                        mkl_found = True
+                        break
+                    except OSError:
+                        continue
+                if mkl_found:
+                    self.accelerators.append(HardwareAccelerator.INTEL_MKL)
+                    logger.info("Detected Intel MKL")
+            except ImportError: # ctypes might not be available in some stripped-down envs
+                pass
+            except Exception as e: # Catch any other errors during MKL detection
+                logger.debug(f"Error during MKL detection: {e}")
+
+        if self.is_arm_cpu and self.has_neon: # has_neon is a broad assumption
+            self.accelerators.append(HardwareAccelerator.ARM_NEON)
+            logger.info("Detected ARM NEON instruction support (assumed for ARM CPU)")
+
+    def _detect_environment(self) -> str:
+        if any(key in os.environ for key in ['KUBERNETES_SERVICE_HOST', 'AWS_EXECUTION_ENV', 'AZURE_FUNCTIONS_ENVIRONMENT', 'GOOGLE_CLOUD_PROJECT', 'FUNCTION_NAME']): # Added more cloud indicators
+            return "cloud"
+        # More robust edge detection
+        is_edge_like = (
+            self.total_memory_gb < 2 or
+            self.cpu_count_physical <= 1 or
+            (self.is_arm_cpu and self.total_memory_gb < 4) # ARM devices often edge
+        )
+        if is_edge_like:
+            # Check for common edge device indicators in hostname or platform
+            hostname_lower = self.hostname.lower()
+            processor_lower = self.processor.lower() if self.processor else ""
+            if any(indicator in hostname_lower for indicator in ["raspberrypi", "jetson", "coral", "edge"]):
+                return "edge"
+            if any(indicator in processor_lower for indicator in ["cortex-a", "snapdragon"]): # Common edge CPU types
+                 return "edge"
+            return "edge" # Generic edge if low resources
+
+        if self.total_memory_gb > 32 or self.cpu_count_physical >= 16:
+            return "cloud" # Could also be a powerful server/desktop
+        return "desktop"
+
+    def _log_system_overview(self):
+        logger.info("=" * 50)
+        logger.info(f"System Overview: {self.hostname} ({self.system} {self.release})")
+        logger.info(f"Environment: {self.environment}")
+        logger.info(f"Optimization Mode: {self.optimization_mode.value}") # Use .value for str enums
+        logger.info("-" * 50)
+        logger.info(f"CPU: {self.processor if self.processor else 'N/A'}")
+        logger.info(f"CPU Cores: {self.cpu_count_physical} physical, {self.cpu_count_logical} logical")
+        logger.info(f"CPU Freq (MHz): Current={self.cpu_freq['current']:.0f}, Min={self.cpu_freq['min']:.0f}, Max={self.cpu_freq['max']:.0f}")
+        logger.info(f"CPU Features: AVX={self.has_avx}, AVX2={self.has_avx2}, AVX512={self.has_avx512}, SSE4={self.has_sse4}, FMA={self.has_fma}, NEON={self.has_neon}")
+        logger.info(f"Memory: {self.total_memory_gb:.2f} GB total, {self.usable_memory_gb:.2f} GB usable, {self.available_memory_gb:.2f} GB available")
+        logger.info(f"Swap Memory: {self.swap_memory_gb:.2f} GB")
+        logger.info(f"Disk (@{Path.home()}): {self.disk_total_gb:.2f} GB total, {self.disk_free_gb:.2f} GB free, SSD={self.is_ssd}")
+        if self.accelerators:
+            logger.info("-" * 50)
+            logger.info("Hardware Accelerators:")
+            for acc in self.accelerators:
+                logger.info(f"  {acc.name}") # .name for simple Enums
+        logger.info("=" * 50)
+
+    def _serialize_config_dict(self, config_dict_input: Dict) -> Dict:
+        """Recursively serialize a dictionary, converting Enums and Path objects."""
+        # This function is mainly for system_info or other generic dicts.
+        # Config objects should use their own to_dict() methods.
         result = {}
-        for key, value in config_dict.items():
+        for key, value in config_dict_input.items():
             if isinstance(value, Enum):
                 result[key] = value.value if hasattr(value, 'value') else value.name
+            elif isinstance(value, Path):
+                result[key] = str(value)
             elif isinstance(value, dict):
-                result[key] = self._serialize_config_dict(value)
+                result[key] = self._serialize_config_dict(value) # Recurse for nested dicts
             elif isinstance(value, list):
+                # Process items in a list
                 result[key] = [
-                    self._serialize_config_dict(item) if isinstance(item, dict) 
-                    else (item.value if isinstance(item, Enum) and hasattr(item, 'value') 
-                        else (item.name if isinstance(item, Enum) else item))
+                    self._serialize_config_dict(item) if isinstance(item, dict)
+                    else (item.value if isinstance(item, Enum) and hasattr(item, 'value')
+                          else (item.name if isinstance(item, Enum)
+                                else (str(item) if isinstance(item, Path) else item)))
                     for item in value
                 ]
             else:
                 result[key] = value
-        return 
+        return result
 
-    def get_optimal_quantization_config(self) -> QuantizationConfig:
-        """
-        Create an optimized quantization configuration based on device capabilities.
-        
-        Returns:
-            Optimized QuantizationConfig
-        """
-        # Default to INT8 quantization for most systems
-        quant_type = QuantizationType.INT8.value
-        
-        # For systems with limited memory, use more aggressive quantization
-        if self.total_memory_gb < 4:
-            quant_mode = QuantizationMode.DYNAMIC_PER_BATCH.value
-            cache_size = 256  # Smaller cache for low memory systems
-        elif self.total_memory_gb < 8:
-            quant_mode = QuantizationMode.DYNAMIC_PER_BATCH.value
-            cache_size = 512
-        else:
-            quant_mode = QuantizationMode.DYNAMIC_PER_CHANNEL.value
-            cache_size = 1024
-        
-        # Determine buffer size based on available memory
-        buffer_size = max(int(self.total_memory_gb * 32), 64)  # 32MB per GB of RAM, minimum 64
-        
-        # Create and return the config
-        return QuantizationConfig(
-            quantization_type=quant_type,
-            quantization_mode=quant_mode,
-            enable_cache=True,
-            cache_size=cache_size,
-            buffer_size=buffer_size,
-            use_percentile=True,
-            min_percentile=0.1,
-            max_percentile=99.9,
-            error_on_nan=True,
-            error_on_inf=True,
-            outlier_threshold=3.0,  # 3 standard deviations
-            num_bits=8,
-            optimize_memory=self.total_memory_gb < 16  # Optimize memory on systems with less than 16GB
-        )
-    
-    def get_optimal_batch_processor_config(self) -> BatchProcessorConfig:
-        """
-        Create an optimized batch processor configuration based on device capabilities.
-        
-        Returns:
-            Optimized BatchProcessorConfig
-        """
-        # Calculate optimal batch sizes based on system resources
-        max_batch_size = min(int(self.cpu_count * 16), 256)
-        initial_batch_size = max(min(int(max_batch_size / 2), 64), 8)
-        min_batch_size = max(int(initial_batch_size / 4), 1)
-        
-        # Calculate max workers based on CPU count
-        max_workers = max(int(self.cpu_count * 0.75), 1)
-        
-        # Calculate memory thresholds
-        max_batch_memory_mb = self.total_memory_gb * 128  # 128MB per GB of RAM
-        
-        # Determine queue sizes based on available memory
-        max_queue_size = min(int(self.total_memory_gb * 100), 5000)
-        queue_warning = max_queue_size // 5
-        queue_critical = max_queue_size // 2
-        
-        # Create and return the config
-        return BatchProcessorConfig(
-            min_batch_size=min_batch_size,
-            max_batch_size=max_batch_size,
-            initial_batch_size=initial_batch_size,
-            max_queue_size=max_queue_size,
-            enable_priority_queue=True,
-            batch_timeout=0.1,
-            item_timeout=10.0,
-            min_batch_interval=0.01,
-            processing_strategy=BatchProcessingStrategy.ADAPTIVE,
-            enable_adaptive_batching=True,
-            max_retries=2,
-            retry_delay=0.1,
-            reduce_batch_on_failure=True,
-            max_batch_memory_mb=max_batch_memory_mb,
-            enable_memory_optimization=True,
-            gc_batch_threshold=max_batch_size // 2,
-            enable_monitoring=True,
-            monitoring_window=100,
-            max_workers=max_workers,
-            enable_health_monitoring=True,
-            health_check_interval=5.0,
-            memory_warning_threshold=70.0,
-            memory_critical_threshold=85.0,
-            queue_warning_threshold=queue_warning,
-            queue_critical_threshold=queue_critical,
-            debug_mode=False
-        )
-    
-    def get_optimal_preprocessor_config(self) -> PreprocessorConfig:
-        """
-        Create an optimized preprocessor configuration based on device capabilities.
-        
-        Returns:
-            Optimized PreprocessorConfig
-        """
-        # Determine optimal settings based on system resources
-        parallel_processing = self.cpu_count > 2
-        n_jobs = max(self.cpu_count - 1, 1) if parallel_processing else 1
-        
-        # Determine cache size based on available memory
-        cache_size = min(int(self.total_memory_gb * 32), 512)
-        
-        # Choose appropriate dtype based on memory constraints
-        dtype = np.float32 if self.total_memory_gb < 8 else np.float64
-        
-        # Create and return the config
-        return PreprocessorConfig(
-            normalization=NormalizationType.STANDARD,
-            robust_percentiles=(25.0, 75.0),
-            handle_nan=True,
-            handle_inf=True,
-            nan_strategy="mean",
-            inf_strategy="mean",
-            detect_outliers=True,
-            outlier_method="iqr",
-            outlier_params={
-                "threshold": 1.5,
-                "clip": True,
-                "n_estimators": 100,
-                "contamination": "auto"
-            },
-            clip_values=False,
-            clip_range=(-np.inf, np.inf),
-            enable_input_validation=True,
-            input_size_limit=None,
-            parallel_processing=parallel_processing,
-            n_jobs=n_jobs,
-            chunk_size=10000 if self.total_memory_gb < 8 else None,
-            cache_enabled=True,
-            cache_size=cache_size,
-            dtype=dtype,
-            epsilon=1e-10,
-            debug_mode=False,
-            custom_normalization_fn=None,
-            custom_transform_fn=None,
-            version="1.0.0"
-        )
-    
-    def get_optimal_inference_engine_config(self) -> InferenceEngineConfig:
-        """
-        Create an optimized inference engine configuration based on device capabilities.
-        
-        Returns:
-            Optimized InferenceEngineConfig
-        """
-        # Determine optimal thread count (leave some cores for system)
-        num_threads = max(int(self.cpu_count * 0.8), 1)
-        
-        # Determine batch sizes based on system resources
-        max_batch_size = min(int(self.cpu_count * 16), 256)
-        initial_batch_size = max(min(int(max_batch_size / 2), 64), 8)
-        min_batch_size = max(int(initial_batch_size / 4), 1)
-        
-        # Determine memory thresholds
-        memory_high_watermark_mb = min(self.total_memory_gb * 256, 4096)
-        memory_limit_gb = self.total_memory_gb * 0.8 if self.total_memory_gb > 4 else None
-        
-        # Get quantization config
-        quantization_config = self.get_optimal_quantization_config()
-        
-        # Create and return the config
-        return InferenceEngineConfig(
-            model_version="1.0",
-            debug_mode=False,
-            num_threads=num_threads,
-            set_cpu_affinity=self.cpu_count > 4,
-            enable_intel_optimization=self.is_intel_cpu and (self.has_avx or self.has_avx2),
-            enable_quantization=True,
-            enable_model_quantization=True,
-            enable_input_quantization=True,
-            quantization_dtype="int8",
-            quantization_config=quantization_config,
-            enable_request_deduplication=True,
-            max_cache_entries=min(int(self.total_memory_gb * 100), 2000),
-            cache_ttl_seconds=300,
-            monitoring_window=100,
-            enable_monitoring=True,
-            monitoring_interval=10.0,
-            throttle_on_high_cpu=True,
-            cpu_threshold_percent=90.0,
-            memory_high_watermark_mb=memory_high_watermark_mb,
-            memory_limit_gb=memory_limit_gb,
-            enable_batching=True,
-            batch_processing_strategy="adaptive",
-            batch_timeout=0.1,
-            max_concurrent_requests=max(num_threads, 2),
-            initial_batch_size=initial_batch_size,
-            min_batch_size=min_batch_size,
-            max_batch_size=max_batch_size,
-            enable_adaptive_batching=True,
-            enable_memory_optimization=True,
-            enable_feature_scaling=True,
-            enable_warmup=True,
-            enable_quantization_aware_inference=self.is_intel_cpu and self.has_avx2,
-            enable_throttling=False
-        )
-    
-    def get_optimal_training_engine_config(self) -> MLTrainingEngineConfig:
-        """
-        Create an optimized training engine configuration based on device capabilities.
-        
-        Returns:
-            Optimized MLTrainingEngineConfig
-        """
-        # Determine optimal job count (leave some cores for system)
-        n_jobs = max(int(self.cpu_count * 0.8), 1)
-        
-        # Choose optimization strategy based on system resources
-        if self.total_memory_gb > 16 and self.cpu_count > 8:
-            optimization_strategy = OptimizationStrategy.ASHT
-            optimization_iterations = 50
-        elif self.total_memory_gb > 8 and self.cpu_count > 4:
-            optimization_strategy = OptimizationStrategy.BAYESIAN_OPTIMIZATION
-            optimization_iterations = 30
-        else:
-            optimization_strategy = OptimizationStrategy.RANDOM_SEARCH
-            optimization_iterations = 20
-        
-        # Get other configs
-        preprocessing_config = self.get_optimal_preprocessor_config()
-        batch_processing_config = self.get_optimal_batch_processor_config()
-        inference_config = self.get_optimal_inference_engine_config()
-        quantization_config = self.get_optimal_quantization_config()
-        
-        # Create and return the config
-        return MLTrainingEngineConfig(
-            task_type=TaskType.CLASSIFICATION,
-            random_state=42,
-            n_jobs=n_jobs,
-            verbose=1,
-            cv_folds=5,
-            test_size=0.2,
-            stratify=True,
-            optimization_strategy=optimization_strategy,
-            optimization_iterations=optimization_iterations,
-            early_stopping=True,
-            feature_selection=True,
-            feature_selection_method="mutual_info",
-            feature_selection_k=None,
-            feature_importance_threshold=0.01,
-            preprocessing_config=preprocessing_config,
-            batch_processing_config=batch_processing_config,
-            inference_config=inference_config,
-            quantization_config=quantization_config,
-            model_path=str(self.model_registry_path),
-            experiment_tracking=True,
-            use_intel_optimization=self.is_intel_cpu and (self.has_avx or self.has_avx2),
-            memory_optimization=self.total_memory_gb < 16,
-            enable_distributed=self.cpu_count > 8,
-            log_level="INFO"
-        )
-    
-
-
-    # Update the save_configs method to use the serialization helper
     def save_configs(self, config_id: Optional[str] = None) -> Dict[str, str]:
-        """
-        Generate and save all optimized configurations.
-        
-        Args:
-            config_id: Optional identifier for the configuration set
-        
-        Returns:
-            Dictionary with paths to saved configuration files
-        """
         if config_id is None:
-            config_id = str(uuid.uuid4())[:8]
-        
-        # Create configs directory if it doesn't exist
+            config_id = f"config_{str(uuid.uuid4())[:8]}" # More descriptive default
         configs_dir = self.config_path / config_id
         configs_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Generate all configs
-        quantization_config = self.get_optimal_quantization_config()
+
+        quant_config = self.get_optimal_quantization_config()
         batch_config = self.get_optimal_batch_processor_config()
-        preprocessor_config = self.get_optimal_preprocessor_config()
-        inference_config = self.get_optimal_inference_engine_config()
-        training_config = self.get_optimal_training_engine_config()
-        
-        # Save system info
-        system_info = {
-            "system": self.system,
-            "machine": self.machine,
-            "processor": self.processor,
-            "cpu_count": self.cpu_count,
-            "total_memory_gb": self.total_memory_gb,
-            "is_intel_cpu": self.is_intel_cpu,
-            "has_avx": self.has_avx,
-            "has_avx2": self.has_avx2,
-            "hostname": self.hostname,
-            "timestamp": str(np.datetime64('now'))
-        }
-        
+        preproc_config = self.get_optimal_preprocessor_config()
+        infer_config = self.get_optimal_inference_engine_config()
+        train_config = self.get_optimal_training_engine_config()
+        system_info = self.get_system_info()
+
         system_info_path = configs_dir / "system_info.json"
         with open(system_info_path, "w") as f:
-            json.dump(system_info, f, indent=2)
-        
-        # Save quantization config - Use serialization helper
-        quant_config_dict = self._serialize_config_dict(asdict(quantization_config))
-        quant_config_path = configs_dir / "quantization_config.json"
-        with open(quant_config_path, "w") as f:
-            json.dump(quant_config_dict, f, indent=2)
-        
-        # Save batch processor config - Use serialization helper
-        batch_config_dict = self._serialize_config_dict(asdict(batch_config))
-        batch_config_path = configs_dir / "batch_processor_config.json"
-        with open(batch_config_path, "w") as f:
-            json.dump(batch_config_dict, f, indent=2)
-        
-        # Save preprocessor config - Use serialization helper
-        # Instead of using to_dict(), use asdict() and then serialize
-        preprocessor_config_dict = self._serialize_config_dict(asdict(preprocessor_config))
-        preprocessor_config_path = configs_dir / "preprocessor_config.json"
-        with open(preprocessor_config_path, "w") as f:
-            json.dump(preprocessor_config_dict, f, indent=2)
-        
-        # Save inference engine config - Use serialization helper
-        inference_config_dict = self._serialize_config_dict(inference_config.to_dict())
-        inference_config_path = configs_dir / "inference_engine_config.json"
-        with open(inference_config_path, "w") as f:
-            json.dump(inference_config_dict, f, indent=2)
-        
-        # Save training engine config - Use serialization helper
-        # For non-dataclass objects, we need to handle differently
-        if hasattr(training_config, '__dict__'):
-            training_config_dict = self._serialize_config_dict(training_config.__dict__)
-        else:
-            training_config_dict = self._serialize_config_dict(training_config.to_dict())
-        
-        training_config_path = configs_dir / "training_engine_config.json"
-        with open(training_config_path, "w") as f:
-            json.dump(training_config_dict, f, indent=2)
-        
-        # Create a master config file with paths to all configs
+            # Use _serialize_config_dict for system_info as it's a plain dict
+            json.dump(self._serialize_config_dict(system_info), f, indent=2)
+
+        # Config objects now have their own to_dict methods that handle serialization
+        configs_to_save = [
+            ("quantization_config", quant_config, configs_dir / "quantization_config.json"),
+            ("batch_processor_config", batch_config, configs_dir / "batch_processor_config.json"),
+            ("preprocessor_config", preproc_config, configs_dir / "preprocessor_config.json"),
+            ("inference_engine_config", infer_config, configs_dir / "inference_engine_config.json"),
+            ("training_engine_config", train_config, configs_dir / "training_engine_config.json")
+        ]
+        saved_paths = {}
+        for name, config_obj, path in configs_to_save:
+            try:
+                if hasattr(config_obj, 'to_dict') and callable(getattr(config_obj, 'to_dict')):
+                    serialized_config = config_obj.to_dict()
+                elif is_dataclass(config_obj): # Fallback for other dataclasses
+                    serialized_config = self._serialize_config_dict(asdict(config_obj))
+                else: # Should not happen for main configs
+                    serialized_config = self._serialize_config_dict(config_obj.__dict__ if hasattr(config_obj, '__dict__') else {})
+
+                with open(path, "w") as f:
+                    json.dump(serialized_config, f, indent=2)
+                saved_paths[name] = str(path)
+                logger.info(f"Saved {name} to {path}")
+            except Exception as e:
+                logger.error(f"Failed to save {name} to {path}: {e}", exc_info=self.debug_mode)
+
+
         master_config = {
             "config_id": config_id,
-            "system_info": str(system_info_path),
-            "quantization_config": str(quant_config_path),
-            "batch_processor_config": str(batch_config_path),
-            "preprocessor_config": str(preprocessor_config_path),
-            "inference_engine_config": str(inference_config_path),
-            "training_engine_config": str(training_config_path),
+            "optimization_mode": self.optimization_mode.value, # Use .value
+            "system_info_path": str(system_info_path),
+            "quantization_config_path": saved_paths.get("quantization_config", ""),
+            "batch_processor_config_path": saved_paths.get("batch_processor_config", ""),
+            "preprocessor_config_path": saved_paths.get("preprocessor_config", ""),
+            "inference_engine_config_path": saved_paths.get("inference_engine_config", ""),
+            "training_engine_config_path": saved_paths.get("training_engine_config", ""),
             "checkpoint_path": str(self.checkpoint_path),
-            "model_registry_path": str(self.model_registry_path)
+            "model_registry_path": str(self.model_registry_path),
+            "creation_timestamp": datetime.datetime.now().isoformat()
         }
-        
         master_config_path = configs_dir / "master_config.json"
         with open(master_config_path, "w") as f:
             json.dump(master_config, f, indent=2)
-        
         logger.info(f"All configurations saved to {configs_dir}")
         return master_config
 
+    def load_configs(self, config_id: str) -> Dict[str, Any]:
+        """
+        Load previously saved configurations as dictionaries.
+        For full object reconstruction, use from_dict methods of config classes
+        on the loaded dictionaries.
+        """
+        configs_dir = self.config_path / config_id
+        if not configs_dir.exists():
+            raise FileNotFoundError(f"Configuration directory not found: {configs_dir}")
+        master_config_path = configs_dir / "master_config.json"
+        if not master_config_path.exists():
+            raise FileNotFoundError(f"Master configuration file not found: {master_config_path}")
+        
+        with open(master_config_path, "r") as f:
+            master_config = json.load(f)
+        
+        loaded_configs = {"master_config": master_config}
+        
+        # Load system info
+        system_info_path_str = master_config.get("system_info_path")
+        if system_info_path_str and Path(system_info_path_str).exists():
+            with open(system_info_path_str, "r") as f:
+                loaded_configs["system_info"] = json.load(f)
+        elif (configs_dir / "system_info.json").exists(): # Fallback
+             with open(configs_dir / "system_info.json", "r") as f:
+                loaded_configs["system_info"] = json.load(f)
 
-# Fix the load_config function to properly check file existence
-def load_config(config_path: Union[str, Path]) -> Dict[str, Any]:
+
+        config_file_keys_to_paths = {
+            "quantization_config": master_config.get("quantization_config_path"),
+            "batch_processor_config": master_config.get("batch_processor_config_path"),
+            "preprocessor_config": master_config.get("preprocessor_config_path"),
+            "inference_engine_config": master_config.get("inference_engine_config_path"),
+            "training_engine_config": master_config.get("training_engine_config_path"),
+        }
+        default_filenames = {
+            "quantization_config": "quantization_config.json",
+            "batch_processor_config": "batch_processor_config.json",
+            "preprocessor_config": "preprocessor_config.json",
+            "inference_engine_config": "inference_engine_config.json",
+            "training_engine_config": "training_engine_config.json",
+        }
+
+        for name, path_str in config_file_keys_to_paths.items():
+            actual_path = None
+            if path_str and Path(path_str).exists():
+                actual_path = Path(path_str)
+            else:
+                fallback_path = configs_dir / default_filenames[name]
+                if fallback_path.exists():
+                    actual_path = fallback_path
+            
+            if actual_path:
+                try:
+                    with open(actual_path, "r") as f:
+                        # Here you could use ConfigClass.from_dict(json.load(f))
+                        # For now, returning dicts as per original behavior.
+                        loaded_configs[name] = json.load(f)
+                except Exception as e:
+                    logger.error(f"Failed to load {name} from {actual_path}: {e}", exc_info=self.debug_mode)
+            elif path_str: # Path was specified in master but not found
+                 logger.warning(f"Configuration file for {name} not found at specified path: {path_str}")
+        
+        return loaded_configs
+
+    def create_configs_for_all_modes(self) -> Dict[str, Dict[str, str]]:
+        base_config_id = f"all_modes_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        all_modes = list(OptimizationMode) # Use imported OptimizationMode
+        original_mode = self.optimization_mode
+        configs_summary = {}
+        for mode_enum_instance in all_modes:
+            self.optimization_mode = mode_enum_instance # Assign enum instance
+            mode_config_id = f"{base_config_id}_{mode_enum_instance.value}" # Use .value for filename
+            master_config = self.save_configs(mode_config_id)
+            configs_summary[mode_enum_instance.value] = master_config # Use .value for key
+            logger.info(f"Created configurations for {mode_enum_instance.value} optimization mode")
+        self.optimization_mode = original_mode
+        return configs_summary
+
+    def auto_tune_configs(self, workload_sample: Any = None) -> Dict[str, Any]:
+        if not self.auto_tune:
+            logger.info("Auto-tuning is disabled, using static optimization")
+            return self.save_configs() # Returns master_config dict
+        logger.info("Starting auto-tuning process (placeholder)...")
+        # Placeholder for actual auto-tuning logic
+        cpu_load = psutil.cpu_percent(interval=1) / 100.0
+        memory_load = psutil.virtual_memory().percent / 100.0
+        logger.info(f"Current system load: CPU {cpu_load:.2%}, Memory {memory_load:.2%}")
+        # Actual tuning logic would adjust parameters before saving
+        tuned_master_config = self.save_configs(f"auto_tuned_{str(uuid.uuid4())[:4]}")
+        logger.info("Auto-tuning complete (placeholder implementation)")
+        return tuned_master_config # Return the master_config dict
+
+    def _get_optimal_quantization_type(self) -> str: # Returns string value of enum
+        if self.total_memory_gb < 4 or self.optimization_mode == OptimizationMode.MEMORY_SAVING:
+            return QuantizationType.INT8.value
+        if self.optimization_mode == OptimizationMode.PERFORMANCE:
+            # FLOAT16 might not always be faster on all CPUs without specific hardware support.
+            # INT8 is often a good balance for performance on CPU.
+            # Consider if AVX512_VNNI or similar is present for INT8 perf.
+            return QuantizationType.INT8.value if self.has_avx512 else QuantizationType.FLOAT16.value
+        elif self.optimization_mode == OptimizationMode.FULL_UTILIZATION:
+            return QuantizationType.MIXED.value
+        return QuantizationType.INT8.value
+
+    def _apply_optimization_mode_factors(self) -> Dict[str, float]:
+        # Keys are OptimizationMode enum instances
+        mode_factors_map = {
+            OptimizationMode.BALANCED: {"cpu": 0.75, "memory": 0.7, "batch_size": 0.8, "cache": 0.7, "workers": 0.75},
+            OptimizationMode.CONSERVATIVE: {"cpu": 0.5, "memory": 0.5, "batch_size": 0.5, "cache": 0.5, "workers": 0.5},
+            OptimizationMode.PERFORMANCE: {"cpu": 0.9, "memory": 0.8, "batch_size": 1.0, "cache": 0.9, "workers": 0.9},
+            OptimizationMode.FULL_UTILIZATION: {"cpu": 1.0, "memory": 0.95, "batch_size": 1.2, "cache": 1.0, "workers": 1.0},
+            OptimizationMode.MEMORY_SAVING: {"cpu": 0.7, "memory": 0.4, "batch_size": 0.6, "cache": 0.4, "workers": 0.7}
+        }
+        factors = mode_factors_map.get(self.optimization_mode, mode_factors_map[OptimizationMode.BALANCED]).copy()
+        
+        if self.environment == "edge":
+            factors["memory"] *= 0.8
+            factors["batch_size"] *= 0.7 # Smaller batches for edge
+            factors["workers"] *= 0.7
+        elif self.environment == "cloud":
+            factors["memory"] *= 1.1 # Can use more memory
+            factors["batch_size"] *= 1.1
+        
+        if self.workload_type == "inference":
+            factors["batch_size"] *= 1.2
+            factors["cache"] *= 0.9
+        elif self.workload_type == "training":
+            factors["memory"] *= 1.1
+            factors["cache"] *= 1.1
+            factors["workers"] *= 1.1 # Training can benefit from more workers for data loading
+
+        if self.power_efficiency:
+            factors["cpu"] *= 0.7
+            factors["memory"] *= 0.8
+            factors["workers"] *= 0.7
+
+        for key in factors: # Clamp factors
+            factors[key] = min(max(factors[key], 0.1), 1.5) # Allow slightly > 1 for full_utilization cases
+        return factors
+
+    def get_optimal_quantization_config(self) -> QuantizationConfig:
+        quant_type_str = self._get_optimal_quantization_type() # This returns string value
+        
+        # Determine quantization mode based on optimization mode
+        if self.optimization_mode == OptimizationMode.PERFORMANCE:
+            quant_mode_enum = QuantizationMode.STATIC
+        elif self.optimization_mode == OptimizationMode.MEMORY_SAVING:
+            quant_mode_enum = QuantizationMode.DYNAMIC
+        else: # BALANCED, FULL_UTILIZATION, CONSERVATIVE
+            quant_mode_enum = QuantizationMode.DYNAMIC_PER_BATCH
+        
+        per_channel_val = (self.optimization_mode == OptimizationMode.PERFORMANCE or
+                           self.optimization_mode == OptimizationMode.FULL_UTILIZATION)
+        symmetric_val = self.optimization_mode != OptimizationMode.PERFORMANCE
+        
+        base_cache_size = (512 if self.total_memory_gb > 16 else
+                           256 if self.total_memory_gb > 8 else
+                           128 if self.total_memory_gb > 4 else 64)
+        cache_size_val = base_cache_size
+        if self.optimization_mode == OptimizationMode.MEMORY_SAVING:
+            cache_size_val //= 2
+        
+        calibration_samples_val = (200 if self.optimization_mode == OptimizationMode.FULL_UTILIZATION else
+                                   100 if self.optimization_mode == OptimizationMode.BALANCED else 50)
+        
+        # Default bits based on type, can be overridden by QuantizationConfig defaults
+        weight_bits_val, activation_bits_val, bias_bits_val = 8, 8, 32
+        if quant_type_str == QuantizationType.MIXED.value:
+            weight_bits_val, activation_bits_val = 8, 16 # Example for mixed
+        elif quant_type_str == QuantizationType.FLOAT16.value:
+            weight_bits_val, activation_bits_val, bias_bits_val = 16, 16, 16 # fp16 bias
+        elif quant_type_str == QuantizationType.INT16.value:
+            weight_bits_val, activation_bits_val, bias_bits_val = 16, 16, 32
+
+        if self.optimization_mode == OptimizationMode.MEMORY_SAVING:
+            bias_bits_val = 16 if bias_bits_val == 32 else bias_bits_val
+
+
+        return QuantizationConfig(
+            quantization_type=quant_type_str, # Pass string value, __post_init__ handles it
+            quantization_mode=quant_mode_enum, # Pass enum, __post_init__ handles it
+            per_channel=per_channel_val,
+            symmetric=symmetric_val,
+            enable_cache=self.optimization_mode != OptimizationMode.MEMORY_SAVING,
+            cache_size=cache_size_val,
+            calibration_samples=calibration_samples_val,
+            calibration_method="percentile" if self.optimization_mode == OptimizationMode.PERFORMANCE else "minmax",
+            percentile=99.99 if self.optimization_mode == OptimizationMode.PERFORMANCE else 99.9,
+            quantize_weights_only=self.optimization_mode == OptimizationMode.CONSERVATIVE,
+            quantize_activations=self.optimization_mode != OptimizationMode.CONSERVATIVE,
+            weight_bits=weight_bits_val,
+            activation_bits=activation_bits_val,
+            quantize_bias=self.optimization_mode != OptimizationMode.PERFORMANCE,
+            bias_bits=bias_bits_val,
+            enable_mixed_precision=quant_type_str == QuantizationType.MIXED.value,
+            optimize_for=(self.optimization_mode.value if self.optimization_mode != OptimizationMode.CONSERVATIVE else OptimizationMode.BALANCED.value),
+            enable_requantization=self.optimization_mode == OptimizationMode.FULL_UTILIZATION,
+            use_percentile=self.optimization_mode == OptimizationMode.PERFORMANCE, # Aligns with calibration_method
+            error_on_nan=self.debug_mode, # More strict in debug mode
+            error_on_inf=self.debug_mode,
+            outlier_threshold=3.0 if self.optimization_mode == OptimizationMode.PERFORMANCE else None,
+            num_bits=weight_bits_val, # Default num_bits to weight_bits
+            optimize_memory=self.optimization_mode != OptimizationMode.PERFORMANCE,
+            buffer_size=64 if self.optimization_mode == OptimizationMode.MEMORY_SAVING else 0
+        )
+
+    def get_optimal_batch_processor_config(self) -> BatchProcessorConfig:
+        factors = self._apply_optimization_mode_factors()
+        
+        # Base batch sizes considering memory and CPU
+        if self.total_memory_gb > 16 and self.cpu_count_logical >= 8:
+            base_max_bs = 256
+        elif self.total_memory_gb > 8 and self.cpu_count_logical >= 4:
+            base_max_bs = 128
+        elif self.total_memory_gb > 4:
+            base_max_bs = 64
+        else:
+            base_max_bs = 32
+
+        max_bs = max(int(base_max_bs * factors["batch_size"]), 8) # Ensure at least 8
+        initial_bs = max(max_bs // (2 if self.optimization_mode != OptimizationMode.PERFORMANCE else 1), 1)
+        min_bs = max(initial_bs // 4, 1)
+        
+        num_workers_val = max(int(self.cpu_count_logical * factors["workers"]), 1)
+        # Cap workers based on physical cores for some modes to avoid over-subscription
+        if self.optimization_mode in [OptimizationMode.CONSERVATIVE, OptimizationMode.MEMORY_SAVING]:
+            num_workers_val = min(num_workers_val, self.cpu_count_physical if self.cpu_count_physical else 1)
+
+        max_q_size = max(num_workers_val * 8, max_bs * 4) # Generous queue size
+
+        processing_strat = BatchProcessingStrategy.ADAPTIVE
+        if self.optimization_mode == OptimizationMode.CONSERVATIVE:
+            processing_strat = BatchProcessingStrategy.FIXED
+        
+        return BatchProcessorConfig(
+            initial_batch_size=initial_bs,
+            min_batch_size=min_bs,
+            max_batch_size=max_bs,
+            max_queue_size=max_q_size,
+            batch_timeout=0.01 if self.optimization_mode == OptimizationMode.PERFORMANCE else 0.05,
+            num_workers=num_workers_val,
+            max_workers=num_workers_val, # Align num_workers and max_workers initially
+            adaptive_batching=self.optimization_mode not in [OptimizationMode.CONSERVATIVE, OptimizationMode.MEMORY_SAVING],
+            enable_adaptive_batching=self.optimization_mode not in [OptimizationMode.CONSERVATIVE, OptimizationMode.MEMORY_SAVING], # Redundant with adaptive_batching
+            processing_strategy=processing_strat, # Pass Enum
+            enable_priority_queue=self.workload_type != "training", # Priority queue more for inference
+            enable_memory_optimization=self.optimization_mode != OptimizationMode.PERFORMANCE,
+            enable_monitoring=self.debug_mode or self.optimization_mode == OptimizationMode.FULL_UTILIZATION,
+            debug_mode=self.debug_mode,
+            # New fields from BatchProcessorConfig
+            max_batch_memory_mb= (self.usable_memory_gb * 1024 * 0.05) if self.optimization_mode == OptimizationMode.MEMORY_SAVING else None # 5% of usable for mem saving
+        )
+
+    def get_optimal_preprocessor_config(self) -> PreprocessorConfig:
+        norm_type_enum = NormalizationType.STANDARD
+        if self.optimization_mode == OptimizationMode.MEMORY_SAVING:
+            norm_type_enum = NormalizationType.MINMAX # MinMax can be slightly lighter
+        elif self.optimization_mode == OptimizationMode.PERFORMANCE:
+            norm_type_enum = NormalizationType.NONE # Fastest if data is already sane
+
+        return PreprocessorConfig(
+            normalization=norm_type_enum, # Pass Enum
+            handle_nan=True,
+            nan_strategy="mean",
+            detect_outliers=self.optimization_mode not in [OptimizationMode.PERFORMANCE, OptimizationMode.MEMORY_SAVING],
+            outlier_handling="clip",
+            parallel_processing=self.cpu_count_logical > 1 and self.optimization_mode != OptimizationMode.MEMORY_SAVING,
+            n_jobs=max(1, int(self.cpu_count_logical * 0.5)) if self.optimization_mode != OptimizationMode.MEMORY_SAVING else 1,
+            cache_preprocessing=self.optimization_mode != OptimizationMode.MEMORY_SAVING,
+            debug_mode=self.debug_mode,
+            # New fields
+            enable_input_validation=self.debug_mode or self.optimization_mode == OptimizationMode.CONSERVATIVE
+        )
+
+    def get_optimal_inference_engine_config(self) -> InferenceEngineConfig:
+        factors = self._apply_optimization_mode_factors()
+        
+        model_prec = "fp16" if self.optimization_mode == OptimizationMode.MEMORY_SAVING and self.has_avx2 else "fp32" # fp16 needs some support
+        enable_fp16 = model_prec == "fp16"
+
+        # Use calculated batch processor config for consistent batch sizes
+        # This ensures InferenceEngineConfig is aligned with how batches might be prepared
+        # Note: InferenceEngineConfig also has its own batch size params, which can be a bit redundant.
+        # We'll use the batch_processor_config's values to set the InferenceEngine's batch params.
+        batch_proc_conf = self.get_optimal_batch_processor_config()
+
+        thread_cnt = max(int(self.cpu_count_logical * factors["cpu"]), 1)
+        if self.optimization_mode == OptimizationMode.CONSERVATIVE:
+             thread_cnt = min(thread_cnt, self.cpu_count_physical if self.cpu_count_physical else 1, 4) # Cap for conservative
+
+        model_cache_sz = max(int(10 * factors["cache"]), 1)
+        if self.environment == "edge":
+            model_cache_sz = min(model_cache_sz, 2)
+
+        mem_limit_factor = 0.8 if self.optimization_mode == OptimizationMode.PERFORMANCE else \
+                           0.6 if self.optimization_mode == OptimizationMode.BALANCED else \
+                           0.4 # Conservative or memory saving
+        mem_limit_gb_val = self.usable_memory_gb * mem_limit_factor if self.optimization_mode != OptimizationMode.FULL_UTILIZATION else None
+        
+        enable_intel_opt = self.is_intel_cpu and (self.has_avx2 or self.has_avx512 or HardwareAccelerator.INTEL_MKL in self.accelerators)
+        
+        quant_conf = self.get_optimal_quantization_config() if self.optimization_mode == OptimizationMode.MEMORY_SAVING else None
+        preproc_conf = self.get_optimal_preprocessor_config() if self.needs_feature_scaling else None # Assuming needs_feature_scaling is set elsewhere
+
+        return InferenceEngineConfig(
+            enable_intel_optimization=enable_intel_opt,
+            enable_batching=True, # Default, actual batching managed by BatchProcessorConfig if used
+            enable_quantization=quant_conf is not None,
+            model_cache_size=model_cache_sz,
+            model_precision=model_prec,
+            max_batch_size=batch_proc_conf.max_batch_size, # From BatchProcessorConfig
+            timeout_ms=50 if self.optimization_mode == OptimizationMode.PERFORMANCE else (200 if self.environment == "edge" else 100),
+            enable_jit=True,
+            enable_onnx=self.onnx_available,
+            onnx_opset=15, # From new config default
+            enable_tensorrt=False, # CPU-only
+            runtime_optimization=self.optimization_mode != OptimizationMode.CONSERVATIVE,
+            thread_count=thread_cnt,
+            num_threads=thread_cnt, # Align
+            warmup=self.optimization_mode != OptimizationMode.MEMORY_SAVING,
+            warmup_iterations=3 if self.environment == "edge" else (10 if self.optimization_mode == OptimizationMode.PERFORMANCE else 5),
+            profiling=self.debug_mode and self.optimization_mode == OptimizationMode.FULL_UTILIZATION,
+            batching_strategy="dynamic", # Default, can be influenced by BatchProcessorConfig
+            debug_mode=self.debug_mode,
+            memory_growth=self.optimization_mode != OptimizationMode.MEMORY_SAVING, # Allow growth unless strictly saving memory
+            set_cpu_affinity=self.optimization_mode == OptimizationMode.PERFORMANCE and self.system != "Darwin",
+            enable_model_quantization=quant_conf is not None, # Redundant with enable_quantization
+            quantization_dtype=quant_conf.quantization_type.value if quant_conf else QuantizationType.INT8.value,
+            quantization_config=quant_conf,
+            enable_request_deduplication=self.optimization_mode != OptimizationMode.MEMORY_SAVING,
+            max_cache_entries=max(int(1000 * factors["cache"]), 50) if self.total_memory_gb > 4 else 20,
+            cache_ttl_seconds=int(600 * factors["cache"]) if self.optimization_mode == OptimizationMode.PERFORMANCE else int(120 * factors["cache"]),
+            enable_monitoring=self.debug_mode or self.optimization_mode == OptimizationMode.FULL_UTILIZATION,
+            monitoring_interval=5.0 if self.environment == "edge" else 10.0,
+            throttle_on_high_cpu=self.optimization_mode != OptimizationMode.PERFORMANCE,
+            cpu_threshold_percent=85.0 if self.optimization_mode == OptimizationMode.PERFORMANCE else 75.0,
+            memory_limit_gb=mem_limit_gb_val,
+            batch_timeout=batch_proc_conf.batch_timeout, # From BatchProcessorConfig
+            max_concurrent_requests=thread_cnt * 2, # Allow some queuing
+            initial_batch_size=batch_proc_conf.initial_batch_size, # From BatchProcessorConfig
+            min_batch_size=batch_proc_conf.min_batch_size, # From BatchProcessorConfig
+            enable_adaptive_batching=batch_proc_conf.adaptive_batching, # From BatchProcessorConfig
+            enable_memory_optimization=self.optimization_mode != OptimizationMode.PERFORMANCE,
+            enable_feature_scaling=preproc_conf is not None,
+            optimization_mode=self.optimization_mode, # Pass the enum instance
+            enable_fp16_optimization=enable_fp16,
+            enable_compiler_optimization=self.optimization_mode != OptimizationMode.CONSERVATIVE,
+            preprocessor_config=preproc_conf,
+            batch_processor_config=batch_proc_conf, # Assign the generated batch processor config
+            threadpoolctl_available=self.threadpoolctl_available,
+            onnx_available=self.onnx_available,
+            treelite_available=self.treelite_available
+        )
+
+    def get_optimal_training_engine_config(self) -> MLTrainingEngineConfig:
+        factors = self._apply_optimization_mode_factors()
+
+        enable_intel_opt = self.is_intel_cpu and \
+                           (self.has_avx2 or self.has_avx512 or HardwareAccelerator.INTEL_MKL in self.accelerators)
+
+        n_jobs_val = -1 if self.optimization_mode == OptimizationMode.FULL_UTILIZATION else \
+                     max(1, int(self.cpu_count_logical * factors["cpu"]))
+        if self.optimization_mode == OptimizationMode.MEMORY_SAVING:
+            n_jobs_val = max(1, int((self.cpu_count_physical or 1) * 0.5))
+
+        cv_folds_val = 3 if self.optimization_mode == OptimizationMode.MEMORY_SAVING or self.workload_type == "inference" else 5
+        
+        opt_strategy_enum = TrainingOptimizationStrategy.HYPERX
+        if self.optimization_mode == OptimizationMode.CONSERVATIVE:
+            opt_strategy_enum = TrainingOptimizationStrategy.RANDOM_SEARCH
+
+        opt_iters = 50
+        if self.optimization_mode == OptimizationMode.PERFORMANCE: opt_iters = 75
+        elif self.optimization_mode == OptimizationMode.MEMORY_SAVING: opt_iters = 25
+        elif self.optimization_mode == OptimizationMode.CONSERVATIVE: opt_iters = 15
+
+        # Default to a common metric. The user can change this on the config object
+        # based on their specific MLTrainingEngineConfig.task_type.
+        model_sel_criteria_enum = ModelSelectionCriteria.ACCURACY
+        opt_metric_val = ModelSelectionCriteria.ACCURACY.value # Pass string value
+
+        early_stop_rounds = 10
+        if self.optimization_mode == OptimizationMode.MEMORY_SAVING: early_stop_rounds = 5
+
+        feat_sel = self.optimization_mode not in [OptimizationMode.PERFORMANCE, OptimizationMode.CONSERVATIVE]
+
+        preproc_conf_train = self.get_optimal_preprocessor_config()
+        batch_proc_conf_train = self.get_optimal_batch_processor_config()
+        batch_proc_conf_train.initial_batch_size = max(batch_proc_conf_train.initial_batch_size, 32 if self.total_memory_gb > 4 else 16)
+        batch_proc_conf_train.max_batch_size = max(batch_proc_conf_train.max_batch_size, 64 if self.total_memory_gb > 4 else 32)
+        if self.optimization_mode == OptimizationMode.MEMORY_SAVING:
+            batch_proc_conf_train.initial_batch_size = min(batch_proc_conf_train.initial_batch_size, 32)
+            batch_proc_conf_train.max_batch_size = min(batch_proc_conf_train.max_batch_size, 64)
+
+        quant_conf_train = self.get_optimal_quantization_config() if self.optimization_mode == OptimizationMode.MEMORY_SAVING else None
+        
+        expl_conf = ExplainabilityConfig(
+            enable_explainability=self.optimization_mode not in [OptimizationMode.MEMORY_SAVING, OptimizationMode.PERFORMANCE],
+            methods=["shap", "feature_importance"] if self.optimization_mode != OptimizationMode.CONSERVATIVE else ["feature_importance"],
+            shap_samples=50 if self.optimization_mode == OptimizationMode.CONSERVATIVE else 100,
+            generate_plots=self.optimization_mode != OptimizationMode.MEMORY_SAVING
+        )
+        mon_conf = MonitoringConfig(
+            enable_monitoring=self.debug_mode or self.environment == "cloud",
+            drift_detection=self.environment == "cloud",
+            performance_tracking=True,
+            alert_on_drift=False
+        )
+
+        exp_platform_val = "mlflow" if self.total_memory_gb >= 4 and self.disk_free_gb > 1 else "csv"
+        mem_opt_train = self.optimization_mode == OptimizationMode.MEMORY_SAVING or self.total_memory_gb < 8
+
+        enable_ens = self.optimization_mode not in [OptimizationMode.MEMORY_SAVING, OptimizationMode.CONSERVATIVE] and self.total_memory_gb >= 8
+        ens_method = "stacking" if self.total_memory_gb >= 16 and self.optimization_mode == OptimizationMode.FULL_UTILIZATION else "voting"
+        ens_size = 3 if self.total_memory_gb < 16 or self.optimization_mode != OptimizationMode.FULL_UTILIZATION else 5
+
+        export_fmts = ["sklearn"]
+        if self.onnx_available: export_fmts.append("onnx")
+        if self.optimization_mode == OptimizationMode.MEMORY_SAVING and self.onnx_available:
+            export_fmts = ["onnx"]
+        elif self.optimization_mode == OptimizationMode.MEMORY_SAVING:
+             export_fmts = []
+
+        sec_config_dict = {}
+        if self.optimization_mode != OptimizationMode.PERFORMANCE:
+            sec_config_dict = {
+                "enable_input_sanitization": True,
+                "enable_output_filtering": False
+            }
+        
+        meta_dict = {
+            "device_info": {
+                "cpu_count_physical": self.cpu_count_physical,
+                "cpu_count_logical": self.cpu_count_logical,
+                "total_memory_gb": self.total_memory_gb,
+                "is_intel_cpu": self.is_intel_cpu,
+                "has_gpu": self.has_gpu
+            },
+            "optimizer_settings": {
+                 "optimization_mode": self.optimization_mode.value,
+                 "environment": self.environment,
+                 "workload_type": self.workload_type,
+                 "auto_tune_optimizer": self.auto_tune
+            }
+        }
+
+        # MLTrainingEngineConfig defaults task_type to CLASSIFICATION.
+        # The optimization_metric and model_selection_criteria set here
+        # are general defaults.
+        return MLTrainingEngineConfig(
+            # task_type will use its default (CLASSIFICATION) or what user provides
+            random_state=42,
+            n_jobs=n_jobs_val,
+            verbose=1 if not self.debug_mode and self.optimization_mode != OptimizationMode.PERFORMANCE else (2 if self.debug_mode else 0),
+            cv_folds=cv_folds_val,
+            stratify=True, # Default, relevant for classification
+            optimization_strategy=opt_strategy_enum,
+            optimization_iterations=opt_iters,
+            optimization_metric=opt_metric_val, # General default metric
+            early_stopping=self.optimization_mode != OptimizationMode.FULL_UTILIZATION,
+            early_stopping_rounds=early_stop_rounds,
+            feature_selection=feat_sel,
+            preprocessing_config=preproc_conf_train,
+            batch_processing_config=batch_proc_conf_train,
+            inference_config=None,
+            quantization_config=quant_conf_train,
+            explainability_config=expl_conf,
+            monitoring_config=mon_conf,
+            model_path=str(self.model_registry_path / "training_models"),
+            checkpoint_path=str(self.checkpoint_path / "training_checkpoints"),
+            experiment_tracking_platform=exp_platform_val,
+            use_intel_optimization=enable_intel_opt,
+            use_gpu=False,
+            gpu_memory_fraction=0.0,
+            memory_optimization=mem_opt_train,
+            enable_distributed=False,
+            checkpointing=self.optimization_mode != OptimizationMode.PERFORMANCE,
+            checkpoint_interval=5 if self.optimization_mode == OptimizationMode.CONSERVATIVE else 10,
+            enable_pruning=self.optimization_mode == OptimizationMode.MEMORY_SAVING,
+            auto_ml=AutoMLMode.BASIC if self.auto_tune and self.optimization_mode != OptimizationMode.CONSERVATIVE else AutoMLMode.DISABLED,
+            ensemble_models=enable_ens,
+            ensemble_method=ens_method,
+            ensemble_size=ens_size,
+            hyperparameter_tuning_cv=self.optimization_mode != OptimizationMode.MEMORY_SAVING,
+            model_selection_criteria=model_sel_criteria_enum, # General default criteria
+            enable_quantization=quant_conf_train is not None,
+            enable_model_compression=self.optimization_mode == OptimizationMode.MEMORY_SAVING,
+            compute_permutation_importance=expl_conf.enable_explainability and "feature_importance" in expl_conf.methods,
+            generate_prediction_explanations=expl_conf.enable_explainability and self.optimization_mode == OptimizationMode.FULL_UTILIZATION,
+            export_formats=export_fmts,
+            log_level="DEBUG" if self.debug_mode else "INFO",
+            debug_mode=self.debug_mode,
+            enable_security=self.optimization_mode != OptimizationMode.PERFORMANCE,
+            security_config=sec_config_dict,
+            metadata=meta_dict
+        )
+
+
+
+    def get_system_info(self) -> Dict[str, Any]:
+        """Get comprehensive information about the current system."""
+        # This method returns a dictionary, which is fine.
+        # _serialize_config_dict will handle enums within this dict if any.
+        return {
+            "system": self.system, "release": self.release, "machine": self.machine,
+            "processor": self.processor, "hostname": self.hostname,
+            "python_version": self.python_version,
+            "cpu_count_physical": self.cpu_count_physical,
+            "cpu_count_logical": self.cpu_count_logical,
+            "cpu_freq_mhz": self.cpu_freq,
+            "cpu_features": {
+                "avx": self.has_avx, "avx2": self.has_avx2, "avx512": self.has_avx512,
+                "sse4": self.has_sse4, "fma": self.has_fma, "neon": self.has_neon
+            },
+            "is_intel_cpu": self.is_intel_cpu, "is_amd_cpu": self.is_amd_cpu, "is_arm_cpu": self.is_arm_cpu,
+            "total_memory_gb": self.total_memory_gb,
+            "available_memory_gb": self.available_memory_gb,
+            "usable_memory_gb": self.usable_memory_gb,
+            "swap_memory_gb": self.swap_memory_gb,
+            "disk_total_gb": self.disk_total_gb, "disk_free_gb": self.disk_free_gb, "is_ssd": self.is_ssd,
+            "accelerators": [acc.name for acc in self.accelerators], # .name for simple Enum
+            "detected_environment": self.environment,
+            "optimizer_settings": { # Added a sub-dict for clarity
+                "optimization_mode": self.optimization_mode.value, # Use .value for str Enum
+                "workload_type": self.workload_type,
+                "power_efficiency": self.power_efficiency,
+                "auto_tune": self.auto_tune,
+                "debug_mode": self.debug_mode
+            },
+            "library_availability": {
+                "onnx_available": self.onnx_available,
+                "threadpoolctl_available": self.threadpoolctl_available,
+                "treelite_available": self.treelite_available # Assuming this is set
+            }
+        }
+
+# Additional utility functions for device_optimizer.py
+# These functions are imported by the API but weren't defined in the original file
+
+def get_system_information(enable_specialized_accelerators: bool = True) -> dict:
     """
-    Load a configuration from a JSON file.
+    Get system information without creating a full DeviceOptimizer instance.
     
     Args:
-        config_path: Path to the configuration file
-    
-    Returns:
-        Configuration as a dictionary
-    """
-    config_path = Path(config_path)
-    if not config_path.exists():
-        raise FileNotFoundError(f"Configuration file not found: {config_path}")
-    
-    with open(config_path, "r") as f:
-        config = json.load(f)
-    
-    return config
-
-def safe_dict_serializer(obj, ignore_types=None, max_depth=10, current_depth=0):
-    """
-    Convert an object to a serializable dictionary, ignoring non-serializable types.
-    
-    Args:
-        obj: The object to convert
-        ignore_types: List of types to ignore (will be replaced with their string representation)
-        max_depth: Maximum recursion depth to prevent infinite recursion
-        current_depth: Current recursion depth (used internally)
+        enable_specialized_accelerators: Whether to detect specialized hardware accelerators
         
     Returns:
-        A JSON-serializable representation of the object
+        Dict containing comprehensive system information
     """
-    if ignore_types is None:
-        ignore_types = [type, types.FunctionType, types.MethodType, types.ModuleType, 
-                        types.BuiltinFunctionType, types.BuiltinMethodType]
+    # Create a temporary DeviceOptimizer instance just to get system info
+    temp_optimizer = DeviceOptimizer(
+        enable_specialized_accelerators=enable_specialized_accelerators
+    )
     
-    # Prevent infinite recursion
-    if current_depth > max_depth:
-        return str(obj)
-    
-    # Handle None
-    if obj is None:
-        return None
-    
-    # Handle basic types that are already serializable
-    if isinstance(obj, (str, int, float, bool)):
-        return obj
-    
-    # Handle Enum objects
-    if isinstance(obj, Enum):
-        return obj.value if hasattr(obj, 'value') else obj.name
-    
-    # Handle numpy types
-    if isinstance(obj, np.integer):
-        return int(obj)
-    if isinstance(obj, np.floating):
-        return float(obj)
-    if isinstance(obj, np.ndarray):
-        return obj.tolist()
-    if isinstance(obj, np.dtype):
-        return str(obj)
-    
-    # Handle Path objects
-    if isinstance(obj, Path):
-        return str(obj)
-    
-    # Handle datetime objects
-    if isinstance(obj, (datetime.date, datetime.datetime)):
-        return obj.isoformat()
-    
-    # Handle types to ignore
-    if any(isinstance(obj, t) for t in ignore_types):
-        return str(obj)
-    
-    # Handle dictionaries
-    if isinstance(obj, dict):
-        result = {}
-        for key, value in obj.items():
-            # Skip keys that start with underscore (private attributes)
-            if isinstance(key, str) and key.startswith('_'):
-                continue
-            
-            # Convert key to string if it's not a string
-            if not isinstance(key, str):
-                key = str(key)
-                
-            # Recursively process the value
-            result[key] = safe_dict_serializer(
-                value, ignore_types, max_depth, current_depth + 1
-            )
-        return result
-    
-    # Handle lists and tuples
-    if isinstance(obj, (list, tuple)):
-        return [safe_dict_serializer(item, ignore_types, max_depth, current_depth + 1) 
-                for item in obj]
-    
-    # Handle sets
-    if isinstance(obj, set):
-        return [safe_dict_serializer(item, ignore_types, max_depth, current_depth + 1) 
-                for item in obj]
-    
-    # Try to convert to dictionary if object has __dict__
-    if hasattr(obj, '__dict__'):
-        return safe_dict_serializer(obj.__dict__, ignore_types, max_depth, current_depth + 1)
-    
-    # Try to convert dataclasses
-    if dataclasses.is_dataclass(obj):
-        return safe_dict_serializer(asdict(obj), ignore_types, max_depth, current_depth + 1)
-    
-    # Try to convert objects with __slots__
-    if hasattr(obj, '__slots__'):
-        result = {}
-        for slot in obj.__slots__:
-            if hasattr(obj, slot):
-                result[slot] = safe_dict_serializer(
-                    getattr(obj, slot), ignore_types, max_depth, current_depth + 1
-                )
-        return result
-    
-    # Last resort: convert to string
-    return str(obj)
+    # Get and return the system information
+    return temp_optimizer.get_system_info()
 
-def save_serializable_json(obj, file_path, indent=2):
+
+def optimize_for_environment(environment: str, 
+                            config_path: str = "./configs",
+                            checkpoint_path: str = "./checkpoints",
+                            model_registry_path: str = "./model_registry") -> dict:
     """
-    Save an object to a JSON file, handling non-serializable types.
+    Create optimized configurations for a specific environment.
     
     Args:
-        obj: The object to save
-        file_path: Path to the output JSON file
-        indent: Indentation level for the JSON file
-    """
-    serializable_obj = safe_dict_serializer(obj)
-    
-    with open(file_path, 'w') as f:
-        json.dump(serializable_obj, f, indent=indent)
-
-
-
-def create_optimized_configs(
-    config_path: str = "./configs",
-    checkpoint_path: str = "./checkpoints",
-    model_registry_path: str = "./model_registry",
-    config_id: Optional[str] = None
-) -> Dict[str, str]:
-    """
-    Create optimized configurations based on the current device.
-    
-    Args:
-        config_path: Path to save configuration files
+        environment: Target environment - 'cloud', 'desktop', or 'edge'
+        config_path: Path where configurations will be saved
         checkpoint_path: Path for model checkpoints
         model_registry_path: Path for model registry
-        config_id: Optional identifier for the configuration set
     
     Returns:
-        Dictionary with paths to saved configuration files
+        Master configuration dictionary
     """
+    # Validate environment value
+    if environment not in ["cloud", "desktop", "edge"]:
+        raise ValueError(f"Invalid environment: {environment}. Must be 'cloud', 'desktop', or 'edge'.")
+    
+    # Select appropriate optimization mode based on environment
+    env_to_mode = {
+        "cloud": OptimizationMode.PERFORMANCE,
+        "desktop": OptimizationMode.BALANCED,
+        "edge": OptimizationMode.MEMORY_SAVING
+    }
+    
+    # Create DeviceOptimizer with environment-specific settings
     optimizer = DeviceOptimizer(
         config_path=config_path,
         checkpoint_path=checkpoint_path,
-        model_registry_path=model_registry_path
+        model_registry_path=model_registry_path,
+        optimization_mode=env_to_mode[environment],
+        environment=environment,
+        # Customize additional parameters based on environment
+        power_efficiency=environment == "edge",
+        auto_tune=environment != "edge"  # Disable auto-tuning for edge devices
     )
     
-    return optimizer.save_configs(config_id)
+    # Generate unique config ID for this environment
+    import uuid
+    config_id = f"env_{environment}_{uuid.uuid4().hex[:6]}"
+    
+    # Save and return configurations
+    return optimizer.save_configs(config_id=config_id)
+
+
+def optimize_for_workload(workload_type: str,
+                         config_path: str = "./configs",
+                         checkpoint_path: str = "./checkpoints",
+                         model_registry_path: str = "./model_registry") -> dict:
+    """
+    Create optimized configurations for a specific workload type.
+    
+    Args:
+        workload_type: Target workload - 'inference', 'training', or 'mixed'
+        config_path: Path where configurations will be saved
+        checkpoint_path: Path for model checkpoints
+        model_registry_path: Path for model registry
+    
+    Returns:
+        Master configuration dictionary
+    """
+    # Validate workload_type value
+    if workload_type not in ["inference", "training", "mixed"]:
+        raise ValueError(f"Invalid workload type: {workload_type}. Must be 'inference', 'training', or 'mixed'.")
+    
+    # Select appropriate optimization mode based on workload
+    workload_to_mode = {
+        "inference": OptimizationMode.PERFORMANCE,
+        "training": OptimizationMode.BALANCED,
+        "mixed": OptimizationMode.BALANCED
+    }
+    
+    # Customize memory settings based on workload
+    memory_reservation = 10.0  # Default
+    if workload_type == "training":
+        memory_reservation = 15.0  # Reserve more memory for training
+    elif workload_type == "inference":
+        memory_reservation = 5.0   # Less reservation for inference
+    
+    # Create DeviceOptimizer with workload-specific settings
+    optimizer = DeviceOptimizer(
+        config_path=config_path,
+        checkpoint_path=checkpoint_path,
+        model_registry_path=model_registry_path,
+        optimization_mode=workload_to_mode[workload_type],
+        workload_type=workload_type,
+        memory_reservation_percent=memory_reservation
+    )
+    
+    # Generate unique config ID for this workload
+    import uuid
+    config_id = f"workload_{workload_type}_{uuid.uuid4().hex[:6]}"
+    
+    # Save and return configurations
+    return optimizer.save_configs(config_id=config_id)
+
+
+def apply_configs_to_pipeline(configs: dict) -> bool:
+    """
+    Apply loaded configurations to ML pipeline components.
+    
+    Args:
+        configs: Dictionary with configurations to apply, typically loaded from saved configs
+        
+    Returns:
+        True if configurations were successfully applied, False otherwise
+    """
+    try:
+        logger = logging.getLogger("cpu_device_optimizer")
+        logger.info("Applying configurations to pipeline components")
+        
+        # Extract individual configs
+        quant_config = configs.get("quantization_config")
+        batch_config = configs.get("batch_processor_config")
+        preproc_config = configs.get("preprocessor_config")
+        infer_config = configs.get("inference_engine_config")
+        train_config = configs.get("training_engine_config")
+        
+        # Check if we have at least some configs
+        if not any([quant_config, batch_config, preproc_config, infer_config, train_config]):
+            logger.error("No valid configurations found in the provided config dictionary")
+            return False
+        
+        
+        logger.info("Successfully applied configurations to pipeline components")
+        return True
+        
+    except Exception as e:
+        logger = logging.getLogger("cpu_device_optimizer")
+        logger.error(f"Error applying configurations to pipeline: {e}")
+        return False
+
+
+def get_default_config(
+    optimization_mode: OptimizationMode = OptimizationMode.BALANCED,
+    workload_type: str = "mixed",
+    environment: str = "auto", 
+    output_dir: str = "./configs/default",
+    enable_specialized_accelerators: bool = True
+) -> dict:
+    """
+    Get default configurations for the specified optimization mode, workload, and environment.
+    
+    Args:
+        optimization_mode: The optimization strategy to use
+        workload_type: Type of workload to optimize for
+        environment: Computing environment
+        output_dir: Directory where configuration files will be saved
+        enable_specialized_accelerators: Whether to enable detection of specialized hardware
+        
+    Returns:
+        Dictionary with all config objects
+    """
+    # Create a DeviceOptimizer with the specified parameters
+    optimizer = DeviceOptimizer(
+        optimization_mode=optimization_mode,
+        workload_type=workload_type,
+        environment=environment,
+        enable_specialized_accelerators=enable_specialized_accelerators,
+        auto_tune=False  # Default configs don't use auto-tuning
+    )
+    
+    # Generate configuration objects
+    quant_config = optimizer.get_optimal_quantization_config()
+    batch_config = optimizer.get_optimal_batch_processor_config()
+    preproc_config = optimizer.get_optimal_preprocessor_config()
+    infer_config = optimizer.get_optimal_inference_engine_config()
+    train_config = optimizer.get_optimal_training_engine_config()
+    
+    # Convert objects to dictionaries
+    configs = {}
+    
+    def serialize_config(config_obj, name):
+        """Helper to serialize config objects to dictionaries"""
+        if hasattr(config_obj, 'to_dict') and callable(getattr(config_obj, 'to_dict')):
+            return config_obj.to_dict()
+        elif hasattr(config_obj, '__dict__'):
+            return optimizer._serialize_config_dict(config_obj.__dict__)
+        else:
+            logger = logging.getLogger("cpu_device_optimizer")
+            logger.warning(f"Could not serialize {name} config")
+            return {}
+    
+    # Serialize all config objects
+    configs = {
+        "quantization_config": serialize_config(quant_config, "quantization"),
+        "batch_processor_config": serialize_config(batch_config, "batch_processor"),
+        "preprocessor_config": serialize_config(preproc_config, "preprocessor"),
+        "inference_engine_config": serialize_config(infer_config, "inference_engine"),
+        "training_engine_config": serialize_config(train_config, "training_engine")
+    }
+    
+    # Save to output_dir if specified
+    if output_dir:
+        import os
+        import json
+        
+        os.makedirs(output_dir, exist_ok=True)
+        for config_name, config_data in configs.items():
+            config_path = os.path.join(output_dir, f"{config_name}.json")
+            with open(config_path, 'w') as f:
+                json.dump(config_data, f, indent=2)
+    
+    return configs

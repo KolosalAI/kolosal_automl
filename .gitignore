@@ -163,3 +163,9 @@ models/
 catboost_info
 experiment_results/
 result/
+configs/
+data/
+mlruns/
+static/
+model_registry/
+notebooks/
