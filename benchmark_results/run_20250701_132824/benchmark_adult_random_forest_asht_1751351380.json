@@ -1,0 +1,20 @@
+{
+  "benchmark_id": "adult_random_forest_asht_1751351380",
+  "dataset": "adult",
+  "model": "random_forest",
+  "optimization_strategy": "asht",
+  "dataset_shape": [
+    48842,
+    97
+  ],
+  "system_info": {
+    "cpu_count": 20,
+    "initial_memory_mb": 600.43359375,
+    "platform": "nt"
+  },
+  "training_time_seconds": 0.0,
+  "peak_memory_mb": 636.671875,
+  "error": "MLTrainingEngine.train_model() got an unexpected keyword argument 'model'",
+  "success": false,
+  "timestamp": "2025-07-01 13:29:42"
+}

@@ -1,0 +1,268 @@
+
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Genta AutoML vs Standard ML Comparison Report</title>
+            <style>
+                body { font-family: Arial, sans-serif; margin: 20px; line-height: 1.6; }
+                .header { background-color: #2c3e50; color: white; padding: 20px; text-align: center; }
+                .summary { background-color: #ecf0f1; padding: 15px; margin: 20px 0; border-radius: 5px; }
+                .improvement { color: #27ae60; font-weight: bold; }
+                .degradation { color: #e74c3c; font-weight: bold; }
+                table { border-collapse: collapse; width: 100%; margin: 20px 0; }
+                th, td { border: 1px solid #bdc3c7; padding: 12px; text-align: left; }
+                th { background-color: #34495e; color: white; }
+                tr:nth-child(even) { background-color: #f8f9fa; }
+                .metric-box { display: inline-block; margin: 10px; padding: 15px; background-color: #ffffff; border: 1px solid #bdc3c7; border-radius: 5px; text-align: center; min-width: 200px; }
+                .chart-container { text-align: center; margin: 20px 0; }
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <h1>Genta AutoML vs Standard ML Comparison Report</h1>
+                <p>Generated on 2025-07-01 14:16:17</p>
+            </div>
+            
+            <div class="summary">
+                <h2>Executive Summary</h2>
+                <p>This report compares the performance of Genta AutoML training engine against standard scikit-learn approaches across multiple datasets and models.</p>
+                
+                <div class="metric-box">
+                    <h3>Training Speed</h3>
+                    <p class="degradation">
+                        -33.4% compared to standard ML
+                    </p>
+                </div>
+                
+                <div class="metric-box">
+                    <h3>Memory Usage</h3>
+                    <p class="degradation">
+                        -0.8% compared to standard ML
+                    </p>
+                </div>
+                
+                <div class="metric-box">
+                    <h3>Model Accuracy</h3>
+                    <p class="degradation">
+                        -1.8% compared to standard ML
+                    </p>
+                </div>
+            </div>
+            
+            <h2>Detailed Metrics Comparison</h2>
+            
+            <h3>Training Time (seconds)</h3>
+            <table>
+                <tr>
+                    <th>Metric</th>
+                    <th>Standard ML</th>
+                    <th>Genta AutoML</th>
+                    <th>Improvement</th>
+                </tr>
+                <tr>
+                    <td>Mean</td>
+                    <td>1.09</td>
+                    <td>1.64</td>
+                    <td class="degradation">-33.4%</td>
+                </tr>
+                <tr>
+                    <td>Standard Deviation</td>
+                    <td>1.10</td>
+                    <td>1.23</td>
+                    <td>-</td>
+                </tr>
+            </table>
+            
+            <h3>Test Score</h3>
+            <table>
+                <tr>
+                    <th>Metric</th>
+                    <th>Standard ML</th>
+                    <th>Genta AutoML</th>
+                    <th>Improvement</th>
+                </tr>
+                <tr>
+                    <td>Mean</td>
+                    <td>0.8118</td>
+                    <td>0.7968</td>
+                    <td class="degradation">-1.8%</td>
+                </tr>
+                <tr>
+                    <td>Standard Deviation</td>
+                    <td>0.2547</td>
+                    <td>0.2532</td>
+                    <td>-</td>
+                </tr>
+            </table>
+            
+            <h3>Memory Usage (MB)</h3>
+            <table>
+                <tr>
+                    <th>Metric</th>
+                    <th>Standard ML</th>
+                    <th>Genta AutoML</th>
+                    <th>Improvement</th>
+                </tr>
+                <tr>
+                    <td>Mean</td>
+                    <td>472.6</td>
+                    <td>476.3</td>
+                    <td class="degradation">-0.8%</td>
+                </tr>
+                <tr>
+                    <td>Standard Deviation</td>
+                    <td>8.7</td>
+                    <td>4.3</td>
+                    <td>-</td>
+                </tr>
+            </table>
+            
+            <div class="chart-container">
+                <h2>Performance Comparison Charts</h2>
+                <img src="comparison_charts_20250701_141546.png" alt="Comparison Charts" style="max-width: 100%; height: auto;">
+            </div>
+            
+            <h2>Individual Results</h2>
+            <table>
+                <tr>
+                    <th>Approach</th>
+                    <th>Dataset</th>
+                    <th>Model</th>
+                    <th>Training Time (s)</th>
+                    <th>Test Score</th>
+                    <th>Memory (MB)</th>
+                    <th>Success</th>
+                </tr>
+        
+                <tr>
+                    <td>genta</td>
+                    <td>diabetes</td>
+                    <td>random_forest</td>
+                    <td>1.38</td>
+                    <td>0.4236</td>
+                    <td>481.0</td>
+                    <td>✓</td>
+                </tr>
+            
+                <tr>
+                    <td>standard</td>
+                    <td>diabetes</td>
+                    <td>random_forest</td>
+                    <td>2.87</td>
+                    <td>0.4512</td>
+                    <td>480.5</td>
+                    <td>✓</td>
+                </tr>
+            
+                <tr>
+                    <td>genta</td>
+                    <td>diabetes</td>
+                    <td>ridge</td>
+                    <td>0.82</td>
+                    <td>0.4572</td>
+                    <td>482.4</td>
+                    <td>✓</td>
+                </tr>
+            
+                <tr>
+                    <td>standard</td>
+                    <td>diabetes</td>
+                    <td>ridge</td>
+                    <td>0.02</td>
+                    <td>0.4528</td>
+                    <td>481.3</td>
+                    <td>✓</td>
+                </tr>
+            
+                <tr>
+                    <td>genta</td>
+                    <td>iris</td>
+                    <td>logistic_regression</td>
+                    <td>0.85</td>
+                    <td>0.9333</td>
+                    <td>472.3</td>
+                    <td>✓</td>
+                </tr>
+            
+                <tr>
+                    <td>standard</td>
+                    <td>iris</td>
+                    <td>logistic_regression</td>
+                    <td>0.06</td>
+                    <td>1.0000</td>
+                    <td>470.8</td>
+                    <td>✓</td>
+                </tr>
+            
+                <tr>
+                    <td>genta</td>
+                    <td>iris</td>
+                    <td>random_forest</td>
+                    <td>4.34</td>
+                    <td>0.9667</td>
+                    <td>470.5</td>
+                    <td>✓</td>
+                </tr>
+            
+                <tr>
+                    <td>standard</td>
+                    <td>iris</td>
+                    <td>random_forest</td>
+                    <td>1.67</td>
+                    <td>0.9667</td>
+                    <td>455.1</td>
+                    <td>✓</td>
+                </tr>
+            
+                <tr>
+                    <td>genta</td>
+                    <td>wine</td>
+                    <td>logistic_regression</td>
+                    <td>1.09</td>
+                    <td>1.0000</td>
+                    <td>476.6</td>
+                    <td>✓</td>
+                </tr>
+            
+                <tr>
+                    <td>standard</td>
+                    <td>wine</td>
+                    <td>logistic_regression</td>
+                    <td>0.09</td>
+                    <td>1.0000</td>
+                    <td>475.2</td>
+                    <td>✓</td>
+                </tr>
+            
+                <tr>
+                    <td>genta</td>
+                    <td>wine</td>
+                    <td>random_forest</td>
+                    <td>1.36</td>
+                    <td>1.0000</td>
+                    <td>475.2</td>
+                    <td>✓</td>
+                </tr>
+            
+                <tr>
+                    <td>standard</td>
+                    <td>wine</td>
+                    <td>random_forest</td>
+                    <td>1.83</td>
+                    <td>1.0000</td>
+                    <td>472.9</td>
+                    <td>✓</td>
+                </tr>
+            
+            </table>
+            
+            <div class="summary">
+                <h2>Conclusions</h2>
+                <ul>
+        <li>Standard ML is <strong>33.4% faster</strong> than Genta AutoML on average.</li><li>Standard ML achieves <strong>1.8% better accuracy</strong> than Genta AutoML on average.</li><li>Standard ML uses <strong>0.8% less memory</strong> than Genta AutoML on average.</li>
+                </ul>
+                <p><em>Note: This comparison was conducted with Genta AutoML optimizations disabled to ensure fair comparison against standard scikit-learn approaches.</em></p>
+            </div>
+        </body>
+        </html>
+        

@@ -1,0 +1,20 @@
+{
+  "benchmark_id": "diabetes_random_forest_asht_1751351336",
+  "dataset": "diabetes",
+  "model": "random_forest",
+  "optimization_strategy": "asht",
+  "dataset_shape": [
+    442,
+    10
+  ],
+  "system_info": {
+    "cpu_count": 20,
+    "initial_memory_mb": 505.8515625,
+    "platform": "nt"
+  },
+  "training_time_seconds": 0.0,
+  "peak_memory_mb": 505.8828125,
+  "error": "MLTrainingEngine.train_model() got an unexpected keyword argument 'model'",
+  "success": false,
+  "timestamp": "2025-07-01 13:28:57"
+}

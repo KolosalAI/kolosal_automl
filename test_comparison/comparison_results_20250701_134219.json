@@ -1,0 +1,54 @@
+[
+  {
+    "approach": "standard",
+    "dataset_name": "iris",
+    "model_name": "random_forest",
+    "dataset_size": [
+      150,
+      4
+    ],
+    "task_type": "classification",
+    "training_time": 1.428941249847412,
+    "prediction_time": 0.006016969680786133,
+    "memory_peak_mb": 454.15234375,
+    "memory_final_mb": 454.2265625,
+    "train_score": 0.9833333333333333,
+    "test_score": 0.9666666666666667,
+    "cv_score_mean": 0.9666666666666667,
+    "cv_score_std": 0.011785113019775804,
+    "best_params": {
+      "model__n_estimators": 100,
+      "model__min_samples_split": 5,
+      "model__max_depth": 10
+    },
+    "feature_count": 4,
+    "model_size_mb": 4.57763671875e-05,
+    "preprocessing_time": 0.0,
+    "success": true,
+    "error_message": ""
+  },
+  {
+    "approach": "genta",
+    "dataset_name": "iris",
+    "model_name": "random_forest",
+    "dataset_size": [
+      0,
+      0
+    ],
+    "task_type": "unknown",
+    "training_time": 0,
+    "prediction_time": 0,
+    "memory_peak_mb": 0,
+    "memory_final_mb": 0,
+    "train_score": 0,
+    "test_score": 0,
+    "cv_score_mean": 0,
+    "cv_score_std": 0,
+    "best_params": {},
+    "feature_count": 0,
+    "model_size_mb": 0,
+    "preprocessing_time": 0,
+    "success": false,
+    "error_message": "too many values to unpack (expected 2)"
+  }
+]

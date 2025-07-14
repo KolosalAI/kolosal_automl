@@ -1,0 +1,20 @@
+{
+  "benchmark_id": "wine_gradient_boosting_asht_1751351317",
+  "dataset": "wine",
+  "model": "gradient_boosting",
+  "optimization_strategy": "asht",
+  "dataset_shape": [
+    178,
+    13
+  ],
+  "system_info": {
+    "cpu_count": 20,
+    "initial_memory_mb": 483.15625,
+    "platform": "nt"
+  },
+  "training_time_seconds": 0.0,
+  "peak_memory_mb": 483.16015625,
+  "error": "MLTrainingEngine.train_model() got an unexpected keyword argument 'model'",
+  "success": false,
+  "timestamp": "2025-07-01 13:28:39"
+}

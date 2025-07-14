@@ -1,0 +1,330 @@
+[
+  {
+    "approach": "standard",
+    "dataset_name": "iris",
+    "model_name": "random_forest",
+    "dataset_size": [
+      150,
+      4
+    ],
+    "task_type": "classification",
+    "training_time": 1.7624695301055908,
+    "prediction_time": 0.007999420166015625,
+    "memory_peak_mb": 454.91015625,
+    "memory_final_mb": 454.984375,
+    "train_score": 0.9833333333333333,
+    "test_score": 0.9666666666666667,
+    "cv_score_mean": 0.9666666666666667,
+    "cv_score_std": 0.011785113019775804,
+    "best_params": {
+      "model__n_estimators": 100,
+      "model__min_samples_split": 5,
+      "model__max_depth": 10
+    },
+    "feature_count": 4,
+    "model_size_mb": 4.57763671875e-05,
+    "preprocessing_time": 0.0,
+    "success": true,
+    "error_message": ""
+  },
+  {
+    "approach": "genta",
+    "dataset_name": "iris",
+    "model_name": "random_forest",
+    "dataset_size": [
+      150,
+      4
+    ],
+    "task_type": "classification",
+    "training_time": 4.93703818321228,
+    "prediction_time": 0.0067441463470458984,
+    "memory_peak_mb": 470.96484375,
+    "memory_final_mb": 470.9765625,
+    "train_score": 0.3333333333333333,
+    "test_score": 0.3333333333333333,
+    "cv_score_mean": 0.9500000000000001,
+    "cv_score_std": 0.020412414523193124,
+    "best_params": {
+      "n_estimators": 50,
+      "min_samples_split": 5,
+      "max_depth": 10
+    },
+    "feature_count": 4,
+    "model_size_mb": 4.57763671875e-05,
+    "preprocessing_time": 0,
+    "success": true,
+    "error_message": ""
+  },
+  {
+    "approach": "standard",
+    "dataset_name": "iris",
+    "model_name": "logistic_regression",
+    "dataset_size": [
+      150,
+      4
+    ],
+    "task_type": "classification",
+    "training_time": 0.14188766479492188,
+    "prediction_time": 0.0,
+    "memory_peak_mb": 471.27734375,
+    "memory_final_mb": 471.27734375,
+    "train_score": 0.975,
+    "test_score": 1.0,
+    "cv_score_mean": 0.9583333333333334,
+    "cv_score_std": 0.03118047822311617,
+    "best_params": {
+      "model__solver": "saga",
+      "model__C": 10.0
+    },
+    "feature_count": 4,
+    "model_size_mb": 4.57763671875e-05,
+    "preprocessing_time": 0.001528024673461914,
+    "success": true,
+    "error_message": ""
+  },
+  {
+    "approach": "genta",
+    "dataset_name": "iris",
+    "model_name": "logistic_regression",
+    "dataset_size": [
+      150,
+      4
+    ],
+    "task_type": "classification",
+    "training_time": 0.9449732303619385,
+    "prediction_time": 0.004588127136230469,
+    "memory_peak_mb": 472.33203125,
+    "memory_final_mb": 472.33203125,
+    "train_score": 0.3333333333333333,
+    "test_score": 0.3333333333333333,
+    "cv_score_mean": 0.9583333333333334,
+    "cv_score_std": 0.03118047822311617,
+    "best_params": {
+      "solver": "saga",
+      "C": 1.0
+    },
+    "feature_count": 4,
+    "model_size_mb": 4.57763671875e-05,
+    "preprocessing_time": 0,
+    "success": true,
+    "error_message": ""
+  },
+  {
+    "approach": "standard",
+    "dataset_name": "wine",
+    "model_name": "random_forest",
+    "dataset_size": [
+      178,
+      13
+    ],
+    "task_type": "classification",
+    "training_time": 2.820014715194702,
+    "prediction_time": 0.013130426406860352,
+    "memory_peak_mb": 472.94140625,
+    "memory_final_mb": 472.9609375,
+    "train_score": 1.0,
+    "test_score": 1.0,
+    "cv_score_mean": 0.9861111111111112,
+    "cv_score_std": 0.019641855032959635,
+    "best_params": {
+      "model__n_estimators": 50,
+      "model__min_samples_split": 5,
+      "model__max_depth": 10
+    },
+    "feature_count": 13,
+    "model_size_mb": 4.57763671875e-05,
+    "preprocessing_time": 0.0,
+    "success": true,
+    "error_message": ""
+  },
+  {
+    "approach": "genta",
+    "dataset_name": "wine",
+    "model_name": "random_forest",
+    "dataset_size": [
+      178,
+      13
+    ],
+    "task_type": "classification",
+    "training_time": 1.890019178390503,
+    "prediction_time": 0.01847529411315918,
+    "memory_peak_mb": 475.6640625,
+    "memory_final_mb": 475.6796875,
+    "train_score": 0.33098591549295775,
+    "test_score": 0.3333333333333333,
+    "cv_score_mean": 0.9720744680851063,
+    "cv_score_std": 0.025945054302592013,
+    "best_params": {
+      "n_estimators": 100,
+      "min_samples_split": 2,
+      "max_depth": 10
+    },
+    "feature_count": 13,
+    "model_size_mb": 4.57763671875e-05,
+    "preprocessing_time": 0,
+    "success": true,
+    "error_message": ""
+  },
+  {
+    "approach": "standard",
+    "dataset_name": "wine",
+    "model_name": "logistic_regression",
+    "dataset_size": [
+      178,
+      13
+    ],
+    "task_type": "classification",
+    "training_time": 0.12963533401489258,
+    "prediction_time": 0.0026226043701171875,
+    "memory_peak_mb": 475.69921875,
+    "memory_final_mb": 475.69921875,
+    "train_score": 0.9929577464788732,
+    "test_score": 1.0,
+    "cv_score_mean": 0.9861111111111112,
+    "cv_score_std": 0.019641855032959635,
+    "best_params": {
+      "model__solver": "saga",
+      "model__C": 0.1
+    },
+    "feature_count": 13,
+    "model_size_mb": 4.57763671875e-05,
+    "preprocessing_time": 0.0,
+    "success": true,
+    "error_message": ""
+  },
+  {
+    "approach": "genta",
+    "dataset_name": "wine",
+    "model_name": "logistic_regression",
+    "dataset_size": [
+      178,
+      13
+    ],
+    "task_type": "classification",
+    "training_time": 1.2746820449829102,
+    "prediction_time": 0.0,
+    "memory_peak_mb": 476.86328125,
+    "memory_final_mb": 476.87109375,
+    "train_score": 0.33098591549295775,
+    "test_score": 0.3333333333333333,
+    "cv_score_mean": 0.733451536643026,
+    "cv_score_std": 0.11169118237243245,
+    "best_params": {
+      "solver": "saga",
+      "C": 0.1
+    },
+    "feature_count": 13,
+    "model_size_mb": 4.57763671875e-05,
+    "preprocessing_time": 0,
+    "success": true,
+    "error_message": ""
+  },
+  {
+    "approach": "standard",
+    "dataset_name": "diabetes",
+    "model_name": "random_forest",
+    "dataset_size": [
+      442,
+      10
+    ],
+    "task_type": "regression",
+    "training_time": 5.3559675216674805,
+    "prediction_time": 0.03877878189086914,
+    "memory_peak_mb": 480.890625,
+    "memory_final_mb": 480.9140625,
+    "train_score": 0.8974548258306618,
+    "test_score": 0.4512061535695817,
+    "cv_score_mean": 0.41519866599575367,
+    "cv_score_std": 0.06482670897483982,
+    "best_params": {
+      "model__n_estimators": 100,
+      "model__min_samples_split": 5,
+      "model__max_depth": 20
+    },
+    "feature_count": 10,
+    "model_size_mb": 4.57763671875e-05,
+    "preprocessing_time": 0.0,
+    "success": true,
+    "error_message": ""
+  },
+  {
+    "approach": "genta",
+    "dataset_name": "diabetes",
+    "model_name": "random_forest",
+    "dataset_size": [
+      442,
+      10
+    ],
+    "task_type": "regression",
+    "training_time": 2.3106508255004883,
+    "prediction_time": 0.018522262573242188,
+    "memory_peak_mb": 481.34375,
+    "memory_final_mb": 481.34375,
+    "train_score": -0.005241990860761492,
+    "test_score": -0.014203388972669595,
+    "cv_score_mean": 0.4017631802108285,
+    "cv_score_std": 0.0706911396887607,
+    "best_params": {
+      "n_estimators": 50,
+      "min_samples_split": 5,
+      "max_depth": 10
+    },
+    "feature_count": 10,
+    "model_size_mb": 4.57763671875e-05,
+    "preprocessing_time": 0,
+    "success": true,
+    "error_message": ""
+  },
+  {
+    "approach": "standard",
+    "dataset_name": "diabetes",
+    "model_name": "ridge",
+    "dataset_size": [
+      442,
+      10
+    ],
+    "task_type": "regression",
+    "training_time": 0.05034685134887695,
+    "prediction_time": 0.002018451690673828,
+    "memory_peak_mb": 481.58203125,
+    "memory_final_mb": 481.58203125,
+    "train_score": 0.5279147769156123,
+    "test_score": 0.45281775734917173,
+    "cv_score_mean": 0.48793455930940777,
+    "cv_score_std": 0.06087755898506049,
+    "best_params": {
+      "model__alpha": 0.1
+    },
+    "feature_count": 10,
+    "model_size_mb": 4.57763671875e-05,
+    "preprocessing_time": 0.0,
+    "success": true,
+    "error_message": ""
+  },
+  {
+    "approach": "genta",
+    "dataset_name": "diabetes",
+    "model_name": "ridge",
+    "dataset_size": [
+      442,
+      10
+    ],
+    "task_type": "regression",
+    "training_time": 1.1007249355316162,
+    "prediction_time": 0.0,
+    "memory_peak_mb": 482.1171875,
+    "memory_final_mb": 482.1171875,
+    "train_score": 0.048004830630932305,
+    "test_score": 0.03478914807194511,
+    "cv_score_mean": 0.10073130166952986,
+    "cv_score_std": 0.01997353382743025,
+    "best_params": {
+      "alpha": 10.0
+    },
+    "feature_count": 10,
+    "model_size_mb": 4.57763671875e-05,
+    "preprocessing_time": 0,
+    "success": true,
+    "error_message": ""
+  }
+]

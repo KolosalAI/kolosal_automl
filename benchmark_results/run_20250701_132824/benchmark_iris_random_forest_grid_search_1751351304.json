@@ -1,0 +1,20 @@
+{
+  "benchmark_id": "iris_random_forest_grid_search_1751351304",
+  "dataset": "iris",
+  "model": "random_forest",
+  "optimization_strategy": "grid_search",
+  "dataset_shape": [
+    150,
+    4
+  ],
+  "system_info": {
+    "cpu_count": 20,
+    "initial_memory_mb": 469.328125,
+    "platform": "nt"
+  },
+  "training_time_seconds": 0.0009996891021728516,
+  "peak_memory_mb": 469.47265625,
+  "error": "MLTrainingEngine.train_model() got an unexpected keyword argument 'model'",
+  "success": false,
+  "timestamp": "2025-07-01 13:28:27"
+}

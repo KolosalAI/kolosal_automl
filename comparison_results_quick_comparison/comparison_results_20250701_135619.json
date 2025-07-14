@@ -1,0 +1,310 @@
+[
+  {
+    "approach": "standard",
+    "dataset_name": "iris",
+    "model_name": "random_forest",
+    "dataset_size": [
+      150,
+      4
+    ],
+    "task_type": "classification",
+    "training_time": 1.9227802753448486,
+    "prediction_time": 0.0075092315673828125,
+    "memory_peak_mb": 454.87890625,
+    "memory_final_mb": 454.953125,
+    "train_score": 0.9833333333333333,
+    "test_score": 0.9666666666666667,
+    "cv_score_mean": 0.9666666666666667,
+    "cv_score_std": 0.011785113019775804,
+    "best_params": {
+      "model__n_estimators": 100,
+      "model__min_samples_split": 5,
+      "model__max_depth": 10
+    },
+    "feature_count": 4,
+    "model_size_mb": 4.57763671875e-05,
+    "preprocessing_time": 0.0010039806365966797,
+    "success": true,
+    "error_message": ""
+  },
+  {
+    "approach": "genta",
+    "dataset_name": "iris",
+    "model_name": "random_forest",
+    "dataset_size": [
+      0,
+      0
+    ],
+    "task_type": "unknown",
+    "training_time": 0,
+    "prediction_time": 0,
+    "memory_peak_mb": 0,
+    "memory_final_mb": 0,
+    "train_score": 0,
+    "test_score": 0,
+    "cv_score_mean": 0,
+    "cv_score_std": 0,
+    "best_params": {},
+    "feature_count": 0,
+    "model_size_mb": 0,
+    "preprocessing_time": 0,
+    "success": false,
+    "error_message": "'NoneType' object has no attribute 'get'"
+  },
+  {
+    "approach": "standard",
+    "dataset_name": "iris",
+    "model_name": "logistic_regression",
+    "dataset_size": [
+      150,
+      4
+    ],
+    "task_type": "classification",
+    "training_time": 0.06125760078430176,
+    "prediction_time": 0.0010068416595458984,
+    "memory_peak_mb": 470.66015625,
+    "memory_final_mb": 470.66015625,
+    "train_score": 0.975,
+    "test_score": 1.0,
+    "cv_score_mean": 0.9583333333333334,
+    "cv_score_std": 0.03118047822311617,
+    "best_params": {
+      "model__solver": "saga",
+      "model__C": 10.0
+    },
+    "feature_count": 4,
+    "model_size_mb": 4.57763671875e-05,
+    "preprocessing_time": 0.001033782958984375,
+    "success": true,
+    "error_message": ""
+  },
+  {
+    "approach": "genta",
+    "dataset_name": "iris",
+    "model_name": "logistic_regression",
+    "dataset_size": [
+      0,
+      0
+    ],
+    "task_type": "unknown",
+    "training_time": 0,
+    "prediction_time": 0,
+    "memory_peak_mb": 0,
+    "memory_final_mb": 0,
+    "train_score": 0,
+    "test_score": 0,
+    "cv_score_mean": 0,
+    "cv_score_std": 0,
+    "best_params": {},
+    "feature_count": 0,
+    "model_size_mb": 0,
+    "preprocessing_time": 0,
+    "success": false,
+    "error_message": "'NoneType' object has no attribute 'get'"
+  },
+  {
+    "approach": "standard",
+    "dataset_name": "wine",
+    "model_name": "random_forest",
+    "dataset_size": [
+      178,
+      13
+    ],
+    "task_type": "classification",
+    "training_time": 1.6651523113250732,
+    "prediction_time": 0.0041065216064453125,
+    "memory_peak_mb": 472.16015625,
+    "memory_final_mb": 472.23828125,
+    "train_score": 1.0,
+    "test_score": 1.0,
+    "cv_score_mean": 0.9861111111111112,
+    "cv_score_std": 0.019641855032959635,
+    "best_params": {
+      "model__n_estimators": 50,
+      "model__min_samples_split": 5,
+      "model__max_depth": 10
+    },
+    "feature_count": 13,
+    "model_size_mb": 4.57763671875e-05,
+    "preprocessing_time": 0.0010013580322265625,
+    "success": true,
+    "error_message": ""
+  },
+  {
+    "approach": "genta",
+    "dataset_name": "wine",
+    "model_name": "random_forest",
+    "dataset_size": [
+      0,
+      0
+    ],
+    "task_type": "unknown",
+    "training_time": 0,
+    "prediction_time": 0,
+    "memory_peak_mb": 0,
+    "memory_final_mb": 0,
+    "train_score": 0,
+    "test_score": 0,
+    "cv_score_mean": 0,
+    "cv_score_std": 0,
+    "best_params": {},
+    "feature_count": 0,
+    "model_size_mb": 0,
+    "preprocessing_time": 0,
+    "success": false,
+    "error_message": "'NoneType' object has no attribute 'get'"
+  },
+  {
+    "approach": "standard",
+    "dataset_name": "wine",
+    "model_name": "logistic_regression",
+    "dataset_size": [
+      178,
+      13
+    ],
+    "task_type": "classification",
+    "training_time": 0.09770393371582031,
+    "prediction_time": 0.0015609264373779297,
+    "memory_peak_mb": 474.45703125,
+    "memory_final_mb": 474.45703125,
+    "train_score": 0.9929577464788732,
+    "test_score": 1.0,
+    "cv_score_mean": 0.9861111111111112,
+    "cv_score_std": 0.019641855032959635,
+    "best_params": {
+      "model__solver": "saga",
+      "model__C": 0.1
+    },
+    "feature_count": 13,
+    "model_size_mb": 4.57763671875e-05,
+    "preprocessing_time": 0.001009225845336914,
+    "success": true,
+    "error_message": ""
+  },
+  {
+    "approach": "genta",
+    "dataset_name": "wine",
+    "model_name": "logistic_regression",
+    "dataset_size": [
+      0,
+      0
+    ],
+    "task_type": "unknown",
+    "training_time": 0,
+    "prediction_time": 0,
+    "memory_peak_mb": 0,
+    "memory_final_mb": 0,
+    "train_score": 0,
+    "test_score": 0,
+    "cv_score_mean": 0,
+    "cv_score_std": 0,
+    "best_params": {},
+    "feature_count": 0,
+    "model_size_mb": 0,
+    "preprocessing_time": 0,
+    "success": false,
+    "error_message": "'NoneType' object has no attribute 'get'"
+  },
+  {
+    "approach": "standard",
+    "dataset_name": "diabetes",
+    "model_name": "random_forest",
+    "dataset_size": [
+      442,
+      10
+    ],
+    "task_type": "regression",
+    "training_time": 2.776503324508667,
+    "prediction_time": 0.012357234954833984,
+    "memory_peak_mb": 480.46484375,
+    "memory_final_mb": 480.49609375,
+    "train_score": 0.8974548258306618,
+    "test_score": 0.4512061535695817,
+    "cv_score_mean": 0.41519866599575367,
+    "cv_score_std": 0.06482670897483982,
+    "best_params": {
+      "model__n_estimators": 100,
+      "model__min_samples_split": 5,
+      "model__max_depth": 20
+    },
+    "feature_count": 10,
+    "model_size_mb": 4.57763671875e-05,
+    "preprocessing_time": 0.0,
+    "success": true,
+    "error_message": ""
+  },
+  {
+    "approach": "genta",
+    "dataset_name": "diabetes",
+    "model_name": "random_forest",
+    "dataset_size": [
+      0,
+      0
+    ],
+    "task_type": "unknown",
+    "training_time": 0,
+    "prediction_time": 0,
+    "memory_peak_mb": 0,
+    "memory_final_mb": 0,
+    "train_score": 0,
+    "test_score": 0,
+    "cv_score_mean": 0,
+    "cv_score_std": 0,
+    "best_params": {},
+    "feature_count": 0,
+    "model_size_mb": 0,
+    "preprocessing_time": 0,
+    "success": false,
+    "error_message": "'NoneType' object has no attribute 'get'"
+  },
+  {
+    "approach": "standard",
+    "dataset_name": "diabetes",
+    "model_name": "ridge",
+    "dataset_size": [
+      442,
+      10
+    ],
+    "task_type": "regression",
+    "training_time": 0.022772789001464844,
+    "prediction_time": 0.0010242462158203125,
+    "memory_peak_mb": 481.09375,
+    "memory_final_mb": 481.09375,
+    "train_score": 0.5279147769156123,
+    "test_score": 0.45281775734917173,
+    "cv_score_mean": 0.48793455930940777,
+    "cv_score_std": 0.06087755898506049,
+    "best_params": {
+      "model__alpha": 0.1
+    },
+    "feature_count": 10,
+    "model_size_mb": 4.57763671875e-05,
+    "preprocessing_time": 0.0,
+    "success": true,
+    "error_message": ""
+  },
+  {
+    "approach": "genta",
+    "dataset_name": "diabetes",
+    "model_name": "ridge",
+    "dataset_size": [
+      0,
+      0
+    ],
+    "task_type": "unknown",
+    "training_time": 0,
+    "prediction_time": 0,
+    "memory_peak_mb": 0,
+    "memory_final_mb": 0,
+    "train_score": 0,
+    "test_score": 0,
+    "cv_score_mean": 0,
+    "cv_score_std": 0,
+    "best_params": {},
+    "feature_count": 0,
+    "model_size_mb": 0,
+    "preprocessing_time": 0,
+    "success": false,
+    "error_message": "'NoneType' object has no attribute 'get'"
+  }
+]

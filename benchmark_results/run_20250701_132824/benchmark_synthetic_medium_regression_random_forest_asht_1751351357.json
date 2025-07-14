@@ -1,0 +1,20 @@
+{
+  "benchmark_id": "synthetic_medium_regression_random_forest_asht_1751351357",
+  "dataset": "synthetic_medium_regression",
+  "model": "random_forest",
+  "optimization_strategy": "asht",
+  "dataset_shape": [
+    10000,
+    50
+  ],
+  "system_info": {
+    "cpu_count": 20,
+    "initial_memory_mb": 534.57421875,
+    "platform": "nt"
+  },
+  "training_time_seconds": 0.0,
+  "peak_memory_mb": 538.5625,
+  "error": "MLTrainingEngine.train_model() got an unexpected keyword argument 'model'",
+  "success": false,
+  "timestamp": "2025-07-01 13:29:18"
+}

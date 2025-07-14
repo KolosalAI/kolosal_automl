@@ -1,0 +1,20 @@
+{
+  "benchmark_id": "wine_gradient_boosting_bayesian_optimization_1751351369",
+  "dataset": "wine",
+  "model": "gradient_boosting",
+  "optimization_strategy": "bayesian_optimization",
+  "dataset_shape": [
+    178,
+    13
+  ],
+  "system_info": {
+    "cpu_count": 20,
+    "initial_memory_mb": 543.4921875,
+    "platform": "nt"
+  },
+  "training_time_seconds": 0.0006287097930908203,
+  "peak_memory_mb": 543.5078125,
+  "error": "MLTrainingEngine.train_model() got an unexpected keyword argument 'model'",
+  "success": false,
+  "timestamp": "2025-07-01 13:29:31"
+}

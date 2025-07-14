@@ -1,0 +1,20 @@
+{
+  "benchmark_id": "adult_gradient_boosting_asht_1751351382",
+  "dataset": "adult",
+  "model": "gradient_boosting",
+  "optimization_strategy": "asht",
+  "dataset_shape": [
+    48842,
+    97
+  ],
+  "system_info": {
+    "cpu_count": 20,
+    "initial_memory_mb": 602.296875,
+    "platform": "nt"
+  },
+  "training_time_seconds": 0.0,
+  "peak_memory_mb": 638.55078125,
+  "error": "MLTrainingEngine.train_model() got an unexpected keyword argument 'model'",
+  "success": false,
+  "timestamp": "2025-07-01 13:29:44"
+}

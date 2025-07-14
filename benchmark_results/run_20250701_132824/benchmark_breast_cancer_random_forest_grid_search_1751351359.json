@@ -1,0 +1,20 @@
+{
+  "benchmark_id": "breast_cancer_random_forest_grid_search_1751351359",
+  "dataset": "breast_cancer",
+  "model": "random_forest",
+  "optimization_strategy": "grid_search",
+  "dataset_shape": [
+    569,
+    30
+  ],
+  "system_info": {
+    "cpu_count": 20,
+    "initial_memory_mb": 532.5234375,
+    "platform": "nt"
+  },
+  "training_time_seconds": 0.0014488697052001953,
+  "peak_memory_mb": 532.65625,
+  "error": "MLTrainingEngine.train_model() got an unexpected keyword argument 'model'",
+  "success": false,
+  "timestamp": "2025-07-01 13:29:20"
+}
