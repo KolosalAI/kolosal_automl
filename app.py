@@ -12,6 +12,10 @@ import requests
 from io import StringIO
 import argparse
 import sys
+
+# Import matplotlib and seaborn with proper backend
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend
 import matplotlib.pyplot as plt
 import seaborn as sns
 from io import BytesIO
@@ -541,15 +545,16 @@ class MLSystemUI:
                 model_list.append(model_name)
         return model_list
     
-    def get_system_info(self) -> str:
+    def get_system_info(self) -> Dict[str, Any]:
         """Get current system information"""
         try:
             if self.device_optimizer:
                 info = self.device_optimizer.get_system_info()
-                return json.dumps(info, indent=2)
-            return "Device optimizer not available"
+                return info
+            return {"error": "Device optimizer not available"}
         except Exception as e:
-            return f"Error getting system info: {str(e)}"
+            return {"error": f"Error getting system info: {str(e)}"}
+    
     
     def load_sample_data(self, dataset_name: str) -> Tuple[str, Dict, str, str]:
         """Load sample dataset with preview"""
@@ -774,8 +779,7 @@ class MLSystemUI:
             logger.error(error_msg)
             return error_msg, gr.Dropdown(), []
     
-    def train_model(self, target_column: str, algorithm_name: str, model_name: str = None,
-                   progress=gr.Progress()) -> Tuple[str, str, str, gr.Dropdown]:
+    def train_model(self, target_column: str, algorithm_name: str, model_name: str = None) -> Tuple[str, str, str, gr.Dropdown]:
         """Train a model with the current configuration"""
         if self.inference_only:
             return "Training is not available in inference-only mode.", "", "", gr.Dropdown()
@@ -793,7 +797,7 @@ class MLSystemUI:
             if not algorithm_name or algorithm_name == "Select an algorithm...":
                 return "Please select an algorithm to train.", "", "", gr.Dropdown()
             
-            progress(0.1, desc="Initializing training engine...")
+            logger.info("Initializing training engine...")
             
             # Initialize training engine
             self.training_engine = MLTrainingEngine(self.current_config)
@@ -802,7 +806,7 @@ class MLSystemUI:
             X = self.current_data.drop(columns=[target_column])
             y = self.current_data[target_column]
             
-            progress(0.2, desc="Preprocessing data...")
+            logger.info("Preprocessing data...")
             
             # Handle categorical features
             categorical_columns = X.select_dtypes(include=['object']).columns
@@ -810,7 +814,7 @@ class MLSystemUI:
                 for col in categorical_columns:
                     X[col] = pd.Categorical(X[col]).codes
             
-            progress(0.3, desc="Starting model training...")
+            logger.info("Starting model training...")
             
             # Extract model key from algorithm name
             model_key = self.get_model_key_from_name(algorithm_name)
@@ -830,7 +834,7 @@ class MLSystemUI:
             )
             
             training_time = time.time() - start_time
-            progress(1.0, desc="Training completed!")
+            logger.info("Training completed!")
             
             # Store trained model information
             self.trained_models[model_name] = {
@@ -1469,6 +1473,15 @@ Upload your data, configure training parameters, train models, and make predicti
                         outputs=[prediction_output]
                     )
                 
+                # Update prediction model dropdown when new models are trained
+                def update_prediction_model_dropdown():
+                    return gr.Dropdown(choices=app.get_trained_model_list())
+                
+                trained_models_dropdown.change(
+                    fn=update_prediction_model_dropdown,
+                    outputs=[prediction_model_dropdown]
+                )
+                
                 # Model Management Tab
                 with gr.Tab("💾 Model Management", id="model_management"):
                     gr.Markdown("### Save and Load Models")
@@ -1543,11 +1556,23 @@ Upload your data, configure training parameters, train models, and make predicti
                         fn=app.get_model_performance,
                         outputs=[performance_output]
                     )
+                
+                # System Info Tab
+                with gr.Tab("🖥️ System Info", id="system_info"):
+                    gr.Markdown("### System Information and Optimization")
+                    
+                    system_btn = gr.Button("🖥️ Get System Info", variant="secondary")
+                    system_output = gr.JSON(label="System Information")
+                    
+                    system_btn.click(
+                        fn=app.get_system_info,
+                        outputs=[system_output]
+                    )
             
-            # Inference Server Tab (always available)
-            with gr.Tab("🔧 Inference Server", id="inference_server"):
-                # Custom CSS for inference server styling
-                gr.HTML("""
+                # Inference Server Tab (always available)
+                with gr.Tab("🔧 Inference Server", id="inference_server"):
+                    # Custom CSS for inference server styling
+                    gr.HTML("""
                 <style>
                 .inference-container {
                     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -1680,6 +1705,9 @@ Upload your data, configure training parameters, train models, and make predicti
                             )
                             
                             load_inference_btn = gr.Button("🔧 Load Model", variant="primary")
+                            
+                            # Model loading status
+                            model_load_status = gr.Markdown("No model loaded yet...")
                         
                         gr.HTML('</div>')
                         
@@ -1883,18 +1911,18 @@ Server logs will be displayed here.
                 # Button event handlers
                 start_server_btn.click(
                     fn=simulate_start_server,
-                    outputs=[gr.HTML(visible=False), server_logs]
+                    outputs=[server_status_display, server_logs]
                 )
                 
                 stop_server_btn.click(
                     fn=simulate_stop_server,
-                    outputs=[gr.HTML(visible=False), server_logs]
+                    outputs=[server_status_display, server_logs]
                 )
                 
                 load_inference_btn.click(
                     fn=load_model_enhanced,
                     inputs=[inference_model_file, inference_password],
-                    outputs=[gr.Markdown(visible=False), loaded_models_display, server_logs]
+                    outputs=[model_load_status, loaded_models_display, server_logs]
                 )
                 
                 inference_predict_btn.click(
@@ -1912,19 +1940,6 @@ Server logs will be displayed here.
                     fn=lambda: """<div class="server-logs">Logs cleared.</div>""",
                     outputs=[server_logs]
                 )
-            
-            if not inference_only:
-                # System Info Tab
-                with gr.Tab("🖥️ System Info", id="system_info"):
-                    gr.Markdown("### System Information and Optimization")
-                    
-                    system_btn = gr.Button("🖥️ Get System Info", variant="secondary")
-                    system_output = gr.JSON(label="System Information")
-                    
-                    system_btn.click(
-                        fn=app.get_system_info,
-                        outputs=[system_output]
-                    )
         
         # Footer
         footer_text = """
