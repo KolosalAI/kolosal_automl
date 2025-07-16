@@ -1195,8 +1195,8 @@ Load your trained models and make instant predictions!
 Upload your data, configure training parameters, train models, and make predictions - all in one place!
     """
     
-    with gr.Blocks(css=css, title=title, theme=gr.themes.Soft()) as interface:
-        gr.Image(value="assets/logo.png", width=120, show_label=False, show_download_button=False)
+    with gr.Blocks(css=css, title=title) as interface:
+        gr.Image(value="assets/logo.png", show_label=False, show_download_button=False, height=120)
         gr.Markdown(f"""
 # {title}
 
@@ -1206,8 +1206,9 @@ Upload your data, configure training parameters, train models, and make predicti
         with gr.Tabs():
             
             if not inference_only:
-                # Create shared state for algorithm choices
+                # Create shared state for algorithm choices and data storage
                 algorithm_choices_state = gr.State([])
+                data_state = gr.State()
                 
                 # Data Upload Tab
                 with gr.Tab("📁 Data Upload", id="data_upload"):
@@ -1218,11 +1219,11 @@ Upload your data, configure training parameters, train models, and make predicti
                             gr.Markdown("#### Upload Your Own Dataset")
                             file_input = gr.File(
                                 label="Upload Dataset",
-                                file_types=[".csv", ".xlsx", ".xls", ".json"],
+                                file_count="single",
                                 type="filepath"
                             )
                             
-                            load_btn = gr.Button("Load Data", variant="primary", size="lg")
+                            load_btn = gr.Button("Load Data", variant="primary")
                             
                         with gr.Column(scale=1):
                             gr.Markdown("#### Or Load Sample Dataset")
@@ -1232,7 +1233,7 @@ Upload your data, configure training parameters, train models, and make predicti
                                 label="Sample Datasets"
                             )
                             
-                            load_sample_btn = gr.Button("Load Sample Data", variant="secondary", size="lg")
+                            load_sample_btn = gr.Button("Load Sample Data", variant="secondary")
                     
                     with gr.Row():
                         data_info = gr.Markdown("Upload a dataset or select a sample dataset to get started...")
@@ -1312,7 +1313,7 @@ Upload your data, configure training parameters, train models, and make predicti
                             label="Optimization Mode"
                         )
                     
-                    config_btn = gr.Button("Create Configuration", variant="primary", size="lg")
+                    config_btn = gr.Button("Create Configuration", variant="primary")
                     config_output = gr.Markdown("")
                     
                     # Algorithm selection (updated based on task type)
@@ -1349,7 +1350,7 @@ Upload your data, configure training parameters, train models, and make predicti
                                 info="Custom name for your trained model"
                             )
                             
-                            train_btn = gr.Button("🚀 Start Training", variant="primary", size="lg")
+                            train_btn = gr.Button("🚀 Start Training", variant="primary")
                             
                         with gr.Column(scale=2):
                             training_output = gr.Markdown("Configure your model and click 'Start Training'...")
@@ -1380,13 +1381,13 @@ Upload your data, configure training parameters, train models, and make predicti
                 load_btn.click(
                     fn=app.load_data,
                     inputs=[file_input],
-                    outputs=[data_info, gr.State(), data_preview, sample_data_table]
+                    outputs=[data_info, data_state, data_preview, sample_data_table]
                 )
                 
                 load_sample_btn.click(
                     fn=app.load_sample_data,
                     inputs=[sample_dropdown],
-                    outputs=[data_info, gr.State(), data_preview, sample_data_table]
+                    outputs=[data_info, data_state, data_preview, sample_data_table]
                 )
                 
                 # Configuration tab event handlers
@@ -1462,7 +1463,7 @@ Upload your data, configure training parameters, train models, and make predicti
                                 info="Choose a specific trained model or use current training engine model"
                             )
                             
-                            predict_btn = gr.Button("🔮 Make Prediction", variant="primary", size="lg")
+                            predict_btn = gr.Button("🔮 Make Prediction", variant="primary")
                             
                         with gr.Column(scale=2):
                             prediction_output = gr.Markdown("Enter input data and click 'Make Prediction'...")
@@ -1479,6 +1480,7 @@ Upload your data, configure training parameters, train models, and make predicti
                 
                 trained_models_dropdown.change(
                     fn=update_prediction_model_dropdown,
+                    inputs=[],
                     outputs=[prediction_model_dropdown]
                 )
                 
@@ -1516,7 +1518,7 @@ Upload your data, configure training parameters, train models, and make predicti
                             
                             load_file = gr.File(
                                 label="Model File",
-                                file_types=[".pkl"],
+                                file_count="single",
                                 type="filepath"
                             )
                             
@@ -1547,7 +1549,7 @@ Upload your data, configure training parameters, train models, and make predicti
                     
                     with gr.Row():
                         with gr.Column(scale=1):
-                            performance_btn = gr.Button("📊 Get Performance Report", variant="primary", size="lg")
+                            performance_btn = gr.Button("📊 Get Performance Report", variant="primary")
                             
                         with gr.Column(scale=2):
                             performance_output = gr.Markdown("Click 'Get Performance Report' to see model comparisons...")
@@ -1569,10 +1571,10 @@ Upload your data, configure training parameters, train models, and make predicti
                         outputs=[system_output]
                     )
             
-                # Inference Server Tab (always available)
-                with gr.Tab("🔧 Inference Server", id="inference_server"):
-                    # Custom CSS for inference server styling
-                    gr.HTML("""
+            # Inference Server Tab (always available)
+            with gr.Tab("🔧 Inference Server", id="inference_server"):
+                # Custom CSS for inference server styling
+                gr.HTML("""
                 <style>
                 .inference-container {
                     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -1685,15 +1687,15 @@ Upload your data, configure training parameters, train models, and make predicti
                         gr.Markdown("### Server Controls")
                         
                         with gr.Row():
-                            start_server_btn = gr.Button("▶️ Start Server", variant="primary", size="sm")
-                            stop_server_btn = gr.Button("⏹️ Stop Server", variant="secondary", size="sm")
-                            load_model_btn = gr.Button("📁 Load Model", variant="secondary", size="sm")
+                            start_server_btn = gr.Button("▶️ Start Server", variant="primary")
+                            stop_server_btn = gr.Button("⏹️ Stop Server", variant="secondary")
+                            load_model_btn = gr.Button("📁 Load Model", variant="secondary")
                         
                         # Model Loading Section
                         with gr.Accordion("Model Loading", open=False):
                             inference_model_file = gr.File(
                                 label="Select Model File",
-                                file_types=[".pkl", ".joblib", ".h5", ".pt", ".onnx"],
+                                file_count="single",
                                 type="filepath"
                             )
                             
@@ -1723,8 +1725,8 @@ Upload your data, configure training parameters, train models, and make predicti
                         )
                         
                         with gr.Row():
-                            inference_predict_btn = gr.Button("🎯 Predict", variant="primary", size="lg")
-                            clear_input_btn = gr.Button("🗑️ Clear", variant="secondary", size="sm")
+                            inference_predict_btn = gr.Button("🎯 Predict", variant="primary")
+                            clear_input_btn = gr.Button("🗑️ Clear", variant="secondary")
                         
                         inference_output = gr.Markdown("**Prediction Results:**\n\nLoad a model and enter input data to make predictions...")
                         gr.HTML('</div>')
@@ -1816,8 +1818,8 @@ Server logs will be displayed here.
                         """)
                         
                         with gr.Row():
-                            refresh_logs_btn = gr.Button("🔄 Refresh Logs", variant="secondary", size="sm")
-                            clear_logs_btn = gr.Button("🗑️ Clear Logs", variant="secondary", size="sm")
+                            refresh_logs_btn = gr.Button("🔄 Refresh Logs", variant="secondary")
+                            clear_logs_btn = gr.Button("🗑️ Clear Logs", variant="secondary")
                 
                 # Event handlers for inference server
                 def update_server_status(is_running=False):
@@ -2041,10 +2043,7 @@ Available Features:
         server_port=args.port,
         share=args.share,
         debug=True,
-        show_error=True,
-        favicon_path=None,
-        ssl_verify=False,
-        quiet=False
+        show_error=True
     )
 
 if __name__ == "__main__":
