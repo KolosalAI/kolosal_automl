@@ -45,14 +45,12 @@ This documentation provides comprehensive coverage of all modules in the Kolosal
 
 #### Core APIs
 - **[batch_processor_api.py](modules/api/batch_processor_api.md)** - RESTful API for batch processing operations
-
-#### Specialized APIs (Documentation In Progress)
-- **data_preprocessor_api.py** - API for data preprocessing services
-- **inference_engine_api.py** - API for model inference services  
-- **model_manager_api.py** - API for model management operations
-- **train_engine_api.py** - API for model training services
-- **quantizer_api.py** - API for model quantization services
-- **device_optimizer_api.py** - API for device optimization
+- **[data_preprocessor_api.py](modules/api/data_preprocessor_api.md)** - Advanced API for data preprocessing with streaming support
+- **[inference_engine_api.py](modules/api/inference_engine_api.md)** - High-performance API for model inference operations
+- **[model_manager_api.py](modules/api/model_manager_api.md)** - Secure API for model lifecycle management
+- **[train_engine_api.py](modules/api/train_engine_api.md)** - Comprehensive API for ML model training and AutoML
+- **[quantizer_api.py](modules/api/quantizer_api.md)** - Advanced API for model and data quantization
+- **[device_optimizer_api.py](modules/api/device_optimizer_api.md)** - Hardware-aware optimization and configuration API
 
 ### 📁 Optimizer Modules (`modules/optimizer/`)
 - **[asht.py](modules/optimizer/asht.md)** - Adaptive Surrogate-Assisted Hyperparameter Tuning
