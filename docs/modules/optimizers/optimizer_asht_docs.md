@@ -2,16 +2,30 @@
 
 ## Overview
 
-The **ASHTOptimizer** (Adaptive Surrogate-Assisted Hyperparameter Tuning) class is designed to efficiently search for optimal hyperparameter configurations for a given estimator. It leverages a surrogate model (by default, a RandomForestRegressor) to approximate the performance of different hyperparameter settings and uses an Expected Improvement acquisition function to guide the search. The optimization process is performed in two phases:
+The **ASHTOptimizer** (Adaptive Surrogate-Assisted Hyperparameter Tuning) class is an advanced hyperparameter optimization algorithm designed to efficiently search for optimal hyperparameter configurations for machine learning estimators. It leverages a surrogate model (RandomForestRegressor by default) to approximate the performance of different hyperparameter settings and uses an Expected Improvement acquisition function to guide the search intelligently.
 
-1. **Phase 1**: Initial exploration with a subset of the resource (budget).  
-2. **Phase 2**: Iterative focused search guided by the surrogate model, refining the parameter space progressively.
+The optimization process operates in multiple phases:
+
+1. **Phase 1**: Initial exploration with random sampling to gather baseline performance data
+2. **Phase 2**: Iterative focused search guided by the surrogate model, progressively refining the parameter space
+3. **Phase 3**: Exploitation phase focusing on the most promising regions
+
+## Key Features
+- **Adaptive Budget Allocation**: Dynamically adjusts computational resources
+- **Surrogate Model Learning**: Uses RandomForest to model objective function
+- **Expected Improvement**: Balances exploration vs exploitation
+- **Multi-type Parameter Support**: Handles continuous, discrete, and categorical parameters
+- **Early Stopping**: Prevents overfitting and saves computational resources
 
 ## Class: `ASHTOptimizer`
 
 ### Initialization
 
 ```python
+from modules.optimizer.asht import ASHTOptimizer
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.datasets import make_classification
+
 def __init__(
     self,
     estimator,

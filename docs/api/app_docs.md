@@ -1,16 +1,18 @@
 # kolosal AutoML API
 
 ## Overview
-The kolosal AutoML API is a comprehensive FastAPI-based application that provides a suite of machine learning tools for data preprocessing, model training, inference, quantization, and deployment. It features a modular architecture with separate API components for different ML workflow stages, robust error handling, request tracking, and performance metrics collection.
+The kolosal AutoML API is a comprehensive FastAPI-based application that provides a suite of machine learning tools for data preprocessing, model training, inference, quantization, and deployment. It features a modular architecture with separate API components for different ML workflow stages, robust error handling, request tracking, performance metrics collection, and comprehensive security features.
+
+The API integrates all components of the kolosal AutoML system into a unified REST interface with automatic OpenAPI documentation, middleware support, and production-ready configurations.
 
 ## Prerequisites
-- Python ≥3.8
+- Python ≥3.10
 - FastAPI
 - Uvicorn
 - Pydantic
 - Required packages:
   ```bash
-  fastapi uvicorn pydantic
+  pip install fastapi uvicorn pydantic
   ```
 
 ## Installation
@@ -19,13 +21,31 @@ pip install -r requirements.txt
 ```
 
 ## Usage
+
+### Running the API Server
 ```bash
+# Using the Python module
 python -m modules.api.app
+
+# Or using the main entry point
+python start_api.py
+
+# Or using Uvicorn directly
+uvicorn modules.api.app:app --host 0.0.0.0 --port 8000 --reload
+
+# Production deployment
+uvicorn modules.api.app:app --host 0.0.0.0 --port 8000 --workers 4
 ```
 
-Alternatively, use the Uvicorn server directly:
+### API Documentation
+Once the server is running, access the interactive API documentation:
+- **Swagger UI**: http://localhost:8000/docs
+- **ReDoc**: http://localhost:8000/redoc
+- **OpenAPI JSON**: http://localhost:8000/openapi.json
+
+### Health Check
 ```bash
-uvicorn modules.api.app:app --host 0.0.0.0 --port 8000 --reload
+curl http://localhost:8000/health
 ```
 
 ## Configuration

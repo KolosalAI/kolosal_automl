@@ -1,15 +1,17 @@
 # CPU Device Optimizer
 
 ## Overview
-The CPU Device Optimizer is a sophisticated module for automatically configuring machine learning pipeline settings based on CPU capabilities. It performs hardware detection and generates optimized configurations for various ML pipeline components, including quantization, batch processing, preprocessing, inference, and training engines.
+The CPU Device Optimizer is a sophisticated module for automatically configuring machine learning pipeline settings based on CPU capabilities and system resources. It performs comprehensive hardware detection and generates optimized configurations for various ML pipeline components, including quantization, batch processing, preprocessing, inference, and training engines.
+
+The optimizer intelligently adapts to different CPU architectures (Intel, AMD, ARM), detects available accelerator libraries, and provides performance-tuned configurations for different optimization modes and workload types.
 
 ## Prerequisites
-- Python ≥3.6
+- Python ≥3.10
 - Required packages:
   ```bash
   pip install psutil numpy pathlib dataclasses
   ```
-- Dependencies from `modules.configs` (with classes for configuration components)
+- Dependencies from `modules.configs` (configuration classes)
 
 ## Installation
 ```bash
@@ -18,12 +20,13 @@ pip install -r requirements.txt
 
 ## Usage
 ```python
-from cpu_device_optimizer import DeviceOptimizer, OptimizationMode
+from modules.device_optimizer import DeviceOptimizer, OptimizationMode
+from modules.configs import OptimizationMode
 
 # Create an optimizer with default settings
 optimizer = DeviceOptimizer()
 
-# Get optimized configurations
+# Get optimized configurations for different components
 quantization_config = optimizer.get_optimal_quantization_config()
 batch_config = optimizer.get_optimal_batch_processor_config()
 preprocessor_config = optimizer.get_optimal_preprocessor_config()
@@ -32,6 +35,7 @@ training_config = optimizer.get_optimal_training_engine_config()
 
 # Save all configurations to disk
 config_paths = optimizer.save_configs()
+print(f"Configurations saved to: {config_paths}")
 
 # Create configurations for performance mode
 performance_optimizer = DeviceOptimizer(
@@ -40,8 +44,22 @@ performance_optimizer = DeviceOptimizer(
 )
 performance_configs = performance_optimizer.save_configs("perf_configs")
 
+# Create configurations for memory-optimized mode
+memory_optimizer = DeviceOptimizer(
+    optimization_mode=OptimizationMode.MEMORY,
+    workload_type="training"
+)
+memory_configs = memory_optimizer.save_configs("memory_configs")
+
 # Create configurations for all optimization modes
 all_mode_configs = create_configs_for_all_modes()
+
+# Get hardware information
+hw_info = optimizer.get_hardware_info()
+print(f"CPU: {hw_info['cpu_model']}")
+print(f"Cores: {hw_info['cpu_cores']}")
+print(f"Memory: {hw_info['total_memory_gb']} GB")
+print(f"Available accelerators: {hw_info['accelerators']}")
 ```
 
 ## Configuration

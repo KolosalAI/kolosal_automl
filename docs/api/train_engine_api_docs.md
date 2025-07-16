@@ -3,20 +3,28 @@
 ## Overview
 The ML Training Engine API provides a RESTful interface for training, evaluating, managing, and making predictions with machine learning models. It serves as a comprehensive interface to the MLTrainingEngine module, allowing users to upload data, train various machine learning models, optimize hyperparameters, visualize model performance, and generate predictions through a simple HTTP API.
 
+The API integrates with the complete kolosal AutoML system and provides production-ready endpoints for automated machine learning workflows.
+
 ## Prerequisites
 - Python ≥3.10
-- FastAPI
-- Pandas, NumPy
-- MLTrainingEngine module
-- Additional requirements based on model types used
+- FastAPI framework
+- Core ML dependencies:
+  ```bash
+  pip install fastapi uvicorn pandas numpy scikit-learn
+  ```
+- MLTrainingEngine module from kolosal AutoML
+- Additional requirements based on model types used (XGBoost, LightGBM, etc.)
 
 ## Installation
 ```bash
 # Install required dependencies
-pip install fastapi uvicorn pandas numpy
+pip install -r requirements.txt
 
-# Start the server
-uvicorn main:app --reload
+# Start the API server
+python start_api.py
+
+# Or using uvicorn directly
+uvicorn modules.api.train_engine_api:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 ## Usage

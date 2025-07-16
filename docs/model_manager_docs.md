@@ -3,8 +3,10 @@
 ## Overview
 `SecureModelManager` is a robust security-focused model management system that provides advanced encryption capabilities for machine learning models. It enables secure storage, loading, and management of models with features such as password-based encryption, integrity verification, quantization support, and access control.
 
+The manager supports multiple encryption algorithms, automatic model versioning, and seamless integration with the kolosal AutoML training pipeline.
+
 ## Prerequisites
-- Python ≥3.7
+- Python ≥3.10
 - Required packages:
   ```bash
   pip install joblib numpy cryptography
@@ -20,30 +22,53 @@ pip install joblib numpy cryptography
 ## Usage
 ```python
 from modules.configs import TaskType
-from secure_model_manager import SecureModelManager
+from modules.model_manager import SecureModelManager
+import joblib
 
 # Create a configuration object
 class Config:
     task_type = TaskType.CLASSIFICATION
     model_path = "./models"
     enable_encryption = True
+    key_iterations = 200000
+    hash_algorithm = "sha512"
+    use_scrypt = True
     
 config = Config()
 
 # Initialize the secure model manager
 manager = SecureModelManager(config)
 
-# Save a model
-manager.save_model("my_model", "./models/my_model.pkl")
+# Train a simple model (example)
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.datasets import make_classification
+X, y = make_classification(n_samples=1000, n_features=20, random_state=42)
+model = RandomForestClassifier(random_state=42)
+model.fit(X, y)
 
-# Load a model
-model = manager.load_model("./models/my_model.pkl")
+# Save a model with encryption
+manager.save_model(model, "my_model", "./models/my_model.pkl")
+
+# Load a model (will prompt for password if encrypted)
+loaded_model = manager.load_model("./models/my_model.pkl")
 
 # Verify model integrity
 is_valid = manager.verify_model_integrity("./models/my_model.pkl")
+print(f"Model integrity: {'Valid' if is_valid else 'Invalid'}")
+
+# Add model to registry for tracking
+manager.add_model(model, "my_model", score=0.95, metadata={"algorithm": "RandomForest"})
+
+# Get best model
+best_model = manager.get_best_model()
+print(f"Best model score: {manager.best_score}")
 
 # Rotate encryption key
 manager.rotate_encryption_key("new_password")
+
+# Export model with metadata
+export_path = manager.export_model("my_model", "./exports/my_model_export.pkl")
+print(f"Model exported to: {export_path}")
 ```
 
 ## Configuration
