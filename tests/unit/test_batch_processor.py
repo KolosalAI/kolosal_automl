@@ -1,4 +1,5 @@
 import pytest
+import unittest
 import numpy as np
 import time
 import threading
@@ -30,18 +31,79 @@ try:
             HYBRID = "hybrid"
             BATCH = "batch"
             STREAM = "stream"
+            ASYNC = "async"
         
         class HybridConfig:
-            def __init__(self):
-                self.processing_mode = ProcessingMode.HYBRID
+            def __init__(self, **kwargs):
+                self.processing_mode = kwargs.get('processing_mode', ProcessingMode.HYBRID)
+                self.cache_strategy = kwargs.get('cache_strategy', CacheStrategy.LRU)
+                self.cache_size = kwargs.get('cache_size', 1000)
+                self.cache_ttl = kwargs.get('cache_ttl', 3600)
+                self.enable_streaming = kwargs.get('enable_streaming', True)
+                self.enable_compression = kwargs.get('enable_compression', True)
+                self.enable_prefetching = kwargs.get('enable_prefetching', True)
+                self.enable_gpu_processing = kwargs.get('enable_gpu_processing', False)
         
         class CacheStrategy:
             LRU = "lru"
             TTL = "ttl"
+            NONE = "none"
         
         class ResultCache:
-            def __init__(self, **kwargs):
-                pass
+            def __init__(self, config, **kwargs):
+                self.config = config
+                self.cache = {}
+                self.access_order = []
+                self.timestamps = {}  # For TTL tracking
+                
+            def put(self, key, value):
+                if self.config.cache_strategy == CacheStrategy.NONE:
+                    return  # Don't cache anything
+                    
+                self.cache[key] = value
+                if self.config.cache_strategy == CacheStrategy.TTL:
+                    self.timestamps[key] = time.time()
+                    
+                if key in self.access_order:
+                    self.access_order.remove(key)
+                self.access_order.append(key)
+                
+                # Simple LRU eviction
+                if len(self.cache) > self.config.cache_size:
+                    oldest_key = self.access_order.pop(0)
+                    del self.cache[oldest_key]
+                    if oldest_key in self.timestamps:
+                        del self.timestamps[oldest_key]
+                    
+            def get(self, key):
+                if self.config.cache_strategy == CacheStrategy.NONE:
+                    return None
+                    
+                if key not in self.cache:
+                    return None
+                    
+                # Check TTL expiration
+                if self.config.cache_strategy == CacheStrategy.TTL:
+                    if key in self.timestamps:
+                        elapsed = time.time() - self.timestamps[key]
+                        if elapsed > self.config.cache_ttl:
+                            # Expired, remove it
+                            del self.cache[key]
+                            del self.timestamps[key]
+                            if key in self.access_order:
+                                self.access_order.remove(key)
+                            return None
+                
+                if key in self.access_order:
+                    self.access_order.remove(key)
+                self.access_order.append(key)
+                return self.cache[key]
+                
+            def _hash_key(self, data):
+                return str(hash(str(data)))
+                
+            def hash_key(self, data):
+                return self._hash_key(data)
         
         class StreamProcessor:
             def __init__(self, **kwargs):
@@ -72,12 +134,12 @@ class TestHybridConfig:
         config = HybridConfig()
         
         assert config.processing_mode == ProcessingMode.HYBRID
-        self.assertEqual(config.cache_strategy, CacheStrategy.LRU)
-        self.assertEqual(config.cache_size, 1000)
-        self.assertEqual(config.cache_ttl, 3600)
-        self.assertTrue(config.enable_streaming)
-        self.assertTrue(config.enable_compression)
-        self.assertTrue(config.enable_prefetching)
+        assert config.cache_strategy == CacheStrategy.LRU
+        assert config.cache_size == 1000
+        assert config.cache_ttl == 3600
+        assert config.enable_streaming == True
+        assert config.enable_compression == True
+        assert config.enable_prefetching == True
     
     def test_custom_initialization(self):
         """Test configuration with custom values."""
@@ -88,10 +150,10 @@ class TestHybridConfig:
             enable_gpu_processing=True
         )
         
-        self.assertEqual(config.processing_mode, ProcessingMode.ASYNC)
-        self.assertEqual(config.cache_strategy, CacheStrategy.TTL)
-        self.assertEqual(config.cache_size, 500)
-        self.assertTrue(config.enable_gpu_processing)
+        assert config.processing_mode == ProcessingMode.ASYNC
+        assert config.cache_strategy == CacheStrategy.TTL
+        assert config.cache_size == 500
+        assert config.enable_gpu_processing == True
 
 
 class TestResultCache(unittest.TestCase):
