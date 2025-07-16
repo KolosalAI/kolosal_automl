@@ -45,7 +45,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Quantizer API",
     description="API for high-performance data quantization with advanced features",
-    version="1.0.0",
+    version="0.1.4",
     lifespan=lifespan
 )
 
@@ -153,7 +153,7 @@ async def health_check():
     return {
         "status": "healthy",
         "service": "Quantizer API",
-        "version": "1.0.0",
+        "version": "0.1.4",
         "active_instances": len(quantizer_instances),
         "instance_ids": list(quantizer_instances.keys()),
         "timestamp": datetime.now().isoformat()
@@ -534,7 +534,7 @@ async def get_documentation():
     docs = {
         "title": "Quantizer API Documentation",
         "description": "API for high-performance data quantization with advanced features",
-        "version": "1.0.0",
+        "version": "0.1.4",
         "endpoints": [
             {
                 "path": "/",

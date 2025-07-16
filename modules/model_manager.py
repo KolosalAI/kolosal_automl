@@ -27,7 +27,7 @@ class SecureModelManager:
     
     DEFAULT_KEY_ITERATIONS = 200000
     DEFAULT_HASH_ALGORITHM = "sha512"
-    VERSION = "2.0.0"
+    VERSION = "0.1.4"
     
     def __init__(self, config, logger=None, secret_key=None):
         """Initialize the secure model manager with encryption capabilities"""
@@ -164,7 +164,7 @@ class SecureModelManager:
         try:
             # Check version compatibility
             metadata = encrypted_package.get("encryption_metadata", {})
-            package_version = metadata.get("version", "1.0.0")
+            package_version = metadata.get("version", "0.1.4")
             
             if package_version > self.VERSION:
                 self.logger.warning(f"Model was encrypted with a newer version ({package_version}) than current ({self.VERSION})")

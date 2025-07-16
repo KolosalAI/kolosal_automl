@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 app = FastAPI(
     title="Secure Model Manager API",
     description="API for managing machine learning models with advanced security features",
-    version="1.0.0"
+    version="0.1.4"
 )
 
 # Add CORS middleware
@@ -606,7 +606,7 @@ async def api_info():
     """API information endpoint"""
     return {
         "name": "Secure Model Manager API",
-        "version": "1.0.0",
+        "version": "0.1.4",
         "description": "API for managing machine learning models with advanced security features",
         "docs_url": "/docs",
         "total_managers": len(manager_instances)

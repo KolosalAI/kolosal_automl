@@ -75,7 +75,7 @@ logger = logging.getLogger("data_preprocessor_api")
 api_config = {
     "title": "Data Preprocessor API",
     "description": "Enhanced API for advanced data preprocessing operations",
-    "version": "1.0.0",
+    "version": "0.1.4",
     "host": os.environ.get("PREPROCESSOR_API_HOST", "0.0.0.0"),
     "port": int(os.environ.get("PREPROCESSOR_API_PORT", "8002")),
     "debug": os.environ.get("PREPROCESSOR_API_DEBUG", "False").lower() in ("true", "1", "t"),

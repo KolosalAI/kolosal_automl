@@ -48,7 +48,7 @@ class TestModelManagerAPI(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(data["name"], "Secure Model Manager API")
-        self.assertEqual(data["version"], "1.0.0")
+        self.assertEqual(data["version"], "0.1.4")
         self.assertIn("total_managers", data)
 
     @patch("modules.api.model_manager_api.SecureModelManager")
@@ -57,7 +57,7 @@ class TestModelManagerAPI(unittest.TestCase):
         # Setup mock
         mock_manager = MagicMock()
         mock_manager_class.return_value = mock_manager
-        mock_manager_class.VERSION = "1.0.0"
+        mock_manager_class.VERSION = "0.1.4"
         
         # Test data
         config_data = {

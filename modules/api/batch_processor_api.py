@@ -143,7 +143,7 @@ class ProcessingResponse(BaseModel):
 api_config = {
     "title": "Batch Processor API",
     "description": "High-performance batch processing API for ML workloads",
-    "version": "1.0.0",
+    "version": "0.1.4",
     "host": os.environ.get("BATCH_API_HOST", "0.0.0.0"),
     "port": int(os.environ.get("BATCH_API_PORT", "8001")),
     "debug": parse_bool_env("BATCH_API_DEBUG", "0"),

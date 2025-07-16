@@ -355,5 +355,5 @@ python -m unittest tests/test_secure_model_manager.py
 ```
 
 ## Versioning and Metadata
-> Last Updated: 2025-05-11
-> Version: 0.1.0
+> Last Updated: 2025-07-17
+> Version: 0.1.4

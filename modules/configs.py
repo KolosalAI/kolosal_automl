@@ -347,7 +347,7 @@ class PreprocessorConfig:
     dtype: np.dtype = np.float64
     epsilon: float = 1e-10  # Small value to avoid division by zero
     debug_mode: bool = False
-    version: str = "1.0.0"
+    version: str = "0.1.4"
     
     def __post_init__(self):
         # Handle normalization as string or enum

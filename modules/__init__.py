@@ -11,7 +11,7 @@ This package contains all the core modules for the ML pipeline including:
 from .configs import *
 from .engine import *
 
-__version__ = "0.1.0"
+__version__ = "0.1.4"
 __author__ = "Kolosal AI Team"
 
 # Package metadata

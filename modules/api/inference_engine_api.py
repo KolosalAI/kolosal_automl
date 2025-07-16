@@ -237,7 +237,7 @@ class QuantizationRequest(BaseModel):
 api_config = {
     "title": "Inference Engine API",
     "description": "A high-performance API for machine learning model inference",
-    "version": "1.0.0",
+    "version": "0.1.4",
     "default_model_dir": os.environ.get("MODEL_DIR", "./models"),
     "api_keys": os.environ.get("API_KEYS", "").split(","),
     "max_workers": int(os.environ.get("MAX_WORKERS", "4")),

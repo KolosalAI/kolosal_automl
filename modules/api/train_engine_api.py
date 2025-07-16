@@ -61,7 +61,7 @@ logger = logging.getLogger("MLTrainingEngineAPI")
 app = FastAPI(
     title="ML Training Engine API",
     description="A RESTful API for training, evaluating, and deploying machine learning models",
-    version="1.0.0"
+    version="0.1.4"
 )
 
 # Enable CORS
@@ -605,7 +605,7 @@ async def root():
     """Root endpoint with API information."""
     return {
         "name": "ML Training Engine API",
-        "version": "1.0.0",
+        "version": "0.1.4",
         "documentation": "/docs",
         "status": "engine_initialized" if ml_engine else "engine_not_initialized"
     }
@@ -1689,7 +1689,7 @@ async def health_check():
     return {
         "status": "healthy",
         "service": "ML Training Engine API",
-        "version": "1.0.0",
+        "version": "0.1.4",
         "engine_initialized": ml_engine is not None,
         "timestamp": datetime.now().isoformat()
     }

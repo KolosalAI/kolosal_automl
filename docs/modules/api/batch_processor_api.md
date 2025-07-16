@@ -10,7 +10,7 @@ The Batch Processor API provides a RESTful interface for the BatchProcessor engi
 - **Dynamic Batch Sizing**: Automatic optimization of batch sizes
 - **Priority-Based Processing**: Multi-level priority queue management
 - **Async Processing**: Non-blocking batch processing with WebSocket support
-- **Performance Monitoring**: Real-time metrics and analytics
+-         "version": "0.1.4",*Performance Monitoring**: Real-time metrics and analytics
 - **Security**: API key authentication and request validation
 - **Scalability**: Support for high-throughput batch processing
 

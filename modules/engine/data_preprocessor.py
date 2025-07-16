@@ -1252,7 +1252,7 @@ class DataPreprocessor:
             instance._fitted = state['fitted']
             instance._n_features = state['n_features']
             instance._n_samples_seen = state['n_samples_seen']
-            instance._version = state.get('version', '1.0.0')
+            instance._version = state.get('version', '0.1.4')
             
             # Verify hash for data integrity
             saved_hash = state.get('hash', None)

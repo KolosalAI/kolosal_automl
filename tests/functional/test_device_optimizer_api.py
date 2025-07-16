@@ -121,7 +121,7 @@ class TestDeviceOptimizerAPI:
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(data["api"], "CPU Device Optimizer API")
-        self.assertEqual(data["version"], "1.0.0")
+        self.assertEqual(data["version"], "0.1.4")
         self.assertIn("description", data)
     
     @mock.patch("modules.api.device_optimizer.get_system_information")

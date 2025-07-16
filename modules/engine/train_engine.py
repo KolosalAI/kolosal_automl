@@ -115,7 +115,7 @@ class MLTrainingEngine:
     - Integration with InferenceEngine for deployment
     """
     
-    VERSION = "1.0.0"
+    VERSION = "0.1.4"
     
     def __init__(self, config: MLTrainingEngineConfig):
         """

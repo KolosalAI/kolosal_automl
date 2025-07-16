@@ -45,7 +45,7 @@ logging.basicConfig(
 logger = logging.getLogger("kolosal_api")
 
 # API configuration
-API_VERSION = "1.0.0"
+API_VERSION = "0.1.4"
 API_TITLE = "kolosal AutoML API"
 API_DESCRIPTION = """
 kolosal AutoML provides a comprehensive suite of machine learning tools for data preprocessing,

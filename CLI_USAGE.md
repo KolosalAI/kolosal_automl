@@ -78,4 +78,4 @@ python main.py --system-info --no-banner
 
 ## Version
 
-Current version: **v0.1.2**
+Current version: **v0.1.4**

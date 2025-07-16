@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-kolosal AutoML Training & Inference System Version v0.1.2
+kolosal AutoML Training & Inference System Version v0.1.4
 ML Main CLI
 
 Main entry point for the kolosal AutoML system. Allows users to choose between
@@ -39,7 +39,7 @@ def print_banner():
 ║  ╚═╝  ╚═╝ ╚═════╝ ╚══════╝ ╚═════╝ ╚══════╝╚═╝  ╚═╝╚══════╝   ╚═╝  ╚═╝╚═╝    ║
 ║                                                                              ║
 ║                         AutoML Training & Inference System                   ║
-║                                 Version v0.1.3                               ║
+║                                 Version v0.1.4                               ║
 ║                                                                              ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
     """
@@ -517,7 +517,7 @@ Examples:
     parser.add_argument(
         "--version",
         action="version",
-        version="kolosal AutoML v0.1.3"
+        version="kolosal AutoML v0.1.4"
     )
     
     parser.add_argument(

@@ -134,7 +134,7 @@ app = FastAPI(
     - Configuration saving and loading
     - Creating optimized configs for different modes and environments
     """,
-    version="1.0.0",
+    version="0.1.4",
     docs_url="/docs",
     redoc_url="/redoc",
 )
@@ -166,7 +166,7 @@ async def root():
     """Root endpoint with API information"""
     return {
         "api": "CPU Device Optimizer API",
-        "version": "1.0.0",
+        "version": "0.1.4",
         "description": "API for hardware detection, configuration generation, and optimization"
     }
 
@@ -596,7 +596,7 @@ async def health_check():
         return {
             "status": "healthy",
             "service": "CPU Device Optimizer API",
-            "version": "1.0.0",
+            "version": "0.1.4",
             "cpu_count": system_info.get("cpu_count", 0),
             "memory_gb": system_info.get("memory", {}).get("total_gb", 0),
             "timestamp": datetime.datetime.now().isoformat()
@@ -605,7 +605,7 @@ async def health_check():
         return {
             "status": "degraded",
             "service": "CPU Device Optimizer API",
-            "version": "1.0.0",
+            "version": "0.1.4",
             "error": str(e),
             "timestamp": datetime.datetime.now().isoformat()
         }
