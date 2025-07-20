@@ -176,7 +176,7 @@ class TestDataPreprocessorAPI(unittest.TestCase):
         mock_fit.return_value = None
         
         # Patch parse_csv_data to return expected values
-        with patch('modules.api.data_preprocessor.parse_csv_data', return_value=(
+        with patch('modules.api.data_preprocessor_api.parse_csv_data', return_value=(
             np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]]), 
             ["feature1", "feature2"]
         )):
@@ -613,10 +613,12 @@ class TestDataPreprocessorAPI(unittest.TestCase):
 
     def test_get_preprocessor_not_found(self):
         """Test that get_preprocessor raises HTTPException when preprocessor not found."""
-        with self.assertRaises(Exception) as context:
+        from fastapi import HTTPException
+        
+        with self.assertRaises(HTTPException) as context:
             get_preprocessor("nonexistent-id")
         
-        self.assertIn("Preprocessor with ID nonexistent-id not found", str(context.exception))
+        self.assertIn("Preprocessor with ID nonexistent-id not found", str(context.exception.detail))
 
 
 if __name__ == "__main__":

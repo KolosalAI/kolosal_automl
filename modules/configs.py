@@ -281,8 +281,8 @@ class PreprocessorConfig:
     nan_strategy: str = "mean"  # Options: "mean", "median", "most_frequent", "constant"
     nan_fill_value: float = 0.0  # Value to use for constant strategy
     inf_strategy: str = "max_value"  # Options: "max_value", "median", "constant"
-    pos_inf_fill_value: float = np.nan  # Value to use for positive infinity
-    neg_inf_fill_value: float = np.nan  # Value to use for negative infinity
+    pos_inf_fill_value: float = 1e10  # Value to use for positive infinity
+    neg_inf_fill_value: float = -1e10  # Value to use for negative infinity
     inf_buffer: float = 1.0  # Multiplier for max/min when replacing infinities
     copy_X: bool = True  # Whether to copy data for transformations
     
@@ -298,8 +298,8 @@ class PreprocessorConfig:
     
     # Clipping settings
     clip_values: bool = False
-    clip_min: float = float('-inf')
-    clip_max: float = float('inf')
+    clip_min: float = -1e10
+    clip_max: float = 1e10
     
     # Scaling settings
     scale_shift: bool = False  # Whether to apply an offset after scaling

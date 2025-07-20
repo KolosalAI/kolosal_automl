@@ -11,6 +11,7 @@ import pandas as pd
 import numpy as np
 import tempfile
 import shutil
+import logging
 from pathlib import Path
 from unittest.mock import Mock, MagicMock
 
@@ -18,6 +19,34 @@ from unittest.mock import Mock, MagicMock
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
+
+# Configure logging for tests
+def setup_test_logging():
+    """Set up logging configuration for tests."""
+    # Create logs directory if it doesn't exist
+    log_dir = Path("tests")
+    log_dir.mkdir(exist_ok=True)
+    
+    # Configure root logger
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s [%(levelname)8s] %(name)s: %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S',
+        handlers=[
+            logging.FileHandler(log_dir / "test.log", mode='a'),
+            logging.StreamHandler()
+        ]
+    )
+    
+    # Set specific log levels for different modules
+    logging.getLogger('urllib3').setLevel(logging.WARNING)
+    logging.getLogger('requests').setLevel(logging.WARNING)
+    logging.getLogger('matplotlib').setLevel(logging.WARNING)
+    
+    return logging.getLogger(__name__)
+
+# Set up logging when conftest is imported
+test_logger = setup_test_logging()
 
 # Import shared configurations
 try:
@@ -32,6 +61,27 @@ except ImportError:
         def __init__(self):
             self.model_path = "./test_models"
             self.task_type = TaskType.CLASSIFICATION
+
+@pytest.fixture(scope="session", autouse=True)
+def setup_test_session():
+    """Set up the test session with logging."""
+    logger = logging.getLogger("test_session")
+    logger.info("=" * 80)
+    logger.info("Starting test session")
+    logger.info("=" * 80)
+    yield
+    logger.info("=" * 80)
+    logger.info("Test session completed")
+    logger.info("=" * 80)
+
+@pytest.fixture(scope="function", autouse=True)
+def log_test_start_end(request):
+    """Log the start and end of each test."""
+    logger = logging.getLogger("test_function")
+    test_name = request.node.name
+    logger.info(f"Starting test: {test_name}")
+    yield
+    logger.info(f"Completed test: {test_name}")
 
 @pytest.fixture(scope="session")
 def test_dir():
@@ -68,6 +118,9 @@ def cleanup_test_artifacts():
     """Clean up temporary files after all tests have run."""
     yield  # Run all tests first
     
+    logger = logging.getLogger("test_cleanup")
+    logger.info("Starting cleanup of test artifacts...")
+    
     # Then clean up directories
     cleanup_dirs = [
         "./test_models",
@@ -87,8 +140,14 @@ def cleanup_test_artifacts():
         if path.exists():
             try:
                 shutil.rmtree(path)
+                logger.info(f"Cleaned up directory: {dir_path}")
             except (OSError, PermissionError) as e:
-                print(f"Warning: Could not clean up {dir_path}: {e}")
+                logger.warning(f"Could not clean up {dir_path}: {e}")
+
+@pytest.fixture
+def test_logger():
+    """Provide a logger for tests to use."""
+    return logging.getLogger("test")
 
 @pytest.fixture
 def sample_data():

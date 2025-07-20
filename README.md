@@ -1,6 +1,4 @@
-# 🚀 kolosal Au- 🔥 **Complete Batch Processing API** with dynamic batching and priority queues
-- 🛡️ **Enterprise Security Framework** with rate limiting, input validation, and audit logging
-- 📊 **Real-time Monitoring System** with performance analytics and interactive dashboardL - Enterprise-Grade ML Platform
+# 🚀 kolosal AutoML
 
 [![MIT License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
@@ -28,13 +26,19 @@
 ### ✨ **What's New in v0.1.4**
 
 - 🔥 **Complete Batch Processing API** with dynamic batching and priority queues
-- �️ **Enterprise Security Framework** with rate limiting, input validation, and audit logging
+- 🛡️ **Enterprise Security Framework** with rate limiting, input validation, and audit logging
 - 📊 **Real-time Monitoring System** with performance analytics and interactive dashboard
 - 🐋 **Production Docker Deployment** with monitoring stack (Prometheus, Grafana, Redis, Nginx)
 - 🧪 **Comprehensive Testing Suite** including unit, functional, and integration tests
 - 📚 **Professional Documentation** with API reference, deployment guides, and examples
 - ⚡ **Advanced Error Handling** with circuit breakers and standardized responses
 - 🎯 **Performance Optimization** with resource monitoring and auto-scaling capabilities
+- 🔧 **Enhanced API Stability** with comprehensive data preprocessor API fixes and JSON serialization improvements
+- 🛠️ **Unified Request Handling** with smart content-type detection for both JSON and multipart form data
+- 🔍 **Production-Ready Testing** with 26/26 data preprocessor API tests passing and robust error handling
+- 📋 **Improved Model Management** with fixed parameter binding and Pydantic model compatibilityProcessing API** with dynamic batching and priority queues
+- 🛡️ **Enterprise Security Framework** with rate limiting, input validation, and audit logging
+- 📊 **Real-time Monitoring System** with performance analytics and interactive dashboardL - Enterprise-Grade ML Platform
 
 ## 📋 Overview
 

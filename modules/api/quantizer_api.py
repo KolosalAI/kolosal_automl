@@ -86,7 +86,7 @@ class QuantizerConfigModel(BaseModel):
 
 class QuantizationRequest(BaseModel):
     data: List[List[float]] = Field(..., description="2D array of data to quantize")
-    validate: bool = Field(default=True, description="Whether to validate input")
+    validate_input: bool = Field(default=True, description="Whether to validate input", alias="validate")
     channel_dim: Optional[int] = Field(default=None, description="Dimension index for per-channel quantization")
     layer_name: Optional[str] = Field(default=None, description="Layer name for mixed precision handling")
 
@@ -253,7 +253,7 @@ async def quantize_data(
         # Perform quantization
         result = quantizer.quantize(
             data, 
-            validate=request.validate, 
+            validate=request.validate_input, 
             channel_dim=request.channel_dim,
             layer_name=request.layer_name
         )

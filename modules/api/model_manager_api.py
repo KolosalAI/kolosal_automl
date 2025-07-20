@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends, File, UploadFile, BackgroundTasks, Query, Path as FastAPIPath
+from fastapi import FastAPI, HTTPException, Depends, File, UploadFile, BackgroundTasks, Query, Path as FastAPIPath, Body
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials, APIKeyHeader
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -295,7 +295,7 @@ async def list_managers():
 @app.post("/api/managers/{manager_id}/models/save", response_model=OperationResponse, dependencies=[Depends(get_current_user)])
 async def save_model(
     manager_id: str = FastAPIPath(..., description="ID of the manager to use"),
-    request: ModelSaveRequest = None
+    request: ModelSaveRequest = Body(...)
 ):
     """
     Save a model using the specified manager.
@@ -339,7 +339,7 @@ async def save_model(
 @app.post("/api/managers/{manager_id}/models/load", response_model=OperationResponse, dependencies=[Depends(get_current_user)])
 async def load_model(
     manager_id: str = FastAPIPath(..., description="ID of the manager to use"),
-    request: ModelLoadRequest = None
+    request: ModelLoadRequest = Body(...)
 ):
     """
     Load a model using the specified manager.

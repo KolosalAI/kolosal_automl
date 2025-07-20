@@ -37,7 +37,7 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from fastapi import FastAPI, File, UploadFile, HTTPException, Query, BackgroundTasks, Depends, Body, status, Request
+from fastapi import FastAPI, File, UploadFile, HTTPException, Query, BackgroundTasks, Depends, Body, Form, status, Request
 from fastapi.responses import JSONResponse, FileResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
@@ -210,7 +210,7 @@ class DataRequest(BaseModel):
 
 class TransformOptions(BaseModel):
     """Options for transform operations"""
-    copy: bool = Field(True, description="Whether to copy the input data")
+    copy_data: bool = Field(True, description="Whether to copy the input data", alias="copy")
 
 class PreprocessorCreateResponse(BaseModel):
     """Response model for preprocessor creation"""
@@ -464,10 +464,22 @@ def create_preprocessor(config: PreprocessorConfigRequest = Body(...)):
         # Store the preprocessor
         active_preprocessors[preprocessor_id] = preprocessor
         
-        # Create response
+        # Create response with safe JSON values
+        safe_config = {}
+        for key, value in config_dict.items():
+            if isinstance(value, float):
+                if np.isnan(value):
+                    safe_config[key] = None
+                elif np.isinf(value):
+                    safe_config[key] = 1e10 if value > 0 else -1e10
+                else:
+                    safe_config[key] = value
+            else:
+                safe_config[key] = value
+        
         return PreprocessorCreateResponse(
             preprocessor_id=preprocessor_id,
-            config=config_dict,
+            config=safe_config,
             created_at=datetime.now().isoformat()
         )
     except Exception as e:
@@ -491,16 +503,30 @@ def list_preprocessors():
     """
     preprocessors_info = []
     
+    def make_json_safe(obj):
+        """Convert value to JSON-safe format"""
+        if isinstance(obj, (int, str, bool, type(None))):
+            return obj
+        elif isinstance(obj, float):
+            if np.isinf(obj) or np.isnan(obj):
+                return None
+            return obj
+        elif isinstance(obj, Enum):
+            return obj.value
+        elif isinstance(obj, type):
+            return str(obj.__name__)
+        elif isinstance(obj, (list, tuple)):
+            return [make_json_safe(item) for item in obj]
+        elif isinstance(obj, dict):
+            return {k: make_json_safe(v) for k, v in obj.items()}
+        else:
+            return str(obj)
+    
     for preprocessor_id, preprocessor in active_preprocessors.items():
-        # Convert config to dict correctly, handling the Enum values
+        # Convert config to dict correctly, handling the Enum values and infinity
         config_dict = {}
         for key, value in asdict(preprocessor.config).items():
-            if isinstance(value, Enum):
-                config_dict[key] = value.value
-            elif isinstance(value, type):
-                config_dict[key] = str(value.__name__)
-            else:
-                config_dict[key] = value
+            config_dict[key] = make_json_safe(value)
         
         # Get basic info for each preprocessor
         info = {
@@ -537,11 +563,34 @@ def get_preprocessor_info(preprocessor_id: str):
     """
     preprocessor = get_preprocessor(preprocessor_id)
     
-    # Build response
+    def make_json_safe(obj):
+        """Convert value to JSON-safe format"""
+        if isinstance(obj, (int, str, bool, type(None))):
+            return obj
+        elif isinstance(obj, float):
+            if np.isinf(obj) or np.isnan(obj):
+                return None
+            return obj
+        elif isinstance(obj, Enum):
+            return obj.value
+        elif isinstance(obj, type):
+            return str(obj.__name__)
+        elif isinstance(obj, (list, tuple)):
+            return [make_json_safe(item) for item in obj]
+        elif isinstance(obj, dict):
+            return {k: make_json_safe(v) for k, v in obj.items()}
+        else:
+            return str(obj)
+    
+    # Build response with JSON-safe config
+    config_dict = {}
+    for key, value in asdict(preprocessor.config).items():
+        config_dict[key] = make_json_safe(value)
+    
     response = {
         "preprocessor_id": preprocessor_id,
         "fitted": preprocessor._fitted,
-        "config": asdict(preprocessor.config),
+        "config": config_dict,
         "created_at": datetime.now().isoformat()  # We don't store creation time, so use current time
     }
     
@@ -588,9 +637,9 @@ def delete_preprocessor(preprocessor_id: str):
     response_model=StatusResponse,
     summary="Fit a preprocessor to data"
 )
-def fit_preprocessor(
+async def fit_preprocessor(
     preprocessor_id: str,
-    data: Optional[DataRequest] = None,
+    request: Request,
     csv_file: Optional[UploadFile] = File(None),
     has_header: bool = Query(True, description="Whether the CSV file has a header row")
 ):
@@ -612,15 +661,47 @@ def fit_preprocessor(
     preprocessor = get_preprocessor(preprocessor_id)
     
     try:
-        # Process data based on input method
-        if data is not None:
-            # Use JSON data
-            X = np.array(data.data)
-            feature_names = data.feature_names
-        elif csv_file is not None:
+        data = None
+        # Check if this is a multipart request (has file) or JSON request
+        content_type = request.headers.get("content-type", "")
+        
+        if csv_file is not None:
             # Use CSV file
-            file_content = csv_file.file.read()
+            file_content = await csv_file.read()
             X, feature_names = parse_csv_data(file_content, has_header)
+        elif "application/json" in content_type:
+            # Handle JSON request
+            json_data = await request.json()
+            if isinstance(json_data, dict):
+                X = np.array(json_data.get("data", []))
+                feature_names = json_data.get("feature_names", None)
+            else:
+                # If it's just an array, assume it's the data
+                X = np.array(json_data)
+                feature_names = None
+        elif "multipart/form-data" in content_type:
+            # Handle form data
+            form = await request.form()
+            data_str = form.get("data")
+            if data_str:
+                try:
+                    data_dict = json.loads(data_str)
+                    if isinstance(data_dict, dict):
+                        X = np.array(data_dict.get("data", []))
+                        feature_names = data_dict.get("feature_names", None)
+                    else:
+                        X = np.array(data_dict)
+                        feature_names = None
+                except json.JSONDecodeError:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Invalid JSON format in data field"
+                    )
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail="No data provided. Please provide either JSON data or a CSV file."
+                )
         else:
             raise HTTPException(
                 status_code=400,
@@ -628,7 +709,7 @@ def fit_preprocessor(
             )
         
         # Fit the preprocessor
-        preprocessor.fit(X, feature_names=feature_names)
+        preprocessor.fit(X, feature_names)
         
         return StatusResponse(
             success=True,
@@ -649,8 +730,7 @@ def fit_preprocessor(
 )
 async def transform_data(
     preprocessor_id: str,
-    options: TransformOptions = Body(TransformOptions()),
-    data: Optional[DataRequest] = None,
+    request: Request,
     csv_file: Optional[UploadFile] = File(None),
     has_header: bool = Query(True, description="Whether the CSV file has a header row"),
     output_format: str = Query("json", description="Output format (json or csv)")
@@ -683,14 +763,62 @@ async def transform_data(
         )
     
     try:
-        # Process data based on input method
-        if data is not None:
-            # Use JSON data
-            X = np.array(data.data)
-        elif csv_file is not None:
+        # Parse options if provided
+        transform_options = TransformOptions()
+        data = None
+        options = None
+        
+        # Check if this is a multipart request (has file) or JSON request
+        content_type = request.headers.get("content-type", "")
+        
+        if csv_file is not None:
             # Use CSV file
             file_content = await csv_file.read()
             X, _ = parse_csv_data(file_content, has_header)
+        elif "application/json" in content_type:
+            # Handle JSON request
+            json_data = await request.json()
+            if isinstance(json_data, dict):
+                # Check if it's wrapped in a "data" field
+                if "data" in json_data:
+                    X = np.array(json_data["data"])
+                else:
+                    X = np.array(json_data)
+            else:
+                # If it's just an array, assume it's the data
+                X = np.array(json_data)
+        elif "multipart/form-data" in content_type:
+            # Handle form data
+            form = await request.form()
+            data_str = form.get("data")
+            options_str = form.get("options")
+            
+            if options_str:
+                try:
+                    options_dict = json.loads(options_str)
+                    if isinstance(options_dict, dict):
+                        transform_options.copy_data = options_dict.get("copy", True)
+                except json.JSONDecodeError:
+                    # Use default options if JSON is invalid
+                    pass
+            
+            if data_str:
+                try:
+                    data_dict = json.loads(data_str)
+                    if isinstance(data_dict, dict):
+                        X = np.array(data_dict.get("data", []))
+                    else:
+                        X = np.array(data_dict)
+                except json.JSONDecodeError:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Invalid JSON format in data field"
+                    )
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail="No data provided. Please provide either JSON data or a CSV file."
+                )
         else:
             raise HTTPException(
                 status_code=400,
@@ -698,7 +826,7 @@ async def transform_data(
             )
         
         # Transform the data
-        transformed_data = preprocessor.transform(X, copy=options.copy)
+        transformed_data = preprocessor.transform(X, copy=transform_options.copy_data)
         
         # Prepare response based on output format
         if output_format.lower() == "json":
@@ -740,9 +868,7 @@ async def transform_data(
 )
 async def fit_transform_data(
     preprocessor_id: str,
-    options: TransformOptions = Body(TransformOptions()),
-    data: Optional[DataRequest] = None,
-    csv_file: Optional[UploadFile] = File(None),
+    request: Request,
     has_header: bool = Query(True, description="Whether the CSV file has a header row"),
     output_format: str = Query("json", description="Output format (json or csv)")
 ):
@@ -754,9 +880,7 @@ async def fit_transform_data(
     
     Args:
         preprocessor_id: Unique ID of the preprocessor
-        options: Transform options
-        data: JSON data structure (optional)
-        csv_file: CSV file upload (optional)
+        request: HTTP request containing options and data
         has_header: Whether the CSV file has a header row
         output_format: Output format (json or csv)
         
@@ -767,15 +891,80 @@ async def fit_transform_data(
     preprocessor = get_preprocessor(preprocessor_id)
     
     try:
-        # Process data based on input method
-        if data is not None:
-            # Use JSON data
-            X = np.array(data.data)
-            feature_names = data.feature_names
-        elif csv_file is not None:
-            # Use CSV file
-            file_content = await csv_file.read()
-            X, feature_names = parse_csv_data(file_content, has_header)
+        content_type = request.headers.get("content-type", "")
+        
+        # Parse options and data based on content type
+        transform_options = TransformOptions()
+        X = None
+        feature_names = None
+        
+        if "application/json" in content_type:
+            # Handle JSON request
+            body = await request.json()
+            
+            # Parse options if provided
+            if "options" in body:
+                options_data = body["options"]
+                if isinstance(options_data, dict):
+                    transform_options.copy = options_data.get("copy", True)
+            
+            # Parse data
+            if "data" in body:
+                X = np.array(body["data"])
+                feature_names = body.get("feature_names", None)
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail="No data provided in JSON request. Please provide 'data' field."
+                )
+                
+        elif "multipart/form-data" in content_type:
+            # Handle multipart form data
+            form = await request.form()
+            
+            # Parse options if provided
+            if "options" in form:
+                try:
+                    options_dict = json.loads(form["options"])
+                    if isinstance(options_dict, dict):
+                        transform_options.copy = options_dict.get("copy", True)
+                except json.JSONDecodeError:
+                    # Use default options if JSON is invalid
+                    pass
+            
+            # Process data based on input method
+            if "data" in form:
+                # Parse JSON data from form field
+                try:
+                    data_dict = json.loads(form["data"])
+                    if isinstance(data_dict, dict):
+                        X = np.array(data_dict.get("data", []))
+                        feature_names = data_dict.get("feature_names", None)
+                    else:
+                        # If it's just an array, assume it's the data
+                        X = np.array(data_dict)
+                        feature_names = None
+                except json.JSONDecodeError:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Invalid JSON format in data field"
+                    )
+            elif "csv_file" in form:
+                # Use CSV file
+                csv_file = form["csv_file"]
+                if hasattr(csv_file, 'read'):
+                    file_content = await csv_file.read()
+                    X, feature_names = parse_csv_data(file_content, has_header)
+                else:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Invalid CSV file upload"
+                    )
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail="No data provided. Please provide either JSON data or a CSV file."
+                )
         else:
             raise HTTPException(
                 status_code=400,
@@ -783,7 +972,7 @@ async def fit_transform_data(
             )
         
         # Fit and transform the data
-        transformed_data = preprocessor.fit_transform(X, feature_names=feature_names, copy=options.copy)
+        transformed_data = preprocessor.fit_transform(X, feature_names=feature_names, copy=transform_options.copy_data)
         
         # Prepare response based on output format
         if output_format.lower() == "json":
@@ -835,9 +1024,7 @@ async def fit_transform_data(
 )
 async def reverse_transform_data(
     preprocessor_id: str,
-    options: TransformOptions = Body(TransformOptions()),
-    data: Optional[DataRequest] = None,
-    csv_file: Optional[UploadFile] = File(None),
+    request: Request,
     has_header: bool = Query(True, description="Whether the CSV file has a header row"),
     output_format: str = Query("json", description="Output format (json or csv)")
 ):
@@ -849,9 +1036,7 @@ async def reverse_transform_data(
     
     Args:
         preprocessor_id: Unique ID of the preprocessor
-        options: Transform options
-        data: JSON data structure (optional)
-        csv_file: CSV file upload (optional)
+        request: HTTP request containing options and data
         has_header: Whether the CSV file has a header row
         output_format: Output format (json or csv)
         
@@ -869,14 +1054,76 @@ async def reverse_transform_data(
         )
     
     try:
-        # Process data based on input method
-        if data is not None:
-            # Use JSON data
-            X = np.array(data.data)
-        elif csv_file is not None:
-            # Use CSV file
-            file_content = await csv_file.read()
-            X, _ = parse_csv_data(file_content, has_header)
+        content_type = request.headers.get("content-type", "")
+        
+        # Parse options and data based on content type
+        transform_options = TransformOptions()
+        X = None
+        
+        if "application/json" in content_type:
+            # Handle JSON request
+            body = await request.json()
+            
+            # Parse options if provided
+            if "options" in body:
+                options_data = body["options"]
+                if isinstance(options_data, dict):
+                    transform_options.copy = options_data.get("copy", True)
+            
+            # Parse data
+            if "data" in body:
+                X = np.array(body["data"])
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail="No data provided in JSON request. Please provide 'data' field."
+                )
+                
+        elif "multipart/form-data" in content_type:
+            # Handle multipart form data
+            form = await request.form()
+            
+            # Parse options if provided
+            if "options" in form:
+                try:
+                    options_dict = json.loads(form["options"])
+                    if isinstance(options_dict, dict):
+                        transform_options.copy = options_dict.get("copy", True)
+                except json.JSONDecodeError:
+                    # Use default options if JSON is invalid
+                    pass
+            
+            # Process data based on input method
+            if "data" in form:
+                # Parse JSON data from form field
+                try:
+                    data_dict = json.loads(form["data"])
+                    if isinstance(data_dict, dict):
+                        X = np.array(data_dict.get("data", []))
+                    else:
+                        # If it's just an array, assume it's the data
+                        X = np.array(data_dict)
+                except json.JSONDecodeError:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Invalid JSON format in data field"
+                    )
+            elif "csv_file" in form:
+                # Use CSV file
+                csv_file = form["csv_file"]
+                if hasattr(csv_file, 'read'):
+                    file_content = await csv_file.read()
+                    X, _ = parse_csv_data(file_content, has_header)
+                else:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Invalid CSV file upload"
+                    )
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail="No data provided. Please provide either JSON data or a CSV file."
+                )
         else:
             raise HTTPException(
                 status_code=400,
@@ -884,7 +1131,7 @@ async def reverse_transform_data(
             )
         
         # Reverse transform the data
-        reverse_transformed_data = preprocessor.reverse_transform(X, copy=options.copy)
+        reverse_transformed_data = preprocessor.reverse_transform(X, copy=transform_options.copy_data)
         
         # Prepare response based on output format
         if output_format.lower() == "json":
@@ -935,10 +1182,9 @@ async def reverse_transform_data(
     response_model=StatusResponse,
     summary="Partially fit a preprocessor with new data"
 )
-def partial_fit_preprocessor(
+async def partial_fit_preprocessor(
     preprocessor_id: str,
-    data: Optional[DataRequest] = None,
-    csv_file: Optional[UploadFile] = File(None),
+    request: Request,
     has_header: bool = Query(True, description="Whether the CSV file has a header row")
 ):
     """
@@ -948,8 +1194,7 @@ def partial_fit_preprocessor(
     
     Args:
         preprocessor_id: Unique ID of the preprocessor
-        data: JSON data structure (optional)
-        csv_file: CSV file upload (optional)
+        request: HTTP request containing data and feature_names
         has_header: Whether the CSV file has a header row
         
     Returns:
@@ -959,15 +1204,61 @@ def partial_fit_preprocessor(
     preprocessor = get_preprocessor(preprocessor_id)
     
     try:
-        # Process data based on input method
-        if data is not None:
-            # Use JSON data
-            X = np.array(data.data)
-            feature_names = data.feature_names
-        elif csv_file is not None:
-            # Use CSV file
-            file_content = csv_file.file.read()
-            X, feature_names = parse_csv_data(file_content, has_header)
+        content_type = request.headers.get("content-type", "")
+        X = None
+        feature_names = None
+        
+        if "application/json" in content_type:
+            # Handle JSON request
+            body = await request.json()
+            
+            # Parse data
+            if "data" in body:
+                X = np.array(body["data"])
+                feature_names = body.get("feature_names", None)
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail="No data provided in JSON request. Please provide 'data' field."
+                )
+                
+        elif "multipart/form-data" in content_type:
+            # Handle multipart form data
+            form = await request.form()
+            
+            # Process data based on input method
+            if "data" in form:
+                # Parse JSON data from form field
+                try:
+                    data_dict = json.loads(form["data"])
+                    if isinstance(data_dict, dict):
+                        X = np.array(data_dict.get("data", []))
+                        feature_names = data_dict.get("feature_names", None)
+                    else:
+                        # If it's just an array, assume it's the data
+                        X = np.array(data_dict)
+                        feature_names = None
+                except json.JSONDecodeError:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Invalid JSON format in data field"
+                    )
+            elif "csv_file" in form:
+                # Use CSV file
+                csv_file = form["csv_file"]
+                if hasattr(csv_file, 'read'):
+                    file_content = await csv_file.read()
+                    X, feature_names = parse_csv_data(file_content, has_header)
+                else:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Invalid CSV file upload"
+                    )
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail="No data provided. Please provide either JSON data or a CSV file."
+                )
         else:
             raise HTTPException(
                 status_code=400,
@@ -1203,6 +1494,7 @@ def serialize_preprocessor(
 @app.post(
     "/preprocessors/deserialize",
     response_model=PreprocessorCreateResponse,
+    status_code=status.HTTP_201_CREATED,
     summary="Load preprocessor from disk"
 )
 def deserialize_preprocessor(
