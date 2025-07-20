@@ -1,53 +1,74 @@
-# kolosal AutoML 🤖
+# 🚀 kolosal Au- 🔥 **Complete Batch Processing API** with dynamic batching and priority queues
+- 🛡️ **Enterprise Security Framework** with rate limiting, input validation, and audit logging
+- 📊 **Real-time Monitoring System** with performance analytics and interactive dashboardL - Enterprise-Grade ML Platform
 
 [![MIT License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Built with UV](https://img.shields.io/badge/built%20with-uv-%23B072FF?logo=pypi)](https://github.com/astral-sh/uv)
-[![Version](https://img.shields.io/badge/version-v0.1.4-green.svg)]()
-[![Tests](https://img.shields.io/badge/tests-pytest-brightgreen)]()
+[![Version](https://img.shields.io/badge/version-0.1.4-green.svg)]()
+[![Development](https://img.shields.io/badge/status-development-orange)]()
+[![Test**🚀 D**🚀 Development Ready | 🛡️ Enterprise Security | 📊 Real-time Monitoring**
 
-### 🌟 **New Features in v0.1.4**
+**Built with ❤️ by Kolosal, Inc**
 
-* **🧪 Complete pytest Test Suite** – Migrated from unittest to pytest with comprehensive test infrastructure
-* **🔧 Advanced Test Runner** – Custom test runner script with category-based execution (unit, functional, integration)
-* **📊 Test Fixtures & Markers** – Robust fixture system with proper setup/teardown and test categorization
-* **⚡ Individual Test Execution** – Run specific tests or test categories with `pytest -vv`
-* **🎯 Improved Error Handling** – Graceful handling of missing modules with pytest.skip decorators
-* **📋 Test Documentation** – Comprehensive test suite documentation and usage examples
-* **🚀 CI/CD Ready** – Production-ready test configuration for continuous integration
-* **🏥 Enhanced Batch Processing** – Advanced health monitoring, memory management, and performance analytics
-* **📈 Production Hardening** – Comprehensive error handling, retry logic, and system optimization
+[🌟 Star us on GitHub](https://github.com/Genta-Technology/kolosal-automl) | [📖 Documentation](docs/) | [🐛 Report Issues](https://github.com/Genta-Technology/kolosal-automl/issues) | [💬 Discussions](https://github.com/Genta-Technology/kolosal-automl/discussions)
 
-### 📝 Previous Releases (v0.1.3)
+**kolosal AutoML v0.1.4 - Advancing ML automation with enhanced enterprise features**ent Ready | 🛡️ Enterprise Security | 📊 Real-time Monitoring**
 
-* **Advanced Batch Processing API** – High-performance batch processing with priority queues
-* **🚀 Unified CLI Interface** – New main.py with interactive mode selection between GUI and API
-* **🔧 Enhanced API Integration** – Complete REST API server with health checks for all modules
-* **🎯 Improved Error Handling** – Robust error handling and comprehensive logging across all components
-* **📊 Better System Integration** – Seamless switching between web interface and API server modes
-* **Interactive CLI Mode** – Choose between GUI, API, or system info with simple menu
-* **Direct Mode Selection** – Launch specific modes directly via command line flags
-* **Version Display** – Easy version checking with --version flag
-* **System Analysis** – Built-in hardware and software analysis tools
-* **Enhanced Logging** – Comprehensive logging across all components
+**Built with ❤️ by Kolosal, Inc**
 
----
+[🌟 Star us on GitHub](https://github.com/Genta-Technology/kolosal-automl) | [📖 Documentation](docs/) | [🐛 Report Issues](https://github.com/Genta-Technology/kolosal-automl/issues) | [💬 Discussions](https://github.com/Genta-Technology/kolosal-automl/discussions)
+
+**kolosal AutoML v0.1.4 - Advancing ML automation with enhanced enterprise features**s://img.shields.io/badge/tests-comprehensive-brightgreen)]()
+
+## 🌟 **Enhanced v0.1.4 Features**
+
+**kolosal AutoML** continues to evolve as a comprehensive machine learning platform with significant improvements in batch processing, monitoring, and enterprise-grade features. This release focuses on production readiness and advanced automation capabilities.
+
+### ✨ **What's New in v0.1.4**
+
+- 🔥 **Complete Batch Processing API** with dynamic batching and priority queues
+- �️ **Enterprise Security Framework** with rate limiting, input validation, and audit logging
+- 📊 **Real-time Monitoring System** with performance analytics and interactive dashboard
+- 🐋 **Production Docker Deployment** with monitoring stack (Prometheus, Grafana, Redis, Nginx)
+- 🧪 **Comprehensive Testing Suite** including unit, functional, and integration tests
+- 📚 **Professional Documentation** with API reference, deployment guides, and examples
+- ⚡ **Advanced Error Handling** with circuit breakers and standardized responses
+- 🎯 **Performance Optimization** with resource monitoring and auto-scaling capabilities
 
 ## 📋 Overview
 
-**kolosal AutoML** streamlines the entire machine‑learning lifecycle—from data ingestion to model deployment. Now featuring a modern **Gradio-powered web interface**, intelligent preprocessing, state‑of‑the‑art hyper‑parameter optimisation, device‑aware acceleration, and first‑class experiment tracking.
+**kolosal AutoML** is a comprehensive machine learning platform that provides advanced automation for model development, deployment, and monitoring. The platform streamlines the entire ML lifecycle from data ingestion to production deployment with enterprise-grade features including real-time monitoring, advanced security, and scalable infrastructure.
 
----
+##  Key Features
 
-## 🌟 Key Features
+### 🖥️ **Real-time Monitoring Dashboard**
+- **Interactive Web Interface**: Live dashboard at `/monitoring/dashboard`
+- **System Metrics**: CPU, memory, disk usage tracking
+- **API Performance**: Request rates, response times, error analytics
+- **Alert Management**: Real-time notifications and alert history
+- **Performance Trends**: Historical analysis and optimization recommendations
 
-### 🖥️ **Modern Web Interface & CLI (NEW in v0.1.2)**
-* **Unified CLI Interface** with interactive mode selection
-* **Gradio-powered UI** with intuitive tabbed interface
-* **Real-time data visualization** and comprehensive data previews
-* **Interactive model training** with progress tracking
-* **Dedicated inference server** for production deployments
-* **Sample dataset integration** with popular ML datasets
+### 🛡️ **Enterprise Security Framework**
+- **Advanced Rate Limiting**: Sliding window with 100 req/min default
+- **Input Validation**: XSS, SQL injection, and path traversal protection
+- **Audit Logging**: Comprehensive security event tracking
+- **API Key Management**: Multiple keys with hot rotation support
+- **IP Security**: Blocking, whitelisting, and geographic restrictions
+
+### ⚡ **High-Performance Batch Processing**
+- **Dynamic Batching**: Intelligent batch sizing based on system load
+- **Priority Queues**: High, normal, and low priority processing
+- **Async Processing**: Non-blocking operations with real-time status
+- **Memory Optimization**: Efficient resource management and cleanup
+- **Analytics**: Comprehensive performance metrics and insights
+
+### 🔧 **Production-Ready Infrastructure**
+- **Docker Deployment**: Multi-stage builds with security hardening
+- **Monitoring Stack**: Prometheus, Grafana, Redis, Nginx integration
+- **Health Checks**: Comprehensive endpoint monitoring
+- **Load Balancing**: Nginx reverse proxy with automatic scaling
+- **Service Discovery**: Automatic container orchestration
 * **Secure model management** with encryption support
 
 ### 🔄 Flexible Model Training
@@ -729,73 +750,47 @@ curl "http://localhost:8000/api/batch/status"
 
 ## 📚 Documentation
 
-For comprehensive documentation and tutorials:
-- **CLI Usage Guide**: [CLI_USAGE.md](CLI_USAGE.md) 🆕
-- **API Reference**: [modules/api/README.md](modules/api/README.md) 🆕
-- **Batch Processing Guide**: [docs/engine/batch_processor_docs.md](docs/engine/batch_processor_docs.md) 🆕
-- **Inference Engine Guide**: [docs/engine/inference_engine_docs.md](docs/engine/inference_engine_docs.md) 🆕
-- **Device Optimizer Guide**: [docs/device_optimizer_docs.md](docs/device_optimizer_docs.md)
-- **Configuration Guide**: [docs/configuration.md](docs/configuration.md)
-- **Deployment Guide**: [docs/deployment.md](docs/deployment.md)
-- **Contributing Guide**: [CONTRIBUTING.md](CONTRIBUTING.md)
+For comprehensive documentation and examples:
+- **[Complete API Documentation](docs/COMPLETE_API_DOCUMENTATION.md)** - Full API reference with examples
+- **[Deployment Guide](docs/COMPLETE_API_DOCUMENTATION.md#deployment-guide)** - Production deployment instructions
+- **[Security Guide](docs/COMPLETE_API_DOCUMENTATION.md#security-features)** - Security configuration and best practices
+- **[Monitoring Guide](docs/COMPLETE_API_DOCUMENTATION.md#monitoring--analytics)** - Monitoring and analytics setup
 
----
+## 🤝 Contributing
+
+We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.md) for details.
+
+### **Development Workflow**
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Make your changes
+4. Run tests (`python -m pytest tests/ -v`)
+5. Commit your changes (`git commit -m 'Add amazing feature'`)
+6. Push to the branch (`git push origin feature/amazing-feature`)
+7. Open a Pull Request
 
 ## 📄 License
 
-Released under the MIT License. See [`LICENSE`](LICENSE) for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
----
+## 🙏 Acknowledgments
 
-## 🎉 Getting Started
-
-Ready to explore advanced machine learning? Try our quickstart:
-
-```bash
-# Clone and setup
-git clone https://github.com/KolosalAI/kolosal_automl.git
-cd kolosal_automl
-
-# Quick install with UV
-curl -LsSf https://astral.sh/uv/install.sh | sh
-uv venv && source .venv/bin/activate
-uv pip install -r requirements.txt
-
-# Launch with interactive CLI (NEW!)
-python main.py
-
-# Or directly launch the web interface
-uv run python app.py
-
-# Open http://localhost:7860 in your browser and start experimenting! 🚀
-```
-
-### 🚀 Three Ways to Get Started:
-
-1. **🎯 Interactive CLI** (Recommended)
-   ```bash
-   python main.py
-   # Choose from menu: Web Interface, API Server, or System Info
-   ```
-
-2. **🌐 Direct Web Interface**
-   ```bash
-   python main.py --mode gui
-   # or: uv run python app.py
-   ```
-
-3. **🔧 API Server**
-   ```bash
-   python main.py --mode api
-   # or: uv run python start_api.py
-   ```
+- Built with [FastAPI](https://fastapi.tiangolo.com/) for high-performance API development
+- Monitoring powered by [Prometheus](https://prometheus.io/) and [Grafana](https://grafana.com/)
+- Containerization with [Docker](https://www.docker.com/)
+- Testing framework using [pytest](https://docs.pytest.org/)
 
 ---
 
 <div align="center">
 
-**Built with ❤️ by the kolosal AI Team**
+**🚀 Ready for Production | 🛡️ Enterprise Security | 📊 Real-time Monitoring**
 
-[🌟 Star us on GitHub](https://github.com/KolosalAI/kolosal_automl) | [📖 Documentation](docs/) | [🐛 Report Issues](https://github.com/KolosalAI/kolosal_automl/issues) | [📝 CLI Guide](CLI_USAGE.md)
+**Built with ❤️ by the Genta Technology Team**
+
+[🌟 Star us on GitHub](https://github.com/Genta-Technology/kolosal-automl) | [📖 Documentation](docs/) | [🐛 Report Issues](https://github.com/Genta-Technology/kolosal-automl/issues) | [� Discussions](https://github.com/Genta-Technology/kolosal-automl/discussions)
+
+**kolosal AutoML v1.0.0 - Transform your ML workflow with enterprise-grade automation**
 
 </div>
