@@ -21,11 +21,28 @@
 
 ## 🌟 **Enhanced v0.1.4 Features**
 
-**kolosal AutoML** continues to evolve as a comprehensive machine learning platform with significant improvements in batch processing, monitoring, and enterprise-grade features. This release focuses on production readiness and advanced automation capabilities.
+**kolosal AutoML** continues to evolve as a comprehensive machine learning platform with significant improvements in multi-model training, batch processing, monitoring, and enterprise-grade features. This release introduces revolutionary **multi-algorithm comparison** capabilities alongside production readiness and advanced automation features.
 
 ### ✨ **What's New in v0.1.4**
 
-- 🔥 **Complete Batch Processing API** with dynamic batching and priority queues
+#### 🤖 **Multi-Model Training & Comparison**
+- 🚀 **Simultaneous Algorithm Training** - Train multiple ML algorithms in one click with automatic comparison
+- 📊 **Intelligent Model Ranking** - Automatic performance-based ranking with comprehensive metrics analysis
+- ⚙️ **Hyperparameter Optimization** - Built-in optimization for all selected algorithms simultaneously
+- 🏆 **Best Model Selection** - AI-powered recommendations with statistical significance testing
+- 📈 **Comparative Analytics** - Side-by-side performance analysis with training time vs accuracy trade-offs
+- 🎯 **Enhanced UI Experience** - Multiselect algorithm dropdown with real-time training progress tracking
+- 📝 **Comprehensive Results** - Detailed metrics, feature importance, and model summaries for informed decision-making
+
+#### �️ **Improved Inference Server**
+- 🎯 **Dual Model Loading** - Load from trained models in current session or upload external model files
+- 🔄 **Real-time Model Management** - Refresh and switch between multiple loaded models seamlessly
+- 📁 **Enhanced File Support** - Support for .pkl, .joblib, and .model file formats
+- 🔐 **Security Integration** - Encrypted model loading with password protection
+- 📊 **Model Status Dashboard** - Real-time display of loaded models with detailed metadata
+
+#### 🎨 **UI/UX Enhancements**
+- �🔥 **Complete Batch Processing API** with dynamic batching and priority queues
 - 🛡️ **Enterprise Security Framework** with rate limiting, input validation, and audit logging
 - 📊 **Real-time Monitoring System** with performance analytics and interactive dashboard
 - 🐋 **Production Docker Deployment** with monitoring stack (Prometheus, Grafana, Redis, Nginx)
@@ -36,9 +53,7 @@
 - 🔧 **Enhanced API Stability** with comprehensive data preprocessor API fixes and JSON serialization improvements
 - 🛠️ **Unified Request Handling** with smart content-type detection for both JSON and multipart form data
 - 🔍 **Production-Ready Testing** with 26/26 data preprocessor API tests passing and robust error handling
-- 📋 **Improved Model Management** with fixed parameter binding and Pydantic model compatibilityProcessing API** with dynamic batching and priority queues
-- 🛡️ **Enterprise Security Framework** with rate limiting, input validation, and audit logging
-- 📊 **Real-time Monitoring System** with performance analytics and interactive dashboardL - Enterprise-Grade ML Platform
+- 📋 **Improved Model Management** with fixed parameter binding and Pydantic model compatibility
 
 ## 📋 Overview
 
