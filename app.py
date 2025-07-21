@@ -42,6 +42,19 @@ import modules.engine.utils as engine_utils
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+def load_css_file(css_path: str = "static/styles.css") -> str:
+    """Load CSS styles from external file"""
+    try:
+        if os.path.exists(css_path):
+            with open(css_path, 'r', encoding='utf-8') as file:
+                return file.read()
+        else:
+            logger.warning(f"CSS file not found at {css_path}. Using default minimal styles.")
+            return ""
+    except Exception as e:
+        logger.error(f"Error loading CSS file: {e}")
+        return ""
+
 class DataPreviewGenerator:
     """Generate comprehensive data previews and visualizations"""
     
@@ -194,44 +207,44 @@ class DataPreviewGenerator:
         
         # Basic information
         preview_text = f"""
-## 📊 **Dataset Overview**
+## 📊 Dataset Overview
 
-- **Shape**: {summary['basic_info']['shape'][0]:,} rows × {summary['basic_info']['shape'][1]} columns
-- **Memory Usage**: {summary['basic_info']['memory_usage_mb']:.2f} MB
-- **Total Missing Values**: {summary['missing_data']['total_missing']:,} ({summary['missing_data']['total_missing'] / (df.shape[0] * df.shape[1]) * 100:.1f}% of all data)
+- Shape: {summary['basic_info']['shape'][0]:,} rows × {summary['basic_info']['shape'][1]} columns
+- Memory Usage: {summary['basic_info']['memory_usage_mb']:.2f} MB
+- Total Missing Values: {summary['missing_data']['total_missing']:,} ({summary['missing_data']['total_missing'] / (df.shape[0] * df.shape[1]) * 100:.1f}% of all data)
 
-### 🔍 **Data Types**
-- **Numerical Columns** ({len(summary['data_types']['numerical'])}): {', '.join(summary['data_types']['numerical'][:5])}{'...' if len(summary['data_types']['numerical']) > 5 else ''}
-- **Categorical Columns** ({len(summary['data_types']['categorical'])}): {', '.join(summary['data_types']['categorical'][:5])}{'...' if len(summary['data_types']['categorical']) > 5 else ''}
-- **DateTime Columns** ({len(summary['data_types']['datetime'])}): {', '.join(summary['data_types']['datetime'][:5])}{'...' if len(summary['data_types']['datetime']) > 5 else ''}
+### 🔍 Data Types
+- Numerical Columns ({len(summary['data_types']['numerical'])}): {', '.join(summary['data_types']['numerical'][:5])}{'...' if len(summary['data_types']['numerical']) > 5 else ''}
+- Categorical Columns ({len(summary['data_types']['categorical'])}): {', '.join(summary['data_types']['categorical'][:5])}{'...' if len(summary['data_types']['categorical']) > 5 else ''}
+- DateTime Columns ({len(summary['data_types']['datetime'])}): {', '.join(summary['data_types']['datetime'][:5])}{'...' if len(summary['data_types']['datetime']) > 5 else ''}
         """
         
         # Missing data details
         if summary['missing_data']['total_missing'] > 0:
-            preview_text += "\n### ⚠️ **Missing Data by Column**\n"
+            preview_text += "\n### ⚠️ Missing Data by Column\n"
             missing_cols = {k: v for k, v in summary['missing_data']['missing_by_column'].items() if v > 0}
             for col, missing_count in sorted(missing_cols.items(), key=lambda x: x[1], reverse=True)[:10]:
                 percentage = summary['missing_data']['missing_percentage'][col]
-                preview_text += f"- **{col}**: {missing_count:,} missing ({percentage:.1f}%)\n"
+                preview_text += f"- {col}: {missing_count:,} missing ({percentage:.1f}%)\n"
         
         # Numerical statistics
         if 'numerical_stats' in summary and summary['numerical_stats']:
-            preview_text += "\n### 📈 **Numerical Statistics**\n"
+            preview_text += "\n### 📈 Numerical Statistics\n"
             stats_df = pd.DataFrame(summary['numerical_stats']).round(2)
             # Create a simple text table instead of markdown table for better compatibility
             preview_text += "\n"
             for stat in ['mean', 'std', 'min', 'max']:
                 if stat in stats_df.index:
-                    preview_text += f"**{stat.upper()}**:\n"
+                    preview_text += f"{stat.upper()}:\n"
                     for col in stats_df.columns[:5]:  # Limit to first 5 columns
                         preview_text += f"- {col}: {stats_df.loc[stat, col]:.2f}\n"
                     preview_text += "\n"
         
         # Categorical summaries
         if 'categorical_stats' in summary and summary['categorical_stats']:
-            preview_text += "\n### 🏷️ **Categorical Summaries**\n"
+            preview_text += "\n### 🏷️ Categorical Summaries\n"
             for col, stats in list(summary['categorical_stats'].items())[:3]:
-                preview_text += f"\n**{col}** ({stats['unique_count']} unique values):\n"
+                preview_text += f"\n{col} ({stats['unique_count']} unique values):\n"
                 for value, count in list(stats['top_values'].items())[:5]:
                     preview_text += f"- {value}: {count:,}\n"
         
@@ -573,14 +586,14 @@ class MLSystemUI:
             sample_table = df.head(10).to_html(classes="table table-striped", escape=False, border=0)
             
             info_text = f"""
-**Sample Dataset Loaded: {metadata['name']}**
+Sample Dataset Loaded: {metadata['name']}
 
-- **Description**: {metadata['description']}
-- **Task Type**: {metadata['task_type']}
-- **Target Column**: {metadata['target_column']}
-- **Shape**: {df.shape[0]} rows × {df.shape[1]} columns
-- **Columns**: {', '.join(df.columns.tolist()[:10])}{'...' if len(df.columns) > 10 else ''}
-- **Missing Values**: {df.isnull().sum().sum()} total
+- Description: {metadata['description']}
+- Task Type: {metadata['task_type']}
+- Target Column: {metadata['target_column']}
+- Shape: {df.shape[0]} rows × {df.shape[1]} columns
+- Columns: {', '.join(df.columns.tolist()[:10])}{'...' if len(df.columns) > 10 else ''}
+- Missing Values: {df.isnull().sum().sum()} total
             """
             
             return info_text, metadata, preview_text, sample_table
@@ -618,12 +631,12 @@ class MLSystemUI:
             sample_table = df.head(10).to_html(classes="table table-striped", escape=False, border=0)
             
             info_text = f"""
-**Data Loaded Successfully!**
+Data Loaded Successfully!
 
-- **Shape**: {df.shape[0]} rows × {df.shape[1]} columns
-- **Columns**: {', '.join(df.columns.tolist()[:10])}{'...' if len(df.columns) > 10 else ''}
-- **Missing Values**: {df.isnull().sum().sum()} total
-- **Memory Usage**: {df.memory_usage(deep=True).sum() / 1024**2:.2f} MB
+- Shape: {df.shape[0]} rows × {df.shape[1]} columns
+- Columns: {', '.join(df.columns.tolist()[:10])}{'...' if len(df.columns) > 10 else ''}
+- Missing Values: {df.isnull().sum().sum()} total
+- Memory Usage: {df.memory_usage(deep=True).sum() / 1024**2:.2f} MB
             """
             
             return info_text, summary, preview_text, sample_table
@@ -654,11 +667,11 @@ class MLSystemUI:
             if self.inference_server.is_loaded:
                 model_info = self.inference_server.get_model_info()
                 return f"""
-✅ **Model loaded successfully for inference!**
+✅ Model loaded successfully for inference!
 
-- **File**: {file.name}
-- **Model Type**: {model_info.get('model_type', 'Unknown')}
-- **Status**: Ready for predictions
+- File: {file.name}
+- Model Type: {model_info.get('model_type', 'Unknown')}
+- Status: Ready for predictions
                 """
             else:
                 return "❌ Failed to load model for inference."
@@ -696,12 +709,12 @@ class MLSystemUI:
             # Format results
             predictions = result["predictions"]
             prediction_text = f"""
-**Inference Server Prediction:**
+Inference Server Prediction:
 
-- **Input**: {input_data}
-- **Prediction**: {predictions}
-- **Input Shape**: {result['input_shape']}
-- **Model Type**: {result.get('model_metadata', {}).get('model_type', 'Unknown')}
+- Input: {input_data}
+- Prediction: {predictions}
+- Input Shape: {result['input_shape']}
+- Model Type: {result.get('model_metadata', {}).get('model_type', 'Unknown')}
             """
             
             return prediction_text
@@ -758,18 +771,18 @@ class MLSystemUI:
             )
             
             config_text = f"""
-**Configuration Created Successfully!**
+Configuration Created Successfully!
 
-- **Task Type**: {task_type}
-- **Optimization Strategy**: {optimization_strategy}
-- **CV Folds**: {cv_folds}
-- **Test Size**: {test_size}
-- **Feature Selection**: {'Enabled' if enable_feature_selection else 'Disabled'}
-- **Normalization**: {normalization}
-- **Quantization**: {'Enabled' if enable_quantization else 'Disabled'}
-- **Available Algorithms**: {len(algorithms)} algorithms for {task_type.lower()}
+- Task Type: {task_type}
+- Optimization Strategy: {optimization_strategy}
+- CV Folds: {cv_folds}
+- Test Size: {test_size}
+- Feature Selection: {'Enabled' if enable_feature_selection else 'Disabled'}
+- Normalization: {normalization}
+- Quantization: {'Enabled' if enable_quantization else 'Disabled'}
+- Available Algorithms: {len(algorithms)} algorithms for {task_type.lower()}
 
-✅ **Algorithm dropdown in Training tab has been updated!**
+✅ Algorithm dropdown in Training tab has been updated!
             """
             
             return config_text, algorithm_dropdown, algorithms
@@ -848,15 +861,15 @@ class MLSystemUI:
             }
             
             # Generate results summary
-            metrics_text = "**Training Results:**\n\n"
+            metrics_text = "Training Results:\n\n"
             if 'metrics' in result and result['metrics']:
                 for metric, value in result['metrics'].items():
                     if isinstance(value, (int, float)):
-                        metrics_text += f"- **{metric.replace('_', ' ').title()}**: {value:.4f}\n"
+                        metrics_text += f"- {metric.replace('_', ' ').title()}: {value:.4f}\n"
                     else:
-                        metrics_text += f"- **{metric.replace('_', ' ').title()}**: {value}\n"
+                        metrics_text += f"- {metric.replace('_', ' ').title()}: {value}\n"
             
-            metrics_text += f"\n- **Training Time**: {training_time:.2f} seconds"
+            metrics_text += f"\n- Training Time: {training_time:.2f} seconds"
             
             # Feature importance
             importance_text = ""
@@ -864,27 +877,27 @@ class MLSystemUI:
                 importance = result['feature_importance']
                 feature_names = X.columns.tolist()
                 
-                importance_text = "**Top 10 Feature Importances:**\n\n"
+                importance_text = "Top 10 Feature Importances:\n\n"
                 if isinstance(importance, dict):
                     sorted_features = sorted(importance.items(), key=lambda x: x[1], reverse=True)[:10]
                     for feature, score in sorted_features:
-                        importance_text += f"- **{feature}**: {score:.4f}\n"
+                        importance_text += f"- {feature}: {score:.4f}\n"
                 else:
                     indices = np.argsort(importance)[::-1][:10]
                     for i, idx in enumerate(indices):
                         if idx < len(feature_names):
-                            importance_text += f"- **{feature_names[idx]}**: {importance[idx]:.4f}\n"
+                            importance_text += f"- {feature_names[idx]}: {importance[idx]:.4f}\n"
             
             # Model summary
             summary_text = f"""
-**Model Training Summary**
+Model Training Summary
 
-- **Model Name**: {model_name}
-- **Algorithm**: {algorithm_name}
-- **Dataset Shape**: {X.shape[0]} samples × {X.shape[1]} features
-- **Target Column**: {target_column}
-- **Task Type**: {self.current_config.task_type.value}
-- **Status**: ✅ Training Completed Successfully
+- Model Name: {model_name}
+- Algorithm: {algorithm_name}
+- Dataset Shape: {X.shape[0]} samples × {X.shape[1]} features
+- Target Column: {target_column}
+- Task Type: {self.current_config.task_type.value}
+- Status: ✅ Training Completed Successfully
             """
             
             # Update trained models dropdown
@@ -910,24 +923,24 @@ class MLSystemUI:
             model_info = self.trained_models[model_name]
             
             info_text = f"""
-**Trained Model Information**
+Trained Model Information
 
-- **Model Name**: {model_name}
-- **Algorithm**: {model_info['algorithm']}
-- **Target Column**: {model_info['target_column']}
-- **Training Time**: {model_info['training_time']:.2f} seconds
-- **Data Shape**: {model_info['data_shape'][0]} samples × {model_info['data_shape'][1]} features
-- **Feature Names**: {', '.join(model_info['feature_names'][:10])}{'...' if len(model_info['feature_names']) > 10 else ''}
+- Model Name: {model_name}
+- Algorithm: {model_info['algorithm']}
+- Target Column: {model_info['target_column']}
+- Training Time: {model_info['training_time']:.2f} seconds
+- Data Shape: {model_info['data_shape'][0]} samples × {model_info['data_shape'][1]} features
+- Feature Names: {', '.join(model_info['feature_names'][:10])}{'...' if len(model_info['feature_names']) > 10 else ''}
 
-**Performance Metrics:**
+Performance Metrics:
             """
             
             if 'metrics' in model_info['result'] and model_info['result']['metrics']:
                 for metric, value in model_info['result']['metrics'].items():
                     if isinstance(value, (int, float)):
-                        info_text += f"\n- **{metric.replace('_', ' ').title()}**: {value:.4f}"
+                        info_text += f"\n- {metric.replace('_', ' ').title()}: {value:.4f}"
                     else:
-                        info_text += f"\n- **{metric.replace('_', ' ').title()}**: {value}"
+                        info_text += f"\n- {metric.replace('_', ' ').title()}: {value}"
             
             return info_text
             
@@ -989,12 +1002,12 @@ class MLSystemUI:
                 result = predictions
             
             prediction_text = f"""
-**Prediction Result:**
+Prediction Result:
 
-- **Model Used**: {model_name}
-- **Input**: {input_data}
-- **Prediction**: {result}
-- **Data Shape**: {input_array.shape}
+- Model Used: {model_name}
+- Input: {input_data}
+- Prediction: {result}
+- Data Shape: {input_array.shape}
             """
             
             return prediction_text
@@ -1114,7 +1127,7 @@ class MLSystemUI:
                     if isinstance(comparison, dict) and 'models' in comparison and 'error' not in comparison:
                         models = comparison.get('models', [])
                         if isinstance(models, list) and models:
-                            comparison_text += "**Training Engine Model Comparison:**\n\n"
+                            comparison_text += "Training Engine Model Comparison:\n\n"
                             for model in models:
                                 if isinstance(model, dict):
                                     model_name = model.get('name', 'Unknown')
@@ -1124,33 +1137,33 @@ class MLSystemUI:
                                     metrics = model.get('metrics', {})
                                     
                                     comparison_text += f"### {model_name} {'👑' if is_best else ''}\n"
-                                    comparison_text += f"- **Type**: {model_type}\n"
-                                    comparison_text += f"- **Training Time**: {training_time:.2f}s\n"
+                                    comparison_text += f"- Type: {model_type}\n"
+                                    comparison_text += f"- Training Time: {training_time:.2f}s\n"
                                     
                                     if isinstance(metrics, dict) and metrics:
-                                        comparison_text += "- **Metrics**:\n"
+                                        comparison_text += "- Metrics:\n"
                                         for metric, value in metrics.items():
                                             if isinstance(value, (int, float)):
                                                 comparison_text += f"  - {metric}: {value:.4f}\n"
                                     comparison_text += "\n"
                     elif isinstance(comparison, dict) and 'error' in comparison:
-                        comparison_text += f"**Training Engine Error**: {comparison['error']}\n\n"
+                        comparison_text += f"Training Engine Error: {comparison['error']}\n\n"
                         
                 except Exception as comparison_error:
-                    comparison_text += f"**Error getting model comparison**: {str(comparison_error)}\n\n"
+                    comparison_text += f"Error getting model comparison: {str(comparison_error)}\n\n"
             
             # Add stored model information
             if self.trained_models:
-                comparison_text += "\n**Stored Trained Models:**\n\n"
+                comparison_text += "\nStored Trained Models:\n\n"
                 for model_name, model_info in self.trained_models.items():
                     comparison_text += f"### {model_name}\n"
-                    comparison_text += f"- **Algorithm**: {model_info['algorithm']}\n"
-                    comparison_text += f"- **Target**: {model_info['target_column']}\n"
-                    comparison_text += f"- **Training Time**: {model_info['training_time']:.2f}s\n"
-                    comparison_text += f"- **Data Shape**: {model_info['data_shape'][0]} × {model_info['data_shape'][1]}\n"
+                    comparison_text += f"- Algorithm: {model_info['algorithm']}\n"
+                    comparison_text += f"- Target: {model_info['target_column']}\n"
+                    comparison_text += f"- Training Time: {model_info['training_time']:.2f}s\n"
+                    comparison_text += f"- Data Shape: {model_info['data_shape'][0]} × {model_info['data_shape'][1]}\n"
                     
                     if 'metrics' in model_info['result'] and model_info['result']['metrics']:
-                        comparison_text += "- **Metrics**:\n"
+                        comparison_text += "- Metrics:\n"
                         for metric, value in model_info['result']['metrics'].items():
                             if isinstance(value, (int, float)):
                                 comparison_text += f"  - {metric}: {value:.4f}\n"
@@ -1168,103 +1181,182 @@ def create_ui(inference_only: bool = False):
     
     app = MLSystemUI(inference_only=inference_only)
     
-    # Custom CSS for better styling
-    css = """
-    .gradio-container {
-        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    }
-    .tab-nav {
-        background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
-    }
-    .metric-box {
-        background: #f8f9fa;
-        border-radius: 8px;
-        padding: 15px;
-        margin: 10px 0;
-    }
-    """
+    # Load CSS styles from external file
+    css = load_css_file()
     
-    title = "🚀 ML Inference Server" if inference_only else "🚀 ML Training & Inference System"
+    title = "🚀 ML Inference Server" if inference_only else "🚀 AutoML Training & Inference Platform"
     description = """
-**A machine learning inference server for real-time predictions.**
+🎯 Real-time ML inference server with enterprise-grade security and performance optimization.
 
-Load your trained models and make instant predictions!
+✨ Load your trained models and get instant predictions with minimal latency!
     """ if inference_only else """
-**A comprehensive machine learning platform with advanced optimization and secure model management.**
+🤖 Complete AutoML platform with advanced optimization, model comparison, and secure deployment.
 
-Upload your data, configure training parameters, train models, and make predictions - all in one place!
+🎯 Quick Start: Upload data → Configure training → Train multiple models → Compare results → Deploy predictions
     """
     
-    with gr.Blocks(css=css, title=title) as interface:
-        gr.Image(value="assets/logo.png", show_label=False, show_download_button=False, height=120)
-        gr.Markdown(f"""
+    with gr.Blocks(css=css, title=title, theme=gr.themes.Soft()) as interface:
+        # Header with logo and improved welcome section
+        with gr.Row():
+            with gr.Column(scale=1):
+                gr.Image(value="assets/logo.png", show_label=False, show_download_button=False, height=100, width=150)
+            with gr.Column(scale=4):
+                gr.Markdown(f"""
 # {title}
-
 {description}
-        """)
+                """)
         
-        with gr.Tabs():
+        # Quick start guide for new users
+        if not inference_only:
+            gr.HTML("""
+            <div class="quick-start">
+                <h3 style="margin-top: 0;">🚀 Quick Start Guide</h3>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-top: 15px;">
+                    <div style="text-align: center;">
+                        <div style="font-size: 2em; margin-bottom: 5px;">📁</div>
+                        <div><strong>1. Load Data</strong></div>
+                        <div style="font-size: 0.9em; opacity: 0.9;">Upload CSV/Excel or try sample datasets</div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div style="font-size: 2em; margin-bottom: 5px;">⚙️</div>
+                        <div><strong>2. Configure</strong></div>
+                        <div style="font-size: 0.9em; opacity: 0.9;">Set task type and parameters</div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div style="font-size: 2em; margin-bottom: 5px;">🎯</div>
+                        <div><strong>3. Train</strong></div>
+                        <div style="font-size: 0.9em; opacity: 0.9;">Select algorithms and train models</div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div style="font-size: 2em; margin-bottom: 5px;">📊</div>
+                        <div><strong>4. Compare</strong></div>
+                        <div style="font-size: 0.9em; opacity: 0.9;">Analyze model performance</div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div style="font-size: 2em; margin-bottom: 5px;">🔮</div>
+                        <div><strong>5. Predict</strong></div>
+                        <div style="font-size: 0.9em; opacity: 0.9;">Make real-time predictions</div>
+                    </div>
+                </div>
+            </div>
+            """)
+        
+        with gr.Tabs() as main_tabs:
             
             if not inference_only:
                 # Create shared state for algorithm choices and data storage
                 algorithm_choices_state = gr.State([])
                 data_state = gr.State()
                 
-                # Data Upload Tab
-                with gr.Tab("📁 Data Upload", id="data_upload"):
-                    gr.Markdown("### Upload Dataset or Load Sample Data")
+                # 🎯 STEP 1: Data Upload Tab - Improved with better guidance
+                with gr.Tab("📁 Step 1: Load Data", id="data_upload"):
+                    gr.HTML("""
+                    <div class="step-indicator">
+                        Step 1: Load Your Dataset - Upload files or try sample datasets
+                    </div>
+                    """)
                     
                     with gr.Row():
                         with gr.Column(scale=1):
-                            gr.Markdown("#### Upload Your Own Dataset")
+                            gr.Markdown("""
+                            ### 📤 Upload Your Dataset
+                            Supported formats: CSV, Excel (.xlsx, .xls), JSON
+                            Requirements: Clean data with headers
+                            """)
+                            
                             file_input = gr.File(
-                                label="Upload Dataset",
+                                label="📁 Select Data File",
                                 file_count="single",
-                                type="filepath"
+                                type="filepath",
+                                file_types=[".csv", ".xlsx", ".xls", ".json"]
                             )
                             
-                            load_btn = gr.Button("Load Data", variant="primary")
+                            load_btn = gr.Button("📤 Upload & Analyze Data", variant="primary", size="lg")
                             
                         with gr.Column(scale=1):
-                            gr.Markdown("#### Or Load Sample Dataset")
+                            gr.Markdown("""
+                            ### 🎲 Try Sample Datasets
+                            Perfect for learning: Pre-loaded datasets for different ML tasks
+                            """)
+                            
+                            # Enhanced sample dataset selection with descriptions
+                            sample_descriptions = {
+                                "Iris": "🌸 Classic classification: Predict flower species (150 samples, 4 features)",
+                                "Boston Housing": "🏠 Regression: Predict house prices (506 samples, 13 features)",
+                                "Titanic": "🚢 Classification: Predict passenger survival (891 samples, 12 features)",
+                                "Wine Quality": "🍷 Regression: Predict wine quality scores (1599 samples, 11 features)",
+                                "Diabetes": "💊 Classification: Predict diabetes onset (768 samples, 8 features)",
+                                "Car Evaluation": "🚗 Classification: Predict car acceptability (1728 samples, 6 features)"
+                            }
+                            
                             sample_dropdown = gr.Dropdown(
-                                choices=["Select a dataset..."] + app.sample_data_loader.get_available_datasets(),
-                                value="Select a dataset...",
-                                label="Sample Datasets"
+                                choices=["🎯 Choose a sample dataset..."] + [f"{name}: {desc}" for name, desc in sample_descriptions.items()],
+                                value="🎯 Choose a sample dataset...",
+                                label="🎲 Sample Datasets",
+                                info="Perfect for testing and learning"
                             )
                             
-                            load_sample_btn = gr.Button("Load Sample Data", variant="secondary")
+                            load_sample_btn = gr.Button("🎲 Load Sample Dataset", variant="secondary", size="lg")
                     
+                    # Data status and preview
                     with gr.Row():
-                        data_info = gr.Markdown("Upload a dataset or select a sample dataset to get started...")
+                        data_info = gr.HTML("""
+                        <div class="info-card">
+                            <h4>📋 Dataset Status</h4>
+                            <p>👆 Upload your own data or select a sample dataset to get started</p>
+                            <ul>
+                                <li>✅ Supports CSV, Excel, and JSON formats</li>
+                                <li>✅ Automatic data type detection</li>
+                                <li>✅ Missing value analysis</li>
+                                <li>✅ Statistical summaries</li>
+                            </ul>
+                        </div>
+                        """)
                     
-                    # Data Preview Section
+                    # Enhanced Data Preview Section with tabs
                     with gr.Row():
-                        with gr.Column():
-                            gr.Markdown("### 📊 Data Preview")
-                            data_preview = gr.Markdown("Data preview will appear here after loading...")
-                    
-                    with gr.Row():
-                        with gr.Column():
-                            gr.Markdown("### 📈 Sample Data (First 10 Rows)")
-                            sample_data_table = gr.HTML("")
+                        with gr.Tabs():
+                            with gr.Tab("📊 Data Overview"):
+                                data_preview = gr.Markdown("📊 Data analysis will appear here after loading...")
+                            
+                            with gr.Tab("📋 Sample Data"):
+                                sample_data_table = gr.HTML("""
+                                <div class="info-card">
+                                    <p style="text-align: center; color: #666;">
+                                        📋 First 10 rows of your dataset will appear here
+                                    </p>
+                                </div>
+                                """)
                 
-                # Configuration Tab
-                with gr.Tab("⚙️ Configuration", id="configuration"):
-                    gr.Markdown("### Training Configuration")
+                # 🎯 STEP 2: Configuration Tab - Enhanced with smart defaults
+                with gr.Tab("⚙️ Step 2: Configure Training", id="configuration"):
+                    gr.HTML("""
+                    <div class="step-indicator">
+                        Step 2: Configure ML Training Parameters - Set up optimization and algorithms
+                    </div>
+                    """)
                     
                     with gr.Row():
-                        with gr.Column():
+                        with gr.Column(scale=1):
+                            gr.Markdown("### 🎯 Core Settings")
+                            
                             task_type = gr.Dropdown(
                                 choices=["CLASSIFICATION", "REGRESSION"],
                                 value="CLASSIFICATION",
-                                label="Task Type"
+                                label="🎯 Task Type",
+                                info="Classification: Predict categories | Regression: Predict numbers"
                             )
                             
                             optimization_strategy = gr.Dropdown(
-                                choices=["RANDOM_SEARCH", "GRID_SEARCH", "BAYESIAN_OPTIMIZATION", "HYPERX"],
+                                choices=[
+                                    ("Random Search (Fast)", "RANDOM_SEARCH"),
+                                    ("Grid Search (Thorough)", "GRID_SEARCH"),
+                                    ("Bayesian Optimization (Smart)", "BAYESIAN_OPTIMIZATION"),
+                                    ("HyperX (Advanced)", "HYPERX")
+                                ],
                                 value="RANDOM_SEARCH",
-                                label="Optimization Strategy"
+                                label="🔍 Optimization Strategy",
+                                info="How to find the best model parameters"
                             )
                             
                             cv_folds = gr.Slider(
@@ -1272,127 +1364,314 @@ Upload your data, configure training parameters, train models, and make predicti
                                 maximum=10,
                                 value=5,
                                 step=1,
-                                label="Cross-Validation Folds"
+                                label="📊 Cross-Validation Folds",
+                                info="More folds = better validation, but slower training"
                             )
                             
-                        with gr.Column():
+                        with gr.Column(scale=1):
+                            gr.Markdown("### 📊 Data Settings")
+                            
                             test_size = gr.Slider(
                                 minimum=0.1,
                                 maximum=0.5,
                                 value=0.2,
                                 step=0.05,
-                                label="Test Size"
+                                label="📊 Test Data Proportion",
+                                info="Portion of data reserved for final testing"
                             )
                             
                             random_state = gr.Number(
                                 value=42,
-                                label="Random State",
-                                precision=0
+                                label="🎲 Random Seed",
+                                precision=0,
+                                info="For reproducible results (use same number for consistent results)"
                             )
                             
                             normalization = gr.Dropdown(
-                                choices=["STANDARD", "MINMAX", "ROBUST", "NONE"],
+                                choices=[
+                                    ("Standard Scaling (Recommended)", "STANDARD"),
+                                    ("Min-Max Scaling (0-1 range)", "MINMAX"),
+                                    ("Robust Scaling (Outlier-resistant)", "ROBUST"),
+                                    ("No Normalization", "NONE")
+                                ],
                                 value="STANDARD",
-                                label="Normalization"
+                                label="📏 Data Normalization",
+                                info="How to scale your features for better model performance"
                             )
                     
                     with gr.Row():
-                        enable_feature_selection = gr.Checkbox(
-                            label="Enable Feature Selection",
-                            value=True
-                        )
-                        
-                        enable_quantization = gr.Checkbox(
-                            label="Enable Model Quantization",
-                            value=False
-                        )
-                        
-                        optimization_mode = gr.Dropdown(
-                            choices=["BALANCED", "PERFORMANCE", "MEMORY_SAVING", "CONSERVATIVE"],
-                            value="BALANCED",
-                            label="Optimization Mode"
-                        )
+                        with gr.Column():
+                            gr.Markdown("### 🚀 Advanced Options")
+                            
+                            with gr.Row():
+                                enable_feature_selection = gr.Checkbox(
+                                    label="✨ Smart Feature Selection",
+                                    value=True,
+                                    info="Automatically identify the most important features"
+                                )
+                                
+                                enable_quantization = gr.Checkbox(
+                                    label="⚡ Model Compression",
+                                    value=False,
+                                    info="Reduce model size for faster inference"
+                                )
+                            
+                            optimization_mode = gr.Dropdown(
+                                choices=[
+                                    ("Balanced (Recommended)", "BALANCED"),
+                                    ("Performance Focus", "PERFORMANCE"),
+                                    ("Memory Saving", "MEMORY_SAVING"),
+                                    ("Conservative", "CONSERVATIVE")
+                                ],
+                                value="BALANCED",
+                                label="⚖️ Optimization Mode",
+                                info="Balance between speed, accuracy, and resource usage"
+                            )
                     
-                    config_btn = gr.Button("Create Configuration", variant="primary")
-                    config_output = gr.Markdown("")
+                    with gr.Row():
+                        config_btn = gr.Button("⚙️ Create Training Configuration", variant="primary", size="lg")
+                        
+                    config_output = gr.HTML("""
+                    <div class="info-card">
+                        <h4>📋 Configuration Status</h4>
+                        <p>👆 Click "Create Training Configuration" to set up your ML pipeline</p>
+                    </div>
+                    """)
                     
-                    # Algorithm selection (updated based on task type)
+                    # Algorithm selection display (updated based on task type)
                     algorithm_dropdown = gr.Dropdown(
                         choices=[],
-                        label="Available ML Algorithms",
-                        info="Select task type and create configuration to see available algorithms"
+                        label="🤖 Available ML Algorithms",
+                        info="Create configuration first to see available algorithms for your task type",
+                        interactive=False
                     )
                 
-                # Training Tab
-                with gr.Tab("🎯 Model Training", id="training"):
-                    gr.Markdown("### Train Machine Learning Models")
+                # 🎯 STEP 3: Training Tab - Enhanced with progress tracking
+                with gr.Tab("🎯 Step 3: Train Models", id="training"):
+                    gr.HTML("""
+                    <div class="step-indicator">
+                        Step 3: Train ML Models - Select algorithms and start training
+                    </div>
+                    """)
                     
                     with gr.Row():
                         with gr.Column(scale=1):
+                            gr.Markdown("### 🎯 Training Setup")
+                            
                             target_column = gr.Textbox(
-                                label="Target Column",
-                                placeholder="Enter the name of your target column",
-                                info="The column you want to predict"
+                                label="🎯 Target Column Name",
+                                placeholder="e.g., price, category, outcome",
+                                info="The column you want to predict (must match exactly)",
+                                lines=1
                             )
                             
-                            # Create the algorithm selection dropdown that will be updated
+                            # Enhanced algorithm selection
                             algorithm_selection = gr.Dropdown(
-                                choices=["Configure training parameters first..."],
-                                value="Configure training parameters first...",
-                                label="Select ML Algorithm",
-                                info="Go to Configuration tab and create config to see available algorithms",
-                                interactive=True
+                                choices=["⚙️ Configure training parameters first..."],
+                                value="⚙️ Configure training parameters first...",
+                                label="🤖 Select ML Algorithm",
+                                info="Complete Step 2 (Configuration) to see available algorithms",
+                                interactive=False
                             )
                             
                             model_name_input = gr.Textbox(
-                                label="Model Name (Optional)",
-                                placeholder="Leave empty for auto-generated name",
-                                info="Custom name for your trained model"
+                                label="📝 Model Name (Optional)",
+                                placeholder="e.g., my_iris_classifier",
+                                info="Leave empty for auto-generated name with timestamp",
+                                lines=1
                             )
                             
-                            train_btn = gr.Button("🚀 Start Training", variant="primary")
+                            train_btn = gr.Button("🚀 Start Training", variant="primary", size="lg")
                             
                         with gr.Column(scale=2):
-                            training_output = gr.Markdown("Configure your model and click 'Start Training'...")
+                            training_output = gr.HTML("""
+                            <div class="info-card">
+                                <h4>🎯 Training Status</h4>
+                                <p><strong>Ready to train!</strong> Follow these steps:</p>
+                                <ol>
+                                    <li>✅ Load your data in Step 1</li>
+                                    <li>✅ Configure parameters in Step 2</li>
+                                    <li>🎯 Enter your target column name</li>
+                                    <li>🤖 Select an ML algorithm</li>
+                                    <li>🚀 Click "Start Training"</li>
+                                </ol>
+                            </div>
+                            """)
                     
+                    # Results display with better organization
                     with gr.Row():
                         with gr.Column():
-                            metrics_output = gr.Markdown("")
+                            gr.Markdown("### 📊 Model Performance")
+                            metrics_output = gr.HTML("""
+                            <div class="info-card">
+                                <p style="text-align: center; color: #666;">
+                                    📊 Training metrics will appear here
+                                </p>
+                            </div>
+                            """)
+                            
                         with gr.Column():
-                            importance_output = gr.Markdown("")
+                            gr.Markdown("### 🏆 Feature Importance")
+                            importance_output = gr.HTML("""
+                            <div class="info-card">
+                                <p style="text-align: center; color: #666;">
+                                    🏆 Feature importance rankings will appear here
+                                </p>
+                            </div>
+                            """)
                     
-                    # Trained models dropdown (updated after training)
-                    trained_models_dropdown = gr.Dropdown(
-                        choices=app.get_trained_model_list(),
-                        value="Select a trained model...",
-                        label="Trained Models",
-                        info="Select a model to view details or use for predictions"
-                    )
+                    # Enhanced trained models management
+                    with gr.Row():
+                        with gr.Column(scale=2):
+                            trained_models_dropdown = gr.Dropdown(
+                                choices=app.get_trained_model_list(),
+                                value="📋 Select a trained model...",
+                                label="📋 Your Trained Models",
+                                info="All your trained models appear here"
+                            )
+                            
+                        with gr.Column(scale=1):
+                            model_info_btn = gr.Button("📋 View Model Details", variant="secondary")
                     
                     # Model information display
-                    with gr.Row():
-                        with gr.Column():
-                            model_info_btn = gr.Button("📋 Get Model Info", variant="secondary")
-                            model_info_output = gr.Markdown("")
+                    model_info_output = gr.HTML("""
+                    <div class="info-card">
+                        <h4>📋 Model Information</h4>
+                        <p>Select a trained model and click "View Model Details" to see comprehensive information including performance metrics, training time, and feature details.</p>
+                    </div>
+                    """)
                 
-                # Now set up the event handlers after all components are defined
+                # Enhanced event handlers for better UX
                 
-                # Data upload tab event handlers
+                # Data upload tab event handlers with better feedback
+                def load_data_enhanced(file):
+                    if file is None:
+                        return gr.HTML("""
+                        <div class="error-card">
+                            <h4>❌ No File Selected</h4>
+                            <p>Please select a data file to upload.</p>
+                        </div>
+                        """), {}, gr.Markdown("Please upload a file first."), gr.HTML("")
+                    
+                    try:
+                        result = app.load_data(file)
+                        if isinstance(result, tuple) and len(result) >= 4:
+                            info, data_state, preview, table = result
+                            if "Error" in info:
+                                return gr.HTML(f"""
+                                <div class="error-card">
+                                    <h4>❌ Upload Failed</h4>
+                                    <p>{info}</p>
+                                </div>
+                                """), data_state, preview, table
+                            else:
+                                return gr.HTML(f"""
+                                <div class="success-card">
+                                    <h4>✅ Data Loaded Successfully!</h4>
+                                    <p>{info}</p>
+                                </div>
+                                """), data_state, preview, table
+                        else:
+                            return gr.HTML("""
+                            <div class="error-card">
+                                <h4>❌ Unexpected Error</h4>
+                                <p>Please try again or contact support.</p>
+                            </div>
+                            """), {}, gr.Markdown("Error occurred"), gr.HTML("")
+                    except Exception as e:
+                        return gr.HTML(f"""
+                        <div class="error-card">
+                            <h4>❌ Upload Error</h4>
+                            <p>Error: {str(e)}</p>
+                        </div>
+                        """), {}, gr.Markdown("Error occurred"), gr.HTML("")
+                
+                def load_sample_data_enhanced(dataset_selection):
+                    if dataset_selection.startswith("🎯"):
+                        return gr.HTML("""
+                        <div class="info-card">
+                            <h4>📋 Dataset Status</h4>
+                            <p>👆 Select a sample dataset from the dropdown to get started</p>
+                        </div>
+                        """), {}, gr.Markdown("Please select a dataset"), gr.HTML("")
+                    
+                    # Extract dataset name from the formatted string
+                    dataset_name = dataset_selection.split(":")[0]
+                    try:
+                        result = app.load_sample_data(dataset_name)
+                        if isinstance(result, tuple) and len(result) >= 4:
+                            info, data_state, preview, table = result
+                            return gr.HTML(f"""
+                            <div class="success-card">
+                                <h4>✅ Sample Dataset Loaded!</h4>
+                                <div>{info}</div>
+                            </div>
+                            """), data_state, preview, table
+                        else:
+                            return gr.HTML("""
+                            <div class="error-card">
+                                <h4>❌ Loading Failed</h4>
+                                <p>Could not load the selected dataset.</p>
+                            </div>
+                            """), {}, gr.Markdown("Error occurred"), gr.HTML("")
+                    except Exception as e:
+                        return gr.HTML(f"""
+                        <div class="error-card">
+                            <h4>❌ Loading Error</h4>
+                            <p>Error: {str(e)}</p>
+                        </div>
+                        """), {}, gr.Markdown("Error occurred"), gr.HTML("")
+                
                 load_btn.click(
-                    fn=app.load_data,
+                    fn=load_data_enhanced,
                     inputs=[file_input],
                     outputs=[data_info, data_state, data_preview, sample_data_table]
                 )
                 
                 load_sample_btn.click(
-                    fn=app.load_sample_data,
+                    fn=load_sample_data_enhanced,
                     inputs=[sample_dropdown],
                     outputs=[data_info, data_state, data_preview, sample_data_table]
                 )
                 
+                # Enhanced configuration handler
+                def create_config_enhanced(*args):
+                    try:
+                        result = app.create_training_config(*args)
+                        if isinstance(result, tuple) and len(result) >= 3:
+                            config_text, algorithm_dropdown_update, algorithm_choices = result
+                            if "Error" in config_text:
+                                return gr.HTML(f"""
+                                <div class="error-card">
+                                    <h4>❌ Configuration Failed</h4>
+                                    <p>{config_text}</p>
+                                </div>
+                                """), algorithm_dropdown_update, algorithm_choices
+                            else:
+                                return gr.HTML(f"""
+                                <div class="success-card">
+                                    <h4>✅ Configuration Created!</h4>
+                                    <div>{config_text}</div>
+                                </div>
+                                """), algorithm_dropdown_update, algorithm_choices
+                        else:
+                            return gr.HTML("""
+                            <div class="error-card">
+                                <h4>❌ Configuration Error</h4>
+                                <p>Please check your settings and try again.</p>
+                            </div>
+                            """), gr.Dropdown(), []
+                    except Exception as e:
+                        return gr.HTML(f"""
+                        <div class="error-card">
+                            <h4>❌ Configuration Error</h4>
+                            <p>Error: {str(e)}</p>
+                        </div>
+                        """), gr.Dropdown(), []
+                
                 # Configuration tab event handlers
                 config_btn.click(
-                    fn=app.create_training_config,
+                    fn=create_config_enhanced,
                     inputs=[
                         task_type, optimization_strategy, cv_folds, test_size,
                         random_state, enable_feature_selection, normalization,
@@ -1415,12 +1694,22 @@ Upload your data, configure training parameters, train models, and make predicti
                 
                 # Function to update training tab algorithm dropdown
                 def update_algorithm_choices_from_state(algorithm_list):
-                    return gr.Dropdown(
-                        choices=algorithm_list if algorithm_list else ["Configure training parameters first..."],
-                        value=algorithm_list[0] if algorithm_list else "Configure training parameters first...",
-                        label="Select ML Algorithm",
-                        info="Available algorithms based on your configuration"
-                    )
+                    if algorithm_list and len(algorithm_list) > 0:
+                        return gr.Dropdown(
+                            choices=algorithm_list,
+                            value=algorithm_list[0],
+                            label="🤖 Select ML Algorithm",
+                            info="Choose from available algorithms for your task type",
+                            interactive=True
+                        )
+                    else:
+                        return gr.Dropdown(
+                            choices=["⚙️ Configure training parameters first..."],
+                            value="⚙️ Configure training parameters first...",
+                            label="🤖 Select ML Algorithm",
+                            info="Complete Step 2 (Configuration) to see available algorithms",
+                            interactive=False
+                        )
                 
                 # Update the training tab dropdown when algorithm choices state changes
                 algorithm_choices_state.change(
@@ -1429,249 +1718,485 @@ Upload your data, configure training parameters, train models, and make predicti
                     outputs=[algorithm_selection]
                 )
                 
+                # Enhanced training handler
+                def train_model_enhanced(target_col, algorithm, model_name):
+                    if not target_col:
+                        return gr.HTML("""
+                        <div class="error-card">
+                            <h4>❌ Missing Target Column</h4>
+                            <p>Please enter the name of your target column.</p>
+                        </div>
+                        """), gr.HTML(""), gr.HTML(""), gr.Dropdown()
+                    
+                    if algorithm.startswith("⚙️"):
+                        return gr.HTML("""
+                        <div class="error-card">
+                            <h4>❌ No Algorithm Selected</h4>
+                            <p>Please complete Step 2 (Configuration) and select an algorithm.</p>
+                        </div>
+                        """), gr.HTML(""), gr.HTML(""), gr.Dropdown()
+                    
+                    try:
+                        # Show training in progress
+                        progress_html = gr.HTML("""
+                        <div class="info-card">
+                            <h4>🚀 Training In Progress...</h4>
+                            <p>Please wait while we train your model. This may take a few minutes.</p>
+                            <div style="margin: 10px 0;">
+                                <div style="background: #f0f0f0; border-radius: 10px; overflow: hidden;">
+                                    <div style="background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); height: 20px; width: 0%; animation: progress 2s infinite;"></div>
+                                </div>
+                            </div>
+                        </div>
+                        """)
+                        
+                        result = app.train_model(target_col, algorithm, model_name)
+                        if isinstance(result, tuple) and len(result) >= 4:
+                            summary, metrics, importance, models_dropdown = result
+                            if "Error" in summary:
+                                return gr.HTML(f"""
+                                <div class="error-card">
+                                    <h4>❌ Training Failed</h4>
+                                    <div>{summary}</div>
+                                </div>
+                                """), gr.HTML(f"""
+                                <div class="error-card">
+                                    <p>Training was unsuccessful. Please check your data and configuration.</p>
+                                </div>
+                                """), gr.HTML(""), models_dropdown
+                            else:
+                                return gr.HTML(f"""
+                                <div class="success-card">
+                                    <h4>✅ Training Completed Successfully!</h4>
+                                    <div>{summary}</div>
+                                </div>
+                                """), gr.HTML(f"""
+                                <div class="metric-box">
+                                    <h4>📊 Performance Metrics</h4>
+                                    <div>{metrics}</div>
+                                </div>
+                                """), gr.HTML(f"""
+                                <div class="metric-box">
+                                    <h4>🏆 Feature Importance</h4>
+                                    <div>{importance}</div>
+                                </div>
+                                """), models_dropdown
+                        else:
+                            return gr.HTML("""
+                            <div class="error-card">
+                                <h4>❌ Training Error</h4>
+                                <p>An unexpected error occurred during training.</p>
+                            </div>
+                            """), gr.HTML(""), gr.HTML(""), gr.Dropdown()
+                    except Exception as e:
+                        return gr.HTML(f"""
+                        <div class="error-card">
+                            <h4>❌ Training Error</h4>
+                            <p>Error: {str(e)}</p>
+                        </div>
+                        """), gr.HTML(""), gr.HTML(""), gr.Dropdown()
+                
                 # Training tab event handlers
                 train_btn.click(
-                    fn=app.train_model,
+                    fn=train_model_enhanced,
                     inputs=[target_column, algorithm_selection, model_name_input],
                     outputs=[training_output, metrics_output, importance_output, trained_models_dropdown]
                 )
                 
+                def get_model_info_enhanced(model_name):
+                    try:
+                        result = app.get_trained_model_info(model_name)
+                        return gr.HTML(f"""
+                        <div class="metric-box">
+                            <h4>📋 Model Details</h4>
+                            <div>{result}</div>
+                        </div>
+                        """)
+                    except Exception as e:
+                        return gr.HTML(f"""
+                        <div class="error-card">
+                            <h4>❌ Error</h4>
+                            <p>Could not retrieve model information: {str(e)}</p>
+                        </div>
+                        """)
+                
                 model_info_btn.click(
-                    fn=app.get_trained_model_info,
+                    fn=get_model_info_enhanced,
                     inputs=[trained_models_dropdown],
                     outputs=[model_info_output]
                 )
                 
-                # Prediction Tab
-                with gr.Tab("🔮 Predictions", id="predictions"):
-                    gr.Markdown("### Make Predictions with Trained Models")
+                # 🎯 STEP 4: Predictions Tab - Enhanced with better UX
+                with gr.Tab("🔮 Step 4: Make Predictions", id="predictions"):
+                    gr.HTML("""
+                    <div class="step-indicator">
+                        Step 4: Make Real-time Predictions - Test your trained models
+                    </div>
+                    """)
                     
                     with gr.Row():
                         with gr.Column(scale=1):
+                            gr.Markdown("### 🔮 Prediction Input")
+                            
                             prediction_input = gr.Textbox(
-                                label="Input Data",
-                                placeholder="Enter comma-separated values or JSON array",
-                                lines=3,
-                                info="Example: 1.5, 2.3, 0.8, 1.1 or [1.5, 2.3, 0.8, 1.1]"
+                                label="📊 Input Data",
+                                placeholder="Example: 5.1, 3.5, 1.4, 0.2\nOr JSON: [5.1, 3.5, 1.4, 0.2]",
+                                lines=4,
+                                info="Enter feature values in the same order as your training data"
                             )
                             
-                            # Model selection for predictions
+                            # Enhanced model selection
                             prediction_model_dropdown = gr.Dropdown(
                                 choices=app.get_trained_model_list(),
-                                value="Select a trained model...",
-                                label="Select Model for Prediction",
-                                info="Choose a specific trained model or use current training engine model"
+                                value="📋 Select a trained model...",
+                                label="🤖 Select Model",
+                                info="Choose which trained model to use for prediction"
                             )
                             
-                            predict_btn = gr.Button("🔮 Make Prediction", variant="primary")
+                            with gr.Row():
+                                predict_btn = gr.Button("🔮 Make Prediction", variant="primary", size="lg")
+                                clear_input_btn = gr.Button("🗑️ Clear Input", variant="secondary")
                             
                         with gr.Column(scale=2):
-                            prediction_output = gr.Markdown("Enter input data and click 'Make Prediction'...")
+                            gr.Markdown("### 📊 Prediction Results")
+                            prediction_output = gr.HTML("""
+                            <div class="info-card">
+                                <h4>🔮 Ready for Predictions</h4>
+                                <p><strong>How to make predictions:</strong></p>
+                                <ol>
+                                    <li>✅ Train at least one model in Step 3</li>
+                                    <li>📊 Enter your input data (feature values)</li>
+                                    <li>🤖 Select a trained model</li>
+                                    <li>🔮 Click "Make Prediction"</li>
+                                </ol>
+                                <div style="margin-top: 15px; padding: 10px; background: #f0f8ff; color: #1e40af; border-radius: 6px;">
+                                    <strong>💡 Tip:</strong> Make sure your input features are in the same order and scale as your training data.
+                                </div>
+                            </div>
+                            """)
+                    
+                    # Enhanced prediction handlers
+                    def make_prediction_enhanced(input_data, selected_model):
+                        if not input_data.strip():
+                            return gr.HTML("""
+                            <div class="error-card">
+                                <h4>❌ No Input Data</h4>
+                                <p>Please enter the feature values for prediction.</p>
+                            </div>
+                            """)
+                        
+                        if selected_model.startswith("📋"):
+                            return gr.HTML("""
+                            <div class="error-card">
+                                <h4>❌ No Model Selected</h4>
+                                <p>Please select a trained model for prediction.</p>
+                            </div>
+                            """)
+                        
+                        try:
+                            result = app.make_prediction(input_data, selected_model)
+                            if "Error" in result:
+                                return gr.HTML(f"""
+                                <div class="error-card">
+                                    <h4>❌ Prediction Failed</h4>
+                                    <p>{result}</p>
+                                </div>
+                                """)
+                            else:
+                                return gr.HTML(f"""
+                                <div class="success-card">
+                                    <h4>✅ Prediction Successful!</h4>
+                                    <div style="margin-top: 15px;">
+                                        {result}
+                                    </div>
+                                </div>
+                                """)
+                        except Exception as e:
+                            return gr.HTML(f"""
+                            <div class="error-card">
+                                <h4>❌ Prediction Error</h4>
+                                <p>Error: {str(e)}</p>
+                            </div>
+                            """)
                     
                     predict_btn.click(
-                        fn=app.make_prediction,
+                        fn=make_prediction_enhanced,
                         inputs=[prediction_input, prediction_model_dropdown],
                         outputs=[prediction_output]
                     )
+                    
+                    clear_input_btn.click(
+                        fn=lambda: "",
+                        outputs=[prediction_input]
+                    )
                 
-                # Update prediction model dropdown when new models are trained
-                def update_prediction_model_dropdown():
-                    return gr.Dropdown(choices=app.get_trained_model_list())
+                # 🎯 STEP 5: Model Comparison Tab - Enhanced performance analysis
+                with gr.Tab("📊 Step 5: Compare Models", id="performance"):
+                    gr.HTML("""
+                    <div class="step-indicator">
+                        Step 5: Model Performance Analysis - Compare and choose the best model
+                    </div>
+                    """)
+                    
+                    with gr.Row():
+                        with gr.Column(scale=1):
+                            gr.Markdown("### 📊 Performance Analysis")
+                            performance_btn = gr.Button("📊 Generate Performance Report", variant="primary", size="lg")
+                            
+                            gr.Markdown("""
+                            📈 What you'll see:
+                            - Model accuracy comparisons
+                            - Training time analysis  
+                            - Feature importance rankings
+                            - Recommendations for best model
+                            """)
+                            
+                        with gr.Column(scale=2):
+                            performance_output = gr.HTML("""
+                            <div class="info-card">
+                                <h4>📊 Performance Dashboard</h4>
+                                <p><strong>Ready to analyze your models!</strong></p>
+                                <p>Click "Generate Performance Report" to see:</p>
+                                <ul>
+                                    <li>📈 Accuracy metrics for each model</li>
+                                    <li>⏱️ Training time comparisons</li>
+                                    <li>🏆 Feature importance analysis</li>
+                                    <li>💡 Best model recommendations</li>
+                                </ul>
+                                <div style="margin-top: 15px; padding: 10px; background: #f0f8ff; color: #1e40af; border-radius: 6px;">
+                                    <strong>💡 Note:</strong> Train multiple models in Step 3 to see meaningful comparisons.
+                                </div>
+                            </div>
+                            """)
+                    
+                    def get_performance_enhanced():
+                        try:
+                            result = app.get_model_performance()
+                            if "Error" in result or "No models" in result:
+                                return gr.HTML(f"""
+                                <div class="info-card">
+                                    <h4>📊 Performance Report</h4>
+                                    <p>{result}</p>
+                                    <div style="margin-top: 15px; padding: 10px; background: #fff3cd; color: #856404; border-radius: 6px;">
+                                        <strong>💡 Tip:</strong> Train multiple models in Step 3 to see performance comparisons.
+                                    </div>
+                                </div>
+                                """)
+                            else:
+                                return gr.HTML(f"""
+                                <div class="metric-box">
+                                    <h4>📊 Model Performance Report</h4>
+                                    <div>{result}</div>
+                                </div>
+                                """)
+                        except Exception as e:
+                            return gr.HTML(f"""
+                            <div class="error-card">
+                                <h4>❌ Report Generation Failed</h4>
+                                <p>Error: {str(e)}</p>
+                            </div>
+                            """)
+                    
+                    performance_btn.click(
+                        fn=get_performance_enhanced,
+                        outputs=[performance_output]
+                    )
                 
-                trained_models_dropdown.change(
-                    fn=update_prediction_model_dropdown,
-                    inputs=[],
-                    outputs=[prediction_model_dropdown]
-                )
-                
-                # Model Management Tab
+                # 💾 Model Management Tab - Enhanced with better organization
                 with gr.Tab("💾 Model Management", id="model_management"):
-                    gr.Markdown("### Save and Load Models")
+                    gr.Markdown("### 💾 Save and Load Models")
                     
                     with gr.Row():
                         with gr.Column():
-                            gr.Markdown("#### Save Model")
+                            gr.HTML("""
+                            <div class="workflow-step">
+                                <h4>💾 Save Trained Models</h4>
+                                <p>Securely save your best performing models for future use</p>
+                            </div>
+                            """)
                             
                             save_model_name = gr.Textbox(
-                                label="Model Name",
-                                placeholder="Enter a name for your model"
+                                label="📝 Model Name",
+                                placeholder="e.g., best_iris_classifier_v1",
+                                info="Choose a descriptive name for your model"
                             )
                             
                             save_model_dropdown = gr.Dropdown(
                                 choices=app.get_trained_model_list(),
-                                value="Select a trained model...",
-                                label="Select Model to Save",
-                                info="Choose which trained model to save"
+                                value="📋 Select a trained model...",
+                                label="🤖 Select Model to Save",
+                                info="Choose which trained model to save permanently"
                             )
                             
                             save_password = gr.Textbox(
-                                label="Encryption Password (Optional)",
+                                label="🔐 Encryption Password (Optional)",
                                 type="password",
-                                placeholder="Leave empty for no encryption"
+                                placeholder="Leave empty for no encryption",
+                                info="Add password protection for sensitive models"
                             )
                             
-                            save_btn = gr.Button("💾 Save Model", variant="primary")
-                            save_output = gr.Markdown("")
+                            save_btn = gr.Button("💾 Save Model", variant="primary", size="lg")
+                            save_output = gr.HTML("""
+                            <div class="info-card">
+                                <h4>💾 Save Status</h4>
+                                <p>Select a model and click "Save Model" to store it permanently.</p>
+                            </div>
+                            """)
                             
                         with gr.Column():
-                            gr.Markdown("#### Load Model")
+                            gr.HTML("""
+                            <div class="workflow-step">
+                                <h4>📂 Load Saved Models</h4>
+                                <p>Load previously saved models for inference or further training</p>
+                            </div>
+                            """)
                             
                             load_file = gr.File(
-                                label="Model File",
+                                label="📁 Select Model File",
                                 file_count="single",
-                                type="filepath"
+                                type="filepath",
+                                file_types=[".pkl", ".joblib", ".model"]
                             )
                             
                             load_password = gr.Textbox(
-                                label="Decryption Password",
+                                label="🔐 Decryption Password",
                                 type="password",
-                                placeholder="Enter password if model is encrypted"
+                                placeholder="Enter password if model is encrypted",
+                                info="Only needed for encrypted models"
                             )
                             
-                            load_btn = gr.Button("📂 Load Model", variant="secondary")
-                            load_output = gr.Markdown("")
+                            load_btn = gr.Button("📂 Load Model", variant="secondary", size="lg")
+                            load_output = gr.HTML("""
+                            <div class="info-card">
+                                <h4>📂 Load Status</h4>
+                                <p>Select a model file and click "Load Model" to import it.</p>
+                            </div>
+                            """)
+                    
+                    # Enhanced save/load handlers
+                    def save_model_enhanced(model_name, selected_model, password):
+                        if not model_name:
+                            return gr.HTML("""
+                            <div class="error-card">
+                                <h4>❌ Missing Model Name</h4>
+                                <p>Please enter a name for your model.</p>
+                            </div>
+                            """)
+                        
+                        if selected_model.startswith("📋"):
+                            return gr.HTML("""
+                            <div class="error-card">
+                                <h4>❌ No Model Selected</h4>
+                                <p>Please select a trained model to save.</p>
+                            </div>
+                            """)
+                        
+                        try:
+                            result = app.save_model(model_name, selected_model, password)
+                            if "✅" in result:
+                                return gr.HTML(f"""
+                                <div class="success-card">
+                                    <h4>✅ Model Saved Successfully!</h4>
+                                    <p>{result}</p>
+                                </div>
+                                """)
+                            else:
+                                return gr.HTML(f"""
+                                <div class="error-card">
+                                    <h4>❌ Save Failed</h4>
+                                    <p>{result}</p>
+                                </div>
+                                """)
+                        except Exception as e:
+                            return gr.HTML(f"""
+                            <div class="error-card">
+                                <h4>❌ Save Error</h4>
+                                <p>Error: {str(e)}</p>
+                            </div>
+                            """)
+                    
+                    def load_model_enhanced(file, password):
+                        if file is None:
+                            return gr.HTML("""
+                            <div class="error-card">
+                                <h4>❌ No File Selected</h4>
+                                <p>Please select a model file to load.</p>
+                            </div>
+                            """)
+                        
+                        try:
+                            result = app.load_model(file, password)
+                            if "✅" in result:
+                                return gr.HTML(f"""
+                                <div class="success-card">
+                                    <h4>✅ Model Loaded Successfully!</h4>
+                                    <p>{result}</p>
+                                </div>
+                                """)
+                            else:
+                                return gr.HTML(f"""
+                                <div class="error-card">
+                                    <h4>❌ Load Failed</h4>
+                                    <p>{result}</p>
+                                </div>
+                                """)
+                        except Exception as e:
+                            return gr.HTML(f"""
+                            <div class="error-card">
+                                <h4>❌ Load Error</h4>
+                                <p>Error: {str(e)}</p>
+                            </div>
+                            """)
                     
                     save_btn.click(
-                        fn=app.save_model,
+                        fn=save_model_enhanced,
                         inputs=[save_model_name, save_model_dropdown, save_password],
                         outputs=[save_output]
                     )
                     
                     load_btn.click(
-                        fn=app.load_model,
+                        fn=load_model_enhanced,
                         inputs=[load_file, load_password],
                         outputs=[load_output]
                     )
                 
-                # Performance Tab
-                with gr.Tab("📊 Performance", id="performance"):
-                    gr.Markdown("### Model Performance Analysis")
+                # 🖥️ System Info Tab - Enhanced with useful information
+                with gr.Tab("🖥️ System Information", id="system_info"):
+                    gr.Markdown("### 🖥️ System Resources and Optimization")
                     
                     with gr.Row():
                         with gr.Column(scale=1):
-                            performance_btn = gr.Button("📊 Get Performance Report", variant="primary")
+                            system_btn = gr.Button("🖥️ Check System Resources", variant="primary")
+                            
+                            gr.Markdown("""
+                            📊 System Information Includes:
+                            - CPU and memory usage
+                            - Available disk space
+                            - GPU information (if available)
+                            - Python environment details
+                            - Optimization recommendations
+                            """)
                             
                         with gr.Column(scale=2):
-                            performance_output = gr.Markdown("Click 'Get Performance Report' to see model comparisons...")
+                            system_output = gr.JSON(
+                                label="🖥️ System Information",
+                                value={"info": "Click 'Check System Resources' to view system information"}
+                            )
                     
-                    performance_btn.click(
-                        fn=app.get_model_performance,
-                        outputs=[performance_output]
-                    )
-                
-                # System Info Tab
-                with gr.Tab("🖥️ System Info", id="system_info"):
-                    gr.Markdown("### System Information and Optimization")
-                    
-                    system_btn = gr.Button("🖥️ Get System Info", variant="secondary")
-                    system_output = gr.JSON(label="System Information")
+                    def get_system_info_enhanced():
+                        try:
+                            result = app.get_system_info()
+                            return result
+                        except Exception as e:
+                            return {"error": f"Could not retrieve system information: {str(e)}"}
                     
                     system_btn.click(
-                        fn=app.get_system_info,
+                        fn=get_system_info_enhanced,
                         outputs=[system_output]
                     )
             
             # Inference Server Tab (always available)
             with gr.Tab("🔧 Inference Server", id="inference_server"):
-                # Custom CSS for inference server styling
-                gr.HTML("""
-                <style>
-                .inference-container {
-                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                    border-radius: 12px;
-                    padding: 20px;
-                    margin: 10px 0;
-                    color: white;
-                }
-                .server-status {
-                    background: rgba(255, 255, 255, 0.1);
-                    border-radius: 8px;
-                    padding: 15px;
-                    margin: 10px 0;
-                    border: 1px solid rgba(255, 255, 255, 0.2);
-                }
-                .server-controls {
-                    background: rgba(0, 0, 0, 0.05);
-                    border-radius: 8px;
-                    padding: 20px;
-                    margin: 10px 0;
-                    border: 1px solid #e0e0e0;
-                }
-                .status-indicator {
-                    display: inline-block;
-                    width: 12px;
-                    height: 12px;
-                    border-radius: 50%;
-                    margin-right: 8px;
-                }
-                .status-stopped {
-                    background-color: #ff6b6b;
-                }
-                .status-running {
-                    background-color: #51cf66;
-                }
-                .status-loading {
-                    background-color: #ffd43b;
-                }
-                .server-metric {
-                    display: flex;
-                    justify-content: space-between;
-                    padding: 5px 0;
-                    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-                }
-                .server-metric:last-child {
-                    border-bottom: none;
-                }
-                .metric-label {
-                    font-weight: 500;
-                    opacity: 0.8;
-                }
-                .metric-value {
-                    font-weight: bold;
-                }
-                .server-logs {
-                    background: #1a1a1a;
-                    color: #00ff00;
-                    border-radius: 8px;
-                    padding: 15px;
-                    font-family: 'Courier New', monospace;
-                    font-size: 12px;
-                    height: 200px;
-                    overflow-y: auto;
-                    white-space: pre-wrap;
-                }
-                .control-button {
-                    margin: 5px;
-                    padding: 10px 20px;
-                    border-radius: 6px;
-                    border: none;
-                    cursor: pointer;
-                    font-weight: 500;
-                    transition: all 0.3s ease;
-                }
-                .btn-start {
-                    background: #51cf66;
-                    color: white;
-                }
-                .btn-stop {
-                    background: #ff6b6b;
-                    color: white;
-                }
-                .btn-load {
-                    background: #339af0;
-                    color: white;
-                }
-                .model-info-card {
-                    background: white;
-                    border-radius: 8px;
-                    padding: 15px;
-                    margin: 10px 0;
-                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-                    border: 1px solid #e0e0e0;
-                }
-                </style>
-                """)
-                
                 with gr.Row():
                     # Left Panel - Server Control
                     with gr.Column(scale=2):
@@ -1728,7 +2253,7 @@ Upload your data, configure training parameters, train models, and make predicti
                             inference_predict_btn = gr.Button("🎯 Predict", variant="primary")
                             clear_input_btn = gr.Button("🗑️ Clear", variant="secondary")
                         
-                        inference_output = gr.Markdown("**Prediction Results:**\n\nLoad a model and enter input data to make predictions...")
+                        inference_output = gr.Markdown("Prediction Results:\n\nLoad a model and enter input data to make predictions...")
                         gr.HTML('</div>')
                     
                     # Right Panel - Server Status & Logs
@@ -1863,7 +2388,7 @@ Server logs will be displayed here.
                         return f"""
                         <div class="model-info-card">
                             <h4 style="margin-top: 0;">📚 Loaded Models</h4>
-                            <div style="padding: 10px; background: #f0f8ff; border-radius: 4px; margin: 5px 0;">
+                            <div style="padding: 10px; background: #f0f8ff; color: #1e40af; border-radius: 4px; margin: 5px 0;">
                                 <strong>{model_name}</strong>
                                 <br><small style="color: #666;">Status: Ready</small>
                             </div>
@@ -1943,41 +2468,82 @@ Server logs will be displayed here.
                     outputs=[server_logs]
                 )
         
-        # Footer
-        footer_text = """
----
-**ML Inference Server** - Optimized for real-time predictions.
-
-💡 **Tips:**
-- Load your trained model in the Inference Server tab
-- Make real-time predictions with minimal latency
-- Supports encrypted model files for security
-        """ if inference_only else """
----
-**ML Training & Inference System** - Built with advanced optimization and security features.
-
-💡 **Tips:**
-- Start by uploading your dataset or loading sample data in the Data Upload tab
-- Try sample datasets like Iris, Titanic, or Boston Housing for quick testing
-- Configure your training parameters in the Configuration tab
-- Select from multiple ML algorithms based on your task type
-- Train multiple models and compare their performance
-- Use the Inference Server for production-ready predictions
-- Save models securely with encryption
-- View detailed information about your trained models
-
-**Available ML Algorithms:**
-- **Tree-Based**: Random Forest, Extra Trees, Decision Tree, Gradient Boosting
-- **Boosting**: XGBoost, LightGBM, CatBoost, AdaBoost
-- **Linear Models**: Logistic/Linear Regression, Ridge, Lasso, Elastic Net
-- **Support Vector Machines**: RBF, Linear, Polynomial kernels
-- **Neural Networks**: Multi-layer Perceptron, Basic Neural Network
-- **Naive Bayes**: Gaussian, Multinomial, Bernoulli
-- **Nearest Neighbors**: K-Nearest Neighbors
-- **Ensemble Methods**: Voting Classifier, Bagging
-        """
-        
-        gr.Markdown(footer_text)
+        # Enhanced footer with helpful information
+        gr.HTML("""
+        <div style="margin-top: 40px; padding: 30px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 15px; color: white;">
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 30px;">
+        """ + ("""
+                <div>
+                    <h3 style="margin-top: 0;">🚀 Quick Start Guide</h3>
+                    <ol style="margin: 0;">
+                        <li><strong>Load Data:</strong> Upload CSV/Excel or try sample datasets</li>
+                        <li><strong>Configure:</strong> Set task type and optimization parameters</li>
+                        <li><strong>Train:</strong> Select algorithms and train multiple models</li>
+                        <li><strong>Compare:</strong> Analyze performance metrics</li>
+                        <li><strong>Predict:</strong> Make real-time predictions</li>
+                    </ol>
+                </div>
+                <div>
+                    <h3 style="margin-top: 0;">🤖 Available Algorithms</h3>
+                    <div style="font-size: 0.9em;">
+                        <strong>Tree-Based:</strong> Random Forest, XGBoost, LightGBM<br>
+                        <strong>Linear:</strong> Logistic/Linear Regression, Ridge, Lasso<br>
+                        <strong>Advanced:</strong> SVM, Neural Networks, Ensemble Methods<br>
+                        <strong>Specialized:</strong> Naive Bayes, KNN, CatBoost
+                    </div>
+                </div>
+                <div>
+                    <h3 style="margin-top: 0;">💡 Pro Tips</h3>
+                    <ul style="margin: 0; font-size: 0.9em;">
+                        <li>Try sample datasets for quick testing</li>
+                        <li>Use feature selection for better performance</li>
+                        <li>Compare multiple algorithms</li>
+                        <li>Save your best models securely</li>
+                        <li>Check system resources for optimization</li>
+                    </ul>
+                </div>
+                <div>
+                    <h3 style="margin-top: 0;">🔧 Features</h3>
+                    <ul style="margin: 0; font-size: 0.9em;">
+                        <li>✅ 20+ ML algorithms</li>
+                        <li>✅ Automatic hyperparameter tuning</li>
+                        <li>✅ Model performance comparison</li>
+                        <li>✅ Secure model encryption</li>
+                        <li>✅ Real-time inference server</li>
+                        <li>✅ Advanced optimization</li>
+                    </ul>
+                </div>
+        """ if not inference_only else """
+                <div>
+                    <h3 style="margin-top: 0;">🚀 Inference Server</h3>
+                    <p style="margin: 0;">High-performance ML inference with enterprise-grade security and optimization.</p>
+                </div>
+                <div>
+                    <h3 style="margin-top: 0;">💡 Quick Guide</h3>
+                    <ol style="margin: 0;">
+                        <li>Load your trained model</li>
+                        <li>Start the inference server</li>
+                        <li>Make real-time predictions</li>
+                    </ol>
+                </div>
+                <div>
+                    <h3 style="margin-top: 0;">🔧 Features</h3>
+                    <ul style="margin: 0; font-size: 0.9em;">
+                        <li>✅ Real-time predictions</li>
+                        <li>✅ Model encryption support</li>
+                        <li>✅ Optimized performance</li>
+                        <li>✅ Enterprise security</li>
+                    </ul>
+                </div>
+        """) + """
+            </div>
+            <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.2);">
+                <p style="margin: 0; font-size: 0.9em; opacity: 0.9;">
+                    <strong>Kolosal AutoML Platform</strong> - Powered by advanced machine learning and optimization
+                </p>
+            </div>
+        </div>
+        """)
     
     return interface
 
