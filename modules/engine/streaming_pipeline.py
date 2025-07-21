@@ -289,6 +289,19 @@ class StreamingDataPipeline:
         self.logger.info(f"Streaming pipeline initialized with chunk_size={chunk_size}, "
                         f"parallel={enable_parallel}, distributed={enable_distributed}")
     
+    def initialize(self):
+        """
+        Initialize the streaming data pipeline for compatibility with training engine.
+        This method exists for API compatibility but actual initialization
+        happens in __init__.
+        """
+        if self.enable_distributed:
+            self.logger.info("Streaming data pipeline initialization complete with distributed processing enabled")
+        elif self.enable_parallel:
+            self.logger.info("Streaming data pipeline initialization complete with parallel processing enabled")
+        else:
+            self.logger.info("Streaming data pipeline initialization complete with single-threaded processing")
+    
     def _setup_distributed_processing(self):
         """Setup distributed processing backend."""
         if self.distributed_backend == 'dask' and DASK_AVAILABLE:

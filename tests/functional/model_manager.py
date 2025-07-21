@@ -498,38 +498,34 @@ class SecureModelManager:
         
         try:
             if method == "scrypt":
-                # Using scrypt for key derivation
+                # Verify with Scrypt
                 kdf = Scrypt(
-                    algorithm=hashes.SHA256(),
-                    length=32,
                     salt=ac["salt"],
-                    n=ac["n"],
-                    r=ac["r"],
-                    p=ac["p"],
+                    length=len(ac["password_hash"]),
+                    n=2**14,  # Reduced from 2**20 for practical performance
+                    r=8,
+                    p=1,
                     backend=default_backend()
                 )
-                derived_key = kdf.derive(access_code.encode('utf-8'))
+                # This will raise an exception if verification fails
+                kdf.verify(access_code.encode(), ac["password_hash"])
             else:
-                # Using PBKDF2 for key derivation (default)
-                kdf = PBKDF2HMAC(
-                    algorithm=hashes.SHA256(),
-                    length=32,
-                    salt=ac["salt"],
-                    iterations=ac.get("iterations", 100000),
-                    backend=default_backend()
+                # Verify with PBKDF2
+                provided_hash = hashlib.pbkdf2_hmac(
+                    ac.get("algorithm", self.hash_algorithm),
+                    access_code.encode(),
+                    ac["salt"],
+                    ac.get("iterations", self.key_iterations)
                 )
-                derived_key = kdf.derive(access_code.encode('utf-8'))
-            
-            # Compare with stored hash
-            stored_hash = ac["hash"]
-            if derived_key == stored_hash:
-                return True
-            else:
-                self.logger.error("Invalid access code provided")
-                return False
-                
+                if not isinstance(provided_hash, bytes) or not isinstance(ac["password_hash"], bytes):
+                    raise ValueError("Hash type mismatch")
+                    
+                if provided_hash != ac["password_hash"]:
+                    raise ValueError("Invalid access code")
+                    
+            return True
         except Exception as e:
-            self.logger.error(f"Access control verification failed: {str(e)}")
+            self.logger.error(f"Access verification failed: {str(e)}")
             return False
 
     def _get_model_score(self, metrics: Dict[str, float]) -> float:
@@ -737,9 +733,6 @@ class SecureModelManager:
             except Exception as e:
                 self.logger.error(f"Integrity check failed with error: {str(e)}")
                 return False
-        except FileNotFoundError:
-            self.logger.error(f"Model file not found: {filepath}")
-            return False
         except Exception as e:
             self.logger.error(f"Failed to verify model integrity: {str(e)}")
             return False

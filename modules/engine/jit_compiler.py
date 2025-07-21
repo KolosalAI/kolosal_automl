@@ -112,6 +112,17 @@ class JITCompiler:
         else:
             self.logger.info("JIT compiler initialized with Numba support")
     
+    def initialize(self):
+        """
+        Initialize the JIT compiler for compatibility with training engine.
+        This method exists for API compatibility but actual initialization
+        happens in __init__.
+        """
+        if self.enable_compilation:
+            self.logger.info("JIT compiler initialization complete")
+        else:
+            self.logger.info("JIT compiler disabled")
+    
     def compile_if_hot(self, func: Callable, *args, **kwargs) -> Any:
         """
         Execute function and compile if it's identified as a hot path.

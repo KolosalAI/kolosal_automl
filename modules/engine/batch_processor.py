@@ -578,7 +578,10 @@ class BatchProcessor(Generic[T, U]):
                 except Exception as e:
                     retries += 1
                     if retries > self.config.max_retries:
-                        raise
+                        # Final retry exceeded, handle the error
+                        self.logger.error(f"Error in numpy batch {batch_id} after {self.config.max_retries} retries: {e}")
+                        self._handle_batch_error(e, batch_requests)
+                        return
                     self.logger.warning(f"Retry {retries}/{self.config.max_retries} for batch {batch_id}: {e}")
                     time.sleep(self.config.retry_delay)
                     

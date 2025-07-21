@@ -254,9 +254,24 @@ class TestBatchProcessorErrorHandling:
             np.array([[1.0]], dtype=np.float32)
         )
         
-        # Should propagate error
+        # Should propagate error but not crash the system
         with pytest.raises(ValueError, match="Intentional failure"):
             future.result(timeout=5.0)
+        
+        # Processor should still be running and capable of handling other requests
+        # Test with a working function
+        def working_func(x):
+            return x * 2
+        
+        processor.stop()
+        processor.start(working_func)
+        
+        # This should work
+        future2 = processor.enqueue_predict(
+            np.array([[2.0]], dtype=np.float32)
+        )
+        result = future2.result(timeout=5.0)
+        np.testing.assert_array_equal(result, np.array([[4.0]], dtype=np.float32))
         
         processor.stop()
     

@@ -268,6 +268,17 @@ class AdaptiveHyperparameterOptimizer:
         
         self.logger.info(f"Adaptive hyperparameter optimizer initialized with {optimization_backend} backend")
     
+    def initialize(self):
+        """
+        Initialize the adaptive hyperparameter optimizer for compatibility with training engine.
+        This method exists for API compatibility but actual initialization
+        happens in __init__.
+        """
+        if self.enable_adaptive_search:
+            self.logger.info("Adaptive hyperparameter optimizer initialization complete with adaptive search enabled")
+        else:
+            self.logger.info("Adaptive hyperparameter optimizer initialization complete with standard search")
+    
     def _validate_backend(self):
         """Validate that the selected backend is available."""
         # Re-check imports in case they were installed after module import
@@ -279,21 +290,27 @@ class AdaptiveHyperparameterOptimizer:
                 OPTUNA_AVAILABLE = True
             except ImportError:
                 OPTUNA_AVAILABLE = False
-                raise ImportError("Optuna is not available. Install with: pip install optuna")
+                self.logger.warning("Optuna is not available. Hyperparameter optimization will be limited.")
+                # Fallback to basic optimization
+                self.optimization_backend = 'basic'
         elif self.optimization_backend == 'hyperopt':
             try:
                 import hyperopt
                 HYPEROPT_AVAILABLE = True
             except ImportError:
                 HYPEROPT_AVAILABLE = False
-                raise ImportError("Hyperopt is not available. Install with: pip install hyperopt")
+                self.logger.warning("Hyperopt is not available. Hyperparameter optimization will be limited.")
+                # Fallback to basic optimization
+                self.optimization_backend = 'basic'
         elif self.optimization_backend == 'skopt':
             try:
                 import skopt
                 SKOPT_AVAILABLE = True
             except ImportError:
                 SKOPT_AVAILABLE = False
-                raise ImportError("Scikit-Optimize is not available. Install with: pip install scikit-optimize")
+                self.logger.warning("Scikit-Optimize is not available. Hyperparameter optimization will be limited.")
+                # Fallback to basic optimization
+                self.optimization_backend = 'basic'
     
     def optimize(self,
                  objective_function: Callable,

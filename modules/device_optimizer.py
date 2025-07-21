@@ -4,6 +4,7 @@ import psutil
 import json
 import logging
 import numpy as np
+import subprocess
 from pathlib import Path
 from typing import Dict, Any, Optional, Union, List, Tuple # Removed TypeVar
 import multiprocessing
@@ -243,6 +244,7 @@ class DeviceOptimizer:
                      pass # Could add more checks here
             except Exception as e:
                 logger.debug(f"SSD detection failed on macOS: {e}")
+                
         # Windows SSD detection is more complex, often relying on PowerShell or WMI
         # For simplicity, we'll default to False if not Linux/macOS with clear indication
         return False
@@ -339,7 +341,7 @@ class DeviceOptimizer:
         logger.info("=" * 50)
 
     def _serialize_config_dict(self, config_dict_input: Dict) -> Dict:
-        """Recursively serialize a dictionary, converting Enums and Path objects."""
+        """Recursively serialize a dictionary, converting Enums, Path objects, types, and other non-serializable objects."""
         # This function is mainly for system_info or other generic dicts.
         # Config objects should use their own to_dict() methods.
         result = {}
@@ -348,6 +350,9 @@ class DeviceOptimizer:
                 result[key] = value.value if hasattr(value, 'value') else value.name
             elif isinstance(value, Path):
                 result[key] = str(value)
+            elif isinstance(value, type):
+                # Handle type objects by converting to string representation
+                result[key] = f"{value.__module__}.{value.__name__}" if hasattr(value, '__module__') else str(value)
             elif isinstance(value, dict):
                 result[key] = self._serialize_config_dict(value) # Recurse for nested dicts
             elif isinstance(value, list):
@@ -356,9 +361,14 @@ class DeviceOptimizer:
                     self._serialize_config_dict(item) if isinstance(item, dict)
                     else (item.value if isinstance(item, Enum) and hasattr(item, 'value')
                           else (item.name if isinstance(item, Enum)
-                                else (str(item) if isinstance(item, Path) else item)))
+                                else (str(item) if isinstance(item, Path) 
+                                      else (f"{item.__module__}.{item.__name__}" if isinstance(item, type) and hasattr(item, '__module__')
+                                            else str(item) if isinstance(item, type) else item))))
                     for item in value
                 ]
+            elif hasattr(value, '__dict__') and not isinstance(value, (str, int, float, bool, type(None))):
+                # Handle custom objects by converting to string representation
+                result[key] = str(value)
             else:
                 result[key] = value
         return result
@@ -392,12 +402,16 @@ class DeviceOptimizer:
         saved_paths = {}
         for name, config_obj, path in configs_to_save:
             try:
+                # Always use our enhanced serialization to handle all edge cases
                 if hasattr(config_obj, 'to_dict') and callable(getattr(config_obj, 'to_dict')):
-                    serialized_config = config_obj.to_dict()
-                elif is_dataclass(config_obj): # Fallback for other dataclasses
-                    serialized_config = self._serialize_config_dict(asdict(config_obj))
-                else: # Should not happen for main configs
-                    serialized_config = self._serialize_config_dict(config_obj.__dict__ if hasattr(config_obj, '__dict__') else {})
+                    config_dict = config_obj.to_dict()
+                elif is_dataclass(config_obj):
+                    config_dict = asdict(config_obj)
+                else:
+                    config_dict = config_obj.__dict__ if hasattr(config_obj, '__dict__') else {}
+                
+                # Always pass through our enhanced serializer to handle enums, types, etc.
+                serialized_config = self._serialize_config_dict(config_dict)
 
                 with open(path, "w") as f:
                     json.dump(serialized_config, f, indent=2)
