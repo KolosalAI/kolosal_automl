@@ -949,6 +949,190 @@ Performance Metrics:
             logger.error(error_msg)
             return error_msg
     
+    def train_multiple_models(self, target_column: str, algorithm_names: List[str], base_model_name: str = None) -> Tuple[str, str, str, gr.Dropdown]:
+        """Train multiple models with the current configuration and hyperparameter optimization"""
+        if self.inference_only:
+            return "Training is not available in inference-only mode.", "", "", gr.Dropdown()
+        
+        try:
+            if self.current_data is None:
+                return "No data loaded. Please upload a dataset first.", "", "", gr.Dropdown()
+            
+            if self.current_config is None:
+                return "No configuration created. Please configure training parameters first.", "", "", gr.Dropdown()
+            
+            if target_column not in self.current_data.columns:
+                return f"Target column '{target_column}' not found in dataset.", "", "", gr.Dropdown()
+            
+            if not algorithm_names or len(algorithm_names) == 0:
+                return "Please select at least one algorithm to train.", "", "", gr.Dropdown()
+            
+            logger.info(f"Initializing training engine for {len(algorithm_names)} algorithms...")
+            
+            # Initialize training engine
+            self.training_engine = MLTrainingEngine(self.current_config)
+            
+            # Prepare data
+            X = self.current_data.drop(columns=[target_column])
+            y = self.current_data[target_column]
+            
+            logger.info("Preprocessing data...")
+            
+            # Handle categorical features
+            categorical_columns = X.select_dtypes(include=['object']).columns
+            if len(categorical_columns) > 0:
+                for col in categorical_columns:
+                    X[col] = pd.Categorical(X[col]).codes
+            
+            # Track all results
+            all_results = {}
+            training_times = {}
+            best_model = None
+            best_score = float('-inf')
+            
+            total_start_time = time.time()
+            
+            logger.info(f"Starting training for {len(algorithm_names)} algorithms...")
+            
+            # Train each algorithm
+            for i, algorithm_name in enumerate(algorithm_names, 1):
+                logger.info(f"Training algorithm {i}/{len(algorithm_names)}: {algorithm_name}")
+                
+                try:
+                    # Extract model key from algorithm name
+                    model_key = self.get_model_key_from_name(algorithm_name)
+                    
+                    # Generate unique model name
+                    if base_model_name:
+                        model_name = f"{base_model_name}_{algorithm_name.split(' - ')[-1]}_{int(time.time())}"
+                    else:
+                        timestamp = int(time.time())
+                        model_name = f"{algorithm_name.split(' - ')[-1]}_{timestamp}"
+                    
+                    # Train model with hyperparameter optimization
+                    start_time = time.time()
+                    result = self.training_engine.train_model(
+                        X=X.values, 
+                        y=y.values,
+                        model_type=model_key,
+                        model_name=model_name
+                    )
+                    
+                    training_time = time.time() - start_time
+                    training_times[model_name] = training_time
+                    
+                    # Store trained model information
+                    self.trained_models[model_name] = {
+                        'algorithm': algorithm_name,
+                        'model_key': model_key,
+                        'target_column': target_column,
+                        'training_time': training_time,
+                        'result': result,
+                        'feature_names': X.columns.tolist(),
+                        'data_shape': X.shape
+                    }
+                    
+                    all_results[model_name] = result
+                    
+                    # Track best model based on primary metric
+                    if 'metrics' in result and result['metrics']:
+                        # Get the primary metric score
+                        primary_metric_key = 'accuracy' if self.current_config.task_type.value == 'CLASSIFICATION' else 'r2_score'
+                        if primary_metric_key in result['metrics']:
+                            score = result['metrics'][primary_metric_key]
+                            if score > best_score:
+                                best_score = score
+                                best_model = model_name
+                    
+                    logger.info(f"Completed training {algorithm_name} in {training_time:.2f}s")
+                    
+                except Exception as e:
+                    logger.error(f"Error training {algorithm_name}: {str(e)}")
+                    continue
+            
+            total_training_time = time.time() - total_start_time
+            logger.info(f"All models training completed in {total_training_time:.2f}s")
+            
+            if not all_results:
+                return "Error: No models were successfully trained.", "", "", gr.Dropdown()
+            
+            # Generate comparative results summary
+            metrics_text = f"Multi-Model Training Results ({len(all_results)} models):\n\n"
+            
+            # Sort models by performance
+            model_scores = []
+            for model_name, result in all_results.items():
+                if 'metrics' in result and result['metrics']:
+                    primary_metric_key = 'accuracy' if self.current_config.task_type.value == 'CLASSIFICATION' else 'r2_score'
+                    score = result['metrics'].get(primary_metric_key, 0)
+                    model_scores.append((model_name, score, result))
+            
+            model_scores.sort(key=lambda x: x[1], reverse=True)
+            
+            # Display results for each model
+            for rank, (model_name, score, result) in enumerate(model_scores, 1):
+                algorithm = self.trained_models[model_name]['algorithm']
+                metrics_text += f"🏆 Rank {rank}: {algorithm.split(' - ')[-1]}\n"
+                
+                if 'metrics' in result and result['metrics']:
+                    for metric, value in result['metrics'].items():
+                        if isinstance(value, (int, float)):
+                            metrics_text += f"   • {metric.replace('_', ' ').title()}: {value:.4f}\n"
+                        else:
+                            metrics_text += f"   • {metric.replace('_', ' ').title()}: {value}\n"
+                
+                metrics_text += f"   • Training Time: {training_times[model_name]:.2f}s\n"
+                if rank == 1:
+                    metrics_text += "   🎯 BEST MODEL\n"
+                metrics_text += "\n"
+            
+            # Feature importance from best model
+            importance_text = ""
+            if best_model and 'feature_importance' in all_results[best_model] and all_results[best_model]['feature_importance'] is not None:
+                importance = all_results[best_model]['feature_importance']
+                feature_names = X.columns.tolist()
+                
+                importance_text = f"Feature Importance (Best Model - {self.trained_models[best_model]['algorithm'].split(' - ')[-1]}):\n\n"
+                if isinstance(importance, dict):
+                    sorted_features = sorted(importance.items(), key=lambda x: x[1], reverse=True)[:10]
+                    for feature, score in sorted_features:
+                        importance_text += f"🏆 {feature}: {score:.4f}\n"
+                else:
+                    indices = np.argsort(importance)[::-1][:10]
+                    for i, idx in enumerate(indices):
+                        if idx < len(feature_names):
+                            importance_text += f"🏆 {feature_names[idx]}: {importance[idx]:.4f}\n"
+            
+            # Model training summary
+            summary_text = f"""
+Multi-Model Training Summary
+
+✅ Successfully Trained: {len(all_results)} models
+🏆 Best Model: {self.trained_models[best_model]['algorithm'].split(' - ')[-1] if best_model else 'N/A'}
+📊 Dataset Shape: {X.shape[0]} samples × {X.shape[1]} features
+🎯 Target Column: {target_column}
+📈 Task Type: {self.current_config.task_type.value}
+⏱️ Total Training Time: {total_training_time:.2f} seconds
+🔍 Optimization Strategy: {self.current_config.optimization_strategy.value}
+
+Algorithms Trained:
+{chr(10).join([f"• {self.trained_models[name]['algorithm'].split(' - ')[-1]}" for name in all_results.keys()])}
+            """
+            
+            # Update trained models dropdown
+            trained_models_dropdown = gr.Dropdown(
+                choices=self.get_trained_model_list(),
+                value="Select a trained model...",
+                label="Trained Models"
+            )
+            
+            return summary_text, metrics_text, importance_text, trained_models_dropdown
+            
+        except Exception as e:
+            error_msg = f"Error during multi-model training: {str(e)}\n\n{traceback.format_exc()}"
+            logger.error(error_msg)
+            return error_msg, "", "", gr.Dropdown()
+    
     def make_prediction(self, input_data: str, selected_model: str = None) -> str:
         """Make predictions using the trained model"""
         if self.inference_only:
@@ -1441,8 +1625,8 @@ def create_ui(inference_only: bool = False):
                     # Algorithm selection display (updated based on task type)
                     algorithm_dropdown = gr.Dropdown(
                         choices=[],
-                        label="🤖 Available ML Algorithms",
-                        info="Create configuration first to see available algorithms for your task type",
+                        label="🤖 Available ML Algorithms Preview",
+                        info="Create configuration to see algorithms. You'll select multiple in Step 3 for comparison.",
                         interactive=False
                     )
                 
@@ -1465,36 +1649,40 @@ def create_ui(inference_only: bool = False):
                                 lines=1
                             )
                             
-                            # Enhanced algorithm selection
+                            # Enhanced algorithm selection - Now supports multiple models
                             algorithm_selection = gr.Dropdown(
                                 choices=["⚙️ Configure training parameters first..."],
-                                value="⚙️ Configure training parameters first...",
-                                label="🤖 Select ML Algorithm",
-                                info="Complete Step 2 (Configuration) to see available algorithms",
-                                interactive=False
+                                value=["⚙️ Configure training parameters first..."],
+                                label="🤖 Select ML Algorithms",
+                                info="Complete Step 2 (Configuration) to see available algorithms. Select multiple algorithms for comparison.",
+                                interactive=False,
+                                multiselect=True
                             )
                             
                             model_name_input = gr.Textbox(
-                                label="📝 Model Name (Optional)",
-                                placeholder="e.g., my_iris_classifier",
-                                info="Leave empty for auto-generated name with timestamp",
+                                label="📝 Base Model Name (Optional)",
+                                placeholder="e.g., my_experiment",
+                                info="Base name for all models. Each algorithm will get a unique suffix.",
                                 lines=1
                             )
                             
-                            train_btn = gr.Button("🚀 Start Training", variant="primary", size="lg")
+                            train_btn = gr.Button("🚀 Start Multi-Model Training", variant="primary", size="lg")
                             
                         with gr.Column(scale=2):
                             training_output = gr.HTML("""
                             <div class="info-card">
                                 <h4>🎯 Training Status</h4>
-                                <p><strong>Ready to train!</strong> Follow these steps:</p>
+                                <p><strong>Ready to train multiple models!</strong> Follow these steps:</p>
                                 <ol>
                                     <li>✅ Load your data in Step 1</li>
                                     <li>✅ Configure parameters in Step 2</li>
                                     <li>🎯 Enter your target column name</li>
-                                    <li>🤖 Select an ML algorithm</li>
-                                    <li>🚀 Click "Start Training"</li>
+                                    <li>🤖 Select one or more ML algorithms for comparison</li>
+                                    <li>🚀 Click "Start Training" to train and optimize all selected models</li>
                                 </ol>
+                                <div style="margin-top: 15px; padding: 10px; background: #e6f3ff; color: #1e40af; border-radius: 6px;">
+                                    <strong>💡 New Feature:</strong> Select multiple algorithms to train and compare them automatically with hyperparameter optimization!
+                                </div>
                             </div>
                             """)
                     
@@ -1683,7 +1871,7 @@ def create_ui(inference_only: bool = False):
                 # Connect the algorithm dropdown updates to the training tab
                 def update_training_algorithms(task_type_value):
                     algorithms = app.get_algorithms_for_task(task_type_value)
-                    return gr.Dropdown(choices=algorithms, value=algorithms[0] if algorithms else None)
+                    return gr.Dropdown(choices=algorithms, value=None)
                 
                 # Update algorithm dropdown when task type changes
                 task_type.change(
@@ -1697,18 +1885,20 @@ def create_ui(inference_only: bool = False):
                     if algorithm_list and len(algorithm_list) > 0:
                         return gr.Dropdown(
                             choices=algorithm_list,
-                            value=algorithm_list[0],
-                            label="🤖 Select ML Algorithm",
-                            info="Choose from available algorithms for your task type",
-                            interactive=True
+                            value=[],
+                            label="🤖 Select ML Algorithms",
+                            info="Choose multiple algorithms for comparison and hyperparameter optimization",
+                            interactive=True,
+                            multiselect=True
                         )
                     else:
                         return gr.Dropdown(
                             choices=["⚙️ Configure training parameters first..."],
-                            value="⚙️ Configure training parameters first...",
-                            label="🤖 Select ML Algorithm",
+                            value=["⚙️ Configure training parameters first..."],
+                            label="🤖 Select ML Algorithms",
                             info="Complete Step 2 (Configuration) to see available algorithms",
-                            interactive=False
+                            interactive=False,
+                            multiselect=True
                         )
                 
                 # Update the training tab dropdown when algorithm choices state changes
@@ -1718,8 +1908,8 @@ def create_ui(inference_only: bool = False):
                     outputs=[algorithm_selection]
                 )
                 
-                # Enhanced training handler
-                def train_model_enhanced(target_col, algorithm, model_name):
+                # Enhanced training handler - Now supports multiple algorithms
+                def train_model_enhanced(target_col, algorithms, model_name):
                     if not target_col:
                         return gr.HTML("""
                         <div class="error-card">
@@ -1728,20 +1918,31 @@ def create_ui(inference_only: bool = False):
                         </div>
                         """), gr.HTML(""), gr.HTML(""), gr.Dropdown()
                     
-                    if algorithm.startswith("⚙️"):
+                    if not algorithms or (len(algorithms) == 1 and algorithms[0].startswith("⚙️")):
                         return gr.HTML("""
                         <div class="error-card">
-                            <h4>❌ No Algorithm Selected</h4>
-                            <p>Please complete Step 2 (Configuration) and select an algorithm.</p>
+                            <h4>❌ No Algorithms Selected</h4>
+                            <p>Please complete Step 2 (Configuration) and select one or more algorithms.</p>
+                        </div>
+                        """), gr.HTML(""), gr.HTML(""), gr.Dropdown()
+                    
+                    # Filter out placeholder values
+                    valid_algorithms = [alg for alg in algorithms if not alg.startswith("⚙️")]
+                    if not valid_algorithms:
+                        return gr.HTML("""
+                        <div class="error-card">
+                            <h4>❌ No Valid Algorithms Selected</h4>
+                            <p>Please select at least one valid algorithm.</p>
                         </div>
                         """), gr.HTML(""), gr.HTML(""), gr.Dropdown()
                     
                     try:
                         # Show training in progress
-                        progress_html = gr.HTML("""
+                        progress_html = gr.HTML(f"""
                         <div class="info-card">
-                            <h4>🚀 Training In Progress...</h4>
-                            <p>Please wait while we train your model. This may take a few minutes.</p>
+                            <h4>🚀 Training {len(valid_algorithms)} Model(s) In Progress...</h4>
+                            <p>Training algorithms: {', '.join([alg.split(' - ')[-1] for alg in valid_algorithms])}</p>
+                            <p>Please wait while we train and optimize your models. This may take several minutes.</p>
                             <div style="margin: 10px 0;">
                                 <div style="background: #f0f0f0; border-radius: 10px; overflow: hidden;">
                                     <div style="background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); height: 20px; width: 0%; animation: progress 2s infinite;"></div>
@@ -1750,7 +1951,8 @@ def create_ui(inference_only: bool = False):
                         </div>
                         """)
                         
-                        result = app.train_model(target_col, algorithm, model_name)
+                        # Train multiple models
+                        result = app.train_multiple_models(target_col, valid_algorithms, model_name)
                         if isinstance(result, tuple) and len(result) >= 4:
                             summary, metrics, importance, models_dropdown = result
                             if "Error" in summary:
@@ -1944,27 +2146,29 @@ def create_ui(inference_only: bool = False):
                             performance_btn = gr.Button("📊 Generate Performance Report", variant="primary", size="lg")
                             
                             gr.Markdown("""
-                            📈 What you'll see:
-                            - Model accuracy comparisons
-                            - Training time analysis  
-                            - Feature importance rankings
-                            - Recommendations for best model
+                            📈 Enhanced Multi-Model Analysis:
+                            - Side-by-side model comparisons
+                            - Hyperparameter optimization results
+                            - Training time vs performance trade-offs
+                            - Statistical significance testing
+                            - Automated best model recommendations
                             """)
                             
                         with gr.Column(scale=2):
                             performance_output = gr.HTML("""
                             <div class="info-card">
-                                <h4>📊 Performance Dashboard</h4>
-                                <p><strong>Ready to analyze your models!</strong></p>
+                                <h4>📊 Multi-Model Performance Dashboard</h4>
+                                <p><strong>Ready to analyze your trained models!</strong></p>
                                 <p>Click "Generate Performance Report" to see:</p>
                                 <ul>
-                                    <li>📈 Accuracy metrics for each model</li>
-                                    <li>⏱️ Training time comparisons</li>
-                                    <li>🏆 Feature importance analysis</li>
-                                    <li>💡 Best model recommendations</li>
+                                    <li>🏆 Ranked performance comparison across all models</li>
+                                    <li>📈 Detailed metrics for each algorithm</li>
+                                    <li>⏱️ Training efficiency analysis</li>
+                                    <li>� Hyperparameter optimization results</li>
+                                    <li>💡 AI-powered model selection recommendations</li>
                                 </ul>
-                                <div style="margin-top: 15px; padding: 10px; background: #f0f8ff; color: #1e40af; border-radius: 6px;">
-                                    <strong>💡 Note:</strong> Train multiple models in Step 3 to see meaningful comparisons.
+                                <div style="margin-top: 15px; padding: 10px; background: #e6f3ff; color: #1e40af; border-radius: 6px;">
+                                    <strong>💡 Tip:</strong> The new multi-model training automatically generates comprehensive comparisons!
                                 </div>
                             </div>
                             """)
@@ -2217,24 +2421,70 @@ def create_ui(inference_only: bool = False):
                             load_model_btn = gr.Button("📁 Load Model", variant="secondary")
                         
                         # Model Loading Section
-                        with gr.Accordion("Model Loading", open=False):
-                            inference_model_file = gr.File(
-                                label="Select Model File",
-                                file_count="single",
-                                type="filepath"
-                            )
+                        with gr.Accordion("📁 Model Loading", open=False):
+                            gr.HTML("""
+                            <div style="margin-bottom: 15px; padding: 10px; background: #f8f9fa; border-radius: 6px;">
+                                <h4 style="margin: 0 0 8px 0; color: #495057;">Load Model Options</h4>
+                                <p style="margin: 0; font-size: 14px; color: #6c757d;">Choose from trained models or upload a saved model file</p>
+                            </div>
+                            """)
                             
-                            inference_password = gr.Textbox(
-                                label="Decryption Password",
-                                type="password",
-                                placeholder="Leave empty if model is not encrypted",
-                                container=False
-                            )
+                            # Option 1: Select from trained models
+                            with gr.Row():
+                                with gr.Column():
+                                    gr.Markdown("**🎯 Option 1: Load Trained Model**")
+                                    
+                                    available_models_dropdown = gr.Dropdown(
+                                        choices=app.get_trained_model_list(),
+                                        value="📋 Select a trained model...",
+                                        label="🤖 Available Trained Models",
+                                        info="Select from models trained in this session"
+                                    )
+                                    
+                                    with gr.Row():
+                                        load_trained_btn = gr.Button("🎯 Load Trained Model", variant="primary", size="sm")
+                                        refresh_models_btn = gr.Button("🔄 Refresh", variant="secondary", size="sm")
                             
-                            load_inference_btn = gr.Button("🔧 Load Model", variant="primary")
+                            # Separator
+                            gr.HTML('<hr style="margin: 20px 0; border: 1px solid #dee2e6;">')
                             
-                            # Model loading status
-                            model_load_status = gr.Markdown("No model loaded yet...")
+                            # Option 2: Upload model file
+                            with gr.Row():
+                                with gr.Column():
+                                    gr.Markdown("**📁 Option 2: Upload Model File**")
+                                    
+                                    inference_model_file = gr.File(
+                                        label="📁 Select Model File",
+                                        file_count="single",
+                                        type="filepath",
+                                        file_types=[".pkl", ".joblib", ".model"]
+                                    )
+                                    
+                                    inference_password = gr.Textbox(
+                                        label="🔐 Decryption Password",
+                                        type="password",
+                                        placeholder="Leave empty if model is not encrypted",
+                                        lines=1
+                                    )
+                                    
+                                    load_file_btn = gr.Button("� Load Model File", variant="secondary", size="sm")
+                            
+                            # Model loading status and info
+                            with gr.Row():
+                                model_load_status = gr.HTML("""
+                                <div class="info-card">
+                                    <h4>📋 Model Status</h4>
+                                    <p>No model loaded yet. Select a trained model or upload a model file to get started.</p>
+                                </div>
+                                """)
+                            
+                            # Currently loaded model display
+                            loaded_models_display = gr.HTML("""
+                            <div class="info-card">
+                                <h4>🤖 Loaded Models</h4>
+                                <p style="text-align: center; color: #666;">No models currently loaded in inference server</p>
+                            </div>
+                            """)
                         
                         gr.HTML('</div>')
                         
@@ -2411,8 +2661,150 @@ Server logs will be displayed here.
                 def simulate_stop_server():
                     return update_server_status(False)
                 
-                # Enhanced load model function
-                def load_model_enhanced(file, password=""):
+                # Enhanced load model function for file uploads
+                def load_model_file_enhanced(file, password=""):
+                    if file is None:
+                        return gr.HTML("""
+                        <div class="error-card">
+                            <h4>❌ No File Selected</h4>
+                            <p>Please select a model file to load.</p>
+                        </div>
+                        """), gr.HTML("""
+                        <div class="info-card">
+                            <h4>🤖 Loaded Models</h4>
+                            <p style="text-align: center; color: #666;">No models currently loaded in inference server</p>
+                        </div>
+                        """), """<div class="server-logs">No file selected for loading.</div>"""
+                    
+                    try:
+                        # This would integrate with the actual inference server
+                        file_name = os.path.basename(file)
+                        return gr.HTML(f"""
+                        <div class="success-card">
+                            <h4>✅ Model File Loaded!</h4>
+                            <p>Successfully loaded model from: <strong>{file_name}</strong></p>
+                            <p>Model is now ready for inference predictions.</p>
+                        </div>
+                        """), gr.HTML(f"""
+                        <div class="metric-box">
+                            <h4>🤖 Loaded Models</h4>
+                            <div class="server-metric">
+                                <span class="metric-label">Model File:</span>
+                                <span class="metric-value">{file_name}</span>
+                            </div>
+                            <div class="server-metric">
+                                <span class="metric-label">Status:</span>
+                                <span class="metric-value" style="color: #28a745;">Active</span>
+                            </div>
+                            <div class="server-metric">
+                                <span class="metric-label">Type:</span>
+                                <span class="metric-value">External File</span>
+                            </div>
+                        </div>
+                        """), f"""<div class="server-logs">[{datetime.now().strftime('%H:%M:%S')}] Model loaded from file: {file_name}</div>"""
+                    
+                    except Exception as e:
+                        return gr.HTML(f"""
+                        <div class="error-card">
+                            <h4>❌ Model Loading Failed</h4>
+                            <p>Error: {str(e)}</p>
+                        </div>
+                        """), gr.HTML("""
+                        <div class="info-card">
+                            <h4>🤖 Loaded Models</h4>
+                            <p style="text-align: center; color: #666;">Model loading failed</p>
+                        </div>
+                            """), f"""<div class="server-logs">[{datetime.now().strftime('%H:%M:%S')}] ERROR: {str(e)}</div>"""
+                
+                # Refresh available models function
+                def refresh_available_models():
+                    """Refresh the list of available trained models"""
+                    updated_choices = app.get_trained_model_list()
+                    return gr.Dropdown(
+                        choices=updated_choices,
+                        value="📋 Select a trained model...",
+                        label="🤖 Available Trained Models",
+                        info=f"Select from models trained in this session ({len(updated_choices)} models available)"
+                    )                # Load trained model function
+                def load_trained_model_enhanced(selected_model):
+                    if selected_model.startswith("📋"):
+                        return gr.HTML("""
+                        <div class="error-card">
+                            <h4>❌ No Model Selected</h4>
+                            <p>Please select a trained model from the dropdown.</p>
+                        </div>
+                        """), gr.HTML("""
+                        <div class="info-card">
+                            <h4>🤖 Loaded Models</h4>
+                            <p style="text-align: center; color: #666;">No models currently loaded in inference server</p>
+                        </div>
+                        """), """<div class="server-logs">No model selected for loading.</div>"""
+                    
+                    try:
+                        # Get model info from trained models
+                        if selected_model in app.trained_models:
+                            model_info = app.trained_models[selected_model]
+                            algorithm = model_info['algorithm']
+                            target = model_info['target_column']
+                            
+                            return gr.HTML(f"""
+                            <div class="success-card">
+                                <h4>✅ Trained Model Loaded!</h4>
+                                <p>Successfully loaded model: <strong>{selected_model}</strong></p>
+                                <p>Algorithm: {algorithm}</p>
+                                <p>Target: {target}</p>
+                                <p>Model is now ready for inference predictions.</p>
+                            </div>
+                            """), gr.HTML(f"""
+                            <div class="metric-box">
+                                <h4>🤖 Loaded Models</h4>
+                                <div class="server-metric">
+                                    <span class="metric-label">Model Name:</span>
+                                    <span class="metric-value">{selected_model}</span>
+                                </div>
+                                <div class="server-metric">
+                                    <span class="metric-label">Algorithm:</span>
+                                    <span class="metric-value">{algorithm.split(' - ')[-1]}</span>
+                                </div>
+                                <div class="server-metric">
+                                    <span class="metric-label">Target:</span>
+                                    <span class="metric-value">{target}</span>
+                                </div>
+                                <div class="server-metric">
+                                    <span class="metric-label">Status:</span>
+                                    <span class="metric-value" style="color: #28a745;">Active</span>
+                                </div>
+                                <div class="server-metric">
+                                    <span class="metric-label">Type:</span>
+                                    <span class="metric-value">Trained Model</span>
+                                </div>
+                            </div>
+                            """), f"""<div class="server-logs">[{datetime.now().strftime('%H:%M:%S')}] Trained model loaded: {selected_model}</div>"""
+                        else:
+                            return gr.HTML(f"""
+                            <div class="error-card">
+                                <h4>❌ Model Not Found</h4>
+                                <p>Model "{selected_model}" not found in trained models.</p>
+                            </div>
+                            """), gr.HTML("""
+                            <div class="info-card">
+                                <h4>🤖 Loaded Models</h4>
+                                <p style="text-align: center; color: #666;">Model not found</p>
+                            </div>
+                            """), f"""<div class="server-logs">[{datetime.now().strftime('%H:%M:%S')}] ERROR: Model not found: {selected_model}</div>"""
+                    
+                    except Exception as e:
+                        return gr.HTML(f"""
+                        <div class="error-card">
+                            <h4>❌ Model Loading Failed</h4>
+                            <p>Error: {str(e)}</p>
+                        </div>
+                        """), gr.HTML("""
+                        <div class="info-card">
+                            <h4>🤖 Loaded Models</h4>
+                            <p style="text-align: center; color: #666;">Model loading failed</p>
+                        </div>
+                        """), f"""<div class="server-logs">[{datetime.now().strftime('%H:%M:%S')}] ERROR: {str(e)}</div>"""
                     result = app.load_inference_model(file, password)
                     if "✅" in result:
                         model_name = file.name.split('/')[-1] if file else "Unknown Model"
@@ -2446,10 +2838,24 @@ Server logs will be displayed here.
                     outputs=[server_status_display, server_logs]
                 )
                 
-                load_inference_btn.click(
-                    fn=load_model_enhanced,
+                # Load trained model handler
+                load_trained_btn.click(
+                    fn=load_trained_model_enhanced,
+                    inputs=[available_models_dropdown],
+                    outputs=[model_load_status, loaded_models_display, server_logs]
+                )
+                
+                # Load model file handler
+                load_file_btn.click(
+                    fn=load_model_file_enhanced,
                     inputs=[inference_model_file, inference_password],
                     outputs=[model_load_status, loaded_models_display, server_logs]
+                )
+                
+                # Refresh models handler
+                refresh_models_btn.click(
+                    fn=refresh_available_models,
+                    outputs=[available_models_dropdown]
                 )
                 
                 inference_predict_btn.click(

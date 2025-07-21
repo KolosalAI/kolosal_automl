@@ -16,11 +16,11 @@
     --text-off-white: #e2e8f0;
     
     /* Background Colors */
-    --bg-primary: #ffffff;
+    --bg-primary: transparent;
     --bg-secondary: #f7fafc;
     --bg-dark: #2d3748;
     --bg-darker: #1a202c;
-    --bg-card: #ffffff;
+    --bg-card: transparent;
     
     /* State Colors */
     --success-color: #48bb78;
@@ -264,7 +264,7 @@
     height: 24px;
     background: var(--primary-color);
     border-radius: var(--radius-round);
-    border: 3px solid var(--bg-primary);
+    border: 3px solid #ffffff;
     box-shadow: var(--shadow-sm);
 }
 
