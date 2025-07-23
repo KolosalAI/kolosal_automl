@@ -590,7 +590,35 @@ class MonitoringManager:
         """Set up default alert handlers"""
         def log_alert_handler(alert: Alert, timestamp: float):
             """Log alerts to file"""
-            alert_log = logging.getLogger("kolosal_alerts")
+            try:
+                from modules.logging_config import get_logger
+                alert_log = get_logger(
+                    name="kolosal_alerts",
+                    level=logging.ERROR,
+                    log_file="kolosal_alerts.log",
+                    enable_console=True
+                )
+            except ImportError:
+                # Fallback to basic logging if centralized logging not available
+                alert_log = logging.getLogger("kolosal_alerts")
+                alert_log.setLevel(logging.ERROR)
+                
+                # Only add handler if none exists
+                if not alert_log.handlers:
+                    try:
+                        file_handler = logging.FileHandler("kolosal_alerts.log")
+                        file_handler.setFormatter(
+                            logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+                        )
+                        alert_log.addHandler(file_handler)
+                    except Exception:
+                        # If file handler fails, use console handler
+                        console_handler = logging.StreamHandler()
+                        console_handler.setFormatter(
+                            logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+                        )
+                        alert_log.addHandler(console_handler)
+            
             alert_log.error(
                 f"ALERT: {alert.name} - {alert.message} "
                 f"(Level: {alert.level.value}, Time: {datetime.fromtimestamp(timestamp)})"

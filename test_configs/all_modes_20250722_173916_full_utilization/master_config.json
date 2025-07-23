@@ -1,0 +1,13 @@
+{
+  "config_id": "all_modes_20250722_173916_full_utilization",
+  "optimization_mode": "full_utilization",
+  "system_info_path": "test_configs\\all_modes_20250722_173916_full_utilization\\system_info.json",
+  "quantization_config_path": "test_configs\\all_modes_20250722_173916_full_utilization\\quantization_config.json",
+  "batch_processor_config_path": "test_configs\\all_modes_20250722_173916_full_utilization\\batch_processor_config.json",
+  "preprocessor_config_path": "test_configs\\all_modes_20250722_173916_full_utilization\\preprocessor_config.json",
+  "inference_engine_config_path": "test_configs\\all_modes_20250722_173916_full_utilization\\inference_engine_config.json",
+  "training_engine_config_path": "test_configs\\all_modes_20250722_173916_full_utilization\\training_engine_config.json",
+  "checkpoint_path": "test_checkpoints",
+  "model_registry_path": "test_model_registry",
+  "creation_timestamp": "2025-07-22T17:39:16.647693"
+}

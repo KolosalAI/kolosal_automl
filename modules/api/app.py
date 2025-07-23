@@ -47,16 +47,19 @@ from modules.api.error_handling import (
 from modules.api.monitoring import default_monitoring
 from modules.api.dashboard import generate_dashboard_html
 
-# Configure logging
-logging.basicConfig(
+# Configure centralized logging
+from modules.logging_config import get_logger, setup_root_logging
+
+# Setup root logging configuration
+setup_root_logging(level=logging.INFO)
+
+# Get configured logger
+logger = get_logger(
+    name="kolosal_api",
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler("kolosal_api.log"),
-        logging.StreamHandler()
-    ]
+    log_file="kolosal_api.log",
+    enable_console=True
 )
-logger = logging.getLogger("kolosal_api")
 
 # API configuration
 API_VERSION = "0.1.4"
@@ -147,7 +150,20 @@ async def lifespan(app: FastAPI):
     
     # Shutdown logic
     logger.info("Shutting down kolosal AutoML API")
-    default_monitoring.stop()
+    
+    # Stop monitoring system
+    try:
+        default_monitoring.stop()
+    except Exception as e:
+        logger.error(f"Error stopping monitoring: {e}")
+    
+    # Clean up logging resources
+    try:
+        from modules.logging_config import cleanup_logging
+        cleanup_logging()
+    except Exception as e:
+        # Use print since logging might be shutting down
+        print(f"Error cleaning up logging: {e}")
 
 
 # Enhanced authentication function

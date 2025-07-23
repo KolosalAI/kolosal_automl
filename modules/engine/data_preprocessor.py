@@ -136,14 +136,25 @@ class DataPreprocessor:
     def _configure_logging(self) -> None:
         """Configure logging based on config settings."""
         level = logging.DEBUG if self.config.debug_mode else logging.INFO
-        self.logger.setLevel(level)
         
-        # Only add handler if none exists
-        if not self.logger.handlers:
-            handler = logging.StreamHandler()
-            formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-            handler.setFormatter(formatter)
-            self.logger.addHandler(handler)
+        try:
+            from modules.logging_config import get_logger
+            self.logger = get_logger(
+                name="DataPreprocessor",
+                level=level,
+                log_file="data_preprocessor.log",
+                enable_console=True
+            )
+        except ImportError:
+            # Fallback to basic logging if centralized logging not available
+            self.logger.setLevel(level)
+            
+            # Only add handler if none exists
+            if not self.logger.handlers:
+                handler = logging.StreamHandler()
+                formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+                handler.setFormatter(formatter)
+                self.logger.addHandler(handler)
 
     def _init_parallel_executor(self) -> None:
         """Initialize parallel processing executor."""

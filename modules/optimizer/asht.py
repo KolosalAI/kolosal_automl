@@ -1,4 +1,5 @@
 import numpy as np
+import math
 from sklearn.model_selection import cross_val_score
 from tqdm import tqdm
 from sklearn.tree import DecisionTreeRegressor
@@ -368,7 +369,7 @@ class ASHTOptimizer:
     
     def _Phi(self, z):
         """Standard Normal CDF."""
-        return 0.5 * (1.0 + np.math.erf(z / np.sqrt(2.0)))
+        return 0.5 * (1.0 + math.erf(z / np.sqrt(2.0)))
     
     def _expected_improvement(self, x, surrogate, best_f, param_names, xi=0.01):
         """

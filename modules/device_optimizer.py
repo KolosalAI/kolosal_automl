@@ -28,12 +28,22 @@ from .configs import (
     # SecurityConfig is handled as a Dict in MLTrainingEngineConfig
 )
 
-# Setup logging - (assuming this is already correctly set up as per previous)
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
-logger = logging.getLogger("cpu_device_optimizer")
+# Setup centralized logging
+try:
+    from modules.logging_config import get_logger
+    logger = get_logger(
+        name="cpu_device_optimizer",
+        level=logging.INFO,
+        log_file="device_optimizer.log",
+        enable_console=True
+    )
+except ImportError:
+    # Fallback to basic logging if centralized logging not available
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
+    logger = logging.getLogger("cpu_device_optimizer")
 
 
 class HardwareAccelerator(Enum):
@@ -980,6 +990,128 @@ class DeviceOptimizer:
 # Additional utility functions for device_optimizer.py
 # These functions are imported by the API but weren't defined in the original file
 
+def create_optimized_configs(
+    config_path: str = "./configs", 
+    checkpoint_path: str = "./checkpoints", 
+    model_registry_path: str = "./model_registry",
+    optimization_mode: OptimizationMode = OptimizationMode.BALANCED,
+    workload_type: str = "mixed",
+    environment: str = "auto",
+    enable_specialized_accelerators: bool = True,
+    memory_reservation_percent: float = 10.0,
+    power_efficiency: bool = False,
+    resilience_level: int = 1,
+    auto_tune: bool = True,
+    config_id: Optional[str] = None
+) -> Dict[str, str]:
+    """
+    Creates and saves optimized configurations for the ML pipeline using the CPU-Only Device Optimizer.
+    
+    Args:
+        config_path: Path to save configuration files
+        checkpoint_path: Path for model checkpoints  
+        model_registry_path: Path for model registry
+        optimization_mode: Optimization strategy to use
+        workload_type: Type of workload to optimize for
+        environment: Computing environment 
+        enable_specialized_accelerators: Whether to enable detection of specialized hardware
+        memory_reservation_percent: Percentage of memory to reserve for the system
+        power_efficiency: Whether to optimize for power efficiency
+        resilience_level: Level of fault tolerance
+        auto_tune: Whether to enable automatic parameter tuning
+        config_id: Optional configuration identifier
+        
+    Returns:
+        Dictionary with paths to saved configuration files
+    """
+    # Create DeviceOptimizer with all parameters
+    optimizer = DeviceOptimizer(
+        config_path=config_path,
+        checkpoint_path=checkpoint_path,
+        model_registry_path=model_registry_path,
+        optimization_mode=optimization_mode,
+        workload_type=workload_type,
+        environment=environment,
+        enable_specialized_accelerators=enable_specialized_accelerators,
+        memory_reservation_percent=memory_reservation_percent,
+        power_efficiency=power_efficiency,
+        resilience_level=resilience_level,
+        auto_tune=auto_tune
+    )
+    
+    # Save and return configurations
+    return optimizer.save_configs(config_id=config_id)
+
+
+def create_configs_for_all_modes(
+    config_path: str = "./configs",
+    checkpoint_path: str = "./checkpoints", 
+    model_registry_path: str = "./model_registry",
+    workload_type: str = "mixed",
+    environment: str = "auto",
+    enable_specialized_accelerators: bool = True,
+    memory_reservation_percent: float = 10.0,
+    power_efficiency: bool = False,
+    resilience_level: int = 1,
+    auto_tune: bool = True
+) -> Dict[str, Dict[str, str]]:
+    """
+    Generate and save configurations for all optimization modes.
+    
+    Args:
+        config_path: Path to save configuration files
+        checkpoint_path: Path for model checkpoints
+        model_registry_path: Path for model registry
+        workload_type: Type of workload to optimize for
+        environment: Computing environment
+        enable_specialized_accelerators: Whether to enable detection of specialized hardware
+        memory_reservation_percent: Percentage of memory to reserve for the system
+        power_efficiency: Whether to optimize for power efficiency
+        resilience_level: Level of fault tolerance
+        auto_tune: Whether to enable automatic parameter tuning
+        
+    Returns:
+        Dictionary with configurations for each optimization mode
+    """
+    # Create DeviceOptimizer with parameters
+    optimizer = DeviceOptimizer(
+        config_path=config_path,
+        checkpoint_path=checkpoint_path,
+        model_registry_path=model_registry_path,
+        workload_type=workload_type,
+        environment=environment,
+        enable_specialized_accelerators=enable_specialized_accelerators,
+        memory_reservation_percent=memory_reservation_percent,
+        power_efficiency=power_efficiency,
+        resilience_level=resilience_level,
+        auto_tune=auto_tune
+    )
+    
+    # Generate configurations for all modes
+    return optimizer.create_configs_for_all_modes()
+
+
+def load_saved_configs(config_path: str, config_id: str) -> Dict[str, Any]:
+    """
+    Loads previously saved configuration files.
+    
+    Args:
+        config_path: Path where configuration files are stored
+        config_id: Identifier for the configuration set
+        
+    Returns:
+        Dictionary with loaded configurations
+        
+    Raises:
+        FileNotFoundError: If configuration files are not found
+    """
+    # Create DeviceOptimizer instance to use its load_configs method
+    optimizer = DeviceOptimizer(config_path=config_path)
+    
+    # Load and return configurations
+    return optimizer.load_configs(config_id)
+
+
 def get_system_information(enable_specialized_accelerators: bool = True) -> dict:
     """
     Get system information without creating a full DeviceOptimizer instance.
@@ -1112,18 +1244,23 @@ def apply_configs_to_pipeline(configs: dict) -> bool:
         logger = logging.getLogger("cpu_device_optimizer")
         logger.info("Applying configurations to pipeline components")
         
-        # Extract individual configs
-        quant_config = configs.get("quantization_config")
-        batch_config = configs.get("batch_processor_config")
-        preproc_config = configs.get("preprocessor_config")
-        infer_config = configs.get("inference_engine_config")
-        train_config = configs.get("training_engine_config")
+        # Extract individual configs - support both naming conventions
+        quant_config = configs.get("quantization_config") or configs.get("quantization")
+        batch_config = configs.get("batch_processor_config") or configs.get("batch_processing")
+        preproc_config = configs.get("preprocessor_config") or configs.get("preprocessing")
+        infer_config = configs.get("inference_engine_config") or configs.get("inference")
+        train_config = configs.get("training_engine_config") or configs.get("training")
+        
+        # Also check for general config structure
+        has_valid_config = any([
+            quant_config, batch_config, preproc_config, infer_config, train_config,
+            configs.get("config_id"), configs.get("optimization_mode")
+        ])
         
         # Check if we have at least some configs
-        if not any([quant_config, batch_config, preproc_config, infer_config, train_config]):
+        if not has_valid_config:
             logger.error("No valid configurations found in the provided config dictionary")
             return False
-        
         
         logger.info("Successfully applied configurations to pipeline components")
         return True

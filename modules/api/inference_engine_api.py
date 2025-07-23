@@ -69,16 +69,27 @@ from modules.configs import (
     QuantizationMode
 )
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler("inference_api.log")
-    ]
-)
-logger = logging.getLogger("inference_api")
+# Configure centralized logging
+try:
+    from modules.logging_config import get_logger, setup_root_logging
+    setup_root_logging()
+    logger = get_logger(
+        name="inference_api",
+        level=logging.INFO,
+        log_file="inference_api.log",
+        enable_console=True
+    )
+except ImportError:
+    # Fallback to basic logging if centralized logging not available
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.StreamHandler(),
+            logging.FileHandler("inference_api.log")
+        ]
+    )
+    logger = logging.getLogger("inference_api")
 
 # --- Pydantic Models for Request/Response ---
 

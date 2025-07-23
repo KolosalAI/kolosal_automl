@@ -231,16 +231,35 @@ class ErrorHandler:
         self.error_counts: Dict[str, int] = {}
         self.error_history: List[Dict[str, Any]] = []
         
-        # Setup error logger
-        self.logger = logging.getLogger("kolosal_errors")
-        self.logger.setLevel(logging.ERROR)
-        
-        # File handler for errors
-        error_handler = logging.FileHandler("kolosal_errors.log")
-        error_handler.setFormatter(
-            logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-        )
-        self.logger.addHandler(error_handler)
+        # Setup error logger using centralized logging
+        try:
+            from modules.logging_config import get_logger
+            self.logger = get_logger(
+                name="kolosal_errors",
+                level=logging.ERROR,
+                log_file="kolosal_errors.log",
+                enable_console=True
+            )
+        except ImportError:
+            # Fallback to basic logging if centralized logging not available
+            self.logger = logging.getLogger("kolosal_errors")
+            self.logger.setLevel(logging.ERROR)
+            
+            # Only add handler if none exists
+            if not self.logger.handlers:
+                try:
+                    error_handler = logging.FileHandler("kolosal_errors.log")
+                    error_handler.setFormatter(
+                        logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+                    )
+                    self.logger.addHandler(error_handler)
+                except Exception as e:
+                    # If file handler fails, just use console
+                    console_handler = logging.StreamHandler()
+                    console_handler.setFormatter(
+                        logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+                    )
+                    self.logger.addHandler(console_handler)
     
     def handle_exception(
         self,

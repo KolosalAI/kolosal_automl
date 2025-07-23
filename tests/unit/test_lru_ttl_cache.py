@@ -4,6 +4,7 @@ Tests for the LRUTTLCache module.
 This file uses the pytest framework.
 """
 import pytest
+import unittest
 import time
 
 try:
@@ -13,7 +14,7 @@ except ImportError as e:
 
 
 @pytest.mark.unit
-class TestLRUTTLCache:
+class TestLRUTTLCache(unittest.TestCase):
     """Test cases for the LRUTTLCache class."""
 
     @pytest.fixture(autouse=True)

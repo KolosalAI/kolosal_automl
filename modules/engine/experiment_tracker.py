@@ -61,17 +61,28 @@ class ExperimentTracker:
         # Create output directory if it doesn't exist
         os.makedirs(output_dir, exist_ok=True)
             
-        # Set up logging
-        log_path = f"{output_dir}/experiment_{self.experiment_id}.log"
-        logging.basicConfig(
-            level=logging.INFO,
-            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            handlers=[
-                logging.FileHandler(log_path),
-                logging.StreamHandler()
-            ]
-        )
-        self.logger = logging.getLogger(f"Experiment_{self.experiment_id}")
+        # Set up logging using centralized configuration
+        log_filename = f"experiment_{self.experiment_id}.log"
+        try:
+            from modules.logging_config import get_logger
+            self.logger = get_logger(
+                name=f"Experiment_{self.experiment_id}",
+                level=logging.INFO,
+                log_file=log_filename,
+                enable_console=True
+            )
+        except ImportError:
+            # Fallback to basic logging if centralized logging not available
+            log_path = f"{output_dir}/experiment_{self.experiment_id}.log"
+            logging.basicConfig(
+                level=logging.INFO,
+                format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                handlers=[
+                    logging.FileHandler(log_path),
+                    logging.StreamHandler()
+                ]
+            )
+            self.logger = logging.getLogger(f"Experiment_{self.experiment_id}")
         
         # Try to set up MLflow if available
         self.mlflow_configured = False

@@ -31,6 +31,21 @@ TEST_API_KEY = "test_key"
 TEST_TIMEOUT = 30
 
 
+def is_server_available():
+    """Check if the API server is available"""
+    try:
+        response = requests.get(f"{TEST_BASE_URL}/health", timeout=2)
+        return response.status_code == 200
+    except (requests.ConnectionError, requests.Timeout):
+        return False
+
+
+requires_server = pytest.mark.skipif(
+    not is_server_available(),
+    reason="API server not available on localhost:8000"
+)
+
+
 class APITestClient:
     """Enhanced API test client with authentication and monitoring"""
     
@@ -64,6 +79,7 @@ class APITestClient:
         return self.session.delete(url, timeout=TEST_TIMEOUT, **kwargs)
 
 
+@requires_server
 class TestEndToEndWorkflows:
     """Test complete end-to-end workflows"""
     
@@ -233,6 +249,7 @@ class TestEndToEndWorkflows:
         assert response.status_code == 400
 
 
+@requires_server
 class TestPerformanceIntegration:
     """Test performance and load handling"""
     
@@ -331,6 +348,7 @@ class TestPerformanceIntegration:
             assert "timestamp" in data
 
 
+@requires_server
 class TestMultiComponentIntegration:
     """Test integration between multiple components"""
     
@@ -429,6 +447,7 @@ class TestMultiComponentIntegration:
                     pass
 
 
+@requires_server
 class TestDataFlowIntegration:
     """Test data flow through the entire system"""
     

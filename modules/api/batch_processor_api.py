@@ -62,16 +62,27 @@ from modules.configs import (
     PrioritizedItem
 )
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler("batch_processor_api.log")
-    ]
-)
-logger = logging.getLogger("batch_processor_api")
+# Configure centralized logging
+try:
+    from modules.logging_config import get_logger, setup_root_logging
+    setup_root_logging()
+    logger = get_logger(
+        name="batch_processor_api",
+        level=logging.INFO,
+        log_file="batch_processor_api.log",
+        enable_console=True
+    )
+except ImportError:
+    # Fallback to basic logging if centralized logging not available
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.StreamHandler(),
+            logging.FileHandler("batch_processor_api.log")
+        ]
+    )
+    logger = logging.getLogger("batch_processor_api")
 
 # Global variables
 batch_processor: Optional[BatchProcessor] = None
@@ -329,12 +340,16 @@ async def health_check():
 @app.post("/configure", dependencies=[Depends(verify_api_key)])
 async def configure_processor(config_request: BatchProcessorConfigRequest):
     """Configure the batch processor"""
-    global batch_processor
+    global batch_processor, default_process_func
     
     try:
         # Stop existing processor if running
         if batch_processor:
             batch_processor.stop()
+        
+        # Preserve the processing function if not set
+        if default_process_func is None:
+            default_process_func = default_processing_function
         
         # Create new configuration
         config = BatchProcessorConfig(
@@ -372,6 +387,10 @@ async def start_processor():
     
     if not batch_processor:
         raise HTTPException(status_code=400, detail="Processor not configured")
+    
+    # Ensure we have a processing function
+    if default_process_func is None:
+        default_process_func = default_processing_function
     
     try:
         batch_processor.start(default_process_func)

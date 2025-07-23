@@ -59,16 +59,27 @@ from modules.configs import (
     NormalizationType
 )
 
-# Set up logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler("data_preprocessor_api.log")
-    ]
-)
-logger = logging.getLogger("data_preprocessor_api")
+# Set up centralized logging
+try:
+    from modules.logging_config import get_logger, setup_root_logging
+    setup_root_logging()
+    logger = get_logger(
+        name="data_preprocessor_api",
+        level=logging.INFO,
+        log_file="data_preprocessor_api.log",
+        enable_console=True
+    )
+except ImportError:
+    # Fallback to basic logging if centralized logging not available
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.StreamHandler(),
+            logging.FileHandler("data_preprocessor_api.log")
+        ]
+    )
+    logger = logging.getLogger("data_preprocessor_api")
 
 # --- Configuration ---
 

@@ -190,7 +190,7 @@ class SecureModelManager:
             
             return deserialized_data
         except InvalidToken:
-            self.logger.error("Invalid encryption token. Key may be incorrect or data corrupted.")
+            self.logger.warning("Invalid encryption token. Key may be incorrect or data corrupted.")
             return None
         except Exception as e:
             self.logger.error(f"Decryption failed: {str(e)}")
@@ -413,7 +413,7 @@ class SecureModelManager:
                 # Decrypt the model package
                 model_package = self._decrypt_data(file_content)
                 if model_package is None:
-                    self.logger.error("Failed to decrypt model data")
+                    self.logger.warning("Failed to decrypt model data")
                     return None
             elif is_encrypted and (not self.encryption_enabled or self.cipher is None):
                 self.logger.error("Encrypted model detected but encryption is not enabled or initialized")
@@ -490,7 +490,7 @@ class SecureModelManager:
             return True
             
         if access_code is None:
-            self.logger.error("This model requires an access code to load")
+            self.logger.warning("This model requires an access code to load")
             return False
             
         ac = model_package["access_control"]
@@ -529,7 +529,7 @@ class SecureModelManager:
                 return False
                 
         except Exception as e:
-            self.logger.error(f"Access control verification failed: {str(e)}")
+            self.logger.warning(f"Access control verification failed: {str(e)}")
             return False
 
     def _get_model_score(self, metrics: Dict[str, float]) -> float:
@@ -732,7 +732,7 @@ class SecureModelManager:
                 self.logger.info(f"Model {filepath} integrity verified successfully")
                 return True
             except InvalidToken:
-                self.logger.error(f"Cannot decrypt {filepath}. Invalid token or wrong encryption key.")
+                self.logger.warning(f"Cannot decrypt {filepath}. Invalid token or wrong encryption key.")
                 return False
             except Exception as e:
                 self.logger.error(f"Integrity check failed with error: {str(e)}")

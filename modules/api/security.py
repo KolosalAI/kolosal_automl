@@ -32,15 +32,34 @@ from pydantic import BaseModel, validator
 import jwt
 
 # Configure security logger
-security_logger = logging.getLogger("kolosal_security")
-security_logger.setLevel(logging.INFO)
-
-# Security handler for file logging
-security_handler = logging.FileHandler("kolosal_security.log")
-security_handler.setFormatter(
-    logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-)
-security_logger.addHandler(security_handler)
+try:
+    from modules.logging_config import get_logger
+    security_logger = get_logger(
+        name="kolosal_security",
+        level=logging.INFO,
+        log_file="kolosal_security.log",
+        enable_console=True
+    )
+except ImportError:
+    # Fallback to basic logging if centralized logging not available
+    security_logger = logging.getLogger("kolosal_security")
+    security_logger.setLevel(logging.INFO)
+    
+    # Only add handler if none exists
+    if not security_logger.handlers:
+        try:
+            security_handler = logging.FileHandler("kolosal_security.log")
+            security_handler.setFormatter(
+                logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+            )
+            security_logger.addHandler(security_handler)
+        except Exception:
+            # If file handler fails, use console handler
+            console_handler = logging.StreamHandler()
+            console_handler.setFormatter(
+                logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+            )
+            security_logger.addHandler(console_handler)
 
 
 class SecurityConfig(BaseModel):

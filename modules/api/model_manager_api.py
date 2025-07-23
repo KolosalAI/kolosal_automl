@@ -23,16 +23,27 @@ sys.path.insert(0, str(project_root))
 from modules.model_manager import SecureModelManager
 from modules.configs import TaskType  # Assuming this is importable from the same location
 
-# Set up logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler("model_manager_api.log")
-    ]
-)
-logger = logging.getLogger(__name__)
+# Set up centralized logging
+try:
+    from modules.logging_config import get_logger, setup_root_logging
+    setup_root_logging()
+    logger = get_logger(
+        name="model_manager_api",
+        level=logging.INFO,
+        log_file="model_manager_api.log",
+        enable_console=True
+    )
+except ImportError:
+    # Fallback to basic logging if centralized logging not available
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.StreamHandler(),
+            logging.FileHandler("model_manager_api.log")
+        ]
+    )
+    logger = logging.getLogger(__name__)
 
 # Initialize FastAPI app
 app = FastAPI(

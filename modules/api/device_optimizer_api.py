@@ -41,12 +41,23 @@ from modules.configs import (
     ModelSelectionCriteria, AutoMLMode, ExplainabilityConfig, MonitoringConfig
 )
 
-# Setup logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
-logger = logging.getLogger("cpu_device_optimizer_api")
+# Setup centralized logging
+try:
+    from modules.logging_config import get_logger, setup_root_logging
+    setup_root_logging()
+    logger = get_logger(
+        name="cpu_device_optimizer_api",
+        level=logging.INFO,
+        log_file="device_optimizer_api.log",
+        enable_console=True
+    )
+except ImportError:
+    # Fallback to basic logging if centralized logging not available
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
+    logger = logging.getLogger("cpu_device_optimizer_api")
 
 # ------------------ Pydantic models for request/response validation ------------------
 
@@ -463,12 +474,48 @@ async def get_default_configurations(
         infer_config = optimizer.get_optimal_inference_engine_config()
         train_config = optimizer.get_optimal_training_engine_config()
         
+        def serialize_config(config):
+            """Helper function to serialize configuration objects."""
+            if config is None:
+                return None
+            elif hasattr(config, 'to_dict'):
+                return config.to_dict()
+            elif hasattr(config, '__dict__'):
+                # Convert object to dictionary, handling nested objects
+                result = {}
+                for key, value in config.__dict__.items():
+                    if key.startswith('_'):  # Skip private attributes
+                        continue
+                    try:
+                        if value is None:
+                            result[key] = None
+                        elif isinstance(value, (str, int, float, bool, list, dict)):
+                            result[key] = value
+                        elif hasattr(value, '__dict__') and not isinstance(value, type):
+                            # Recursively handle nested objects
+                            result[key] = serialize_config(value)
+                        elif hasattr(value, 'name') and hasattr(value, 'value'):
+                            # Handle enums
+                            result[key] = value.value if hasattr(value, 'value') else value.name
+                        else:
+                            # For other types, convert to string
+                            result[key] = str(value)
+                    except Exception as e:
+                        # If serialization fails, convert to string
+                        result[key] = str(value)
+                return result
+            else:
+                try:
+                    return jsonable_encoder(config)
+                except Exception:
+                    return str(config)
+        
         configs = {
-            "quantization_config": quant_config.to_dict() if hasattr(quant_config, 'to_dict') else jsonable_encoder(quant_config),
-            "batch_processor_config": batch_config.to_dict() if hasattr(batch_config, 'to_dict') else jsonable_encoder(batch_config),
-            "preprocessor_config": preproc_config.to_dict() if hasattr(preproc_config, 'to_dict') else jsonable_encoder(preproc_config),
-            "inference_engine_config": infer_config.to_dict() if hasattr(infer_config, 'to_dict') else jsonable_encoder(infer_config),
-            "training_engine_config": train_config.to_dict() if hasattr(train_config, 'to_dict') else jsonable_encoder(train_config)
+            "quantization_config": serialize_config(quant_config),
+            "batch_processor_config": serialize_config(batch_config),
+            "preprocessor_config": serialize_config(preproc_config),
+            "inference_engine_config": serialize_config(infer_config),
+            "training_engine_config": serialize_config(train_config)
         }
         
         # Save to output_dir if specified
@@ -513,7 +560,9 @@ async def list_configurations(
         configs = []
         
         # Iterate through subdirectories (each should be a config set)
-        for config_dir in configs_dir.iterdir():
+        # Sort the directories for consistent ordering
+        sorted_dirs = sorted(configs_dir.iterdir(), key=lambda x: x.name if x.is_dir() else "")
+        for config_dir in sorted_dirs:
             if config_dir.is_dir():
                 # Look for master_config.json
                 master_config_path = config_dir / "master_config.json"

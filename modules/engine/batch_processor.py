@@ -894,6 +894,31 @@ class BatchProcessor(Generic[T, U]):
             "queue_size": self.queue.qsize() if hasattr(self.queue, 'qsize') else -1,
             "is_paused": self.paused_event.is_set(),
             "is_stopping": self.stop_event.is_set(),
+            "processing_mode": self.config.processing_strategy.value if hasattr(self.config.processing_strategy, 'value') else str(self.config.processing_strategy),
+            "cache_strategy": "lru",  # Default cache strategy
         }
         
         return extended_stats
+    
+    @property
+    def running(self) -> bool:
+        """Check if the batch processor is currently running."""
+        return (self.worker_thread is not None and 
+                self.worker_thread.is_alive() and 
+                not self.stop_event.is_set())
+    
+    def submit(self, item: T, timeout: Optional[float] = None, 
+               priority: BatchPriority = BatchPriority.NORMAL) -> Future[U]:
+        """
+        Submit an item for processing and return a Future.
+        Alias for enqueue_predict for compatibility.
+        
+        Args:
+            item: Item to process
+            timeout: Optional timeout for processing
+            priority: Processing priority
+            
+        Returns:
+            Future that will contain the result
+        """
+        return self.enqueue_predict(item, timeout=timeout, priority=priority)

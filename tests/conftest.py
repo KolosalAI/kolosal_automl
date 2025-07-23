@@ -14,6 +14,8 @@ import shutil
 import logging
 from pathlib import Path
 from unittest.mock import Mock, MagicMock
+from _pytest.capture import CaptureFixture
+from io import StringIO
 
 # Add project root to the Python path for all tests
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
@@ -82,6 +84,82 @@ def log_test_start_end(request):
     logger.info(f"Starting test: {test_name}")
     yield
     logger.info(f"Completed test: {test_name}")
+
+def pytest_runtest_logreport(report):
+    """Log test results with PASS/FAIL/ERROR status."""
+    logger = logging.getLogger("test_result")
+    
+    if report.when == "call":  # Only log the main test phase, not setup/teardown
+        test_name = report.nodeid.split("::")[-1] if "::" in report.nodeid else report.nodeid
+        
+        if report.outcome == "passed":
+            logger.info(f"[PASS] {test_name}")
+        elif report.outcome == "failed":
+            logger.info(f"[FAIL] {test_name}")
+            if hasattr(report, 'longrepr') and report.longrepr:
+                # Log the failure reason (first line of traceback)
+                failure_msg = str(report.longrepr).split('\n')[0] if report.longrepr else "Unknown error"
+                logger.info(f"  Reason: {failure_msg}")
+        elif report.outcome == "skipped":
+            logger.warning(f"[SKIP] {test_name}")
+            if hasattr(report, 'longrepr') and report.longrepr:
+                skip_reason = str(report.longrepr).split('\n')[0] if report.longrepr else "Unknown reason"
+                logger.warning(f"  Reason: {skip_reason}")
+
+def pytest_runtest_call(item):
+    """Log when a test is being executed."""
+    logger = logging.getLogger("test_execution")
+    test_name = item.name
+    logger.debug(f"Executing test: {test_name}")
+
+def pytest_exception_interact(node, call, report):
+    """Log test errors with more detail."""
+    if call.when == "call" and report.outcome == "failed":
+        logger = logging.getLogger("test_error")
+        test_name = node.name
+        logger.error(f"ERROR in {test_name}: {call.excinfo.typename}: {call.excinfo.value}")
+
+def pytest_sessionstart(session):
+    """Log session start with summary."""
+    logger = logging.getLogger("test_session")
+    logger.info("=" * 80)
+    logger.info("PYTEST SESSION START")
+    logger.info("=" * 80)
+
+def pytest_sessionfinish(session, exitstatus):
+    """Log session finish with final summary."""
+    logger = logging.getLogger("test_session")
+    
+    logger.info("=" * 80)
+    logger.info("PYTEST SESSION SUMMARY")
+    
+    # Get test results from pytest's terminal reporter
+    if hasattr(session.config, 'pluginmanager'):
+        terminalreporter = session.config.pluginmanager.get_plugin('terminalreporter')
+        if terminalreporter:
+            stats = terminalreporter.stats
+            passed = len(stats.get('passed', []))
+            failed = len(stats.get('failed', []))
+            error = len(stats.get('error', []))
+            skipped = len(stats.get('skipped', []))
+            
+            total_tests = passed + failed + error + skipped
+            if total_tests > 0:
+                logger.info(f"Total tests: {total_tests}")
+                logger.info(f"Results: {passed} passed, {failed} failed, {error} errors, {skipped} skipped")
+                
+                if failed > 0 or error > 0:
+                    logger.error(f"EXIT STATUS: {exitstatus} (FAILED)")
+                else:
+                    logger.info(f"EXIT STATUS: {exitstatus} (SUCCESS)")
+            else:
+                logger.info(f"EXIT STATUS: {exitstatus}")
+        else:
+            logger.info(f"EXIT STATUS: {exitstatus}")
+    else:
+        logger.info(f"EXIT STATUS: {exitstatus}")
+        
+    logger.info("=" * 80)
 
 @pytest.fixture(scope="session")
 def test_dir():

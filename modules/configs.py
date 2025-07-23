@@ -39,7 +39,7 @@ class QuantizationMode(Enum):
 class QuantizationConfig:
     """Configuration for model quantization"""
     quantization_type: Union[str, QuantizationType] = QuantizationType.INT8
-    quantization_mode: Union[str, QuantizationMode] = QuantizationMode.DYNAMIC_PER_BATCH
+    quantization_mode: Union[str, QuantizationMode] = QuantizationMode.DYNAMIC
     per_channel: bool = False
     symmetric: bool = True
     enable_cache: bool = True
@@ -83,7 +83,7 @@ class QuantizationConfig:
             try:
                 self.quantization_mode = QuantizationMode[self.quantization_mode.upper()]
             except KeyError:
-                self.quantization_mode = QuantizationMode.DYNAMIC_PER_BATCH
+                self.quantization_mode = QuantizationMode.DYNAMIC
     
     def to_dict(self) -> Dict:
         """Convert config to dictionary for serialization"""
@@ -145,6 +145,15 @@ class BatchProcessingStrategy(Enum):
     FIXED = auto()      # Use fixed batch size
     ADAPTIVE = auto()   # Dynamically adjust batch size based on system load
     GREEDY = auto()     # Process as many items as available up to max_batch_size
+    BALANCED = auto()   # Balance between throughput and latency
+
+class ProcessingMode(Enum):
+    """Processing mode for batch operations."""
+    SYNC = "sync"           # Synchronous processing
+    ASYNC = "async"         # Asynchronous processing
+    HYBRID = "hybrid"       # Mixed mode
+    BATCH = "batch"         # Pure batch mode
+    STREAM = "stream"       # Streaming mode
 
 class BatchPriority(Enum):
     """Priority levels for batch processing."""
@@ -350,11 +359,15 @@ class PreprocessorConfig:
     version: str = "0.1.4"
     
     def __post_init__(self):
+        import logging
+        logger = logging.getLogger(__name__)
+        
         # Handle normalization as string or enum
         if isinstance(self.normalization, str):
             try:
                 self.normalization = NormalizationType[self.normalization.upper()]
             except KeyError:
+                logger.error(f"Invalid normalization type '{self.normalization}', defaulting to STANDARD")
                 self.normalization = NormalizationType.STANDARD
                 
         # Initialize empty lists
