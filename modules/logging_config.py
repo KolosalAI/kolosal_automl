@@ -13,6 +13,21 @@ from typing import Dict, List, Optional
 from contextlib import contextmanager
 
 
+class SafeStreamHandler(logging.StreamHandler):
+    """Stream handler that gracefully handles closed streams."""
+    
+    def emit(self, record):
+        """Emit a record, handling closed streams gracefully."""
+        try:
+            # Check if stream is closed before attempting to write
+            if hasattr(self.stream, 'closed') and self.stream.closed:
+                return
+            super().emit(record)
+        except (ValueError, OSError, AttributeError):
+            # Silently ignore errors from closed streams during shutdown
+            pass
+
+
 class LoggingManager:
     """Centralized logging manager to handle all logging configuration."""
     
@@ -94,7 +109,7 @@ class LoggingManager:
         
         # Add console handler if requested
         if enable_console:
-            console_handler = logging.StreamHandler()
+            console_handler = SafeStreamHandler()
             console_handler.setLevel(level)
             console_handler.setFormatter(formatter)
             logger.addHandler(console_handler)
@@ -153,7 +168,8 @@ class LoggingManager:
         # Close all file handlers
         for handler_name, handler in self._file_handlers.items():
             try:
-                handler.close()
+                if hasattr(handler, 'stream') and not handler.stream.closed:
+                    handler.close()
             except Exception as e:
                 # Use print instead of logging since we're shutting down
                 print(f"Error closing file handler {handler_name}: {e}")
@@ -164,7 +180,11 @@ class LoggingManager:
                 # Remove all handlers
                 for handler in logger.handlers[:]:
                     logger.removeHandler(handler)
-                    if hasattr(handler, 'close'):
+                    # Only close if not already closed
+                    if hasattr(handler, 'close') and hasattr(handler, 'stream'):
+                        if not getattr(handler.stream, 'closed', True):
+                            handler.close()
+                    elif hasattr(handler, 'close'):
                         handler.close()
             except Exception as e:
                 print(f"Error cleaning up logger {logger_name}: {e}")

@@ -19,7 +19,8 @@ services:
     container_name: kolosal-automl-api
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "443:8000"  # HTTPS port
+      - "80:8080"   # HTTP redirect port
     environment:
       # API Configuration
       - API_ENV=production
@@ -28,12 +29,19 @@ services:
       - API_PORT=8000
       - API_WORKERS=4
       
-      # Security Configuration
-      - REQUIRE_API_KEY=true
-      - API_KEYS=${API_KEYS:-secure_prod_key_1,secure_prod_key_2}
-      - RATE_LIMIT_REQUESTS=1000
-      - RATE_LIMIT_WINDOW=60
-      - MAX_REQUEST_SIZE=52428800  # 50MB
+      # Enhanced Security Configuration
+      - SECURITY_ENV=production
+      - SECURITY_ENFORCE_HTTPS=true
+      - SECURITY_REQUIRE_API_KEY=true
+      - SECURITY_ENABLE_RATE_LIMITING=true
+      - SECURITY_RATE_LIMIT_REQUESTS=50
+      - SECURITY_RATE_LIMIT_WINDOW=60
+      - SECURITY_ENABLE_JWT=true
+      - SECURITY_JWT_EXPIRY_HOURS=1
+      - SECURITY_ENABLE_AUDIT_LOGGING=true
+      - SECURITY_ALLOWED_ORIGINS=https://yourdomain.com
+      - SECURITY_HSTS_MAX_AGE=31536000
+      - MAX_REQUEST_SIZE=10485760  # 10MB - more restrictive
       
       # Batch Processing Configuration
       - BATCH_INITIAL_SIZE=16

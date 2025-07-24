@@ -280,8 +280,13 @@ class InferenceEngine:
             
             # Only add handlers if none exist
             if not logger.handlers:
-                # Console handler
-                console_handler = logging.StreamHandler()
+                # Safe console handler that handles closed streams
+                try:
+                    from modules.logging_config import SafeStreamHandler
+                    console_handler = SafeStreamHandler()
+                except ImportError:
+                    console_handler = logging.StreamHandler()
+                    
                 console_handler.setLevel(level)
                 
                 # Format
@@ -1412,10 +1417,25 @@ class InferenceEngine:
             # Restore original chunk size
             self.streaming_pipeline.chunk_size = original_chunk_size
     
+    def _safe_log(self, level, message):
+        """Safely log a message, avoiding I/O errors during shutdown."""
+        try:
+            if hasattr(self, 'logger') and self.logger:
+                # Check if logger handlers are still valid
+                for handler in self.logger.handlers:
+                    if hasattr(handler, 'stream') and hasattr(handler.stream, 'closed'):
+                        if handler.stream.closed:
+                            return  # Skip logging if stream is closed
+                
+                getattr(self.logger, level)(message)
+        except (ValueError, OSError, AttributeError):
+            # Silently ignore logging errors during shutdown
+            pass
+    
     def shutdown(self):
         """Shutdown the inference engine and clean up resources."""
         try:
-            self.logger.info("Shutting down inference engine")
+            self._safe_log("info", "Shutting down inference engine")
             
             # Stop monitoring
             if hasattr(self, '_monitoring_active'):
@@ -1444,10 +1464,10 @@ class InferenceEngine:
             # Set state to stopped
             self.state = EngineState.STOPPED
             
-            self.logger.info("Inference engine shutdown complete")
+            self._safe_log("info", "Inference engine shutdown complete")
             
         except Exception as e:
-            self.logger.error(f"Error during shutdown: {str(e)}")
+            self._safe_log("error", f"Error during shutdown: {str(e)}")
     
     def _compile_model(self):
         """Compile the model for faster inference if supported."""

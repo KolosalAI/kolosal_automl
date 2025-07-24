@@ -309,8 +309,7 @@ async def add_request_id(request: Request, call_next: Callable) -> Response:
     # Track request start time
     start_time = time.time()
     
-    # Update metrics
-    app.state.request_count += 1
+    # Track active connections (only this middleware handles connection counting)
     app.state.metrics["active_connections"] += 1
     
     # Process request
@@ -328,20 +327,8 @@ async def add_request_id(request: Request, call_next: Callable) -> Response:
             processing_time=processing_time
         )
         
-        # Update application metrics
-        endpoint = str(request.url.path)
-        if endpoint not in app.state.metrics["requests_per_endpoint"]:
-            app.state.metrics["requests_per_endpoint"][endpoint] = 0
-            app.state.metrics["average_response_time"][endpoint] = 0
-        
-        app.state.metrics["requests_per_endpoint"][endpoint] += 1
-        
-        # Update average response time
-        old_avg = app.state.metrics["average_response_time"][endpoint]
-        count = app.state.metrics["requests_per_endpoint"][endpoint]
-        app.state.metrics["average_response_time"][endpoint] = (
-            (old_avg * (count - 1) + processing_time) / count
-        )
+        # Note: Metrics are already updated in security_and_error_middleware
+        # to avoid duplication and data type conflicts
         
         # Add headers
         response.headers["X-Request-ID"] = request_id
@@ -359,8 +346,8 @@ async def add_request_id(request: Request, call_next: Callable) -> Response:
             processing_time=processing_time
         )
         
-        # Update error metrics
-        app.state.error_count += 1
+        # Note: Error count is already updated in security_and_error_middleware
+        # to avoid duplication
         raise e
         
     finally:
@@ -480,12 +467,22 @@ async def health_check():
 @health_router.get("/metrics", response_model=MetricsResponse, dependencies=[Depends(verify_api_key)])
 async def get_metrics():
     """Get API performance metrics."""
+    # Calculate average response times from lists
+    average_response_time = {}
+    for endpoint, times in app.state.metrics["average_response_time"].items():
+        if isinstance(times, list) and len(times) > 0:
+            average_response_time[endpoint] = sum(times) / len(times)
+        elif isinstance(times, (int, float)):
+            average_response_time[endpoint] = float(times)
+        else:
+            average_response_time[endpoint] = 0.0
+    
     return {
         "total_requests": app.state.request_count,
         "errors": app.state.error_count,
         "uptime_seconds": time.time() - app.state.start_time,
         "requests_per_endpoint": app.state.metrics["requests_per_endpoint"],
-        "average_response_time": app.state.metrics["average_response_time"],
+        "average_response_time": average_response_time,
         "active_connections": app.state.metrics["active_connections"],
         "timestamp": datetime.now().isoformat()
     }

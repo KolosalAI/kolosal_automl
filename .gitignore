@@ -168,3 +168,5 @@ data/
 mlruns/
 model_registry/
 notebooks/
+
+.secrets

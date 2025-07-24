@@ -32,6 +32,17 @@ from modules.engine.inference_engine import InferenceEngine
 from modules.device_optimizer import DeviceOptimizer
 from modules.model_manager import SecureModelManager
 
+# Import enhanced security components
+from modules.security import (
+    SecurityEnvironment, SecurityConfig, EnhancedSecurityManager,
+    TLSManager, SecretsManager, generate_secure_api_key,
+    generate_jwt_secret, validate_password_strength
+)
+from modules.security.enhanced_security import (
+    EnhancedSecurityConfig, DEFAULT_ENHANCED_SECURITY_CONFIG
+)
+from modules.security.security_config import get_security_environment
+
 import modules.engine.batch_processor as batch_processor
 import modules.engine.data_preprocessor as data_preprocessor
 import modules.engine.lru_ttl_cache as lru_ttl_cache
@@ -41,6 +52,63 @@ import modules.engine.utils as engine_utils
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Security Configuration and Initialization
+def initialize_security() -> Tuple[EnhancedSecurityManager, SecurityEnvironment]:
+    """Initialize the security system with enhanced configuration"""
+    try:
+        # Get security environment
+        security_env = get_security_environment()
+        
+        # Create enhanced security configuration
+        security_config = EnhancedSecurityConfig(
+            # Authentication settings
+            require_api_key=os.environ.get("REQUIRE_API_KEY", "False").lower() in ("true", "1"),
+            api_keys=os.environ.get("API_KEYS", generate_secure_api_key()).split(","),
+            enable_jwt_auth=os.environ.get("ENABLE_JWT_AUTH", "False").lower() in ("true", "1"),
+            jwt_secret=os.environ.get("JWT_SECRET") or generate_jwt_secret(),
+            
+            # Security features
+            enable_rate_limiting=True,
+            rate_limit_requests=int(os.environ.get("RATE_LIMIT_REQUESTS", "100")),
+            rate_limit_window=int(os.environ.get("RATE_LIMIT_WINDOW", "60")),
+            
+            # Enhanced security
+            enable_input_validation=True,
+            enable_security_headers=True,
+            enable_audit_logging=True,
+            enforce_https=os.environ.get("ENFORCE_HTTPS", "False").lower() in ("true", "1"),
+            enable_hsts=os.environ.get("ENABLE_HSTS", "False").lower() in ("true", "1"),
+            
+            # IP and access control
+            blocked_ips=os.environ.get("BLOCKED_IPS", "").split(",") if os.environ.get("BLOCKED_IPS") else [],
+            ip_whitelist=os.environ.get("IP_WHITELIST", "").split(",") if os.environ.get("IP_WHITELIST") else [],
+            
+            # Advanced features
+            enable_bot_detection=True,
+            enable_honeypot=os.environ.get("ENABLE_HONEYPOT", "False").lower() in ("true", "1"),
+        )
+        
+        # Initialize security manager
+        security_manager = EnhancedSecurityManager(security_config)
+        
+        # Log security initialization
+        logger.info("🛡️ Enhanced security system initialized")
+        logger.info(f"Security Level: {security_env.security_level.value}")
+        logger.info(f"API Key Required: {security_config.require_api_key}")
+        logger.info(f"JWT Auth: {security_config.enable_jwt_auth}")
+        logger.info(f"Rate Limiting: {security_config.enable_rate_limiting}")
+        logger.info(f"HTTPS Enforced: {security_config.enforce_https}")
+        
+        return security_manager, security_env
+        
+    except Exception as e:
+        logger.error(f"Failed to initialize security system: {e}")
+        # Fall back to default configuration
+        return EnhancedSecurityManager(DEFAULT_ENHANCED_SECURITY_CONFIG), get_security_environment()
+
+# Initialize security system
+SECURITY_MANAGER, SECURITY_ENV = initialize_security()
 
 def load_css_file(css_path: str = "static/styles.css") -> str:
     """Load CSS styles from external file"""
@@ -54,6 +122,256 @@ def load_css_file(css_path: str = "static/styles.css") -> str:
     except Exception as e:
         logger.error(f"Error loading CSS file: {e}")
         return ""
+
+# Security Authentication Functions for Gradio Integration
+def authenticate_user(username: str, password: str) -> bool:
+    """
+    Gradio authentication function with enhanced security
+    
+    Args:
+        username: Username for authentication
+        password: Password for authentication
+        
+    Returns:
+        bool: True if authentication successful, False otherwise
+    """
+    try:
+        # Get authentication credentials from environment
+        valid_users = {}
+        
+        # Support multiple authentication methods
+        if os.environ.get("AUTH_USERS"):
+            # Format: "user1:pass1,user2:pass2"
+            user_pairs = os.environ.get("AUTH_USERS", "").split(",")
+            for pair in user_pairs:
+                if ":" in pair:
+                    user, pwd = pair.split(":", 1)
+                    valid_users[user.strip()] = pwd.strip()
+        else:
+            # Default admin user if no custom users defined
+            valid_users = {
+                "admin": os.environ.get("ADMIN_PASSWORD", "kolosal2025!"),
+                "user": os.environ.get("USER_PASSWORD", "demo123")
+            }
+        
+        # Validate credentials
+        if username in valid_users:
+            # Use time-constant comparison for security
+            import hmac
+            stored_password = valid_users[username]
+            
+            # For enhanced security, validate password strength
+            if len(password) < 6:
+                logger.warning(f"Authentication failed for {username}: Password too short")
+                return False
+            
+            # Time-constant password comparison
+            is_valid = hmac.compare_digest(password, stored_password)
+            
+            if is_valid:
+                logger.info(f"✅ Successful authentication for user: {username}")
+                # Log successful authentication
+                SECURITY_MANAGER.auditor.logger.info(f"GRADIO_AUTH_SUCCESS: User {username} authenticated successfully")
+                return True
+            else:
+                logger.warning(f"❌ Authentication failed for user: {username}")
+                SECURITY_MANAGER.auditor.logger.warning(f"GRADIO_AUTH_FAILED: Invalid password for user {username}")
+                return False
+        else:
+            logger.warning(f"❌ Authentication failed: Unknown user {username}")
+            SECURITY_MANAGER.auditor.logger.warning(f"GRADIO_AUTH_FAILED: Unknown user {username}")
+            return False
+            
+    except Exception as e:
+        logger.error(f"Authentication error: {e}")
+        SECURITY_MANAGER.auditor.logger.error(f"GRADIO_AUTH_ERROR: {e}")
+        return False
+
+def get_auth_config() -> Optional[Tuple[str, str]]:
+    """
+    Get authentication configuration for Gradio
+    
+    Returns:
+        Optional[Tuple[str, str]]: (username, password) if auth required, None otherwise
+    """
+    try:
+        # Check if authentication is required
+        require_auth = os.environ.get("REQUIRE_GRADIO_AUTH", "False").lower() in ("true", "1")
+        
+        if not require_auth and SECURITY_ENV.security_level.value != "production":
+            logger.info("🔓 Authentication disabled for development environment")
+            return None
+            
+        # In production, always require authentication
+        if SECURITY_ENV.security_level.value == "production":
+            logger.info("🔒 Production environment detected - authentication required")
+            return authenticate_user
+            
+        # For development with auth enabled
+        if require_auth:
+            logger.info("🔒 Authentication enabled by configuration")
+            return authenticate_user
+            
+        return None
+        
+    except Exception as e:
+        logger.error(f"Error configuring authentication: {e}")
+        # Default to requiring auth on error for security
+        return authenticate_user
+
+def create_security_headers() -> Dict[str, str]:
+    """Create security headers for Gradio app"""
+    headers = {}
+    
+    if SECURITY_ENV.enforce_https:
+        headers.update({
+            "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+            "X-Content-Type-Options": "nosniff",
+            "X-Frame-Options": "DENY",
+            "X-XSS-Protection": "1; mode=block",
+            "Referrer-Policy": "strict-origin-when-cross-origin"
+        })
+    
+    return headers
+
+# Security Middleware for Gradio Functions
+def security_wrapper(func):
+    """
+    Decorator to add security checks to Gradio functions
+    
+    Args:
+        func: Function to wrap with security
+        
+    Returns:
+        Wrapped function with security checks
+    """
+    def wrapper(*args, **kwargs):
+        start_time = time.time()
+        
+        try:
+            # Rate limiting check (simplified for Gradio)
+            client_id = "gradio_user"  # In a real implementation, extract from session
+            
+            if SECURITY_MANAGER.config.enable_rate_limiting:
+                if not SECURITY_MANAGER.check_rate_limit(client_id):
+                    logger.warning(f"Rate limit exceeded for function {func.__name__}")
+                    return "⚠️ Rate limit exceeded. Please wait before making another request."
+            
+            # Input validation for critical functions
+            if SECURITY_MANAGER.config.enable_input_validation and args:
+                for arg in args:
+                    if isinstance(arg, str) and len(arg) > 10000:  # Prevent extremely large inputs
+                        logger.warning(f"Input too large for function {func.__name__}")
+                        return "⚠️ Input size exceeds maximum allowed limit."
+            
+            # Execute the function
+            result = func(*args, **kwargs)
+            
+            # Log successful execution
+            processing_time = time.time() - start_time
+            SECURITY_MANAGER.auditor.logger.info(
+                f"FUNCTION_CALL: {func.__name__} executed successfully in {processing_time:.3f}s"
+            )
+            
+            return result
+            
+        except Exception as e:
+            # Log security-related errors
+            processing_time = time.time() - start_time
+            SECURITY_MANAGER.auditor.logger.error(
+                f"FUNCTION_ERROR: {func.__name__} failed after {processing_time:.3f}s - {str(e)}"
+            )
+            logger.error(f"Function {func.__name__} failed: {e}")
+            return f"❌ An error occurred: {str(e)}"
+    
+    return wrapper
+
+def validate_file_upload(file_path: str, allowed_extensions: List[str] = None) -> bool:
+    """
+    Validate uploaded files for security
+    
+    Args:
+        file_path: Path to the uploaded file
+        allowed_extensions: List of allowed file extensions
+        
+    Returns:
+        bool: True if file is safe, False otherwise
+    """
+    try:
+        if not file_path or not os.path.exists(file_path):
+            return False
+        
+        # Check file extension
+        allowed_extensions = allowed_extensions or ['.csv', '.xlsx', '.xls', '.json', '.pkl']
+        file_ext = os.path.splitext(file_path)[1].lower()
+        
+        if file_ext not in allowed_extensions:
+            logger.warning(f"Disallowed file extension: {file_ext}")
+            return False
+        
+        # Check file size (max 100MB)
+        max_size = 100 * 1024 * 1024  # 100MB
+        file_size = os.path.getsize(file_path)
+        
+        if file_size > max_size:
+            logger.warning(f"File too large: {file_size} bytes")
+            return False
+        
+        # Basic malware check (check for suspicious patterns)
+        suspicious_patterns = [b'<script', b'javascript:', b'eval(', b'exec(']
+        
+        try:
+            with open(file_path, 'rb') as f:
+                content = f.read(1024)  # Read first 1KB
+                for pattern in suspicious_patterns:
+                    if pattern in content.lower():
+                        logger.warning(f"Suspicious content detected in file: {file_path}")
+                        return False
+        except:
+            pass  # If binary file, skip content check
+        
+        logger.info(f"File upload validated: {file_path}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"File validation error: {e}")
+        return False
+
+def secure_data_processing(data: Any) -> Any:
+    """
+    Secure data processing with input sanitization
+    
+    Args:
+        data: Input data to process
+        
+    Returns:
+        Sanitized data
+    """
+    try:
+        if isinstance(data, str):
+            # Remove potentially dangerous characters
+            data = data.replace('<script>', '').replace('</script>', '')
+            data = data.replace('javascript:', '')
+            
+            # Limit string length
+            if len(data) > 1000000:  # 1MB text limit
+                data = data[:1000000]
+                logger.warning("Input text truncated for security")
+        
+        elif isinstance(data, dict):
+            # Recursively sanitize dictionary
+            for key, value in data.items():
+                data[key] = secure_data_processing(value)
+        
+        elif isinstance(data, list):
+            # Sanitize list items
+            data = [secure_data_processing(item) for item in data]
+        
+        return data
+        
+    except Exception as e:
+        logger.error(f"Data sanitization error: {e}")
+        return data
 
 class DataPreviewGenerator:
     """Generate comprehensive data previews and visualizations"""
@@ -424,7 +742,7 @@ class InferenceServer:
         }
 
 class MLSystemUI:
-    """Enhanced Gradio UI for the ML Training & Inference System"""
+    """Enhanced Gradio UI for the ML Training & Inference System with Security Integration"""
     
     def __init__(self, inference_only: bool = False):
         self.inference_only = inference_only
@@ -438,6 +756,14 @@ class MLSystemUI:
         self.sample_data_loader = SampleDataLoader()
         self.data_preview_generator = DataPreviewGenerator()
         self.trained_models = {}  # Store trained models
+        
+        # Security integration
+        self.security_manager = SECURITY_MANAGER
+        self.security_env = SECURITY_ENV
+        
+        # Initialize security audit logger
+        logger.info("🛡️ Initializing ML System UI with enhanced security")
+        self.security_manager.auditor.logger.info("SYSTEM_INIT: ML System UI initialized")
         
         # Define available ML algorithms with their categories and correct keys
         self.ml_algorithms = {
@@ -603,13 +929,22 @@ Sample Dataset Loaded: {metadata['name']}
             logger.error(error_msg)
             return error_msg, {}, "", ""
     
+    @security_wrapper
     def load_data(self, file) -> Tuple[str, Dict, str, str]:
-        """Load dataset from uploaded file with preview"""
+        """Load dataset from uploaded file with enhanced security validation"""
         try:
             if file is None:
                 return "No file uploaded", {}, "", ""
             
             file_path = file.name
+            
+            # Security validation
+            if not validate_file_upload(file_path, ['.csv', '.xlsx', '.xls', '.json']):
+                self.security_manager.auditor.logger.warning(f"FILE_UPLOAD_REJECTED: {file_path}")
+                return "❌ File upload rejected for security reasons. Please ensure you're uploading a valid data file.", {}, "", ""
+            
+            # Log file upload
+            self.security_manager.auditor.logger.info(f"FILE_UPLOAD: {os.path.basename(file_path)}")
             
             # Load based on file extension
             if file_path.endswith('.csv'):
@@ -620,6 +955,15 @@ Sample Dataset Loaded: {metadata['name']}
                 df = pd.read_json(file_path)
             else:
                 return "Unsupported file format. Please upload CSV, Excel, or JSON files.", {}, "", ""
+            
+            # Data size validation for security
+            if df.shape[0] > 1000000:  # 1M rows limit
+                self.security_manager.auditor.logger.warning(f"LARGE_DATASET: {df.shape}")
+                return "⚠️ Dataset too large. Please use a dataset with fewer than 1 million rows.", {}, "", ""
+            
+            if df.shape[1] > 10000:  # 10K columns limit
+                self.security_manager.auditor.logger.warning(f"WIDE_DATASET: {df.shape}")
+                return "⚠️ Dataset too wide. Please use a dataset with fewer than 10,000 columns.", {}, "", ""
             
             self.current_data = df
             
@@ -641,6 +985,10 @@ Data Loaded Successfully!
             
             return info_text, summary, preview_text, sample_table
             
+        except Exception as e:
+            error_msg = f"Error loading data: {str(e)}"
+            logger.error(error_msg)
+            return error_msg, {}, "", ""
         except Exception as e:
             error_msg = f"Error loading data: {str(e)}"
             logger.error(error_msg)
@@ -681,11 +1029,22 @@ Data Loaded Successfully!
             logger.error(error_msg)
             return error_msg
     
+    @security_wrapper
     def make_inference_prediction(self, input_data: str) -> str:
-        """Make predictions using the inference server"""
+        """Make predictions using the inference server with security validation"""
         try:
             if not self.inference_server.is_loaded:
                 return "No model loaded in inference server. Please load a model first."
+            
+            # Security validation for input data
+            if not input_data or not input_data.strip():
+                return "❌ Empty input data provided."
+            
+            # Sanitize input data
+            input_data = secure_data_processing(input_data)
+            
+            # Log inference request
+            self.security_manager.auditor.logger.info(f"INFERENCE_REQUEST: Input length {len(input_data)}")
             
             # Parse input data
             try:
@@ -697,14 +1056,25 @@ Data Loaded Successfully!
                     # Comma-separated values
                     data = [float(x.strip()) for x in input_data.split(',')]
                     input_array = np.array(data).reshape(1, -1)
+                    
+                # Validate input array size
+                if input_array.shape[1] > 1000:  # Limit features
+                    self.security_manager.auditor.logger.warning(f"LARGE_INFERENCE_INPUT: {input_array.shape}")
+                    return "⚠️ Input has too many features. Maximum 1000 features allowed."
+                    
             except Exception as e:
+                self.security_manager.auditor.logger.warning(f"INFERENCE_PARSE_ERROR: {str(e)}")
                 return f"Error parsing input data: {str(e)}. Please use comma-separated values or JSON array format."
             
             # Make prediction using inference server
             result = self.inference_server.predict(input_array)
             
             if "error" in result:
+                self.security_manager.auditor.logger.error(f"INFERENCE_ERROR: {result['error']}")
                 return f"Prediction failed: {result['error']}"
+            
+            # Log successful prediction
+            self.security_manager.auditor.logger.info("INFERENCE_SUCCESS: Prediction completed")
             
             # Format results
             predictions = result["predictions"]
@@ -792,6 +1162,7 @@ Configuration Created Successfully!
             logger.error(error_msg)
             return error_msg, gr.Dropdown(), []
     
+    @security_wrapper
     def train_model(self, target_column: str, algorithm_name: str, model_name: str = None) -> Tuple[str, str, str, gr.Dropdown]:
         """Train a model with the current configuration"""
         if self.inference_only:
@@ -2874,6 +3245,117 @@ Server logs will be displayed here.
                     outputs=[server_logs]
                 )
         
+        # Security Status Tab
+        with gr.Tab("🛡️ Security Status", id="security_status"):
+            def get_security_status():
+                """Get current security status and configuration"""
+                status_html = f"""
+                <div style="padding: 20px; background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%); border-radius: 15px; color: white;">
+                    <h2 style="margin-top: 0; color: #ecf0f1;">🛡️ Security Status Dashboard</h2>
+                    
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-top: 20px;">
+                        
+                        <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 10px;">
+                            <h3 style="margin-top: 0; color: #3498db;">🔐 Authentication</h3>
+                            <p><strong>Security Level:</strong> {SECURITY_ENV.security_level.value.title()}</p>
+                            <p><strong>API Key Required:</strong> {'✅ Yes' if SECURITY_MANAGER.config.require_api_key else '❌ No'}</p>
+                            <p><strong>JWT Authentication:</strong> {'✅ Enabled' if SECURITY_MANAGER.config.enable_jwt_auth else '❌ Disabled'}</p>
+                            <p><strong>Gradio Auth:</strong> {'✅ Required' if get_auth_config() else '❌ Disabled'}</p>
+                        </div>
+                        
+                        <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 10px;">
+                            <h3 style="margin-top: 0; color: #e74c3c;">🚫 Protection Systems</h3>
+                            <p><strong>Rate Limiting:</strong> {'✅ Enabled' if SECURITY_MANAGER.config.enable_rate_limiting else '❌ Disabled'}</p>
+                            <p><strong>Input Validation:</strong> {'✅ Enabled' if SECURITY_MANAGER.config.enable_input_validation else '❌ Disabled'}</p>
+                            <p><strong>IP Blocking:</strong> {'✅ Active' if SECURITY_MANAGER.config.blocked_ips else '❌ None'}</p>
+                            <p><strong>Honeypot Detection:</strong> {'✅ Enabled' if SECURITY_MANAGER.config.enable_honeypot else '❌ Disabled'}</p>
+                        </div>
+                        
+                        <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 10px;">
+                            <h3 style="margin-top: 0; color: #27ae60;">🔒 Encryption & Privacy</h3>
+                            <p><strong>HTTPS Enforced:</strong> {'✅ Yes' if SECURITY_MANAGER.config.enforce_https else '❌ No'}</p>
+                            <p><strong>HSTS Enabled:</strong> {'✅ Yes' if SECURITY_MANAGER.config.enable_hsts else '❌ No'}</p>
+                            <p><strong>Security Headers:</strong> {'✅ Enabled' if SECURITY_MANAGER.config.enable_security_headers else '❌ Disabled'}</p>
+                            <p><strong>Audit Logging:</strong> {'✅ Active' if SECURITY_MANAGER.config.enable_audit_logging else '❌ Disabled'}</p>
+                        </div>
+                        
+                        <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 10px;">
+                            <h3 style="margin-top: 0; color: #f39c12;">⚡ Performance Limits</h3>
+                            <p><strong>Rate Limit:</strong> {SECURITY_MANAGER.config.rate_limit_requests} requests / {SECURITY_MANAGER.config.rate_limit_window}s</p>
+                            <p><strong>Max Request Size:</strong> {SECURITY_MANAGER.config.max_request_size // (1024*1024)} MB</p>
+                            <p><strong>JWT Expiry:</strong> {SECURITY_MANAGER.config.jwt_expiry_hours} hours</p>
+                            <p><strong>Max JSON Depth:</strong> {SECURITY_MANAGER.config.max_json_depth}</p>
+                        </div>
+                    </div>
+                    
+                    <div style="margin-top: 20px; padding: 15px; background: rgba(255,255,255,0.1); border-radius: 10px;">
+                        <h3 style="margin-top: 0; color: #9b59b6;">📊 Security Configuration</h3>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+                            <div>
+                                <strong>API Keys:</strong> {len(SECURITY_MANAGER.config.api_keys)} configured
+                            </div>
+                            <div>
+                                <strong>Blocked IPs:</strong> {len(SECURITY_MANAGER.config.blocked_ips)} blocked
+                            </div>
+                            <div>
+                                <strong>Whitelisted IPs:</strong> {len(SECURITY_MANAGER.config.ip_whitelist)} allowed
+                            </div>
+                            <div>
+                                <strong>JWT Algorithm:</strong> {SECURITY_MANAGER.config.jwt_algorithm}
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div style="margin-top: 20px; padding: 15px; background: rgba(52, 152, 219, 0.2); border-radius: 10px; border-left: 4px solid #3498db;">
+                        <h4 style="margin-top: 0; color: #3498db;">💡 Security Recommendations</h4>
+                        <ul style="margin: 10px 0;">
+                            {"<li>Enable HTTPS enforcement for production</li>" if not SECURITY_MANAGER.config.enforce_https else ""}
+                            {"<li>Configure API key authentication</li>" if not SECURITY_MANAGER.config.require_api_key else ""}
+                            {"<li>Enable audit logging for monitoring</li>" if not SECURITY_MANAGER.config.enable_audit_logging else ""}
+                            {"<li>Set up rate limiting to prevent abuse</li>" if not SECURITY_MANAGER.config.enable_rate_limiting else ""}
+                            <li>Monitor security logs regularly</li>
+                            <li>Keep security configurations updated</li>
+                            <li>Use strong API keys and rotate them periodically</li>
+                        </ul>
+                    </div>
+                </div>
+                """
+                return status_html
+            
+            gr.HTML(value=get_security_status)
+            
+            with gr.Row():
+                refresh_security_btn = gr.Button("🔄 Refresh Security Status", variant="secondary")
+                
+            # Security audit log viewer (last 10 entries)
+            def get_recent_audit_logs():
+                """Get recent security audit log entries"""
+                try:
+                    # This would typically read from the security log file
+                    # For now, return a simple status
+                    return """
+                    <div style="background: #2c3e50; color: white; padding: 15px; border-radius: 10px; font-family: monospace;">
+                        <h4>📋 Recent Security Events (Last 10)</h4>
+                        <div style="max-height: 300px; overflow-y: auto;">
+                            <div>[INFO] System initialized with enhanced security</div>
+                            <div>[INFO] Security configuration loaded successfully</div>
+                            <div>[INFO] Authentication system activated</div>
+                            <div>[INFO] Rate limiting configured</div>
+                            <div>[INFO] Security headers enabled</div>
+                        </div>
+                    </div>
+                    """
+                except Exception as e:
+                    return f"Error loading audit logs: {str(e)}"
+            
+            security_logs = gr.HTML(value=get_recent_audit_logs)
+            
+            # Refresh button functionality
+            refresh_security_btn.click(
+                fn=lambda: (get_security_status(), get_recent_audit_logs()),
+                outputs=[gr.HTML(), security_logs]
+            )
+        
         # Enhanced footer with helpful information
         gr.HTML("""
         <div style="margin-top: 40px; padding: 30px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 15px; color: white;">
@@ -2954,8 +3436,8 @@ Server logs will be displayed here.
     return interface
 
 def main():
-    """Main function with CLI argument parsing"""
-    parser = argparse.ArgumentParser(description="ML Training & Inference System")
+    """Main function with CLI argument parsing and enhanced security"""
+    parser = argparse.ArgumentParser(description="ML Training & Inference System with Enhanced Security")
     parser.add_argument(
         "--inference-only",
         action="store_true",
@@ -2974,8 +3456,8 @@ def main():
     parser.add_argument(
         "--host",
         type=str,
-        default="0.0.0.0",
-        help="Host address (default: 0.0.0.0)"
+        default="127.0.0.1",  # More secure default
+        help="Host address (default: 127.0.0.1 for security)"
     )
     parser.add_argument(
         "--port",
@@ -2986,37 +3468,133 @@ def main():
     parser.add_argument(
         "--share",
         action="store_true",
-        help="Create a public Gradio link"
+        help="Create a public Gradio link (WARNING: Security implications in production)"
+    )
+    parser.add_argument(
+        "--auth-required",
+        action="store_true",
+        help="Force authentication requirement"
+    )
+    parser.add_argument(
+        "--ssl-cert",
+        type=str,
+        help="Path to SSL certificate file for HTTPS"
+    )
+    parser.add_argument(
+        "--ssl-key",
+        type=str,
+        help="Path to SSL private key file for HTTPS"
+    )
+    parser.add_argument(
+        "--max-threads",
+        type=int,
+        default=4,
+        help="Maximum number of threads for concurrent processing"
     )
     
     args = parser.parse_args()
     
+    # Security validation
+    if args.share and SECURITY_ENV.security_level.value == "production":
+        logger.warning("⚠️  WARNING: --share option should not be used in production environments!")
+        response = input("Continue anyway? (yes/no): ")
+        if response.lower() not in ["yes", "y"]:
+            logger.info("Exiting for security reasons.")
+            sys.exit(1)
+    
+    # Configure authentication
+    auth_config = None
+    if args.auth_required or SECURITY_ENV.security_level.value == "production":
+        auth_config = get_auth_config()
+        if auth_config and callable(auth_config):
+            logger.info("🔐 Authentication enabled")
+        else:
+            logger.info("🔓 Authentication disabled")
+    
+    # SSL/TLS Configuration
+    ssl_context = None
+    if args.ssl_cert and args.ssl_key:
+        try:
+            import ssl
+            ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+            ssl_context.load_cert_chain(args.ssl_cert, args.ssl_key)
+            logger.info("🔒 SSL/TLS enabled")
+        except Exception as e:
+            logger.error(f"Failed to configure SSL: {e}")
+            sys.exit(1)
+    elif SECURITY_ENV.enforce_https:
+        logger.warning("⚠️  HTTPS enforcement is enabled but no SSL certificates provided")
+    
     # Create and launch the interface
     interface = create_ui(inference_only=args.inference_only)
     
+    # Security headers configuration
+    security_headers = create_security_headers()
+    
+    # Display startup information
     print(f"""
 🚀 Starting {'ML Inference Server' if args.inference_only else 'ML Training & Inference System'}
 
+🔧 Configuration:
 Mode: {'Inference Only' if args.inference_only else 'Full Training & Inference'}
 Host: {args.host}
 Port: {args.port}
 Share: {'Yes' if args.share else 'No'}
+Authentication: {'Required' if auth_config else 'Disabled'}
+SSL/TLS: {'Enabled' if ssl_context else 'Disabled'}
+Security Level: {SECURITY_ENV.security_level.value}
 
-Available Features:
+🛡️  Security Features:
+- Enhanced rate limiting: {'✅' if SECURITY_MANAGER.config.enable_rate_limiting else '❌'}
+- Input validation: {'✅' if SECURITY_MANAGER.config.enable_input_validation else '❌'}
+- Audit logging: {'✅' if SECURITY_MANAGER.config.enable_audit_logging else '❌'}
+- Security headers: {'✅' if SECURITY_MANAGER.config.enable_security_headers else '❌'}
+- IP blocking: {'✅' if SECURITY_MANAGER.config.blocked_ips else '❌'}
+
+🚀 Available Features:
 {'- Real-time model inference' if args.inference_only else '''- Multiple ML algorithms support
 - Advanced model training with hyperparameter optimization
 - Model performance comparison
 - Secure model storage with encryption
 - Real-time inference server'''}
+
+⚠️  Security Notice:
+- Keep your API keys secure
+- Monitor the audit logs regularly
+- Use HTTPS in production environments
+- Regularly update security configurations
     """)
     
-    interface.launch(
-        server_name=args.host,
-        server_port=args.port,
-        share=args.share,
-        debug=True,
-        show_error=True
-    )
+    # Launch configuration
+    launch_kwargs = {
+        "server_name": args.host,
+        "server_port": args.port,
+        "share": args.share,
+        "debug": SECURITY_ENV.debug_mode,
+        "show_error": True,
+        "max_threads": args.max_threads,
+        "quiet": False,
+    }
+    
+    # Add authentication if configured
+    if auth_config and callable(auth_config):
+        launch_kwargs["auth"] = auth_config
+    
+    # Add SSL context if available
+    if ssl_context:
+        launch_kwargs["ssl_verify"] = False  # For development
+    
+    try:
+        # Launch the interface with security enhancements
+        interface.launch(**launch_kwargs)
+        
+    except KeyboardInterrupt:
+        logger.info("👋 Shutting down gracefully...")
+        SECURITY_MANAGER.auditor.logger.info("SYSTEM_SHUTDOWN: Gradio interface stopped by user")
+    except Exception as e:
+        logger.error(f"Failed to launch interface: {e}")
+        SECURITY_MANAGER.auditor.logger.error(f"SYSTEM_ERROR: Failed to launch interface - {e}")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

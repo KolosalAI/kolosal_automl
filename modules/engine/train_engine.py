@@ -270,26 +270,41 @@ class MLTrainingEngine:
             
     def _signal_handler(self, signum, frame):
         """Handle signals for graceful shutdown."""
-        self.logger.info(f"Received signal {signum}, cleaning up...")
+        self._safe_log("info", f"Received signal {signum}, cleaning up...")
         self._cleanup_on_shutdown()
         
+    def _safe_log(self, level, message):
+        """Safely log a message, avoiding I/O errors during shutdown."""
+        try:
+            if hasattr(self, 'logger') and self.logger:
+                # Check if logger handlers are still valid
+                for handler in self.logger.handlers:
+                    if hasattr(handler, 'stream') and hasattr(handler.stream, 'closed'):
+                        if handler.stream.closed:
+                            return  # Skip logging if stream is closed
+                
+                getattr(self.logger, level)(message)
+        except (ValueError, OSError, AttributeError):
+            # Silently ignore logging errors during shutdown
+            pass
+    
     def _cleanup_on_shutdown(self):
         """Perform cleanup operations before shutdown."""
         if hasattr(self, 'config') and hasattr(self.config, 'auto_save_on_shutdown') and self.config.auto_save_on_shutdown and hasattr(self, 'best_model') and self.best_model is not None:
-            self.logger.info("Auto-saving best model before shutdown")
+            self._safe_log("info", "Auto-saving best model before shutdown")
             try:
                 self.save_model(self.best_model_name)
             except Exception as e:
-                self.logger.error(f"Error saving model during shutdown: {str(e)}")
+                self._safe_log("error", f"Error saving model during shutdown: {str(e)}")
                 
         # Save experiment state if requested
         if hasattr(self, 'config') and hasattr(self.config, 'save_state_on_shutdown') and self.config.save_state_on_shutdown and hasattr(self, 'tracker') and self.tracker:
             try:
-                self.logger.info("Saving experiment state before shutdown")
+                self._safe_log("info", "Saving experiment state before shutdown")
                 if hasattr(self.tracker, 'end_experiment'):
                     self.tracker.end_experiment()
             except Exception as e:
-                self.logger.error(f"Error saving experiment state during shutdown: {str(e)}")
+                self._safe_log("error", f"Error saving experiment state during shutdown: {str(e)}")
                 
         # Signal components to clean up
         try:
@@ -1425,11 +1440,11 @@ class MLTrainingEngine:
                 pickle.dump(model, f)
             
             model_info["save_path"] = model_path
-            self.logger.info(f"Model '{model_name}' saved to {model_path}")
+            self._safe_log("info", f"Model '{model_name}' saved to {model_path}")
             return model_path
             
         except Exception as e:
-            self.logger.error(f"Failed to save model: {str(e)}")
+            self._safe_log("error", f"Failed to save model: {str(e)}")
             return False
 
     def load_model(self, model_path: str, model_name: Optional[str] = None) -> Tuple[bool, Optional[Any]]:
