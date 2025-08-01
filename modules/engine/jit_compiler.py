@@ -13,20 +13,77 @@ from collections import defaultdict
 import numpy as np
 from dataclasses import dataclass
 import threading
+import warnings
+
+# Configure logger first
+logger = logging.getLogger(__name__)
+
+# Safely try to import numba with comprehensive error handling
+NUMBA_AVAILABLE = False
+NUMBA_ERROR = None
 
 try:
+    # First check if numba is installed
     import numba
+    # Test if numba can actually initialize properly
     from numba import njit, jit, prange
     from numba.typed import Dict as NumbaDict
-    NUMBA_AVAILABLE = True
-except ImportError:
+    
+    # Test basic numba functionality
+    @njit
+    def _test_numba():
+        return 1.0
+    
+    # Try to compile and run a simple function
+    try:
+        _test_numba()
+        NUMBA_AVAILABLE = True
+        logger.info("Numba successfully initialized and tested")
+    except Exception as e:
+        NUMBA_AVAILABLE = False
+        NUMBA_ERROR = f"Numba compilation test failed: {str(e)}"
+        logger.warning(f"Numba compilation test failed: {str(e)}")
+        
+except ImportError as e:
     NUMBA_AVAILABLE = False
+    NUMBA_ERROR = f"Numba import failed: {str(e)}"
+    logger.info(f"Numba not available: {str(e)}")
+except Exception as e:
+    NUMBA_AVAILABLE = False
+    NUMBA_ERROR = f"Numba initialization failed: {str(e)}"
+    logger.warning(f"Numba initialization failed: {str(e)}")
+
+# Define fallback decorators if numba is not available
+if not NUMBA_AVAILABLE:
+    def njit(*args, **kwargs):
+        """Fallback njit decorator that does nothing."""
+        def decorator(func):
+            return func
+        if len(args) == 1 and callable(args[0]):
+            return args[0]
+        return decorator
+    
+    def jit(*args, **kwargs):
+        """Fallback jit decorator that does nothing."""
+        def decorator(func):
+            return func
+        if len(args) == 1 and callable(args[0]):
+            return args[0]
+        return decorator
+    
+    def prange(*args, **kwargs):
+        """Fallback prange that uses regular range."""
+        return range(*args, **kwargs)
+    
+    # Mock NumbaDict
+    NumbaDict = dict
 
 try:
     import psutil
     PSUTIL_AVAILABLE = True
 except ImportError:
     PSUTIL_AVAILABLE = False
+    logger.info("psutil not available - system monitoring disabled")
 
 
 @dataclass
@@ -96,6 +153,13 @@ class JITCompiler:
         self.enable_compilation = enable_compilation and NUMBA_AVAILABLE
         self.logger = logging.getLogger(__name__)
         
+        # Log numba status
+        if not NUMBA_AVAILABLE:
+            if NUMBA_ERROR:
+                self.logger.warning(f"JIT compilation disabled: {NUMBA_ERROR}")
+            else:
+                self.logger.info("JIT compilation disabled: Numba not available")
+        
         # Hot path tracking
         self.hot_path_tracker = HotPathTracker(min_calls_for_compilation)
         
@@ -107,10 +171,10 @@ class JITCompiler:
         # Thread safety
         self.compilation_lock = threading.RLock()
         
-        if not NUMBA_AVAILABLE:
-            self.logger.warning("Numba not available. JIT compilation disabled.")
-        else:
+        if NUMBA_AVAILABLE:
             self.logger.info("JIT compiler initialized with Numba support")
+        else:
+            self.logger.info("JIT compiler initialized in fallback mode (no compilation)")
     
     def initialize(self):
         """
@@ -119,9 +183,14 @@ class JITCompiler:
         happens in __init__.
         """
         if self.enable_compilation:
-            self.logger.info("JIT compiler initialization complete")
+            self.logger.info("JIT compiler initialization complete - Numba enabled")
         else:
-            self.logger.info("JIT compiler disabled")
+            if NUMBA_AVAILABLE:
+                self.logger.info("JIT compiler disabled by configuration")
+            else:
+                self.logger.info("JIT compiler disabled - Numba not available")
+                if NUMBA_ERROR:
+                    self.logger.debug(f"Numba error details: {NUMBA_ERROR}")
     
     def compile_if_hot(self, func: Callable, *args, **kwargs) -> Any:
         """
@@ -191,6 +260,10 @@ class JITCompiler:
     
     def _compile_function(self, func: Callable) -> Optional[Callable]:
         """Compile a function using appropriate Numba decorators."""
+        if not NUMBA_AVAILABLE:
+            self.logger.debug(f"Numba not available, skipping compilation for {func.__name__}")
+            return None
+            
         try:
             # Analyze function signature and body to determine compilation strategy
             signature = inspect.signature(func)
@@ -371,3 +444,16 @@ def get_global_jit_compiler() -> JITCompiler:
     if _global_jit_compiler is None:
         _global_jit_compiler = JITCompiler()
     return _global_jit_compiler
+
+def get_numba_status() -> Dict[str, Any]:
+    """Get detailed status information about Numba availability."""
+    return {
+        "available": NUMBA_AVAILABLE,
+        "error": NUMBA_ERROR,
+        "version": getattr(numba, "__version__", None) if NUMBA_AVAILABLE else None,
+        "thread_layer": getattr(numba, "threading_layer", None) if NUMBA_AVAILABLE else None
+    }
+
+def is_jit_enabled() -> bool:
+    """Check if JIT compilation is enabled and available."""
+    return NUMBA_AVAILABLE

@@ -5,6 +5,7 @@ import json
 import os
 import time
 import traceback
+import hmac
 from typing import Dict, Any, List, Tuple, Optional
 import logging
 from datetime import datetime
@@ -921,6 +922,61 @@ class MLSystemUI:
         except Exception as e:
             return {"error": f"Error getting system info: {str(e)}"}
     
+    def determine_task_type(self, y: pd.Series) -> str:
+        """Determine if the task is classification or regression based on target variable"""
+        try:
+            # Check if target is numeric and has many unique values (likely regression)
+            if pd.api.types.is_numeric_dtype(y):
+                unique_ratio = y.nunique() / len(y)
+                if unique_ratio > 0.05:  # If more than 5% unique values, likely regression
+                    return "regression"
+                else:
+                    return "classification"
+            else:
+                # Non-numeric targets are typically classification
+                return "classification"
+        except Exception:
+            # Default to classification if unable to determine
+            return "classification"
+    
+    def format_model_metrics(self, results) -> str:
+        """Format model training metrics for display"""
+        if not hasattr(results, 'metrics') or not results.metrics:
+            return "No metrics available."
+        
+        metrics_text = "📈 Training Metrics:\n\n"
+        
+        for metric_name, metric_value in results.metrics.items():
+            if isinstance(metric_value, (int, float)):
+                metrics_text += f"- {metric_name.replace('_', ' ').title()}: {metric_value:.4f}\n"
+            else:
+                metrics_text += f"- {metric_name.replace('_', ' ').title()}: {metric_value}\n"
+        
+        return metrics_text
+    
+    def save_preprocessing_config(self, model_name: str, preprocessor, config):
+        """Save preprocessing configuration alongside the model"""
+        try:
+            config_path = f"./models/{model_name}_preprocessing_config.json"
+            os.makedirs(os.path.dirname(config_path), exist_ok=True)
+            
+            # Save configuration as JSON
+            config_dict = {
+                'normalization': config.normalization.value if hasattr(config.normalization, 'value') else str(config.normalization),
+                'chunk_size': config.chunk_size,
+                'n_jobs': config.n_jobs,
+                'enable_feature_selection': getattr(config, 'enable_feature_selection', False),
+                'model_name': model_name
+            }
+            
+            with open(config_path, 'w') as f:
+                json.dump(config_dict, f, indent=2)
+                
+            logger.info(f"Preprocessing configuration saved to {config_path}")
+            
+        except Exception as e:
+            logger.error(f"Failed to save preprocessing config: {e}")
+    
     
     def load_sample_data(self, dataset_name: str) -> Tuple[str, Dict, str, str]:
         """Load sample dataset with preview"""
@@ -1365,7 +1421,7 @@ Configuration Created Successfully!
             task_type = self.determine_task_type(y)
             
             # Create training configuration based on dataset size
-            training_config = self.create_training_config(
+            training_config = self.create_optimized_training_config(
                 algorithm_name=algorithm_name,
                 task_type=task_type,
                 dataset_size=dataset_size,
@@ -1447,7 +1503,7 @@ Configuration Created Successfully!
             self.security_manager.auditor.logger.error(f"TRAINING_ERROR: {error_msg}")
             return f"❌ {error_msg}", "", "", gr.Dropdown()
     
-    def create_training_config(self, algorithm_name: str, task_type: str, 
+    def create_optimized_training_config(self, algorithm_name: str, task_type: str, 
                              dataset_size, processing_mode) -> Dict[str, Any]:
         """Create optimized training configuration based on dataset characteristics"""
         from modules.engine.optimized_data_loader import DatasetSize

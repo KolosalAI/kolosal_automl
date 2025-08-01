@@ -84,12 +84,45 @@ from ..configs import (
 )
 
 # SIMD Optimizations for vectorized operations
+NUMBA_AVAILABLE = False
+NUMBA_ERROR = None
+
 try:
     import numba
     from numba import njit, prange
-    NUMBA_AVAILABLE = True
-except ImportError:
+    
+    # Test basic numba functionality
+    @njit
+    def _test_numba_inference():
+        return 1.0
+    
+    try:
+        _test_numba_inference()
+        NUMBA_AVAILABLE = True
+    except Exception as e:
+        NUMBA_AVAILABLE = False
+        NUMBA_ERROR = f"Numba test failed: {str(e)}"
+        
+except ImportError as e:
     NUMBA_AVAILABLE = False
+    NUMBA_ERROR = f"Numba import failed: {str(e)}"
+except Exception as e:
+    NUMBA_AVAILABLE = False
+    NUMBA_ERROR = f"Numba initialization failed: {str(e)}"
+
+# Define fallback decorators if numba is not available
+if not NUMBA_AVAILABLE:
+    def njit(*args, **kwargs):
+        """Fallback njit decorator that does nothing."""
+        def decorator(func):
+            return func
+        if len(args) == 1 and callable(args[0]):
+            return args[0]
+        return decorator
+    
+    def prange(*args, **kwargs):
+        """Fallback prange that uses regular range."""
+        return range(*args, **kwargs)
 
 
 
