@@ -1,84 +1,25 @@
-# 🚀 kolosal AutoML
+# 🚀 Kolosal AutoML
 
 [![MIT License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Built with UV](https://img.shields.io/badge/built%20with-uv-%23B072FF?logo=pypi)](https://github.com/astral-sh/uv)
 [![Version](https://img.shields.io/badge/version-0.1.4-green.svg)]()
 [![Development](https://img.shields.io/badge/status-development-orange)]()
-[![Test**🚀 D**🚀 Development Ready | 🛡️ Enterprise Security | 📊 Real-time Monitoring**
+[![Tests](https://img.shields.io/badge/tests-comprehensive-brightgreen)]()
 
-**Built with ❤️ by Kolosal, Inc**
+**🚀 Production Ready | 🛡️ Enterprise Security | 📊 Real-time Monitoring**
 
-[🌟 Star us on GitHub](https://github.com/Genta-Technology/kolosal-automl) | [📖 Documentation](docs/) | [🐛 Report Issues](https://github.com/Genta-Technology/kolosal-automl/issues) | [💬 Discussions](https://github.com/Genta-Technology/kolosal-automl/discussions)
+**Built with ❤️ by Kolosal, Inc. team**
 
-**kolosal AutoML v0.1.4 - Advancing ML automation with enhanced enterprise features**ent Ready | 🛡️ Enterprise Security | 📊 Real-time Monitoring**
+[🌟 Star us on GitHub](https://github.com/Genta-Technology/kolosal_automl) | [📖 Documentation](docs/) | [🐛 Report Issues](https://github.com/Genta-Technology/kolosal_automl/issues) | [💬 Discussions](https://github.com/Genta-Technology/kolosal_automl/discussions)
 
-**Built with ❤️ by Kolosal, Inc**
-
-[🌟 Star us on GitHub](https://github.com/Genta-Technology/kolosal-automl) | [📖 Documentation](docs/) | [🐛 Report Issues](https://github.com/Genta-Technology/kolosal-automl/issues) | [💬 Discussions](https://github.com/Genta-Technology/kolosal-automl/discussions)
-
-**kolosal AutoML v0.1.4 - Advancing ML automation with enhanced enterprise features**s://img.shields.io/badge/tests-comprehensive-brightgreen)]()
-
-## 🌟 **Enhanced v0.1.4 Features**
-
-**kolosal AutoML** continues to evolve as a comprehensive machine learning platform with significant improvements in multi-model training, batch processing, monitoring, and enterprise-grade features. This release introduces revolutionary **multi-algorithm comparison** capabilities alongside production readiness and advanced automation features.
-
-### ✨ **What's New in v0.1.4**
-
-#### 🤖 **Multi-Model Training & Comparison**
-- 🚀 **Simultaneous Algorithm Training** - Train multiple ML algorithms in one click with automatic comparison
-- 📊 **Intelligent Model Ranking** - Automatic performance-based ranking with comprehensive metrics analysis
-- ⚙️ **Hyperparameter Optimization** - Built-in optimization for all selected algorithms simultaneously
-- 🏆 **Best Model Selection** - AI-powered recommendations with statistical significance testing
-- 📈 **Comparative Analytics** - Side-by-side performance analysis with training time vs accuracy trade-offs
-- 🎯 **Enhanced UI Experience** - Multiselect algorithm dropdown with real-time training progress tracking
-- 📝 **Comprehensive Results** - Detailed metrics, feature importance, and model summaries for informed decision-making
-
-#### �️ **Improved Inference Server**
-- 🎯 **Dual Model Loading** - Load from trained models in current session or upload external model files
-- 🔄 **Real-time Model Management** - Refresh and switch between multiple loaded models seamlessly
-- 📁 **Enhanced File Support** - Support for .pkl, .joblib, and .model file formats
-- 🔐 **Security Integration** - Encrypted model loading with password protection
-- 📊 **Model Status Dashboard** - Real-time display of loaded models with detailed metadata
-
-#### 🎨 **UI/UX Enhancements**
-- 🔥 **Complete Batch Processing API** with dynamic batching and priority queues
-- 🛡️ **Enterprise Security Framework** with rate limiting, input validation, and audit logging
-- 📊 **Real-time Monitoring System** with performance analytics and interactive dashboard
-- 🐋 **Production Docker Deployment** with monitoring stack (Prometheus, Grafana, Redis, Nginx)
-- 🧪 **Comprehensive Testing Suite** including unit, functional, and integration tests
-- 📚 **Professional Documentation** with API reference, deployment guides, and examples
-- ⚡ **Advanced Error Handling** with circuit breakers and standardized responses
-- 🎯 **Performance Optimization** with resource monitoring and auto-scaling capabilities
-- 🔧 **Enhanced API Stability** with comprehensive data preprocessor API fixes and JSON serialization improvements
-- 🛠️ **Unified Request Handling** with smart content-type detection for both JSON and multipart form data
-- 🔍 **Production-Ready Testing** with 26/26 data preprocessor API tests passing and robust error handling
-- 📋 **Improved Model Management** with fixed parameter binding and Pydantic model compatibility
-
-#### 🧪 **Test Suite Refactoring & Quality Improvements**
-- 🔧 **Comprehensive Test Refactoring** - Major overhaul of test suite to align with actual implementation behavior
-- 🎯 **FastAPI Response Validation** - Updated all API tests to properly handle FastAPI error response structure (`response.json()["detail"]`)
-- 🛠️ **Enhanced Mock Strategies** - Improved mocking for DeviceOptimizer CPU capabilities, BatchProcessor configurations, and component dependencies
-- 📊 **Quantization Parameter Fixes** - Fixed INT8 bounds validation (127 vs 128) and floating-point comparison tolerances
-- 🔄 **Implementation Alignment** - Tests now accurately reflect actual code capabilities (removed tests for unavailable methods)
-- 🌐 **Server Availability Checks** - Integration tests include conditional execution based on API server availability
-- 🧹 **Test Isolation Improvements** - Better cleanup procedures, state management, and resource handling between test runs
-- 📈 **Error Handling Validation** - Enhanced expected vs actual behavior validation with contextual error suppression
-- 🔧 **Mock Configuration Updates** - Better path mocking for directory operations and JSON data loading scenarios
-- ✅ **Production-Ready Testing** - Comprehensive test coverage with improved reliability and maintainability
-
-#### 🔧 **Infrastructure & Stability Improvements**
-- 📝 **Centralized Logging System** - Implemented singleton LoggingManager with thread-safe operations, rotating file handlers, and automatic cleanup to eliminate "I/O operation on closed file" errors
-- 🛠️ **Enhanced Error Handling** - Proper shutdown handling with FastAPI lifespan events, signal handlers, and graceful degradation with fallback mechanisms
-- 🧪 **Comprehensive Test Logging** - Complete pytest configuration with detailed test output capture, session tracking, and comprehensive test.log generation for better debugging
-- 🔄 **Resource Management** - Automatic cleanup handlers, proper file handler management, and thread-safe logging operations across all modules
-- ⚙️ **Improved Reliability** - Eliminated logging conflicts from multiple basicConfig() calls and implemented centralized configuration management
+---
 
 ## 📋 Overview
 
-**kolosal AutoML** is a comprehensive machine learning platform that provides advanced automation for model development, deployment, and monitoring. The platform streamlines the entire ML lifecycle from data ingestion to production deployment with enterprise-grade features including real-time monitoring, advanced security, and scalable infrastructure.
+**Kolosal AutoML** is a comprehensive machine learning platform that provides advanced automation for model development, deployment, and monitoring. The platform streamlines the entire ML lifecycle from data ingestion to production deployment with enterprise-grade features including real-time monitoring, advanced security, and scalable infrastructure.
 
-##  Key Features
+## 🌟 Key Features
 
 ### 🖥️ **Real-time Monitoring Dashboard**
 - **Interactive Web Interface**: Live dashboard at `/monitoring/dashboard`
@@ -109,13 +50,13 @@
 - **Service Discovery**: Automatic container orchestration
 * **Secure model management** with encryption support
 
-### 🔄 Flexible Model Training
+### 🔄 **Flexible Model Training**
+- **Multi-task support**: Classification, regression, clustering
+- **Seamless integration** with scikit-learn, XGBoost, LightGBM & CatBoost
+- **Automated model selection** & tuning
+- **Secure model management** with encryption support
 
-* Multi‑task support: **classification**, **regression**, **clustering**
-* Seamless integration with scikit‑learn, XGBoost, LightGBM & CatBoost
-* Automated model selection & tuning
-
-### 🛠️ Supported Algorithms <sup>(partial)</sup>
+### 🛠️ **Supported Algorithms**
 
 | Classification               | Regression                  |
 | ---------------------------- | --------------------------- |
@@ -128,36 +69,32 @@
 | Support Vector Classifier    | Support Vector Regressor    |
 | Neural Network               | Neural Network              |
 
-### 🔍 Advanced Hyper‑parameter Optimisation
+### 🔍 **Advanced Hyperparameter Optimization**
+- **Grid Search**, **Random Search**, **Bayesian Optimization**
+- **ASHT** (Adaptive Surrogate-Assisted Hyperparameter Tuning)
+- **HyperX** (meta-optimizer for large search spaces)
 
-* **Grid Search**, **Random Search**, **Bayesian Optimisation**
-* **ASHT** (Adaptive Surrogate‑Assisted Hyper‑parameter Tuning)
-* **HyperX** (meta‑optimiser for large search spaces)
+### 🧠 **Smart Preprocessing**
+- Auto-scaling & encoding
+- Robust missing-value & outlier handling
+- Feature selection/extraction pipelines
+- **Incremental Learning** with partial_fit support
 
-### 🧠 Smart Pre‑processing
+### ⚡ **Performance Optimization**
+- Device-aware config & adaptive batching
+- **Advanced Batch Processing** with priority queues
+- **Dynamic Memory Management** with optimization
+- **Asynchronous Processing** for non-blocking operations
+- Quantization & parallel execution
+- Memory-efficient data loaders
 
-* Auto‑scaling & encoding
-* Robust missing‑value & outlier handling
-* Feature selection / extraction pipelines
-* **Incremental Learning** with partial_fit support
-
-### ⚡ Performance Optimisation
-
-* Device‑aware config & adaptive batching
-* **Advanced Batch Processing** with priority queues
-* **Dynamic Memory Management** with optimization
-* **Asynchronous Processing** for non-blocking operations
-* Quantisation & parallel execution
-* Memory‑efficient data loaders
-
-### 📊 Monitoring & Reporting
-
-* Real‑time learning curves & metric dashboards
-* **Performance Analytics** with detailed insights
-* **Job Status Monitoring** for async operations
-* Built‑in experiment tracker
-* Performance comparison across models
-* Feature importance visualizations
+### 📊 **Monitoring & Reporting**
+- Real-time learning curves & metric dashboards
+- **Performance Analytics** with detailed insights
+- **Job Status Monitoring** for async operations
+- Built-in experiment tracker
+- Performance comparison across models
+- Feature importance visualizations
 
 ---
 
@@ -171,7 +108,7 @@
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/KolosalAI/kolosal_automl.git
+git clone https://github.com/Genta-Technology/kolosal_automl.git
 cd kolosal_automl
 
 # 2. Install uv (if not already installed)
@@ -200,7 +137,7 @@ uv pip install xgboost lightgbm catboost
 ### **Option 2 — Standard `pip`**
 
 ```bash
-git clone https://github.com/KolosalAI/kolosal_automl.git
+git clone https://github.com/Genta-Technology/kolosal_automl.git
 cd kolosal_automl
 python -m venv venv && source venv/bin/activate  # create & activate venv
 pip install --upgrade pip
@@ -219,9 +156,9 @@ pip install -r requirements.txt
 
 ## 🎯 Getting Started
 
-### **� Unified CLI Interface (NEW)**
+### **🚀 Unified CLI Interface**
 
-The main entry point for kolosal AutoML system:
+The main entry point for Kolosal AutoML system:
 
 ```bash
 # Interactive mode (recommended for first-time users)
@@ -315,7 +252,7 @@ uv run python modules/api/app.py
 - **Interactive Docs**: http://localhost:8000/docs
 - **API Health**: http://localhost:8000/health
 
-#### **🆕 Advanced API Features:**
+#### **Advanced API Features:**
 - **Batch Processing API**: `/api/batch` - High-performance batch operations with adaptive sizing
 - **Async Inference**: `/api/inference/predict/async` - Non-blocking predictions with job tracking
 - **Performance Metrics**: `/api/inference/metrics` - Real-time performance analytics
@@ -358,7 +295,7 @@ best_model, metrics = engine.train_model(
 
 engine.save_model(best_model)
 
-# 🆕 Advanced Batch Processing
+# Advanced Batch Processing
 batch_config = BatchProcessorConfig(
     initial_batch_size=32,
     max_batch_size=128,
@@ -437,7 +374,7 @@ training_config = MLTrainingEngineConfig(
     early_stopping_rounds=10,
 )
 
-# 🆕 Batch Processing Configuration
+# Batch Processing Configuration
 batch_config = BatchProcessorConfig(
     initial_batch_size=16,
     max_batch_size=256,
@@ -449,7 +386,7 @@ batch_config = BatchProcessorConfig(
     processing_strategy=BatchProcessingStrategy.ADAPTIVE
 )
 
-# 🆕 Enhanced Inference Configuration
+# Enhanced Inference Configuration
 inference_config = InferenceEngineConfig(
     enable_batching=True,
     max_batch_size=128,
@@ -482,10 +419,9 @@ The web interface includes several popular datasets for quick experimentation:
 
 ```
 kolosal_automl/
-├── 📄 main.py                      # 🆕 Main CLI entry point
+├── 📄 main.py                      # Main CLI entry point
 ├── 🌐 app.py                       # Gradio web interface
-├── 🔧 start_api.py                 # 🆕 API server launcher
-├── 🧪 test_api.py                  # 🆕 API testing script
+├── 🔧 start_api.py                 # API server launcher
 ├── 📁 modules/
 │   ├── 📄 __init__.py
 │   ├── 📄 configs.py               # Configuration management
@@ -498,11 +434,11 @@ kolosal_automl/
 │   │   ├── 📄 model_manager_api.py
 │   │   ├── 📄 quantizer_api.py
 │   │   ├── 📄 train_engine_api.py
-│   │   ├── 📄 batch_processor_api.py # 🆕 Batch processing API
-│   │   └── 📄 README.md            # 🆕 API documentation
+│   │   ├── 📄 batch_processor_api.py # Batch processing API
+│   │   └── 📄 README.md            # API documentation
 │   ├── 📁 engine/                  # Core ML engines
 │   │   ├── 📄 __init__.py
-│   │   ├── 📄 batch_processor.py   # 🆕 Advanced batch processing
+│   │   ├── 📄 batch_processor.py   # Advanced batch processing
 │   │   ├── 📄 data_preprocessor.py
 │   │   ├── 📄 inference_engine.py
 │   │   ├── 📄 lru_ttl_cache.py
@@ -517,23 +453,14 @@ kolosal_automl/
 │   └── 📁 utils/                   # Utility functions
 ├── 📁 temp_data/                   # Temporary data storage
 ├── 📁 tests/                       # Test suites
-│   ├── 📄 .gitignore
-│   ├── 📁 env/                     # Test environments
+│   ├──  unit/                    # Unit tests
 │   ├── 📁 functional/              # Functional tests
-│   ├── 📁 integration/             # Integration tests
-│   ├── 📁 templates/               # Test templates
-│   │   ├── 📄 .gitattributes
-│   │   └── 📄 .gitignore
-│   └── 📁 unit/                    # Unit tests
-├── 📄 .gitignore
-├── 📄 app.py                       # Alternative app launcher
-├── 📄 changes.log                  # 🆕 Detailed change tracking log
+│   └── 📁 integration/             # Integration tests
+├── 📁 docs/                        # Documentation
 ├── 📄 compose.yaml                 # Docker Compose configuration
 ├── 📄 Dockerfile                   # Docker containerization
-├── 📄 CLI_USAGE.md                 # 🆕 CLI usage documentation
-├── 📄 kolosal_api.log              # API logging
 ├── 📄 LICENSE                      # MIT License
-├── 📄 pyproject.toml               # 🆕 Project configuration
+├── 📄 pyproject.toml               # Project configuration
 ├── 📄 README.md                    # Project documentation
 └── 📄 requirements.txt             # Dependencies
 ```
@@ -637,152 +564,9 @@ python run_tests.py --coverage
 ✅ **Performance Testing** - Batch processing and concurrent operation validation  
 ✅ **Security Testing** - API authentication and input validation coverage
 
-### Technical Details of Test Refactoring
-
-The recent comprehensive test suite refactoring involved major updates across multiple components:
-
-#### **API Response Structure Updates**
-```python
-# Before: Direct error message access
-assert "No model loaded" in response.json()
-
-# After: FastAPI standard error format
-assert "No model loaded" in response.json()["detail"]
-```
-
-#### **Enhanced Mock Strategies**
-- **DeviceOptimizer**: Switched from file I/O mocking to direct method patching for CPU capabilities
-- **BatchProcessor**: Removed tests for unavailable `hybrid_config` and `cache` features
-- **Path Operations**: Improved directory structure mocking with `__truediv__` support
-- **JSON Loading**: Enhanced data sequence mocking for configuration loading
-
-#### **Implementation Alignment Examples**
-```python
-# Training Engine: Commented out unavailable methods
-# Note: generate_explainability is not available in the actual MLTrainingEngine
-# explanation = engine.generate_explainability(method="permutation")
-pass
-
-# Quantizer: Fixed INT8 parameter bounds
-"zero_point": np.int8(127),  # Valid int8 value (changed from 128)
-
-# Model Manager: Updated best_model structure expectation
-mock_manager.best_model = {"name": "model1"}  # Dict instead of object
-```
-
-#### **Server Availability Integration**
-```python
-@requires_server  # Conditional test execution
-class TestEndToEndWorkflows:
-    # Tests only run when API server is available on localhost:8000
-```
-
 ---
 
-## 📋 Previous Releases
-
-### **v0.1.3 Highlights**
-
-#### 🎉 **Major Updates**
-
-* **🚀 Advanced Batch Processing System** – High-performance batch processor with adaptive sizing, priority queues, and memory optimization
-* **⚡ Asynchronous Job Management** – Non-blocking task execution with comprehensive job tracking and status monitoring
-* **🔧 Enhanced Inference Engine** – Dynamic batching, request deduplication, comprehensive caching, and performance analytics
-* **📊 Real-time Performance Monitoring** – Detailed metrics collection with insights for optimization
-* **🧠 Memory Optimization Framework** – Advanced memory management with garbage collection and usage monitoring
-* **🔄 Robust Error Handling** – Enhanced error recovery, retry mechanisms, and detailed error reporting
-
-#### 🔧 **Technical Improvements**
-
-* **Batch Processing API** – Complete REST API for batch operations with configurable strategies
-* **Async Inference Endpoints** – Non-blocking prediction requests with job tracking
-* **Enhanced Health Monitoring** – Comprehensive health checks for all system components
-* **Performance Analytics** – Real-time metrics with detailed performance insights
-* **Memory Management** – Advanced memory optimization with automatic garbage collection
-* **Request Deduplication** – Intelligent caching to avoid redundant computations
-
-#### 🌟 **New Features**
-
-* **Priority-based Processing** – Handle high-priority requests with advanced queue management
-* **Adaptive Batch Sizing** – Dynamic batch size adjustment based on system load
-* **Feature Importance Analysis** – Built-in feature importance calculation for model interpretability
-* **Job Status Tracking** – Complete async job lifecycle management with status monitoring
-* **Enhanced Documentation** – Comprehensive API documentation with examples and use cases
-* **Performance Profiling** – Detailed performance metrics and optimization recommendations
-
-### **v0.1.2 Highlights**
-* **🚀 Gradio Web Interface** – Complete redesign from Streamlit to Gradio
-* **🔧 Enhanced UV Integration** – Streamlined installation and dependency management
-* **🎯 Dedicated Inference Server** – Production-ready inference endpoint
-* **📊 Advanced Data Visualization** – Comprehensive data previews and analysis
-* **🔐 Secure Model Management** – Enhanced model encryption and access control
-
----
-
-## 🚧 Roadmap
-
-1. ✅ **Complete Test Suite** & CI green (**COMPLETED in v0.1.4**)
-2. **Enhanced Batch Processing** with distributed computing support
-3. **Advanced Async Operations** with streaming and WebSocket support
-4. **Docker Containerization** for easy deployment
-5. **Model Monitoring** & drift detection with real-time alerts
-6. **AutoML Pipeline** with automated feature engineering
-7. **Time‑series & anomaly‑detection** modules
-8. **Cloud‑native deployment** recipes (AWS, GCP, Azure)
-9. **MLOps Integration** with popular platforms
-10. **Distributed Training** with multi-node support
-
----
-
-## 💻 Technology Stack
-
-| Purpose              | Library                           |
-| -------------------- | --------------------------------- |
-| **CLI Interface**    | argparse / subprocess 🆕          |
-| **Web UI**           | Gradio                            |
-| **Package Mgmt**     | UV                                |
-| **API Server**       | FastAPI / Uvicorn 🆕              |
-| **Testing**          | pytest / pytest-asyncio 🆕       |
-| **Test Coverage**    | pytest-cov / coverage 🆕         |
-| **Mock Framework**   | unittest.mock / MagicMock 🆕     |
-| **Batch Processing** | Custom BatchProcessor 🆕          |
-| **Async Jobs**       | asyncio / ThreadPoolExecutor 🆕   |
-| **Data Ops**         | Pandas / NumPy                    |
-| **Core ML**          | scikit‑learn                      |
-| **Boosting**         | XGBoost / LightGBM / CatBoost     |
-| **Visuals**          | Matplotlib / Seaborn              |
-| **Serialisation**    | Joblib / Pickle                   |
-| **Optimization**     | Optuna / Hyperopt                 |
-| **Memory Mgmt**      | psutil / gc 🆕                    |
-
----
-
-## 🎯 Usage Modes
-
-### 1. **Interactive CLI Mode** 🆕
-- Menu-driven interface for mode selection
-- Perfect for first-time users
-- Built-in help and guidance
-
-### 2. **Web Interface Mode**
-- Full-featured Gradio UI
-- Visual data exploration and training
-- Real-time progress monitoring
-
-### 3. **API Server Mode** 🆕
-- Production-ready REST API
-- Programmatic access to all features
-- Comprehensive health monitoring
-
-### 4. **Direct Python Integration**
-- Import modules directly in code
-- Maximum flexibility and control
-- Advanced customization options
-- **Batch Processing Integration** 🆕
-
----
-
-## 🎯 Production-Ready Batch Processing (Enhanced in v0.1.4)
+## 🎯 Production-Ready Batch Processing
 
 ### **Enterprise-Grade ML Batch Operations**
 
@@ -799,12 +583,12 @@ config = BatchProcessorConfig(
     enable_priority_queue=True,
     enable_adaptive_batching=True,
     enable_monitoring=True,
-    enable_health_monitoring=True,  # 🆕 Health monitoring
+    enable_health_monitoring=True,
     processing_strategy=BatchProcessingStrategy.ADAPTIVE,
-    max_batch_memory_mb=1024,  # 🆕 Memory management
-    enable_memory_optimization=True,  # 🆕 Memory optimization
-    memory_warning_threshold=75.0,  # 🆕 Memory alerts
-    queue_warning_threshold=500  # 🆕 Queue alerts
+    max_batch_memory_mb=1024,
+    enable_memory_optimization=True,
+    memory_warning_threshold=75.0,
+    queue_warning_threshold=500
 )
 
 processor = BatchProcessor(config)
@@ -827,7 +611,7 @@ print(f"Throughput: {stats['throughput']:.2f}/s")
 print(f"P95 Latency: {stats['p95_latency']*1000:.2f}ms")
 ```
 
-### **Enhanced Features (v0.1.4)**
+### **Enhanced Features**
 - **🏥 Health Monitoring**: Real-time system health checks and automated alerts
 - **🧠 Advanced Memory Management**: Intelligent memory optimization with automatic GC
 - **📊 Comprehensive Metrics**: Detailed performance analytics with percentile latencies
@@ -837,7 +621,7 @@ print(f"P95 Latency: {stats['p95_latency']*1000:.2f}ms")
 - **📈 Performance Optimization**: Pre-allocated arrays and vectorized operations for NumPy
 - **🛡️ Fault Tolerance**: Circuit breaking and automatic recovery mechanisms
 
-### **REST API Integration** 🆕
+### **REST API Integration**
 ```bash
 # Configure batch processor
 curl -X POST "http://localhost:8000/api/batch/configure" \
@@ -857,26 +641,6 @@ curl "http://localhost:8000/api/batch/status"
 
 ## 🤝 Contributing
 
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/amazing-feature`
-3. Make your changes and add tests
-4. Verify tests pass: `uv run pytest -q`
-5. Commit your changes: `git commit -m 'Add amazing feature'`
-6. Push to the branch: `git push origin feature/amazing-feature`
-7. Open a Pull Request
-
----
-
-## 📚 Documentation
-
-For comprehensive documentation and examples:
-- **[Complete API Documentation](docs/COMPLETE_API_DOCUMENTATION.md)** - Full API reference with examples
-- **[Deployment Guide](docs/COMPLETE_API_DOCUMENTATION.md#deployment-guide)** - Production deployment instructions
-- **[Security Guide](docs/COMPLETE_API_DOCUMENTATION.md#security-features)** - Security configuration and best practices
-- **[Monitoring Guide](docs/COMPLETE_API_DOCUMENTATION.md#monitoring--analytics)** - Monitoring and analytics setup
-
-## 🤝 Contributing
-
 We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.md) for details.
 
 ### **Development Workflow**
@@ -889,9 +653,23 @@ We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.
 6. Push to the branch (`git push origin feature/amazing-feature`)
 7. Open a Pull Request
 
+---
+
+## 📚 Documentation
+
+For comprehensive documentation and examples:
+- **[Complete API Documentation](docs/COMPLETE_API_DOCUMENTATION.md)** - Full API reference with examples
+- **[Deployment Guide](docs/COMPLETE_API_DOCUMENTATION.md#deployment-guide)** - Production deployment instructions
+- **[Security Guide](docs/COMPLETE_API_DOCUMENTATION.md#security-features)** - Security configuration and best practices
+- **[Monitoring Guide](docs/COMPLETE_API_DOCUMENTATION.md#monitoring--analytics)** - Monitoring and analytics setup
+
+---
+
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+---
 
 ## 🙏 Acknowledgments
 
@@ -906,10 +684,10 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 **🚀 Ready for Production | 🛡️ Enterprise Security | 📊 Real-time Monitoring**
 
-**Built with ❤️ by the Genta Technology Team**
+**Built with ❤️ by the Kolosal, Inc. team**
 
-[🌟 Star us on GitHub](https://github.com/Genta-Technology/kolosal-automl) | [📖 Documentation](docs/) | [🐛 Report Issues](https://github.com/Genta-Technology/kolosal-automl/issues) | [� Discussions](https://github.com/Genta-Technology/kolosal-automl/discussions)
+[🌟 Star us on GitHub](https://github.com/Genta-Technology/kolosal_automl) | [📖 Documentation](docs/) | [🐛 Report Issues](https://github.com/Genta-Technology/kolosal_automl/issues) | [💬 Discussions](https://github.com/Genta-Technology/kolosal_automl/discussions)
 
-**kolosal AutoML v1.0.0 - Transform your ML workflow with enterprise-grade automation**
+**Kolosal AutoML v0.1.4 - Transform your ML workflow with enterprise-grade automation**
 
 </div>

@@ -12,11 +12,27 @@ import requests
 from io import StringIO
 import argparse
 import sys
+import psutil
+from pathlib import Path
 
 # Import matplotlib and seaborn with proper backend
 import matplotlib
 matplotlib.use('Agg')  # Use non-interactive backend
 import matplotlib.pyplot as plt
+
+# Import optimization integration
+try:
+    from modules.engine.optimization_integration import (
+        OptimizedDataPipeline,
+        quick_load_optimized,
+        quick_optimize_memory,
+        get_optimization_status,
+        create_optimized_training_pipeline
+    )
+    OPTIMIZATION_INTEGRATION_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"Optimization integration not available: {e}")
+    OPTIMIZATION_INTEGRATION_AVAILABLE = False
 import seaborn as sns
 from io import BytesIO
 import base64
@@ -761,6 +777,17 @@ class MLSystemUI:
         self.security_manager = SECURITY_MANAGER
         self.security_env = SECURITY_ENV
         
+        # Initialize optimization pipeline
+        self.optimization_pipeline = None
+        if OPTIMIZATION_INTEGRATION_AVAILABLE:
+            try:
+                self.optimization_pipeline = create_optimized_training_pipeline(max_memory_pct=75.0)
+                logger.info("🚀 Optimization pipeline initialized")
+                self.security_manager.auditor.logger.info("OPTIMIZATION_INIT: Advanced optimization system enabled")
+            except Exception as e:
+                logger.warning(f"Failed to initialize optimization pipeline: {e}")
+                self.optimization_pipeline = None
+        
         # Initialize security audit logger
         logger.info("🛡️ Initializing ML System UI with enhanced security")
         self.security_manager.auditor.logger.info("SYSTEM_INIT: ML System UI initialized")
@@ -931,7 +958,7 @@ Sample Dataset Loaded: {metadata['name']}
     
     @security_wrapper
     def load_data(self, file) -> Tuple[str, Dict, str, str]:
-        """Load dataset from uploaded file with enhanced security validation"""
+        """Load dataset from uploaded file with enhanced security validation and optimization"""
         try:
             if file is None:
                 return "No file uploaded", {}, "", ""
@@ -939,48 +966,138 @@ Sample Dataset Loaded: {metadata['name']}
             file_path = file.name
             
             # Security validation
-            if not validate_file_upload(file_path, ['.csv', '.xlsx', '.xls', '.json']):
+            if not validate_file_upload(file_path, ['.csv', '.xlsx', '.xls', '.json', '.parquet', '.feather']):
                 self.security_manager.auditor.logger.warning(f"FILE_UPLOAD_REJECTED: {file_path}")
                 return "❌ File upload rejected for security reasons. Please ensure you're uploading a valid data file.", {}, "", ""
             
             # Log file upload
             self.security_manager.auditor.logger.info(f"FILE_UPLOAD: {os.path.basename(file_path)}")
             
-            # Load based on file extension
-            if file_path.endswith('.csv'):
-                df = pd.read_csv(file_path)
-            elif file_path.endswith(('.xlsx', '.xls')):
-                df = pd.read_excel(file_path)
-            elif file_path.endswith('.json'):
-                df = pd.read_json(file_path)
-            else:
-                return "Unsupported file format. Please upload CSV, Excel, or JSON files.", {}, "", ""
+            # Import optimized loader
+            from modules.engine.optimized_data_loader import load_data_optimized, DatasetSize
             
-            # Data size validation for security
-            if df.shape[0] > 1000000:  # 1M rows limit
-                self.security_manager.auditor.logger.warning(f"LARGE_DATASET: {df.shape}")
-                return "⚠️ Dataset too large. Please use a dataset with fewer than 1 million rows.", {}, "", ""
-            
-            if df.shape[1] > 10000:  # 10K columns limit
-                self.security_manager.auditor.logger.warning(f"WIDE_DATASET: {df.shape}")
-                return "⚠️ Dataset too wide. Please use a dataset with fewer than 10,000 columns.", {}, "", ""
+            # Use optimized loading based on dataset size
+            try:
+                # Use optimization pipeline if available
+                if self.optimization_pipeline:
+                    df, dataset_info = self.optimization_pipeline.load_data(file_path)
+                    
+                    # Convert dataset_info to expected format
+                    optimization_info = {
+                        'optimized_loading': dataset_info.get('optimized_loading', True),
+                        'size_category': dataset_info.get('size_category', 'unknown'),
+                        'loading_strategy': dataset_info.get('loading_strategy', 'direct'),
+                        'memory_mb': dataset_info.get('memory_mb', 0),
+                        'loading_time': dataset_info.get('loading_time', 0),
+                        'optimizations_applied': dataset_info.get('optimizations_applied', [])
+                    }
+                    
+                else:
+                    # Fallback to direct optimized loading
+                    from modules.engine.optimized_data_loader import load_data_optimized, DatasetSize
+                    df, dataset_info = load_data_optimized(file_path, max_memory_pct=75.0)
+                    
+                    optimization_info = {
+                        'optimized_loading': True,
+                        'size_category': dataset_info.size_category.value,
+                        'loading_strategy': dataset_info.loading_strategy.value,
+                        'memory_mb': dataset_info.actual_memory_mb,
+                        'loading_time': dataset_info.loading_time,
+                        'optimizations_applied': dataset_info.optimization_applied
+                    }
+                
+                # Enhanced security validation based on actual dataset size
+                size_category = optimization_info['size_category']
+                max_rows_by_category = {
+                    'tiny': 50_000,
+                    'small': 500_000,
+                    'medium': 2_000_000,
+                    'large': 10_000_000,
+                    'huge': 50_000_000  # Allow larger datasets with optimization
+                }
+                
+                max_allowed_rows = max_rows_by_category.get(size_category, 1_000_000)
+                
+                if df.shape[0] > max_allowed_rows:
+                    self.security_manager.auditor.logger.warning(f"LARGE_DATASET: {df.shape} exceeds limit for {size_category}")
+                    return f"⚠️ Dataset too large ({df.shape[0]:,} rows). Maximum allowed for {size_category} datasets: {max_allowed_rows:,} rows.", {}, "", ""
+                
+                if df.shape[1] > 10000:  # Keep column limit
+                    self.security_manager.auditor.logger.warning(f"WIDE_DATASET: {df.shape}")
+                    return "⚠️ Dataset too wide. Please use a dataset with fewer than 10,000 columns.", {}, "", ""
+                
+                # Log optimization details
+                self.security_manager.auditor.logger.info(
+                    f"DATASET_LOADED: {df.shape[0]:,} rows, {df.shape[1]} cols, "
+                    f"strategy={optimization_info['loading_strategy']}, "
+                    f"memory={optimization_info['memory_mb']:.1f}MB, "
+                    f"time={optimization_info.get('loading_time', 0):.2f}s"
+                )
+                
+            except Exception as e:
+                # Fallback to traditional loading for unsupported formats
+                logger.warning(f"Optimized loading failed, using fallback: {e}")
+                
+                if file_path.endswith('.csv'):
+                    df = pd.read_csv(file_path)
+                elif file_path.endswith(('.xlsx', '.xls')):
+                    df = pd.read_excel(file_path)
+                elif file_path.endswith('.json'):
+                    df = pd.read_json(file_path)
+                else:
+                    return "Unsupported file format. Please upload CSV, Excel, JSON, Parquet, or Feather files.", {}, "", ""
+                
+                # Traditional size validation
+                if df.shape[0] > 1000000:  # 1M rows limit for fallback
+                    self.security_manager.auditor.logger.warning(f"LARGE_DATASET: {df.shape}")
+                    return "⚠️ Dataset too large. Please use a dataset with fewer than 1 million rows.", {}, "", ""
+                
+                if df.shape[1] > 10000:
+                    self.security_manager.auditor.logger.warning(f"WIDE_DATASET: {df.shape}")
+                    return "⚠️ Dataset too wide. Please use a dataset with fewer than 10,000 columns.", {}, "", ""
             
             self.current_data = df
             
-            # Generate data summary and preview
+            # Generate enhanced data summary with optimization info
             summary = self.data_preview_generator.generate_data_summary(df)
+            
+            # Add optimization information if available
+            if 'dataset_info' in locals():
+                summary['optimization_info'] = {
+                    'loading_strategy': dataset_info.loading_strategy.value,
+                    'size_category': dataset_info.size_category.value,
+                    'estimated_memory_mb': dataset_info.estimated_memory_mb,
+                    'actual_memory_mb': dataset_info.actual_memory_mb,
+                    'loading_time_seconds': dataset_info.loading_time,
+                    'optimizations_applied': dataset_info.optimization_applied
+                }
+            
             preview_text = self.data_preview_generator.format_data_preview(df, summary)
             
             # Generate sample data table
             sample_table = df.head(10).to_html(classes="table table-striped", escape=False, border=0)
             
-            info_text = f"""
-Data Loaded Successfully!
+            # Enhanced info text with optimization details
+            optimization_info = ""
+            if 'dataset_info' in locals():
+                optimization_info = f"""
 
-- Shape: {df.shape[0]} rows × {df.shape[1]} columns
+🚀 Optimization Details:
+- Loading Strategy: {dataset_info.loading_strategy.value.title()}
+- Dataset Category: {dataset_info.size_category.value.title()}
+- Loading Time: {dataset_info.loading_time:.2f}s
+- Memory Usage: {dataset_info.actual_memory_mb:.2f} MB
+- Optimizations: {', '.join(dataset_info.optimization_applied) if dataset_info.optimization_applied else 'None'}
+"""
+            
+            info_text = f"""
+Data Loaded Successfully! ✅
+
+📊 Dataset Overview:
+- Shape: {df.shape[0]:,} rows × {df.shape[1]:,} columns
 - Columns: {', '.join(df.columns.tolist()[:10])}{'...' if len(df.columns) > 10 else ''}
-- Missing Values: {df.isnull().sum().sum()} total
-- Memory Usage: {df.memory_usage(deep=True).sum() / 1024**2:.2f} MB
+- Missing Values: {df.isnull().sum().sum():,} total
+- Memory Usage: {df.memory_usage(deep=True).sum() / 1024**2:.2f} MB{optimization_info}
             """
             
             return info_text, summary, preview_text, sample_table
@@ -1164,7 +1281,258 @@ Configuration Created Successfully!
     
     @security_wrapper
     def train_model(self, target_column: str, algorithm_name: str, model_name: str = None) -> Tuple[str, str, str, gr.Dropdown]:
-        """Train a model with the current configuration"""
+        """Train model with optimized preprocessing for large datasets"""
+        if self.inference_only:
+            return "❌ Model training is disabled in inference-only mode.", "", "", gr.Dropdown()
+        
+        if self.current_data is None:
+            return "❌ Please load data first.", "", "", gr.Dropdown()
+        
+        if target_column not in self.current_data.columns:
+            return f"❌ Target column '{target_column}' not found in data.", "", "", gr.Dropdown()
+        
+        try:
+            # Import optimized components
+            from modules.engine.adaptive_preprocessing import (
+                create_optimized_preprocessor_config, 
+                ProcessingMode,
+                get_recommended_processing_mode
+            )
+            from modules.engine.optimized_data_loader import DatasetSize
+            
+            # Determine dataset characteristics
+            dataset_rows = len(self.current_data)
+            dataset_memory_mb = self.current_data.memory_usage(deep=True).sum() / 1024 / 1024
+            
+            # Categorize dataset size
+            if dataset_rows < 10_000:
+                dataset_size = DatasetSize.TINY
+            elif dataset_rows < 100_000:
+                dataset_size = DatasetSize.SMALL
+            elif dataset_rows < 1_000_000:
+                dataset_size = DatasetSize.MEDIUM
+            elif dataset_rows < 10_000_000:
+                dataset_size = DatasetSize.LARGE
+            else:
+                dataset_size = DatasetSize.HUGE
+            
+            # Get recommended processing mode
+            available_memory_gb = psutil.virtual_memory().available / (1024**3)
+            processing_mode = get_recommended_processing_mode(
+                dataset_size=dataset_size,
+                available_memory_gb=available_memory_gb,
+                priority="balanced"  # Can be made configurable
+            )
+            
+            # Create optimized preprocessing configuration
+            optimized_config = create_optimized_preprocessor_config(
+                dataset_size=dataset_size,
+                estimated_memory_mb=dataset_memory_mb,
+                processing_mode=processing_mode,
+                num_features=len(self.current_data.columns) - 1  # Exclude target
+            )
+            
+            self.security_manager.auditor.logger.info(
+                f"TRAINING_START: {algorithm_name} on {dataset_size.value} dataset "
+                f"({dataset_rows:,} rows) with {processing_mode.value} processing"
+            )
+            
+            # Log preprocessing configuration
+            logger.info(f"Using optimized preprocessing: chunk_size={optimized_config.chunk_size}, "
+                       f"n_jobs={optimized_config.n_jobs}, "
+                       f"normalization={optimized_config.normalization}")
+            
+            # Create preprocessor with optimized config
+            from modules.engine.data_preprocessor import DataPreprocessor
+            preprocessor = DataPreprocessor(config=optimized_config)
+            
+            # Prepare training data with memory monitoring
+            start_memory = psutil.Process().memory_info().rss / 1024 / 1024
+            
+            X = self.current_data.drop(columns=[target_column])
+            y = self.current_data[target_column]
+            
+            # Fit preprocessor (handles chunking automatically for large datasets)
+            logger.info("Fitting preprocessor with optimized configuration...")
+            X_processed = preprocessor.fit_transform(X)
+            
+            current_memory = psutil.Process().memory_info().rss / 1024 / 1024
+            preprocessing_memory = current_memory - start_memory
+            
+            logger.info(f"Preprocessing completed. Memory usage: {preprocessing_memory:.1f} MB")
+            
+            # Determine task type
+            task_type = self.determine_task_type(y)
+            
+            # Create training configuration based on dataset size
+            training_config = self.create_training_config(
+                algorithm_name=algorithm_name,
+                task_type=task_type,
+                dataset_size=dataset_size,
+                processing_mode=processing_mode
+            )
+            
+            # Train model
+            logger.info(f"Training {algorithm_name} model...")
+            results = self.training_engine.train_model(
+                X=X_processed,
+                y=y,
+                algorithm_name=algorithm_name,
+                config=training_config
+            )
+            
+            if not results.success:
+                error_msg = f"Training failed: {results.error_message}"
+                logger.error(error_msg)
+                return f"❌ {error_msg}", "", "", gr.Dropdown()
+            
+            # Save model with preprocessing configuration
+            saved_models = list(self.training_engine.get_trained_models().keys())
+            model_name = model_name or f"{algorithm_name}_{int(time.time())}"
+            
+            if saved_models:
+                latest_model_name = saved_models[-1]
+                saved_path = self.training_engine.save_model(latest_model_name, model_name)
+                
+                # Save preprocessing configuration alongside model
+                self.save_preprocessing_config(model_name, preprocessor, optimized_config)
+                
+                # Log training completion
+                self.security_manager.auditor.logger.info(
+                    f"TRAINING_COMPLETE: {model_name} trained successfully "
+                    f"(accuracy: {results.best_score:.4f})"
+                )
+            
+            # Update model dropdown
+            updated_models = list(self.training_engine.get_trained_models().keys())
+            model_dropdown = gr.Dropdown(choices=updated_models, value=updated_models[-1] if updated_models else None)
+            
+            # Format results with optimization details
+            results_text = f"""
+✅ Model Training Completed Successfully!
+
+🎯 Model Details:
+- Algorithm: {algorithm_name}
+- Model Name: {model_name}
+- Task Type: {task_type}
+- Best Score: {results.best_score:.4f}
+
+📊 Dataset Information:
+- Size Category: {dataset_size.value.title()}
+- Rows: {dataset_rows:,}
+- Features: {len(X.columns)}
+- Memory Usage: {dataset_memory_mb:.1f} MB
+
+⚡ Optimization Details:
+- Processing Mode: {processing_mode.value.title()}
+- Chunk Size: {optimized_config.chunk_size or 'No chunking'}
+- Workers: {optimized_config.n_jobs}
+- Normalization: {optimized_config.normalization.value}
+- Preprocessing Memory: {preprocessing_memory:.1f} MB
+
+🔧 Training Configuration:
+- Cross Validation: {training_config.get('cv_folds', 'N/A')}
+- Hyperparameter Optimization: {training_config.get('hyperparameter_optimization', 'N/A')}
+- Time Limit: {training_config.get('max_time_minutes', 'N/A')} minutes
+            """
+            
+            # Performance metrics
+            metrics_text = self.format_model_metrics(results)
+            
+            return results_text, metrics_text, f"Model '{model_name}' saved successfully!", model_dropdown
+            
+        except Exception as e:
+            error_msg = f"Training failed: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            self.security_manager.auditor.logger.error(f"TRAINING_ERROR: {error_msg}")
+            return f"❌ {error_msg}", "", "", gr.Dropdown()
+    
+    def create_training_config(self, algorithm_name: str, task_type: str, 
+                             dataset_size, processing_mode) -> Dict[str, Any]:
+        """Create optimized training configuration based on dataset characteristics"""
+        from modules.engine.optimized_data_loader import DatasetSize
+        from modules.engine.adaptive_preprocessing import ProcessingMode
+        
+        # Base configuration
+        config = {
+            'algorithm_name': algorithm_name,
+            'task_type': task_type,
+            'max_time_minutes': 30,  # Default time limit
+            'cv_folds': 5,
+            'hyperparameter_optimization': True,
+            'early_stopping': True,
+            'random_state': 42
+        }
+        
+        # Adjust based on dataset size
+        if dataset_size in [DatasetSize.LARGE, DatasetSize.HUGE]:
+            config.update({
+                'max_time_minutes': 60,  # More time for large datasets
+                'cv_folds': 3,  # Fewer folds for performance
+                'hyperparameter_optimization': processing_mode != ProcessingMode.SPEED,
+                'n_trials': 20 if dataset_size == DatasetSize.LARGE else 10,  # Fewer trials for huge datasets
+            })
+        elif dataset_size == DatasetSize.TINY:
+            config.update({
+                'max_time_minutes': 10,  # Less time for small datasets
+                'cv_folds': 3,  # Fewer folds due to small size
+                'n_trials': 50,  # More trials for better optimization
+            })
+        
+        # Adjust based on processing mode
+        if processing_mode == ProcessingMode.SPEED:
+            config.update({
+                'hyperparameter_optimization': False,
+                'cv_folds': 3,
+                'max_time_minutes': min(config['max_time_minutes'], 20)
+            })
+        elif processing_mode == ProcessingMode.QUALITY:
+            config.update({
+                'hyperparameter_optimization': True,
+                'cv_folds': 5,
+                'n_trials': config.get('n_trials', 30) * 2
+            })
+        
+        return config
+    
+    def save_preprocessing_config(self, model_name: str, preprocessor, config):
+        """Save preprocessing configuration alongside the model"""
+        try:
+            config_path = Path(f"models/{model_name}_preprocessing_config.json")
+            config_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Save configuration
+            config_dict = {
+                'preprocessing_config': config.to_dict() if hasattr(config, 'to_dict') else vars(config),
+                'preprocessing_stats': preprocessor.get_statistics() if hasattr(preprocessor, 'get_statistics') else {},
+                'feature_names': preprocessor.get_feature_names() if hasattr(preprocessor, 'get_feature_names') else [],
+                'timestamp': datetime.now().isoformat()
+            }
+            
+            with open(config_path, 'w') as f:
+                json.dump(config_dict, f, indent=2, default=str)
+                
+            logger.info(f"Preprocessing configuration saved for model '{model_name}'")
+            
+        except Exception as e:
+            logger.warning(f"Failed to save preprocessing configuration: {e}")
+    
+    def format_model_metrics(self, results) -> str:
+        """Format model training metrics for display"""
+        if not hasattr(results, 'metrics') or not results.metrics:
+            return "No detailed metrics available."
+        
+        metrics_text = "📈 Training Metrics:\n\n"
+        
+        for metric_name, metric_value in results.metrics.items():
+            if isinstance(metric_value, float):
+                metrics_text += f"- {metric_name}: {metric_value:.4f}\n"
+            else:
+                metrics_text += f"- {metric_name}: {metric_value}\n"
+        
+        return metrics_text
+
+    def train_model_legacy(self, target_column: str, algorithm_name: str, model_name: str = None) -> Tuple[str, str, str, gr.Dropdown]:
         if self.inference_only:
             return "Training is not available in inference-only mode.", "", "", gr.Dropdown()
         

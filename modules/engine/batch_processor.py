@@ -24,6 +24,13 @@ sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 from configs import BatchProcessorConfig, BatchProcessingStrategy, BatchPriority, PrioritizedItem
 from .batch_stats import BatchStats
 
+# Import optimization modules if available
+try:
+    from .memory_aware_processor import MemoryAwareDataProcessor, MemoryMonitor, AdaptiveChunkProcessor
+    OPTIMIZATION_AVAILABLE = True
+except ImportError:
+    OPTIMIZATION_AVAILABLE = False
+
 # Type variables for generic typing
 T = TypeVar('T')
 U = TypeVar('U')
@@ -76,6 +83,22 @@ class BatchProcessor(Generic[T, U]):
         # Dynamic system load tracking
         self._system_load = 0.5  # Initial normalized load (0-1)
         self._load_alpha = 0.2  # Smoothing factor for load updates
+        
+        # Initialize optimization components if available
+        self._memory_processor = None
+        self._adaptive_chunker = None
+        
+        if OPTIMIZATION_AVAILABLE:
+            try:
+                self._memory_processor = MemoryAwareDataProcessor()
+                self._adaptive_chunker = AdaptiveChunkProcessor(
+                    initial_chunk_size=config.initial_batch_size,
+                    min_chunk_size=max(1, config.initial_batch_size // 4),
+                    max_chunk_size=config.initial_batch_size * 4
+                )
+                logging.getLogger(__name__).info("Memory-aware batch processing enabled")
+            except Exception as e:
+                logging.getLogger(__name__).warning(f"Failed to initialize optimization: {e}")
         
         # Optimize thread pool based on workload
         worker_count = min(
