@@ -7,12 +7,174 @@
 # You can add other services your application may depend on here, such as a
 # database or a cache. For examples, see the Awesome Compose repository:
 # https://github.com/docker/awesome-compose
+# Production-ready Docker Compose configuration for kolosal AutoML
+
+version: '3.8'
+
 services:
-  server:
+  kolosal-api:
     build:
       context: .
+      dockerfile: Dockerfile
+    container_name: kolosal-automl-api
+    restart: unless-stopped
     ports:
-      - 8000:8000
+      - "443:8000"  # HTTPS port
+      - "80:8080"   # HTTP redirect port
+    environment:
+      # API Configuration
+      - API_ENV=production
+      - API_DEBUG=false
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+      - API_WORKERS=4
+      
+      # Enhanced Security Configuration
+      - SECURITY_ENV=production
+      - SECURITY_ENFORCE_HTTPS=true
+      - SECURITY_REQUIRE_API_KEY=true
+      - SECURITY_ENABLE_RATE_LIMITING=true
+      - SECURITY_RATE_LIMIT_REQUESTS=50
+      - SECURITY_RATE_LIMIT_WINDOW=60
+      - SECURITY_ENABLE_JWT=true
+      - SECURITY_JWT_EXPIRY_HOURS=1
+      - SECURITY_ENABLE_AUDIT_LOGGING=true
+      - SECURITY_ALLOWED_ORIGINS=https://yourdomain.com
+      - SECURITY_HSTS_MAX_AGE=31536000
+      - MAX_REQUEST_SIZE=10485760  # 10MB - more restrictive
+      
+      # Batch Processing Configuration
+      - BATCH_INITIAL_SIZE=16
+      - BATCH_MIN_SIZE=2
+      - BATCH_MAX_SIZE=128
+      - BATCH_TIMEOUT=0.02
+      - BATCH_MAX_QUEUE_SIZE=10000
+      - ENABLE_ADAPTIVE_BATCHING=true
+      - ENABLE_MONITORING=true
+      - BATCH_NUM_WORKERS=8
+      - ENABLE_MEMORY_OPTIMIZATION=true
+      
+      # Logging Configuration
+      - LOG_LEVEL=INFO
+      - ENABLE_AUDIT_LOGGING=true
+      
+    volumes:
+      # Persistent data volumes
+      - ./models:/app/models
+      - ./logs:/app/logs
+      - ./temp_data:/app/temp_data
+      - ./static:/app/static
+      
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+      
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '2.0'
+        reservations:
+          memory: 2G
+          cpus: '1.0'
+    
+    networks:
+      - kolosal-network
+    
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.kolosal.rule=Host(`api.kolosal.local`)"
+      - "traefik.http.services.kolosal.loadbalancer.server.port=8000"
+
+  # Redis for caching (optional)
+  redis:
+    image: redis:7-alpine
+    container_name: kolosal-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    networks:
+      - kolosal-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Monitoring with Prometheus (optional)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: kolosal-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - kolosal-network
+
+  # Grafana for visualization (optional)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: kolosal-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin123}
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+    networks:
+      - kolosal-network
+    depends_on:
+      - prometheus
+
+  # Nginx reverse proxy (optional)
+  nginx:
+    image: nginx:alpine
+    container_name: kolosal-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx/ssl:/etc/nginx/ssl
+    networks:
+      - kolosal-network
+    depends_on:
+      - kolosal-api
+
+volumes:
+  redis-data:
+    driver: local
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local
+
+networks:
+  kolosal-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
 
 # The commented out section below is an example of how to define a PostgreSQL
 # database that your application can use. `depends_on` tells Docker Compose to

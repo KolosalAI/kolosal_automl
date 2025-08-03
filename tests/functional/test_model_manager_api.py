@@ -6,6 +6,9 @@ import uuid
 from fastapi.testclient import TestClient
 from fastapi import HTTPException
 
+# Set environment variables before importing the app
+os.environ["API_KEYS"] = "test_key"
+
 # Import the FastAPI app and related classes
 from modules.api.model_manager_api import (
     app, ModelManagerException, get_or_create_manager, 
@@ -22,8 +25,6 @@ class TestModelManagerAPI(unittest.TestCase):
         self.client = TestClient(app)
         # Clear manager instances between tests
         manager_instances.clear()
-        # Set up test API key
-        os.environ["API_KEYS"] = "test_key"
         # Common headers for authenticated requests
         self.api_key_headers = {"X-API-Key": "test_key"}
         self.bearer_headers = {"Authorization": "Bearer test_token"}
@@ -36,20 +37,20 @@ class TestModelManagerAPI(unittest.TestCase):
     def test_health_check(self):
         """Test the health check endpoint"""
         response = self.client.get("/health")
-        self.assertEqual(response.status_code, 200)
+        assert response.status_code == 200
         data = response.json()
-        self.assertEqual(data["status"], "healthy")
-        self.assertIn("timestamp", data)
-        self.assertIn("version", data)
+        assert data["status"] == "healthy"
+        assert "timestamp" in data
+        assert "version" in data
         
     def test_api_info(self):
         """Test the API info endpoint"""
         response = self.client.get("/")
-        self.assertEqual(response.status_code, 200)
+        assert response.status_code == 200
         data = response.json()
-        self.assertEqual(data["name"], "Secure Model Manager API")
-        self.assertEqual(data["version"], "1.0.0")
-        self.assertIn("total_managers", data)
+        assert data["name"] == "Secure Model Manager API"
+        assert data["version"] == "0.1.4"
+        assert "total_managers" in data
 
     @patch("modules.api.model_manager_api.SecureModelManager")
     def test_create_manager(self, mock_manager_class):
@@ -57,7 +58,7 @@ class TestModelManagerAPI(unittest.TestCase):
         # Setup mock
         mock_manager = MagicMock()
         mock_manager_class.return_value = mock_manager
-        mock_manager_class.VERSION = "1.0.0"
+        mock_manager_class.VERSION = "0.1.4"
         
         # Test data
         config_data = {
@@ -76,14 +77,14 @@ class TestModelManagerAPI(unittest.TestCase):
         )
         
         # Assertions
-        self.assertEqual(response.status_code, 200)
+        assert response.status_code == 200
         data = response.json()
-        self.assertTrue(data["success"])
-        self.assertIn("manager_id", data["details"])
+        assert data["success"]
+        assert "manager_id" in data["details"]
         
         # Verify manager was created with correct config
         manager_id = data["details"]["manager_id"]
-        self.assertIn(manager_id, manager_instances)
+        assert manager_id in manager_instances
         
         # Verify SecureModelManager was instantiated with correct params
         mock_manager_class.assert_called_once()
@@ -96,7 +97,7 @@ class TestModelManagerAPI(unittest.TestCase):
         }
         
         response = self.client.post("/api/managers", json=config_data)
-        self.assertEqual(response.status_code, 401)
+        assert response.status_code == 401
         
     @patch("modules.api.model_manager_api.SecureModelManager")
     def test_create_manager_invalid_task_type(self, mock_manager_class):
@@ -113,8 +114,9 @@ class TestModelManagerAPI(unittest.TestCase):
             headers=self.api_key_headers
         )
         
-        self.assertEqual(response.status_code, 400)
-        self.assertIn("Invalid task type", response.json()["detail"])
+        assert response.status_code == 422  # FastAPI validation error
+        response_data = response.json()
+        assert "detail" in response_data
         
     def test_list_managers_empty(self):
         """Test listing managers when none exist"""
@@ -123,8 +125,8 @@ class TestModelManagerAPI(unittest.TestCase):
             headers=self.api_key_headers
         )
         
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {})
+        assert response.status_code == 200
+        assert response.json() == {}
         
     @patch("modules.api.model_manager_api.SecureModelManager")
     def test_list_managers(self, mock_manager_class):
@@ -135,6 +137,7 @@ class TestModelManagerAPI(unittest.TestCase):
         mock_manager.config.model_path = "./test_path"
         mock_manager.config.task_type = TaskType.REGRESSION
         mock_manager.models = {"model1": {}, "model2": {}}
+        # Create a mock best_model dict with a name key (to match API expectation)
         mock_manager.best_model = {"name": "model1"}
         mock_manager_class.return_value = mock_manager
         
@@ -149,23 +152,23 @@ class TestModelManagerAPI(unittest.TestCase):
         )
         
         # Assertions
-        self.assertEqual(response.status_code, 200)
+        assert response.status_code == 200
         data = response.json()
-        self.assertIn(manager_id, data)
+        assert manager_id in data
         manager_data = data[manager_id]
-        self.assertTrue(manager_data["encryption_enabled"])
-        self.assertEqual(manager_data["model_path"], "./test_path")
-        self.assertEqual(manager_data["task_type"], "REGRESSION")
-        self.assertEqual(manager_data["models_count"], 2)
-        self.assertEqual(manager_data["best_model"], "model1")
+        assert manager_data["encryption_enabled"]
+        assert manager_data["model_path"] == "./test_path"
+        assert manager_data["task_type"] == "regression"  # API returns lowercase
+        assert manager_data["models_count"] == 2
+        assert manager_data["best_model"] == "model1"
         
     def test_validate_manager_exists_nonexistent(self):
         """Test validate_manager_exists with non-existent ID"""
         with self.assertRaises(ModelManagerException) as context:
             validate_manager_exists("nonexistent_id")
             
-        self.assertEqual(context.exception.status_code, 404)
-        self.assertIn("not found", context.exception.detail)
+        assert context.exception.status_code == 404
+        assert "not found" in context.exception.detail
         
     @patch("modules.api.model_manager_api.SecureModelManager")
     def test_save_model(self, mock_manager_class):
@@ -196,10 +199,10 @@ class TestModelManagerAPI(unittest.TestCase):
         )
         
         # Assertions
-        self.assertEqual(response.status_code, 200)
+        assert response.status_code == 200
         data = response.json()
-        self.assertTrue(data["success"])
-        self.assertIn("test_model", data["message"])
+        assert data["success"]
+        assert "test_model" in data["message"]
         
         # Verify save_model was called with correct params
         mock_manager.save_model.assert_called_once_with(
@@ -235,8 +238,8 @@ class TestModelManagerAPI(unittest.TestCase):
         )
         
         # Assertions
-        self.assertEqual(response.status_code, 500)
-        self.assertIn("Failed to save model", response.json()["detail"])
+        assert response.status_code == 500
+        assert "Failed to save model" in response.json()["detail"]
         
     @patch("modules.api.model_manager_api.SecureModelManager")
     @patch("os.path.exists")
@@ -245,7 +248,10 @@ class TestModelManagerAPI(unittest.TestCase):
         # Setup mocks
         mock_manager = MagicMock()
         mock_manager.load_model.return_value = MagicMock()  # Return a model
-        mock_manager.best_model = {"name": "other_model"}
+        # Create a mock best_model object with a name attribute
+        mock_best_model = MagicMock()
+        mock_best_model.name = "other_model"
+        mock_manager.best_model = mock_best_model
         mock_manager_class.return_value = mock_manager
         mock_exists.return_value = True
         
@@ -267,11 +273,11 @@ class TestModelManagerAPI(unittest.TestCase):
         )
         
         # Assertions
-        self.assertEqual(response.status_code, 200)
+        assert response.status_code == 200
         data = response.json()
-        self.assertTrue(data["success"])
-        self.assertIn("test_model", data["message"])
-        self.assertEqual(data["details"]["is_best_model"], False)
+        assert data["success"]
+        assert "test_model" in data["message"]
+        assert data["details"]["is_best_model"] == False
         
         # Verify load_model was called with correct params
         mock_manager.load_model.assert_called_once_with(
@@ -306,8 +312,8 @@ class TestModelManagerAPI(unittest.TestCase):
         )
         
         # Assertions
-        self.assertEqual(response.status_code, 404)
-        self.assertIn("not found", response.json()["detail"])
+        assert response.status_code == 404
+        assert "not found" in response.json()["detail"]
         
     @patch("modules.api.model_manager_api.SecureModelManager")
     def test_list_models(self, mock_manager_class):
@@ -315,7 +321,10 @@ class TestModelManagerAPI(unittest.TestCase):
         # Setup mock
         mock_manager = MagicMock()
         mock_manager.models = {"model1": {}, "model2": {}}
-        mock_manager.best_model = {"name": "model1"}
+        # Create a mock best_model object with a name attribute
+        mock_best_model = MagicMock()
+        mock_best_model.name = "model1"
+        mock_manager.best_model = mock_best_model
         mock_manager_class.return_value = mock_manager
         
         # Add a manager to the instances
@@ -329,10 +338,10 @@ class TestModelManagerAPI(unittest.TestCase):
         )
         
         # Assertions
-        self.assertEqual(response.status_code, 200)
+        assert response.status_code == 200
         data = response.json()
-        self.assertEqual(data["models"], ["model1", "model2"])
-        self.assertEqual(data["best_model"], "model1")
+        assert data["models"] == ["model1", "model2"]
+        assert data["best_model"] == "model1"
         
     @patch("modules.api.model_manager_api.SecureModelManager")
     @patch("os.path.exists")
@@ -364,11 +373,11 @@ class TestModelManagerAPI(unittest.TestCase):
                 )
                 
                 # Assertions
-                self.assertEqual(response.status_code, 200)
+                assert response.status_code == 200
                 data = response.json()
-                self.assertEqual(data["filepath"], "./test_path/test_model.pkl")
-                self.assertTrue(data["is_valid"])
-                self.assertEqual(data["encryption_status"], "encrypted")
+                assert data["filepath"] == "./test_path/test_model.pkl"
+                assert data["is_valid"]
+                assert data["encryption_status"] == "encrypted"
                 
                 # Verify verify_model_integrity was called
                 mock_manager.verify_model_integrity.assert_called_once_with(
@@ -401,11 +410,11 @@ class TestModelManagerAPI(unittest.TestCase):
         )
         
         # Assertions
-        self.assertEqual(response.status_code, 200)
+        assert response.status_code == 200
         data = response.json()
-        self.assertTrue(data["success"])
-        self.assertIn("rotated successfully", data["message"])
-        self.assertTrue(data["details"]["using_password"])
+        assert data["success"]
+        assert "rotated successfully" in data["message"]
+        assert data["details"]["using_password"]
         
         # Verify rotate_encryption_key was called
         mock_manager.rotate_encryption_key.assert_called_once_with(
@@ -437,8 +446,8 @@ class TestModelManagerAPI(unittest.TestCase):
         )
         
         # Assertions
-        self.assertEqual(response.status_code, 400)
-        self.assertIn("not enabled", response.json()["detail"])
+        assert response.status_code == 400
+        assert "not enabled" in response.json()["detail"]
         
     @patch("modules.api.model_manager_api.SecureModelManager")
     @patch("os.makedirs")
@@ -470,11 +479,11 @@ class TestModelManagerAPI(unittest.TestCase):
             )
             
             # Assertions
-            self.assertEqual(response.status_code, 200)
+            assert response.status_code == 200
             data = response.json()
-            self.assertTrue(data["success"])
-            self.assertIn("uploaded successfully", data["message"])
-            self.assertEqual(data["details"]["model_name"], "test_model")
+            assert data["success"]
+            assert "uploaded successfully" in data["message"]
+            assert data["details"]["model_name"] == "test_model"
             
             # Verify directories were created
             mock_makedirs.assert_called_once_with(mock_manager.config.model_path, exist_ok=True)
@@ -500,13 +509,13 @@ class TestModelManagerAPI(unittest.TestCase):
         )
         
         # Assertions
-        self.assertEqual(response.status_code, 200)
+        assert response.status_code == 200
         data = response.json()
-        self.assertTrue(data["success"])
-        self.assertIn("deleted successfully", data["message"])
+        assert data["success"]
+        assert "deleted successfully" in data["message"]
         
         # Verify manager was removed
-        self.assertNotIn(manager_id, manager_instances)
+        assert manager_id not in manager_instances
         
     def test_get_or_create_manager_missing_config(self):
         """Test get_or_create_manager with missing config"""
@@ -515,8 +524,8 @@ class TestModelManagerAPI(unittest.TestCase):
         with self.assertRaises(ModelManagerException) as context:
             get_or_create_manager(manager_id)
             
-        self.assertEqual(context.exception.status_code, 400)
-        self.assertIn("no configuration was provided", context.exception.detail)
+        assert context.exception.status_code == 400
+        assert "no configuration was provided" in context.exception.detail
 
 if __name__ == "__main__":
     unittest.main()

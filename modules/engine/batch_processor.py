@@ -24,6 +24,13 @@ sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 from configs import BatchProcessorConfig, BatchProcessingStrategy, BatchPriority, PrioritizedItem
 from .batch_stats import BatchStats
 
+# Import optimization modules if available
+try:
+    from .memory_aware_processor import MemoryAwareDataProcessor, MemoryMonitor, AdaptiveChunkProcessor
+    OPTIMIZATION_AVAILABLE = True
+except ImportError:
+    OPTIMIZATION_AVAILABLE = False
+
 # Type variables for generic typing
 T = TypeVar('T')
 U = TypeVar('U')
@@ -76,6 +83,22 @@ class BatchProcessor(Generic[T, U]):
         # Dynamic system load tracking
         self._system_load = 0.5  # Initial normalized load (0-1)
         self._load_alpha = 0.2  # Smoothing factor for load updates
+        
+        # Initialize optimization components if available
+        self._memory_processor = None
+        self._adaptive_chunker = None
+        
+        if OPTIMIZATION_AVAILABLE:
+            try:
+                self._memory_processor = MemoryAwareDataProcessor()
+                self._adaptive_chunker = AdaptiveChunkProcessor(
+                    initial_chunk_size=config.initial_batch_size,
+                    min_chunk_size=max(1, config.initial_batch_size // 4),
+                    max_chunk_size=config.initial_batch_size * 4
+                )
+                logging.getLogger(__name__).info("Memory-aware batch processing enabled")
+            except Exception as e:
+                logging.getLogger(__name__).warning(f"Failed to initialize optimization: {e}")
         
         # Optimize thread pool based on workload
         worker_count = min(
@@ -578,7 +601,10 @@ class BatchProcessor(Generic[T, U]):
                 except Exception as e:
                     retries += 1
                     if retries > self.config.max_retries:
-                        raise
+                        # Final retry exceeded, handle the error
+                        self.logger.error(f"Error in numpy batch {batch_id} after {self.config.max_retries} retries: {e}")
+                        self._handle_batch_error(e, batch_requests)
+                        return
                     self.logger.warning(f"Retry {retries}/{self.config.max_retries} for batch {batch_id}: {e}")
                     time.sleep(self.config.retry_delay)
                     
@@ -891,6 +917,31 @@ class BatchProcessor(Generic[T, U]):
             "queue_size": self.queue.qsize() if hasattr(self.queue, 'qsize') else -1,
             "is_paused": self.paused_event.is_set(),
             "is_stopping": self.stop_event.is_set(),
+            "processing_mode": self.config.processing_strategy.value if hasattr(self.config.processing_strategy, 'value') else str(self.config.processing_strategy),
+            "cache_strategy": "lru",  # Default cache strategy
         }
         
         return extended_stats
+    
+    @property
+    def running(self) -> bool:
+        """Check if the batch processor is currently running."""
+        return (self.worker_thread is not None and 
+                self.worker_thread.is_alive() and 
+                not self.stop_event.is_set())
+    
+    def submit(self, item: T, timeout: Optional[float] = None, 
+               priority: BatchPriority = BatchPriority.NORMAL) -> Future[U]:
+        """
+        Submit an item for processing and return a Future.
+        Alias for enqueue_predict for compatibility.
+        
+        Args:
+            item: Item to process
+            timeout: Optional timeout for processing
+            priority: Processing priority
+            
+        Returns:
+            Future that will contain the result
+        """
+        return self.enqueue_predict(item, timeout=timeout, priority=priority)

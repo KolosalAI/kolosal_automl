@@ -23,9 +23,20 @@ sys.path.insert(0, str(project_root))
 from modules.configs import QuantizationConfig, QuantizationType, QuantizationMode
 from modules.engine.quantizer import Quantizer  
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(name)s - %(message)s')
-logger = logging.getLogger(__name__)
+# Configure centralized logging
+try:
+    from modules.logging_config import get_logger, setup_root_logging
+    setup_root_logging()
+    logger = get_logger(
+        name="quantizer_api",
+        level=logging.INFO,
+        log_file="quantizer_api.log",
+        enable_console=True
+    )
+except ImportError:
+    # Fallback to basic logging if centralized logging not available
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(name)s - %(message)s')
+    logger = logging.getLogger(__name__)
 
 # Create a global quantizer instance
 quantizer_instances = {}
@@ -45,7 +56,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Quantizer API",
     description="API for high-performance data quantization with advanced features",
-    version="1.0.0",
+    version="0.1.4",
     lifespan=lifespan
 )
 
@@ -86,7 +97,7 @@ class QuantizerConfigModel(BaseModel):
 
 class QuantizationRequest(BaseModel):
     data: List[List[float]] = Field(..., description="2D array of data to quantize")
-    validate: bool = Field(default=True, description="Whether to validate input")
+    validate_input: bool = Field(default=True, description="Whether to validate input", alias="validate")
     channel_dim: Optional[int] = Field(default=None, description="Dimension index for per-channel quantization")
     layer_name: Optional[str] = Field(default=None, description="Layer name for mixed precision handling")
 
@@ -153,7 +164,7 @@ async def health_check():
     return {
         "status": "healthy",
         "service": "Quantizer API",
-        "version": "1.0.0",
+        "version": "0.1.4",
         "active_instances": len(quantizer_instances),
         "instance_ids": list(quantizer_instances.keys()),
         "timestamp": datetime.now().isoformat()
@@ -172,7 +183,7 @@ async def create_instance(instance_id: str, config: QuantizerConfigModel = Body(
     
     try:
         # Convert Pydantic model to dictionary
-        config_dict = config.model_dump()
+        config_dict = config.dict()
         
         # Convert string enums to actual enum values
         config_dict["quantization_type"] = getattr(QuantizationType, config_dict["quantization_type"])
@@ -222,7 +233,7 @@ async def update_config(instance_id: str, config: QuantizerConfigModel):
     
     try:
         # Convert Pydantic model to dictionary
-        config_dict = config.model_dump()
+        config_dict = config.dict()
         
         # Convert string enums to actual enum values
         config_dict["quantization_type"] = getattr(QuantizationType, config_dict["quantization_type"])
@@ -253,7 +264,7 @@ async def quantize_data(
         # Perform quantization
         result = quantizer.quantize(
             data, 
-            validate=request.validate, 
+            validate=request.validate_input, 
             channel_dim=request.channel_dim,
             layer_name=request.layer_name
         )
@@ -534,7 +545,7 @@ async def get_documentation():
     docs = {
         "title": "Quantizer API Documentation",
         "description": "API for high-performance data quantization with advanced features",
-        "version": "1.0.0",
+        "version": "0.1.4",
         "endpoints": [
             {
                 "path": "/",

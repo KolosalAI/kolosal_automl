@@ -39,7 +39,7 @@ class QuantizationMode(Enum):
 class QuantizationConfig:
     """Configuration for model quantization"""
     quantization_type: Union[str, QuantizationType] = QuantizationType.INT8
-    quantization_mode: Union[str, QuantizationMode] = QuantizationMode.DYNAMIC_PER_BATCH
+    quantization_mode: Union[str, QuantizationMode] = QuantizationMode.DYNAMIC
     per_channel: bool = False
     symmetric: bool = True
     enable_cache: bool = True
@@ -83,7 +83,7 @@ class QuantizationConfig:
             try:
                 self.quantization_mode = QuantizationMode[self.quantization_mode.upper()]
             except KeyError:
-                self.quantization_mode = QuantizationMode.DYNAMIC_PER_BATCH
+                self.quantization_mode = QuantizationMode.DYNAMIC
     
     def to_dict(self) -> Dict:
         """Convert config to dictionary for serialization"""
@@ -145,6 +145,15 @@ class BatchProcessingStrategy(Enum):
     FIXED = auto()      # Use fixed batch size
     ADAPTIVE = auto()   # Dynamically adjust batch size based on system load
     GREEDY = auto()     # Process as many items as available up to max_batch_size
+    BALANCED = auto()   # Balance between throughput and latency
+
+class ProcessingMode(Enum):
+    """Processing mode for batch operations."""
+    SYNC = "sync"           # Synchronous processing
+    ASYNC = "async"         # Asynchronous processing
+    HYBRID = "hybrid"       # Mixed mode
+    BATCH = "batch"         # Pure batch mode
+    STREAM = "stream"       # Streaming mode
 
 class BatchPriority(Enum):
     """Priority levels for batch processing."""
@@ -281,8 +290,8 @@ class PreprocessorConfig:
     nan_strategy: str = "mean"  # Options: "mean", "median", "most_frequent", "constant"
     nan_fill_value: float = 0.0  # Value to use for constant strategy
     inf_strategy: str = "max_value"  # Options: "max_value", "median", "constant"
-    pos_inf_fill_value: float = np.nan  # Value to use for positive infinity
-    neg_inf_fill_value: float = np.nan  # Value to use for negative infinity
+    pos_inf_fill_value: float = 1e10  # Value to use for positive infinity
+    neg_inf_fill_value: float = -1e10  # Value to use for negative infinity
     inf_buffer: float = 1.0  # Multiplier for max/min when replacing infinities
     copy_X: bool = True  # Whether to copy data for transformations
     
@@ -298,8 +307,8 @@ class PreprocessorConfig:
     
     # Clipping settings
     clip_values: bool = False
-    clip_min: float = float('-inf')
-    clip_max: float = float('inf')
+    clip_min: float = -1e10
+    clip_max: float = 1e10
     
     # Scaling settings
     scale_shift: bool = False  # Whether to apply an offset after scaling
@@ -347,14 +356,18 @@ class PreprocessorConfig:
     dtype: np.dtype = np.float64
     epsilon: float = 1e-10  # Small value to avoid division by zero
     debug_mode: bool = False
-    version: str = "1.0.0"
+    version: str = "0.1.4"
     
     def __post_init__(self):
+        import logging
+        logger = logging.getLogger(__name__)
+        
         # Handle normalization as string or enum
         if isinstance(self.normalization, str):
             try:
                 self.normalization = NormalizationType[self.normalization.upper()]
             except KeyError:
+                logger.error(f"Invalid normalization type '{self.normalization}', defaulting to STANDARD")
                 self.normalization = NormalizationType.STANDARD
                 
         # Initialize empty lists

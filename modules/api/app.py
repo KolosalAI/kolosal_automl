@@ -20,6 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse
 from fastapi.security import APIKeyHeader
 from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
 from pydantic import BaseModel, Field
@@ -32,20 +33,36 @@ from modules.api.inference_engine_api import app as inference_engine_app
 from modules.api.model_manager_api import app as model_manager_app
 from modules.api.quantizer_api import app as quantizer_app
 from modules.api.train_engine_api import app as train_engine_app
+from modules.api.batch_processor_api import app as batch_processor_app
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler("kolosal_api.log"),
-        logging.StreamHandler()
-    ]
+# Import enhanced security and error handling
+from modules.api.security import (
+    SecurityManager, SecurityConfig, DEFAULT_SECURITY_CONFIG,
+    create_security_middleware, create_auth_dependency
 )
-logger = logging.getLogger("kolosal_api")
+from modules.api.error_handling import (
+    ErrorHandler, default_error_handler, create_error_middleware,
+    KolosalException, ValidationError, AuthenticationError
+)
+from modules.api.monitoring import default_monitoring
+from modules.api.dashboard import generate_dashboard_html
+
+# Configure centralized logging
+from modules.logging_config import get_logger, setup_root_logging
+
+# Setup root logging configuration
+setup_root_logging(level=logging.INFO)
+
+# Get configured logger
+logger = get_logger(
+    name="kolosal_api",
+    level=logging.INFO,
+    log_file="kolosal_api.log",
+    enable_console=True
+)
 
 # API configuration
-API_VERSION = "1.0.0"
+API_VERSION = "0.1.4"
 API_TITLE = "kolosal AutoML API"
 API_DESCRIPTION = """
 kolosal AutoML provides a comprehensive suite of machine learning tools for data preprocessing,
@@ -65,10 +82,32 @@ API_KEY_HEADER = os.environ.get("API_KEY_HEADER", "X-API-Key")
 API_KEYS = os.environ.get("API_KEYS", "dev_key").split(",")
 REQUIRE_API_KEY = os.environ.get("REQUIRE_API_KEY", "False").lower() in ("true", "1", "t")
 
+# Security configuration
+security_config = SecurityConfig(
+    require_api_key=REQUIRE_API_KEY,
+    api_keys=API_KEYS,
+    enable_rate_limiting=True,
+    rate_limit_requests=int(os.environ.get("RATE_LIMIT_REQUESTS", "100")),
+    rate_limit_window=int(os.environ.get("RATE_LIMIT_WINDOW", "60")),
+    enable_input_validation=True,
+    enable_security_headers=True,
+    enable_audit_logging=True,
+    max_request_size=int(os.environ.get("MAX_REQUEST_SIZE", str(10 * 1024 * 1024)))  # 10MB
+)
+
+# Initialize security manager
+security_manager = SecurityManager(security_config)
+
+# Initialize enhanced error handler
+error_handler = ErrorHandler(debug_mode=API_DEBUG, log_errors=True)
+
 # Static files configuration
 STATIC_DIR = Path("static")
 STATIC_DIR.mkdir(exist_ok=True, parents=True)
 
+
+# Define enhanced authentication
+auth_dependency = create_auth_dependency(security_manager)
 
 # Security setup
 api_key_header = APIKeyHeader(name=API_KEY_HEADER, auto_error=False)
@@ -90,22 +129,47 @@ async def lifespan(app: FastAPI):
     app.state.start_time = time.time()
     app.state.request_count = 0
     app.state.error_count = 0
+    app.state.security_manager = security_manager
+    app.state.error_handler = error_handler
+    app.state.monitoring = default_monitoring
+    
+    # Start monitoring system
+    default_monitoring.start()
     
     # Create metrics collector
     app.state.metrics = {
         "requests_per_endpoint": {},
         "average_response_time": {},
         "error_rate": {},
-        "active_connections": 0
+        "active_connections": 0,
+        "security_events": 0,
+        "rate_limit_hits": 0
     }
     
     yield
     
     # Shutdown logic
     logger.info("Shutting down kolosal AutoML API")
+    
+    # Stop monitoring system
+    try:
+        default_monitoring.stop()
+    except Exception as e:
+        logger.error(f"Error stopping monitoring: {e}")
+    
+    # Clean up logging resources
+    try:
+        from modules.logging_config import cleanup_logging
+        cleanup_logging()
+    except Exception as e:
+        # Use print since logging might be shutting down
+        print(f"Error cleaning up logging: {e}")
 
 
-async def verify_api_key(api_key: str = Header(None, alias=API_KEY_HEADER)):
+# Enhanced authentication function
+async def verify_api_key(api_key: Optional[str] = Depends(api_key_header)):
+    """Verify API key with enhanced security"""
+    return await auth_dependency(None, api_key)  # Request will be injected by FastAPI
     """Verify that the API key is valid."""
     # Check if API key is required
     if REQUIRE_API_KEY:
@@ -157,6 +221,57 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# Enhanced middleware for security and error handling
+@app.middleware("http")
+async def security_and_error_middleware(request: Request, call_next):
+    """Combined security and error handling middleware"""
+    start_time = time.time()
+    
+    try:
+        # Apply security middleware
+        security_middleware = create_security_middleware(security_manager)
+        response = await security_middleware(request, call_next)
+        
+        # Update metrics
+        app.state.request_count += 1
+        processing_time = time.time() - start_time
+        
+        endpoint = request.url.path
+        if endpoint not in app.state.metrics["requests_per_endpoint"]:
+            app.state.metrics["requests_per_endpoint"][endpoint] = 0
+        app.state.metrics["requests_per_endpoint"][endpoint] += 1
+        
+        # Update average response time
+        if endpoint not in app.state.metrics["average_response_time"]:
+            app.state.metrics["average_response_time"][endpoint] = []
+        app.state.metrics["average_response_time"][endpoint].append(processing_time)
+        
+        # Keep only last 100 response times for average calculation
+        if len(app.state.metrics["average_response_time"][endpoint]) > 100:
+            app.state.metrics["average_response_time"][endpoint] = \
+                app.state.metrics["average_response_time"][endpoint][-100:]
+        
+        return response
+        
+    except Exception as e:
+        # Handle with enhanced error handler
+        app.state.error_count += 1
+        error_response = error_handler.handle_exception(e, request)
+        
+        # Determine status code
+        status_code = 500
+        if isinstance(e, HTTPException):
+            status_code = e.status_code
+        elif isinstance(e, AuthenticationError):
+            status_code = 401
+        elif isinstance(e, ValidationError):
+            status_code = 400
+        
+        return JSONResponse(
+            status_code=status_code,
+            content=error_response.dict()
+        )
+
 
 # Add middleware
 app.add_middleware(
@@ -194,47 +309,49 @@ async def add_request_id(request: Request, call_next: Callable) -> Response:
     # Track request start time
     start_time = time.time()
     
-    # Update metrics
-    app.state.request_count += 1
+    # Track active connections (only this middleware handles connection counting)
     app.state.metrics["active_connections"] += 1
     
     # Process request
     try:
         response = await call_next(request)
         
-        # Calculate response time
-        response_time = time.time() - start_time
+        # Calculate processing time
+        processing_time = time.time() - start_time
         
-        # Update endpoint metrics
-        endpoint = f"{request.method}:{request.url.path}"
-        if endpoint not in app.state.metrics["requests_per_endpoint"]:
-            app.state.metrics["requests_per_endpoint"][endpoint] = 0
-            app.state.metrics["average_response_time"][endpoint] = 0.0
+        # Record metrics in monitoring system
+        default_monitoring.record_api_request(
+            endpoint=str(request.url.path),
+            method=request.method,
+            status_code=response.status_code,
+            processing_time=processing_time
+        )
         
-        # Update metrics with exponential moving average for response time
-        current_count = app.state.metrics["requests_per_endpoint"][endpoint]
-        current_avg = app.state.metrics["average_response_time"][endpoint]
+        # Note: Metrics are already updated in security_and_error_middleware
+        # to avoid duplication and data type conflicts
         
-        app.state.metrics["requests_per_endpoint"][endpoint] += 1
-        if current_count > 0:
-            # Use EMA with alpha=0.05 for smoother averaging
-            alpha = 0.05
-            app.state.metrics["average_response_time"][endpoint] = (
-                (1 - alpha) * current_avg + alpha * response_time
-            )
-        else:
-            app.state.metrics["average_response_time"][endpoint] = response_time
-        
-        # Add request ID to response headers
+        # Add headers
         response.headers["X-Request-ID"] = request_id
+        response.headers["X-Processing-Time"] = str(processing_time)
+        
         return response
+        
     except Exception as e:
-        # Track errors
-        app.state.error_count += 1
-        logger.error(f"Request {request_id} failed: {str(e)}")
-        raise
+        # Record error in monitoring system
+        processing_time = time.time() - start_time
+        default_monitoring.record_api_request(
+            endpoint=str(request.url.path),
+            method=request.method,
+            status_code=500,
+            processing_time=processing_time
+        )
+        
+        # Note: Error count is already updated in security_and_error_middleware
+        # to avoid duplication
+        raise e
+        
     finally:
-        # Update connection count
+        # Decrease active connections
         app.state.metrics["active_connections"] -= 1
 
 
@@ -327,11 +444,12 @@ async def health_check():
     # Check each component
     components = {
         "data_preprocessor": "healthy",
-        "device_optimizer": "healthy",
+        "device_optimizer": "healthy", 
         "inference_engine": "healthy",
         "model_manager": "healthy",
         "quantizer": "healthy",
-        "train_engine": "healthy"
+        "train_engine": "healthy",
+        "batch_processor": "healthy"
     }
     
     # Simple health check - in a real implementation you'd do a deeper check
@@ -349,12 +467,22 @@ async def health_check():
 @health_router.get("/metrics", response_model=MetricsResponse, dependencies=[Depends(verify_api_key)])
 async def get_metrics():
     """Get API performance metrics."""
+    # Calculate average response times from lists
+    average_response_time = {}
+    for endpoint, times in app.state.metrics["average_response_time"].items():
+        if isinstance(times, list) and len(times) > 0:
+            average_response_time[endpoint] = sum(times) / len(times)
+        elif isinstance(times, (int, float)):
+            average_response_time[endpoint] = float(times)
+        else:
+            average_response_time[endpoint] = 0.0
+    
     return {
         "total_requests": app.state.request_count,
         "errors": app.state.error_count,
         "uptime_seconds": time.time() - app.state.start_time,
         "requests_per_endpoint": app.state.metrics["requests_per_endpoint"],
-        "average_response_time": app.state.metrics["average_response_time"],
+        "average_response_time": average_response_time,
         "active_connections": app.state.metrics["active_connections"],
         "timestamp": datetime.now().isoformat()
     }
@@ -396,6 +524,12 @@ include_component_routes(
     router=main_router,
     prefix="/train",
     tags=["Training Engine"]
+)
+include_component_routes(
+    app=batch_processor_app,
+    router=main_router,
+    prefix="/batch",
+    tags=["Batch Processing"]
 )
 
 
@@ -458,6 +592,86 @@ async def global_exception_handler(request: Request, exc: Exception):
         status_code=status_code,
         content=error_response
     )
+
+
+# Monitoring endpoints
+@app.get("/monitoring/health", tags=["Monitoring"])
+async def get_health_check():
+    """Get system health status"""
+    return {
+        "status": "healthy",
+        "timestamp": datetime.now().isoformat(),
+        "uptime_seconds": time.time() - app.state.start_time,
+        "version": API_VERSION
+    }
+
+
+@app.get("/monitoring/metrics", tags=["Monitoring"], dependencies=[Depends(verify_api_key)])
+async def get_metrics():
+    """Get current system metrics"""
+    try:
+        metrics_data = default_monitoring.get_dashboard_data()
+        return {
+            "status": "success",
+            "data": metrics_data,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve metrics: {str(e)}")
+
+
+@app.get("/monitoring/alerts", tags=["Monitoring"], dependencies=[Depends(verify_api_key)])
+async def get_active_alerts():
+    """Get active alerts"""
+    try:
+        active_alerts = default_monitoring.alert_manager.get_active_alerts()
+        return {
+            "status": "success",
+            "active_alerts": [
+                {
+                    "name": alert.name,
+                    "level": alert.level.value,
+                    "message": alert.message,
+                    "last_triggered": alert.last_triggered
+                }
+                for alert in active_alerts
+            ],
+            "alert_count": len(active_alerts),
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve alerts: {str(e)}")
+
+
+@app.get("/monitoring/performance", tags=["Monitoring"], dependencies=[Depends(verify_api_key)])
+async def get_performance_analysis():
+    """Get performance analysis"""
+    try:
+        performance_data = default_monitoring.performance_analyzer.analyze_throughput_trends(24)
+        resource_data = default_monitoring.performance_analyzer.analyze_resource_utilization(6)
+        
+        return {
+            "status": "success",
+            "performance_analysis": performance_data,
+            "resource_analysis": resource_data,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve performance data: {str(e)}")
+
+
+@app.get("/monitoring/dashboard", tags=["Monitoring"], response_class=HTMLResponse)
+async def get_monitoring_dashboard():
+    """Get HTML monitoring dashboard (no auth required for dashboard view)"""
+    try:
+        metrics_data = default_monitoring.get_dashboard_data()
+        html_content = generate_dashboard_html(metrics_data)
+        return HTMLResponse(content=html_content)
+    except Exception as e:
+        return HTMLResponse(
+            content=f"<html><body><h1>Dashboard Error</h1><p>Failed to load dashboard: {str(e)}</p></body></html>",
+            status_code=500
+        )
 
 
 # Main entry point

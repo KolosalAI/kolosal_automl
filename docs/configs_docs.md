@@ -3,44 +3,84 @@
 ## Overview
 This module provides a comprehensive configuration system for machine learning model optimization, preprocessing, inference, and training. It defines a set of dataclasses and enums that enable fine-grained control over various aspects of machine learning workflows, from data preprocessing to model deployment, with special focus on quantization, batch processing, and model optimization.
 
+The configuration system is built around the `modules.configs` module and provides type-safe, serializable configurations for all components of the kolosal AutoML system.
+
 ## Prerequisites
-- Python ≥3.6
+- Python ≥3.10
 - Required packages:
   ```bash
-  pip install numpy dataclasses typing enum34
+  pip install numpy dataclasses typing
   ```
 
 ## Installation
-No specific installation is required beyond the dependencies. Import the module directly in your Python code.
+No specific installation is required beyond the dependencies. Import the module directly in your Python code:
+
+```python
+from modules.configs import (
+    QuantizationConfig, BatchProcessorConfig, PreprocessorConfig, 
+    InferenceEngineConfig, MLTrainingEngineConfig, TaskType,
+    QuantizationType, QuantizationMode, OptimizationMode
+)
+```
 
 ## Usage
 ```python
-from ml_config import QuantizationConfig, BatchProcessorConfig, PreprocessorConfig, InferenceEngineConfig
+from modules.configs import (
+    QuantizationConfig, BatchProcessorConfig, PreprocessorConfig, 
+    InferenceEngineConfig, MLTrainingEngineConfig, TaskType,
+    QuantizationType, QuantizationMode, OptimizationMode
+)
 
 # Create a quantization configuration for int8
 quant_config = QuantizationConfig(
-    quantization_type="int8",
-    quantization_mode="dynamic_per_batch",
-    symmetric=True
+    quantization_type=QuantizationType.INT8,
+    quantization_mode=QuantizationMode.DYNAMIC_PER_BATCH,
+    symmetric=True,
+    per_channel=False,
+    calibration_samples=100
 )
 
-# Configure a batch processor
+# Configure a batch processor with adaptive batching
 batch_config = BatchProcessorConfig(
     initial_batch_size=64,
     max_batch_size=128,
-    enable_monitoring=True
+    min_batch_size=16,
+    enable_monitoring=True,
+    strategy=BatchProcessingStrategy.ADAPTIVE_LOAD_BALANCING
+)
+
+# Create a comprehensive training engine configuration
+training_config = MLTrainingEngineConfig(
+    task_type=TaskType.CLASSIFICATION,
+    enable_automl=True,
+    automl_mode=AutoMLMode.STANDARD,
+    optimization_strategy=TrainingOptimizationStrategy.AGGRESSIVE,
+    model_selection_criteria=ModelSelectionCriteria.F1_SCORE,
+    cv_folds=5,
+    enable_feature_selection=True,
+    enable_early_stopping=True,
+    max_iter=1000,
+    random_state=42
 )
 
 # Create an inference engine configuration
 inference_config = InferenceEngineConfig(
     enable_intel_optimization=True,
     enable_batching=True,
+    optimization_mode=OptimizationMode.PERFORMANCE,
     quantization_config=quant_config,
-    batch_processor_config=batch_config
+    batch_processor_config=batch_config,
+    enable_caching=True,
+    cache_size=512
 )
 
 # Export configuration to dict for serialization
 config_dict = inference_config.to_dict()
+print(f"Inference config: {config_dict}")
+
+# Save configuration to file
+with open("config.json", "w") as f:
+    json.dump(config_dict, f, indent=2)
 ```
 
 ## Configuration

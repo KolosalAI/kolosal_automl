@@ -1,4 +1,5 @@
 import numpy as np
+import math
 import pandas as pd
 from sklearn.model_selection import cross_val_score, ParameterSampler
 from sklearn.base import clone
@@ -1061,7 +1062,7 @@ class HyperOptX:
             z = imp / sigma
             
             # EI formula: (imp * CDF(z) + sigma * pdf(z))
-            cdf = 0.5 * (1 + np.array([np.math.erf(val / np.sqrt(2)) for val in z]))
+            cdf = 0.5 * (1 + np.array([math.erf(val / np.sqrt(2)) for val in z]))
             pdf = np.exp(-0.5 * z**2) / np.sqrt(2 * np.pi)
             
             ei = imp * cdf + sigma * pdf
@@ -1083,7 +1084,7 @@ class HyperOptX:
                 z = (best_f - mu - xi) / sigma
                 
             # POI is just the CDF
-            acquisition = 0.5 * (1 + np.math.erf(z[0] / np.sqrt(2)))
+            acquisition = 0.5 * (1 + math.erf(z[0] / np.sqrt(2)))
             
         elif acq_type == 'thompson':  # Thompson Sampling
             # Sample from posterior
@@ -1099,7 +1100,7 @@ class HyperOptX:
                 imp = best_f - mu - xi
                 
             z = imp / sigma
-            cdf = 0.5 * (1 + np.array([np.math.erf(val / np.sqrt(2)) for val in z]))
+            cdf = 0.5 * (1 + np.array([math.erf(val / np.sqrt(2)) for val in z]))
             pdf = np.exp(-0.5 * z**2) / np.sqrt(2 * np.pi)
             
             ei = imp * cdf + sigma * pdf

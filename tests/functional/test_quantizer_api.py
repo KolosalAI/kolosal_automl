@@ -53,23 +53,23 @@ class TestQuantizerAPI(unittest.TestCase):
         self.mock_quantizer._lock = MagicMock()
         self.mock_quantizer._qtype = np.int8
 
-    @patch("modules.api.quantizer.quantizer_instances")
+    @patch("modules.api.quantizer_api.quantizer_instances")
     def test_root_endpoint(self, mock_instances):
         """Test the root endpoint returns the expected health check response."""
         response = self.client.get("/")
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {"status": "healthy", "service": "Quantizer API"})
+        assert response.status_code == 200
+        assert response.json() == {"status": "healthy", "service": "Quantizer API"}
 
-    @patch("modules.api.quantizer.quantizer_instances")
+    @patch("modules.api.quantizer_api.quantizer_instances")
     def test_get_instances(self, mock_instances):
         """Test retrieving all quantizer instances."""
         mock_instances.keys.return_value = ["default", "test_instance"]
         
         response = self.client.get("/instances")
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), ["default", "test_instance"])
+        assert response.status_code == 200
+        assert response.json() == ["default", "test_instance"]
 
-    @patch("modules.api.quantizer.quantizer_instances")
+    @patch("modules.api.quantizer_api.quantizer_instances")
     def test_create_instance(self, mock_instances):
         """Test creating a new quantizer instance."""
         # Set up the mock to check if the instance exists
@@ -84,19 +84,19 @@ class TestQuantizerAPI(unittest.TestCase):
         }
         
         response = self.client.post("/instances/test_instance", json=config_data)
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {"message": "Quantizer instance test_instance created successfully"})
+        assert response.status_code == 200
+        assert response.json() == {"message": "Quantizer instance test_instance created successfully"}
         
         # Test duplicate instance creation
         mock_instances.__contains__.return_value = True
         response = self.client.post("/instances/test_instance", json=config_data)
-        self.assertEqual(response.status_code, 409)
+        assert response.status_code == 409
 
-    @patch("modules.api.quantizer.quantizer_instances")
+    @patch("modules.api.quantizer_api.quantizer_instances")
     def test_delete_instance(self, mock_instances):
         """Test deleting a quantizer instance."""
         # Mock the get_quantizer function to return our mock
-        with patch("modules.api.quantizer.get_quantizer", return_value=self.mock_quantizer):
+        with patch("modules.api.quantizer_api.get_quantizer", return_value=self.mock_quantizer):
             # Set up the mock for checking existence
             def mock_contains(key):
                 return key in ["default", "test_instance"]
@@ -105,29 +105,29 @@ class TestQuantizerAPI(unittest.TestCase):
             
             # Test deleting default instance (not allowed)
             response = self.client.delete("/instances/default")
-            self.assertEqual(response.status_code, 403)
+            assert response.status_code == 403
             
             # Test deleting non-default instance
             response = self.client.delete("/instances/test_instance")
-            self.assertEqual(response.status_code, 200)
+            assert response.status_code == 200
             mock_instances.__delitem__.assert_called_once_with("test_instance")
             
             # Test deleting non-existent instance
             response = self.client.delete("/instances/nonexistent")
-            self.assertEqual(response.status_code, 404)
+            assert response.status_code == 404
 
-    @patch("modules.api.quantizer.get_quantizer")
+    @patch("modules.api.quantizer_api.get_quantizer")
     def test_get_config(self, mock_get_quantizer):
         """Test retrieving the configuration of a quantizer instance."""
         mock_get_quantizer.return_value = self.mock_quantizer
         
         response = self.client.get("/instances/default/config")
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["quantization_type"], "INT8")
-        self.assertEqual(response.json()["quantization_mode"], "DYNAMIC")
-        self.assertEqual(response.json()["num_bits"], 8)
+        assert response.status_code == 200
+        assert response.json()["quantization_type"] == "INT8"
+        assert response.json()["quantization_mode"] == "DYNAMIC"
+        assert response.json()["num_bits"] == 8
 
-    @patch("modules.api.quantizer.get_quantizer")
+    @patch("modules.api.quantizer_api.get_quantizer")
     def test_update_config(self, mock_get_quantizer):
         """Test updating the configuration of a quantizer instance."""
         mock_get_quantizer.return_value = self.mock_quantizer
@@ -140,10 +140,10 @@ class TestQuantizerAPI(unittest.TestCase):
         }
         
         response = self.client.put("/instances/default/config", json=config_data)
-        self.assertEqual(response.status_code, 200)
+        assert response.status_code == 200
         self.mock_quantizer.update_config.assert_called_once()
 
-    @patch("modules.api.quantizer.get_quantizer")
+    @patch("modules.api.quantizer_api.get_quantizer")
     def test_quantize_data(self, mock_get_quantizer):
         """Test quantizing input data."""
         mock_get_quantizer.return_value = self.mock_quantizer
@@ -158,13 +158,13 @@ class TestQuantizerAPI(unittest.TestCase):
         }
         
         response = self.client.post("/instances/default/quantize", json=request_data)
-        self.assertEqual(response.status_code, 200)
+        assert response.status_code == 200
         result = response.json()
-        self.assertEqual(result["data"], [[1, 2], [3, 4]])
-        self.assertEqual(result["quantization_type"], "INT8")
-        self.assertEqual(result["original_shape"], [2, 2])
+        assert result["data"] == [[1, 2], [3, 4]]
+        assert result["quantization_type"] == "INT8"
+        assert result["original_shape"] == [2, 2]
 
-    @patch("modules.api.quantizer.get_quantizer")
+    @patch("modules.api.quantizer_api.get_quantizer")
     def test_dequantize_data(self, mock_get_quantizer):
         """Test dequantizing input data."""
         mock_get_quantizer.return_value = self.mock_quantizer
@@ -179,12 +179,12 @@ class TestQuantizerAPI(unittest.TestCase):
         }
         
         response = self.client.post("/instances/default/dequantize", json=request_data)
-        self.assertEqual(response.status_code, 200)
+        assert response.status_code == 200
         result = response.json()
-        self.assertEqual(result["data"], [[1.0, 2.0], [3.0, 4.0]])
-        self.assertEqual(result["original_shape"], [2, 2])
+        assert result["data"] == [[1.0, 2.0], [3.0, 4.0]]
+        assert result["original_shape"] == [2, 2]
 
-    @patch("modules.api.quantizer.get_quantizer")
+    @patch("modules.api.quantizer_api.get_quantizer")
     def test_quantize_dequantize_data(self, mock_get_quantizer):
         """Test quantize and dequantize in one operation."""
         mock_get_quantizer.return_value = self.mock_quantizer
@@ -199,12 +199,18 @@ class TestQuantizerAPI(unittest.TestCase):
         }
         
         response = self.client.post("/instances/default/quantize_dequantize", json=request_data)
-        self.assertEqual(response.status_code, 200)
+        assert response.status_code == 200
         result = response.json()
-        self.assertEqual(result["data"], [[0.9, 1.9], [2.9, 3.9]])
-        self.assertEqual(result["original_shape"], [2, 2])
+        # Use approximate comparison for float values due to precision
+        assert len(result["data"]) == 2
+        assert len(result["data"][0]) == 2
+        assert abs(result["data"][0][0] - 0.9) < 1e-6
+        assert abs(result["data"][0][1] - 1.9) < 1e-6
+        assert abs(result["data"][1][0] - 2.9) < 1e-6
+        assert abs(result["data"][1][1] - 3.9) < 1e-6
+        assert result["original_shape"] == [2, 2]
 
-    @patch("modules.api.quantizer.get_quantizer")
+    @patch("modules.api.quantizer_api.get_quantizer")
     def test_calibrate_quantizer(self, mock_get_quantizer):
         """Test calibrating the quantizer with example data."""
         mock_get_quantizer.return_value = self.mock_quantizer
@@ -214,14 +220,14 @@ class TestQuantizerAPI(unittest.TestCase):
         }
         
         response = self.client.post("/instances/default/calibrate", json=request_data)
-        self.assertEqual(response.status_code, 200)
+        assert response.status_code == 200
         result = response.json()
-        self.assertEqual(result["message"], "Calibration successful")
-        self.assertEqual(result["scale"], 0.1)
-        self.assertEqual(result["zero_point"], 128)
+        assert result["message"] == "Calibration successful"
+        assert result["scale"] == 0.1
+        assert result["zero_point"] == 128
         self.mock_quantizer.calibrate.assert_called_once()
 
-    @patch("modules.api.quantizer.get_quantizer")
+    @patch("modules.api.quantizer_api.get_quantizer")
     def test_compute_scale_zero_point(self, mock_get_quantizer):
         """Test computing scale and zero point for input data."""
         mock_get_quantizer.return_value = self.mock_quantizer
@@ -234,44 +240,44 @@ class TestQuantizerAPI(unittest.TestCase):
         }
         
         response = self.client.post("/instances/default/compute_params", json=request_data)
-        self.assertEqual(response.status_code, 200)
+        assert response.status_code == 200
         result = response.json()
-        self.assertEqual(result["scale"], 0.1)
-        self.assertEqual(result["zero_point"], 128)
+        assert result["scale"] == 0.1
+        assert result["zero_point"] == 128
 
-    @patch("modules.api.quantizer.get_quantizer")
+    @patch("modules.api.quantizer_api.get_quantizer")
     def test_get_stats(self, mock_get_quantizer):
         """Test retrieving quantization statistics."""
         mock_get_quantizer.return_value = self.mock_quantizer
         
         response = self.client.get("/instances/default/stats")
-        self.assertEqual(response.status_code, 200)
+        assert response.status_code == 200
         result = response.json()
-        self.assertEqual(result["quantize_calls"], 5)
-        self.assertEqual(result["dequantize_calls"], 3)
-        self.assertEqual(result["cache_hits"], 2)
+        assert result["quantize_calls"] == 5
+        assert result["dequantize_calls"] == 3
+        assert result["cache_hits"] == 2
 
-    @patch("modules.api.quantizer.get_quantizer")
+    @patch("modules.api.quantizer_api.get_quantizer")
     def test_clear_cache(self, mock_get_quantizer):
         """Test clearing the dequantization cache."""
         mock_get_quantizer.return_value = self.mock_quantizer
         
         response = self.client.post("/instances/default/clear_cache")
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {"message": "Cache cleared successfully"})
+        assert response.status_code == 200
+        assert response.json() == {"message": "Cache cleared successfully"}
         self.mock_quantizer.clear_cache.assert_called_once()
 
-    @patch("modules.api.quantizer.get_quantizer")
+    @patch("modules.api.quantizer_api.get_quantizer")
     def test_reset_stats(self, mock_get_quantizer):
         """Test resetting quantization statistics."""
         mock_get_quantizer.return_value = self.mock_quantizer
         
         response = self.client.post("/instances/default/reset_stats")
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {"message": "Statistics reset successfully"})
+        assert response.status_code == 200
+        assert response.json() == {"message": "Statistics reset successfully"}
         self.mock_quantizer.reset_stats.assert_called_once()
 
-    @patch("modules.api.quantizer.get_quantizer")
+    @patch("modules.api.quantizer_api.get_quantizer")
     def test_export_parameters(self, mock_get_quantizer):
         """Test exporting quantization parameters."""
         mock_get_quantizer.return_value = self.mock_quantizer
@@ -279,20 +285,20 @@ class TestQuantizerAPI(unittest.TestCase):
         # Set up the export_import_parameters method
         self.mock_quantizer.export_import_parameters.return_value = {
             "scale": np.float32(0.1),
-            "zero_point": np.int8(128),
+            "zero_point": np.int8(127),  # Valid int8 value (changed from 128)
             "quantization_type": QuantizationType.INT8,
             "quantization_mode": QuantizationMode.DYNAMIC
         }
         
         response = self.client.get("/instances/default/parameters")
-        self.assertEqual(response.status_code, 200)
+        assert response.status_code == 200
         result = response.json()
-        self.assertEqual(result["scale"], 0.1)
-        self.assertEqual(result["zero_point"], 128)
-        self.assertEqual(result["quantization_type"], "INT8")
-        self.assertEqual(result["quantization_mode"], "DYNAMIC")
+        assert abs(result["scale"] - 0.1) < 1e-6  # Use floating point comparison
+        assert result["zero_point"] == 127  # Fixed from invalid 128
+        assert result["quantization_type"] == "INT8"
+        assert result["quantization_mode"] == "DYNAMIC"
 
-    @patch("modules.api.quantizer.get_quantizer")
+    @patch("modules.api.quantizer_api.get_quantizer")
     def test_import_parameters(self, mock_get_quantizer):
         """Test importing quantization parameters."""
         mock_get_quantizer.return_value = self.mock_quantizer
@@ -307,11 +313,11 @@ class TestQuantizerAPI(unittest.TestCase):
         }
         
         response = self.client.post("/instances/default/parameters", json=request_data)
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {"message": "Parameters imported successfully"})
+        assert response.status_code == 200
+        assert response.json() == {"message": "Parameters imported successfully"}
         self.mock_quantizer.load_parameters.assert_called_once()
 
-    @patch("modules.api.quantizer.get_quantizer")
+    @patch("modules.api.quantizer_api.get_quantizer")
     def test_get_layer_params(self, mock_get_quantizer):
         """Test getting quantization parameters for a specific layer."""
         mock_get_quantizer.return_value = self.mock_quantizer
@@ -324,13 +330,13 @@ class TestQuantizerAPI(unittest.TestCase):
         }
         
         response = self.client.get("/instances/default/layer_params/conv1")
-        self.assertEqual(response.status_code, 200)
+        assert response.status_code == 200
         result = response.json()
-        self.assertEqual(result["scale"], 0.1)
-        self.assertEqual(result["zero_point"], 128)
-        self.assertEqual(result["type"], "INT8")
+        assert result["scale"] == 0.1
+        assert result["zero_point"] == 128
+        assert result["type"] == "INT8"
 
-    @patch("modules.api.quantizer.get_quantizer")
+    @patch("modules.api.quantizer_api.get_quantizer")
     @patch("builtins.open")
     def test_upload_numpy(self, mock_open, mock_get_quantizer):
         """Test uploading and processing a NumPy array file."""
@@ -346,32 +352,32 @@ class TestQuantizerAPI(unittest.TestCase):
     def test_documentation(self):
         """Test retrieving API documentation."""
         response = self.client.get("/documentation")
-        self.assertEqual(response.status_code, 200)
+        assert response.status_code == 200
         result = response.json()
-        self.assertIn("title", result)
-        self.assertIn("description", result)
-        self.assertIn("version", result)
-        self.assertIn("endpoints", result)
-        self.assertIn("examples", result)
+        assert "title" in result
+        assert "description" in result
+        assert "version" in result
+        assert "endpoints" in result
+        assert "examples" in result
 
     def test_helper_functions(self):
         """Test the helper functions for converting between numpy arrays and Python lists."""
         # Test list_to_numpy
         test_list = [[1.0, 2.0], [3.0, 4.0]]
         arr = list_to_numpy(test_list)
-        self.assertIsInstance(arr, np.ndarray)
-        self.assertEqual(arr.shape, (2, 2))
-        self.assertEqual(arr.dtype, np.float32)
+        assert isinstance(arr, np.ndarray)
+        assert arr.shape == (2, 2)
+        assert arr.dtype == np.float32
         
         # Test numpy_to_list
         test_arr = np.array([[1, 2], [3, 4]], dtype=np.int8)
         result_list = numpy_to_list(test_arr)
-        self.assertIsInstance(result_list, list)
-        self.assertEqual(result_list, [[1, 2], [3, 4]])
+        assert isinstance(result_list, list)
+        assert result_list == [[1, 2], [3, 4]]
         
         # Test handling non-numpy inputs
         regular_list = [[1, 2], [3, 4]]
-        self.assertEqual(numpy_to_list(regular_list), regular_list)
+        assert numpy_to_list(regular_list) == regular_list
 
 
 if __name__ == "__main__":

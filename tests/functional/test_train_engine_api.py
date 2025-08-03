@@ -64,6 +64,13 @@ class TestMLTrainingEngineAPI(unittest.TestCase):
     
     def test_root_endpoint(self):
         """Test the root endpoint."""
+        # Ensure ml_engine is None for this test
+        global ml_engine
+        ml_engine = None
+        # Also reset in the API module 
+        from modules.api import train_engine_api
+        train_engine_api.ml_engine = None
+        
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200)
         data = response.json()
@@ -534,12 +541,12 @@ class TestMLTrainingEngineAPI(unittest.TestCase):
         self.assertTrue("download_url" in data)
         self.assertTrue("timestamp" in data)
     
-    @mock.patch('modules.api.train_engine_api.ml_engine')
-    def test_shutdown_engine(self, mock_ml_engine):
+    def test_shutdown_engine(self):
         """Test engine shutdown endpoint."""
-        # Set global ml_engine
-        global ml_engine
-        ml_engine = mock.MagicMock()
+        # Set global ml_engine in the API module
+        from modules.api import train_engine_api
+        mock_engine = mock.MagicMock()
+        train_engine_api.ml_engine = mock_engine
         
         # Make request
         response = self.client.post("/api/engine/shutdown")
@@ -551,7 +558,7 @@ class TestMLTrainingEngineAPI(unittest.TestCase):
         self.assertEqual(data["message"], "Engine shut down successfully")
         
         # Check that ml_engine was reset
-        self.assertIsNone(ml_engine)
+        self.assertIsNone(train_engine_api.ml_engine)
         
         # Test with already shut down engine
         response = self.client.post("/api/engine/shutdown")

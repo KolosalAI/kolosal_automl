@@ -18,6 +18,18 @@ from .preprocessing_exceptions import (
     StatisticsError, SerializationError
 )
 
+# Import optimization modules if available
+try:
+    from .adaptive_preprocessing import (
+        AdaptivePreprocessorConfig, 
+        PreprocessorConfigOptimizer,
+        ProcessingMode
+    )
+    from .memory_aware_processor import MemoryAwareDataProcessor
+    OPTIMIZATION_AVAILABLE = True
+except ImportError:
+    OPTIMIZATION_AVAILABLE = False
+
 
 def log_operation(func):
     @wraps(func)
@@ -85,6 +97,20 @@ class DataPreprocessor:
             "process_chunk_time": []
         }
         
+        # Initialize optimization components if available
+        self._adaptive_config = None
+        self._memory_processor = None
+        
+        if OPTIMIZATION_AVAILABLE:
+            try:
+                self._config_optimizer = PreprocessorConfigOptimizer()
+                self.logger.info("Adaptive preprocessing optimization enabled")
+            except Exception as e:
+                self.logger.warning(f"Failed to initialize optimization components: {e}")
+                self._config_optimizer = None
+        else:
+            self._config_optimizer = None
+        
         # Initialize processing functions
         self._init_processing_functions()
         
@@ -136,14 +162,25 @@ class DataPreprocessor:
     def _configure_logging(self) -> None:
         """Configure logging based on config settings."""
         level = logging.DEBUG if self.config.debug_mode else logging.INFO
-        self.logger.setLevel(level)
         
-        # Only add handler if none exists
-        if not self.logger.handlers:
-            handler = logging.StreamHandler()
-            formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-            handler.setFormatter(formatter)
-            self.logger.addHandler(handler)
+        try:
+            from modules.logging_config import get_logger
+            self.logger = get_logger(
+                name="DataPreprocessor",
+                level=level,
+                log_file="data_preprocessor.log",
+                enable_console=True
+            )
+        except ImportError:
+            # Fallback to basic logging if centralized logging not available
+            self.logger.setLevel(level)
+            
+            # Only add handler if none exists
+            if not self.logger.handlers:
+                handler = logging.StreamHandler()
+                formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+                handler.setFormatter(formatter)
+                self.logger.addHandler(handler)
 
     def _init_parallel_executor(self) -> None:
         """Initialize parallel processing executor."""
@@ -205,6 +242,63 @@ class DataPreprocessor:
                 raise SerializationError(error_msg) from e
             else:
                 raise PreprocessingError(error_msg) from e
+
+    def optimize_for_dataset(self, X, y=None) -> 'DataPreprocessor':
+        """
+        Optimize preprocessor configuration for the given dataset
+        
+        Args:
+            X: Input dataset to optimize for
+            y: Target values (optional)
+            
+        Returns:
+            self: The preprocessor with optimized configuration
+        """
+        if not OPTIMIZATION_AVAILABLE or not self._config_optimizer:
+            self.logger.info("Optimization not available, using default configuration")
+            return self
+        
+        try:
+            import pandas as pd
+            
+            # Convert to DataFrame if needed for optimization
+            if hasattr(X, 'columns'):
+                df = X
+            else:
+                # Convert numpy array to DataFrame for optimization analysis
+                feature_names = [f'feature_{i}' for i in range(X.shape[1])]
+                df = pd.DataFrame(X, columns=feature_names)
+            
+            self.logger.info(f"Optimizing preprocessor for dataset: {df.shape[0]:,} rows, {df.shape[1]} columns")
+            
+            # Get optimized configuration
+            self._adaptive_config = self._config_optimizer.optimize_for_dataset(df)
+            
+            # Update current config with optimized parameters
+            if self._adaptive_config:
+                # Map adaptive config to existing config
+                if hasattr(self.config, 'chunk_size'):
+                    self.config.chunk_size = self._adaptive_config.chunk_size
+                
+                # Update normalization method if different
+                if hasattr(self.config, 'normalization_type'):
+                    norm_mapping = {
+                        'standard': NormalizationType.STANDARD,
+                        'minmax': NormalizationType.MINMAX,
+                        'robust': NormalizationType.ROBUST,
+                        'quantile': NormalizationType.QUANTILE_UNIFORM
+                    }
+                    if self._adaptive_config.normalization_method in norm_mapping:
+                        self.config.normalization_type = norm_mapping[self._adaptive_config.normalization_method]
+                
+                self.logger.info(f"Applied optimization: mode={self._adaptive_config.processing_mode.value}, "
+                               f"chunk_size={self._adaptive_config.chunk_size}, "
+                               f"normalization={self._adaptive_config.normalization_method}")
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to optimize preprocessor configuration: {e}")
+        
+        return self
 
     @log_operation
     def fit(self, X, y=None, feature_names=None, **fit_params):
@@ -1252,7 +1346,7 @@ class DataPreprocessor:
             instance._fitted = state['fitted']
             instance._n_features = state['n_features']
             instance._n_samples_seen = state['n_samples_seen']
-            instance._version = state.get('version', '1.0.0')
+            instance._version = state.get('version', '0.1.4')
             
             # Verify hash for data integrity
             saved_hash = state.get('hash', None)

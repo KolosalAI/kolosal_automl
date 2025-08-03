@@ -46,22 +46,33 @@ from modules.configs import (
 )
 from modules.engine.train_engine import MLTrainingEngine
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler("ml_api.log"),
-        logging.StreamHandler()
-    ]
-)
-logger = logging.getLogger("MLTrainingEngineAPI")
+# Configure centralized logging
+try:
+    from modules.logging_config import get_logger, setup_root_logging
+    setup_root_logging()
+    logger = get_logger(
+        name="MLTrainingEngineAPI",
+        level=logging.INFO,
+        log_file="ml_api.log",
+        enable_console=True
+    )
+except ImportError:
+    # Fallback to basic logging if centralized logging not available
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler("ml_api.log"),
+            logging.StreamHandler()
+        ]
+    )
+    logger = logging.getLogger("MLTrainingEngineAPI")
 
 # Create FastAPI app
 app = FastAPI(
     title="ML Training Engine API",
     description="A RESTful API for training, evaluating, and deploying machine learning models",
-    version="1.0.0"
+    version="0.1.4"
 )
 
 # Enable CORS
@@ -605,7 +616,7 @@ async def root():
     """Root endpoint with API information."""
     return {
         "name": "ML Training Engine API",
-        "version": "1.0.0",
+        "version": "0.1.4",
         "documentation": "/docs",
         "status": "engine_initialized" if ml_engine else "engine_not_initialized"
     }
@@ -793,7 +804,7 @@ async def list_models():
         "count": len(models)
     }
 
-@app.get("/api/models/{model_name}/predict", status_code=200)
+@app.post("/api/models/{model_name}/predict", status_code=200)
 async def predict(model_name: str, request: PredictRequest):
     """Make predictions using a trained model."""
     engine = get_ml_engine()
@@ -1689,7 +1700,7 @@ async def health_check():
     return {
         "status": "healthy",
         "service": "ML Training Engine API",
-        "version": "1.0.0",
+        "version": "0.1.4",
         "engine_initialized": ml_engine is not None,
         "timestamp": datetime.now().isoformat()
     }

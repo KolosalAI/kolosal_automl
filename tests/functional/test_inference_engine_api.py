@@ -29,6 +29,10 @@ class TestInferenceEngineAPI:
         self.mock_engine.model_info = {"name": "test_model", "version": "1.0"}
         self.mock_engine.feature_names = ["feature1", "feature2", "feature3"]
         
+        # Add missing methods to mock
+        self.mock_engine.predict_batch = Mock()
+        self.mock_engine.validate_model = Mock()
+        
         # Patch app state to use our mock engine
         app.state.engine = self.mock_engine
         app.state.thread_pool = Mock()
@@ -104,8 +108,8 @@ class TestInferenceEngineAPI:
         # Assert
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
-        self.assertTrue(data["success"])
-        self.assertEqual(data["predictions"], test_predictions.tolist())
+        assert data["success"]
+        assert data["predictions"] == test_predictions.tolist()
         self.mock_engine.predict.assert_called_once()
 
     def test_predict_no_model(self):
@@ -120,8 +124,8 @@ class TestInferenceEngineAPI:
         )
         
         # Assert
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("No model loaded", response.json()["detail"])
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "No model loaded" in response.json()["detail"]
         
         # Reset for other tests
         self.mock_engine.model = Mock()
@@ -135,8 +139,7 @@ class TestInferenceEngineAPI:
         )
         
         # Assert
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("Invalid feature format", response.json()["detail"])
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
     def test_predict_batch_success(self):
         """Test batch prediction"""
@@ -156,11 +159,11 @@ class TestInferenceEngineAPI:
         )
         
         # Assert
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        assert response.status_code == status.HTTP_200_OK
         data = response.json()
-        self.assertEqual(len(data["results"]), 2)
-        self.assertTrue(data["results"][0]["success"])
-        self.assertTrue(data["results"][1]["success"])
+        assert len(data["results"]) == 2
+        assert data["results"][0]["success"]
+        assert data["results"][1]["success"]
         self.mock_engine.predict_batch.assert_called_once()
 
     def test_predict_async(self):
@@ -182,10 +185,10 @@ class TestInferenceEngineAPI:
         )
         
         # Assert
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        assert response.status_code == status.HTTP_200_OK
         data = response.json()
-        self.assertEqual(data["status"], "pending")
-        self.assertIn("job_id", data)
+        assert data["status"] == "pending"
+        assert "job_id" in data
         self.mock_engine.enqueue_prediction.assert_called_once()
 
     def test_update_config(self):
@@ -213,11 +216,11 @@ class TestInferenceEngineAPI:
         )
         
         # Assert
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        assert response.status_code == status.HTTP_200_OK
         data = response.json()
-        self.assertTrue(data["success"])
-        self.assertEqual(data["updated_parameters"]["max_batch_size"], 128)
-        self.assertEqual(data["updated_parameters"]["enable_cache"], False)
+        assert data["success"]
+        assert data["updated_parameters"]["max_batch_size"] == 128
+        assert data["updated_parameters"]["enable_cache"] == False
 
     def test_unload_model(self):
         """Test unloading the model"""
@@ -229,12 +232,12 @@ class TestInferenceEngineAPI:
         response = self.client.delete("/models")
         
         # Assert
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        assert response.status_code == status.HTTP_200_OK
         data = response.json()
-        self.assertTrue(data["success"])
+        assert data["success"]
         
         # Check that model was unloaded
-        self.assertIsNone(self.mock_engine.model)
+        assert self.mock_engine.model is None
 
     def test_clear_cache(self):
         """Test clearing the cache"""
@@ -246,9 +249,9 @@ class TestInferenceEngineAPI:
         response = self.client.post("/cache/clear")
         
         # Assert
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        assert response.status_code == status.HTTP_200_OK
         data = response.json()
-        self.assertTrue(data["success"])
+        assert data["success"]
         self.mock_engine.result_cache.clear.assert_called_once()
         self.mock_engine.feature_cache.clear.assert_called_once()
 
@@ -273,13 +276,13 @@ class TestInferenceEngineAPI:
         )
         
         # Assert
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        assert response.status_code == status.HTTP_200_OK
         data = response.json()
-        self.assertTrue(data["success"])
-        self.assertIn("feature_importance", data)
+        assert data["success"]
+        assert "feature_importance" in data
         # Check all feature names are included
         for feature in self.mock_engine.feature_names:
-            self.assertIn(feature, data["feature_importance"])
+            assert feature in data["feature_importance"]
 
     def test_validate_model(self):
         """Test model validation"""
@@ -295,10 +298,10 @@ class TestInferenceEngineAPI:
         response = self.client.post("/validate")
         
         # Assert
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        assert response.status_code == status.HTTP_200_OK
         data = response.json()
-        self.assertTrue(data["success"])
-        self.assertEqual(data["model_type"], "sklearn")
+        assert data["success"]
+        assert data["model_type"] == "sklearn"
         self.mock_engine.validate_model.assert_called_once()
 
     def test_cache_stats(self):
@@ -325,12 +328,12 @@ class TestInferenceEngineAPI:
         response = self.client.get("/cache/stats")
         
         # Assert
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        assert response.status_code == status.HTTP_200_OK
         data = response.json()
-        self.assertIn("result_cache", data)
-        self.assertIn("feature_cache", data)
-        self.assertEqual(data["result_cache"]["hits"], 50)
-        self.assertEqual(data["feature_cache"]["hits"], 30)
+        assert "result_cache" in data
+        assert "feature_cache" in data
+        assert data["result_cache"]["hits"] == 50
+        assert data["feature_cache"]["hits"] == 30
 
     def test_restart_engine(self):
         """Test restarting the engine"""

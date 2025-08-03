@@ -8,9 +8,19 @@ import time
 import collections
 import hashlib
 
-# Set up logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(name)s - %(message)s')
-logger = logging.getLogger(__name__)
+# Set up centralized logging
+try:
+    from modules.logging_config import get_logger
+    logger = get_logger(
+        name="quantizer",
+        level=logging.INFO,
+        log_file="quantizer.log",
+        enable_console=True
+    )
+except ImportError:
+    # Fallback to basic logging if centralized logging not available
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(name)s - %(message)s')
+    logger = logging.getLogger(__name__)
 
 from ..configs import QuantizationConfig, QuantizationType, QuantizationMode
 

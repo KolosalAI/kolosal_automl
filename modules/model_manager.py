@@ -27,7 +27,7 @@ class SecureModelManager:
     
     DEFAULT_KEY_ITERATIONS = 200000
     DEFAULT_HASH_ALGORITHM = "sha512"
-    VERSION = "2.0.0"
+    VERSION = "0.1.4"
     
     def __init__(self, config, logger=None, secret_key=None):
         """Initialize the secure model manager with encryption capabilities"""
@@ -164,7 +164,7 @@ class SecureModelManager:
         try:
             # Check version compatibility
             metadata = encrypted_package.get("encryption_metadata", {})
-            package_version = metadata.get("version", "1.0.0")
+            package_version = metadata.get("version", "0.1.4")
             
             if package_version > self.VERSION:
                 self.logger.warning(f"Model was encrypted with a newer version ({package_version}) than current ({self.VERSION})")
@@ -190,7 +190,7 @@ class SecureModelManager:
             
             return deserialized_data
         except InvalidToken:
-            self.logger.error("Invalid encryption token. Key may be incorrect or data corrupted.")
+            self.logger.warning("Invalid encryption token. Key may be incorrect or data corrupted.")
             return None
         except Exception as e:
             self.logger.error(f"Decryption failed: {str(e)}")
@@ -385,11 +385,25 @@ class SecureModelManager:
                 return None
                 
             # Load the raw file content
+            file_content = None
             try:
+                # First try with pickle
                 with open(filepath, 'rb') as f:
                     file_content = pickle.load(f)
+            except (pickle.PickleError, ValueError, EOFError) as pickle_error:
+                self.logger.warning(f"Failed to read with pickle: {str(pickle_error)}, trying joblib...")
+                try:
+                    # Fallback to joblib
+                    file_content = joblib.load(filepath)
+                except Exception as joblib_error:
+                    self.logger.error(f"Failed to read model file with both pickle and joblib. Pickle error: {str(pickle_error)}, Joblib error: {str(joblib_error)}")
+                    return None
             except Exception as e:
                 self.logger.error(f"Failed to read model file: {str(e)}")
+                return None
+                
+            if file_content is None:
+                self.logger.error("Model file content is empty or could not be loaded")
                 return None
                 
             # Check if the model is encrypted
@@ -399,7 +413,7 @@ class SecureModelManager:
                 # Decrypt the model package
                 model_package = self._decrypt_data(file_content)
                 if model_package is None:
-                    self.logger.error("Failed to decrypt model data")
+                    self.logger.warning("Failed to decrypt model data")
                     return None
             elif is_encrypted and (not self.encryption_enabled or self.cipher is None):
                 self.logger.error("Encrypted model detected but encryption is not enabled or initialized")
@@ -476,7 +490,7 @@ class SecureModelManager:
             return True
             
         if access_code is None:
-            self.logger.error("This model requires an access code to load")
+            self.logger.warning("This model requires an access code to load")
             return False
             
         ac = model_package["access_control"]
@@ -484,34 +498,38 @@ class SecureModelManager:
         
         try:
             if method == "scrypt":
-                # Verify with Scrypt
+                # Using scrypt for key derivation
                 kdf = Scrypt(
+                    algorithm=hashes.SHA256(),
+                    length=32,
                     salt=ac["salt"],
-                    length=len(ac["password_hash"]),
-                    n=2**14,  # Reduced from 2**20 for practical performance
-                    r=8,
-                    p=1,
+                    n=ac["n"],
+                    r=ac["r"],
+                    p=ac["p"],
                     backend=default_backend()
                 )
-                # This will raise an exception if verification fails
-                kdf.verify(access_code.encode(), ac["password_hash"])
+                derived_key = kdf.derive(access_code.encode('utf-8'))
             else:
-                # Verify with PBKDF2
-                provided_hash = hashlib.pbkdf2_hmac(
-                    ac.get("algorithm", self.hash_algorithm),
-                    access_code.encode(),
-                    ac["salt"],
-                    ac.get("iterations", self.key_iterations)
+                # Using PBKDF2 for key derivation (default)
+                kdf = PBKDF2HMAC(
+                    algorithm=hashes.SHA256(),
+                    length=32,
+                    salt=ac["salt"],
+                    iterations=ac.get("iterations", 100000),
+                    backend=default_backend()
                 )
-                if not isinstance(provided_hash, bytes) or not isinstance(ac["password_hash"], bytes):
-                    raise ValueError("Hash type mismatch")
-                    
-                if provided_hash != ac["password_hash"]:
-                    raise ValueError("Invalid access code")
-                    
-            return True
+                derived_key = kdf.derive(access_code.encode('utf-8'))
+            
+            # Compare with stored hash
+            stored_hash = ac["hash"]
+            if derived_key == stored_hash:
+                return True
+            else:
+                self.logger.error("Invalid access code provided")
+                return False
+                
         except Exception as e:
-            self.logger.error(f"Access verification failed: {str(e)}")
+            self.logger.warning(f"Access control verification failed: {str(e)}")
             return False
 
     def _get_model_score(self, metrics: Dict[str, float]) -> float:
@@ -714,11 +732,14 @@ class SecureModelManager:
                 self.logger.info(f"Model {filepath} integrity verified successfully")
                 return True
             except InvalidToken:
-                self.logger.error(f"Cannot decrypt {filepath}. Invalid token or wrong encryption key.")
+                self.logger.warning(f"Cannot decrypt {filepath}. Invalid token or wrong encryption key.")
                 return False
             except Exception as e:
                 self.logger.error(f"Integrity check failed with error: {str(e)}")
                 return False
+        except FileNotFoundError:
+            self.logger.error(f"Model file not found: {filepath}")
+            return False
         except Exception as e:
             self.logger.error(f"Failed to verify model integrity: {str(e)}")
             return False

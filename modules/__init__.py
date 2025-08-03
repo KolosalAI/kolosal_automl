@@ -10,8 +10,9 @@ This package contains all the core modules for the ML pipeline including:
 
 from .configs import *
 from .engine import *
+from .model_manager import SecureModelManager
 
-__version__ = "0.1.0"
+__version__ = "0.1.4"
 __author__ = "Kolosal AI Team"
 
 # Package metadata
@@ -43,6 +44,9 @@ __all__ = [
     "BatchProcessor",
     "DataPreprocessor",
     "Quantizer",
+    
+    # From model_manager
+    "SecureModelManager",
     
     # Utils
     "LRUTTLCache",

@@ -9,13 +9,65 @@ import time
 import numpy as np
 from typing import Dict, Any, Optional
 
-# Try to import optimization libraries
+"""
+SIMD-optimized vectorized operations for improved performance.
+
+This module provides SIMD-optimized operations for linear algebra
+that go beyond basic numpy optimizations.
+"""
+
+import time
+import numpy as np
+import logging
+from typing import Dict, Any, Optional
+
+# Configure logger
+logger = logging.getLogger(__name__)
+
+# Safely try to import numba with error handling
+NUMBA_AVAILABLE = False
+NUMBA_ERROR = None
+
 try:
     import numba
     from numba import njit, prange
-    NUMBA_AVAILABLE = True
-except ImportError:
+    
+    # Test basic numba functionality
+    @njit
+    def _test_numba_basic():
+        return 1.0
+    
+    try:
+        _test_numba_basic()
+        NUMBA_AVAILABLE = True
+        logger.debug("Numba successfully initialized for SIMD optimizer")
+    except Exception as e:
+        NUMBA_AVAILABLE = False
+        NUMBA_ERROR = f"Numba test failed: {str(e)}"
+        logger.warning(f"Numba test failed in SIMD optimizer: {str(e)}")
+        
+except ImportError as e:
     NUMBA_AVAILABLE = False
+    NUMBA_ERROR = f"Numba import failed: {str(e)}"
+    logger.debug(f"Numba not available for SIMD optimizer: {str(e)}")
+except Exception as e:
+    NUMBA_AVAILABLE = False
+    NUMBA_ERROR = f"Numba initialization failed: {str(e)}"
+    logger.warning(f"Numba initialization failed in SIMD optimizer: {str(e)}")
+
+# Define fallback decorators if numba is not available
+if not NUMBA_AVAILABLE:
+    def njit(*args, **kwargs):
+        """Fallback njit decorator that does nothing."""
+        def decorator(func):
+            return func
+        if len(args) == 1 and callable(args[0]):
+            return args[0]
+        return decorator
+    
+    def prange(*args, **kwargs):
+        """Fallback prange that uses regular range."""
+        return range(*args, **kwargs)
 
 
 class SIMDOptimizer:
@@ -28,9 +80,17 @@ class SIMDOptimizer:
         self.use_numba = NUMBA_AVAILABLE
         self.cpu_features = self._detect_cpu_features()
         
+        if not NUMBA_AVAILABLE:
+            if NUMBA_ERROR:
+                logger.info(f"SIMD optimizer using fallback mode: {NUMBA_ERROR}")
+            else:
+                logger.info("SIMD optimizer using fallback mode: Numba not available")
+        
         # Pre-compile frequently used functions
         if self.use_numba:
             self._compile_optimized_functions()
+        else:
+            logger.info("SIMD optimizer initialized in numpy fallback mode")
     
     def _detect_cpu_features(self) -> Dict[str, bool]:
         """Detect available CPU SIMD features"""

@@ -3,6 +3,7 @@ Simple test to verify pytest setup is working correctly.
 """
 import pytest
 import numpy as np
+import logging
 
 
 @pytest.mark.unit
@@ -15,6 +16,16 @@ class TestBasicSetup:
         import os
         import numpy as np
         assert True
+
+    def test_logging_setup(self, test_logger):
+        """Test that logging is properly configured."""
+        test_logger.info("Testing log output - this should appear in tests/test.log")
+        test_logger.warning("Testing warning message")
+        test_logger.error("Testing error message")
+        
+        # Verify logger is working
+        assert test_logger is not None
+        assert isinstance(test_logger, logging.Logger)
 
     def test_numpy_operations(self):
         """Test basic numpy operations."""

@@ -128,6 +128,17 @@ class MixedPrecisionManager:
         # Initialize framework-specific components
         self._initialize_frameworks()
         
+    def initialize(self):
+        """
+        Initialize the mixed precision manager for compatibility with training engine.
+        This method exists for API compatibility but actual initialization
+        happens in __init__.
+        """
+        if self.config.enable_fp16 and self.supports_fp16:
+            self.logger.info("Mixed precision manager initialization complete with FP16 enabled")
+        else:
+            self.logger.info("Mixed precision manager initialization complete with FP32 fallback")
+        
         self.logger.info(f"Mixed precision manager initialized. FP16 support: {self.supports_fp16}")
     
     def _detect_fp16_support(self) -> bool:

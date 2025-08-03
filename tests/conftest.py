@@ -11,13 +11,44 @@ import pandas as pd
 import numpy as np
 import tempfile
 import shutil
+import logging
 from pathlib import Path
 from unittest.mock import Mock, MagicMock
+from _pytest.capture import CaptureFixture
+from io import StringIO
 
 # Add project root to the Python path for all tests
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
+
+# Configure logging for tests
+def setup_test_logging():
+    """Set up logging configuration for tests."""
+    # Create logs directory if it doesn't exist
+    log_dir = Path("tests")
+    log_dir.mkdir(exist_ok=True)
+    
+    # Configure root logger
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s [%(levelname)8s] %(name)s: %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S',
+        handlers=[
+            logging.FileHandler(log_dir / "test.log", mode='a'),
+            logging.StreamHandler()
+        ]
+    )
+    
+    # Set specific log levels for different modules
+    logging.getLogger('urllib3').setLevel(logging.WARNING)
+    logging.getLogger('requests').setLevel(logging.WARNING)
+    logging.getLogger('matplotlib').setLevel(logging.WARNING)
+    
+    return logging.getLogger(__name__)
+
+# Set up logging when conftest is imported
+test_logger = setup_test_logging()
 
 # Import shared configurations
 try:
@@ -32,6 +63,103 @@ except ImportError:
         def __init__(self):
             self.model_path = "./test_models"
             self.task_type = TaskType.CLASSIFICATION
+
+@pytest.fixture(scope="session", autouse=True)
+def setup_test_session():
+    """Set up the test session with logging."""
+    logger = logging.getLogger("test_session")
+    logger.info("=" * 80)
+    logger.info("Starting test session")
+    logger.info("=" * 80)
+    yield
+    logger.info("=" * 80)
+    logger.info("Test session completed")
+    logger.info("=" * 80)
+
+@pytest.fixture(scope="function", autouse=True)
+def log_test_start_end(request):
+    """Log the start and end of each test."""
+    logger = logging.getLogger("test_function")
+    test_name = request.node.name
+    logger.info(f"Starting test: {test_name}")
+    yield
+    logger.info(f"Completed test: {test_name}")
+
+def pytest_runtest_logreport(report):
+    """Log test results with PASS/FAIL/ERROR status."""
+    logger = logging.getLogger("test_result")
+    
+    if report.when == "call":  # Only log the main test phase, not setup/teardown
+        test_name = report.nodeid.split("::")[-1] if "::" in report.nodeid else report.nodeid
+        
+        if report.outcome == "passed":
+            logger.info(f"[PASS] {test_name}")
+        elif report.outcome == "failed":
+            logger.info(f"[FAIL] {test_name}")
+            if hasattr(report, 'longrepr') and report.longrepr:
+                # Log the failure reason (first line of traceback)
+                failure_msg = str(report.longrepr).split('\n')[0] if report.longrepr else "Unknown error"
+                logger.info(f"  Reason: {failure_msg}")
+        elif report.outcome == "skipped":
+            logger.warning(f"[SKIP] {test_name}")
+            if hasattr(report, 'longrepr') and report.longrepr:
+                skip_reason = str(report.longrepr).split('\n')[0] if report.longrepr else "Unknown reason"
+                logger.warning(f"  Reason: {skip_reason}")
+
+def pytest_runtest_call(item):
+    """Log when a test is being executed."""
+    logger = logging.getLogger("test_execution")
+    test_name = item.name
+    logger.debug(f"Executing test: {test_name}")
+
+def pytest_exception_interact(node, call, report):
+    """Log test errors with more detail."""
+    if call.when == "call" and report.outcome == "failed":
+        logger = logging.getLogger("test_error")
+        test_name = node.name
+        logger.error(f"ERROR in {test_name}: {call.excinfo.typename}: {call.excinfo.value}")
+
+def pytest_sessionstart(session):
+    """Log session start with summary."""
+    logger = logging.getLogger("test_session")
+    logger.info("=" * 80)
+    logger.info("PYTEST SESSION START")
+    logger.info("=" * 80)
+
+def pytest_sessionfinish(session, exitstatus):
+    """Log session finish with final summary."""
+    logger = logging.getLogger("test_session")
+    
+    logger.info("=" * 80)
+    logger.info("PYTEST SESSION SUMMARY")
+    
+    # Get test results from pytest's terminal reporter
+    if hasattr(session.config, 'pluginmanager'):
+        terminalreporter = session.config.pluginmanager.get_plugin('terminalreporter')
+        if terminalreporter:
+            stats = terminalreporter.stats
+            passed = len(stats.get('passed', []))
+            failed = len(stats.get('failed', []))
+            error = len(stats.get('error', []))
+            skipped = len(stats.get('skipped', []))
+            
+            total_tests = passed + failed + error + skipped
+            if total_tests > 0:
+                logger.info(f"Total tests: {total_tests}")
+                logger.info(f"Results: {passed} passed, {failed} failed, {error} errors, {skipped} skipped")
+                
+                if failed > 0 or error > 0:
+                    logger.error(f"EXIT STATUS: {exitstatus} (FAILED)")
+                else:
+                    logger.info(f"EXIT STATUS: {exitstatus} (SUCCESS)")
+            else:
+                logger.info(f"EXIT STATUS: {exitstatus}")
+        else:
+            logger.info(f"EXIT STATUS: {exitstatus}")
+    else:
+        logger.info(f"EXIT STATUS: {exitstatus}")
+        
+    logger.info("=" * 80)
 
 @pytest.fixture(scope="session")
 def test_dir():
@@ -68,6 +196,9 @@ def cleanup_test_artifacts():
     """Clean up temporary files after all tests have run."""
     yield  # Run all tests first
     
+    logger = logging.getLogger("test_cleanup")
+    logger.info("Starting cleanup of test artifacts...")
+    
     # Then clean up directories
     cleanup_dirs = [
         "./test_models",
@@ -87,8 +218,14 @@ def cleanup_test_artifacts():
         if path.exists():
             try:
                 shutil.rmtree(path)
+                logger.info(f"Cleaned up directory: {dir_path}")
             except (OSError, PermissionError) as e:
-                print(f"Warning: Could not clean up {dir_path}: {e}")
+                logger.warning(f"Could not clean up {dir_path}: {e}")
+
+@pytest.fixture
+def test_logger():
+    """Provide a logger for tests to use."""
+    return logging.getLogger("test")
 
 @pytest.fixture
 def sample_data():

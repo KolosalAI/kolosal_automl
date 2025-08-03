@@ -84,12 +84,45 @@ from ..configs import (
 )
 
 # SIMD Optimizations for vectorized operations
+NUMBA_AVAILABLE = False
+NUMBA_ERROR = None
+
 try:
     import numba
     from numba import njit, prange
-    NUMBA_AVAILABLE = True
-except ImportError:
+    
+    # Test basic numba functionality
+    @njit
+    def _test_numba_inference():
+        return 1.0
+    
+    try:
+        _test_numba_inference()
+        NUMBA_AVAILABLE = True
+    except Exception as e:
+        NUMBA_AVAILABLE = False
+        NUMBA_ERROR = f"Numba test failed: {str(e)}"
+        
+except ImportError as e:
     NUMBA_AVAILABLE = False
+    NUMBA_ERROR = f"Numba import failed: {str(e)}"
+except Exception as e:
+    NUMBA_AVAILABLE = False
+    NUMBA_ERROR = f"Numba initialization failed: {str(e)}"
+
+# Define fallback decorators if numba is not available
+if not NUMBA_AVAILABLE:
+    def njit(*args, **kwargs):
+        """Fallback njit decorator that does nothing."""
+        def decorator(func):
+            return func
+        if len(args) == 1 and callable(args[0]):
+            return args[0]
+        return decorator
+    
+    def prange(*args, **kwargs):
+        """Fallback prange that uses regular range."""
+        return range(*args, **kwargs)
 
 
 
@@ -262,27 +295,42 @@ class InferenceEngine:
     
     def _setup_logging(self) -> logging.Logger:
         """Configure logging based on configuration"""
-        logger = logging.getLogger(f"{__name__}.InferenceEngine")
-        
         # Set logging level based on debug mode
         level = logging.DEBUG if self.config.debug_mode else logging.INFO
-        logger.setLevel(level)
         
-        # Only add handlers if none exist
-        if not logger.handlers:
-            # Console handler
-            console_handler = logging.StreamHandler()
-            console_handler.setLevel(level)
-            
-            # Format
-            formatter = logging.Formatter(
-                '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        try:
+            from modules.logging_config import get_logger
+            logger = get_logger(
+                name=f"InferenceEngine",
+                level=level,
+                log_file="inference_engine.log",
+                enable_console=True
             )
-            console_handler.setFormatter(formatter)
-            logger.addHandler(console_handler)
-        
-        # Use lazy logging for performance
-        logger.propagate = False
+        except ImportError:
+            # Fallback to basic logging if centralized logging not available
+            logger = logging.getLogger(f"{__name__}.InferenceEngine")
+            logger.setLevel(level)
+            
+            # Only add handlers if none exist
+            if not logger.handlers:
+                # Safe console handler that handles closed streams
+                try:
+                    from modules.logging_config import SafeStreamHandler
+                    console_handler = SafeStreamHandler()
+                except ImportError:
+                    console_handler = logging.StreamHandler()
+                    
+                console_handler.setLevel(level)
+                
+                # Format
+                formatter = logging.Formatter(
+                    '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+                )
+                console_handler.setFormatter(formatter)
+                logger.addHandler(console_handler)
+            
+            # Use lazy logging for performance
+            logger.propagate = False
         
         return logger
     
@@ -376,6 +424,23 @@ class InferenceEngine:
         
         if self.logger.isEnabledFor(logging.INFO):
             self.logger.info(f"Advanced resource management configured with {thread_count} threads")
+    
+    def _control_threading(self, max_threads: int = 1):
+        """Context manager to control threading for numerical libraries during prediction."""
+        from contextlib import contextmanager
+        
+        @contextmanager
+        def thread_controller():
+            if THREADPOOLCTL_AVAILABLE:
+                # Control threadpoolctl libraries
+                with threadpoolctl.threadpool_limits(limits=max_threads, user_api="blas"):
+                    with threadpoolctl.threadpool_limits(limits=max_threads, user_api="openmp"):
+                        yield
+            else:
+                # Fallback - just yield without thread control
+                yield
+        
+        return thread_controller()
     
     def _thread_pool_initializer(self):
         """Initialize worker thread with optimized settings"""
@@ -999,7 +1064,7 @@ class InferenceEngine:
             
             # Use optimized prediction with all enhancements
             with self._control_threading(1):  # Limit threads during prediction
-                predictions = self._predict_with_optimizations(features)
+                predictions = self._predict_internal(features)
                     
             inference_time = time.time() - predict_start
             
@@ -1080,6 +1145,9 @@ class InferenceEngine:
         if self.model is None:
             raise RuntimeError("No model loaded")
         
+        # Get the model type early
+        model_type = self.model_type
+        
         # Apply JIT compilation for frequently called prediction methods
         if hasattr(self, 'jit_compiler') and hasattr(self.config, 'enable_jit_compilation') and self.config.enable_jit_compilation:
             # Use JIT compiler for model prediction if supported
@@ -1096,7 +1164,6 @@ class InferenceEngine:
             features = np.ascontiguousarray(features)
             
         # Choose prediction method based on model type
-        model_type = self.model_type
         if model_type == ModelType.SKLEARN:
             # Scikit-learn models 
             # For batch predictions, use vectorized APIs directly
@@ -1383,10 +1450,25 @@ class InferenceEngine:
             # Restore original chunk size
             self.streaming_pipeline.chunk_size = original_chunk_size
     
+    def _safe_log(self, level, message):
+        """Safely log a message, avoiding I/O errors during shutdown."""
+        try:
+            if hasattr(self, 'logger') and self.logger:
+                # Check if logger handlers are still valid
+                for handler in self.logger.handlers:
+                    if hasattr(handler, 'stream') and hasattr(handler.stream, 'closed'):
+                        if handler.stream.closed:
+                            return  # Skip logging if stream is closed
+                
+                getattr(self.logger, level)(message)
+        except (ValueError, OSError, AttributeError):
+            # Silently ignore logging errors during shutdown
+            pass
+    
     def shutdown(self):
         """Shutdown the inference engine and clean up resources."""
         try:
-            self.logger.info("Shutting down inference engine")
+            self._safe_log("info", "Shutting down inference engine")
             
             # Stop monitoring
             if hasattr(self, '_monitoring_active'):
@@ -1402,14 +1484,23 @@ class InferenceEngine:
             if hasattr(self, 'feature_cache') and self.feature_cache:
                 self.feature_cache.clear()
             
+            # Clear memory pool
+            if hasattr(self, 'memory_pool') and self.memory_pool:
+                self.memory_pool.clear()
+            
             # Cleanup models
             if hasattr(self, 'model'):
                 self.model = None
+            if hasattr(self, 'compiled_model'):
+                self.compiled_model = None
+                
+            # Set state to stopped
+            self.state = EngineState.STOPPED
             
-            self.logger.info("Inference engine shutdown complete")
+            self._safe_log("info", "Inference engine shutdown complete")
             
         except Exception as e:
-            self.logger.error(f"Error during shutdown: {str(e)}")
+            self._safe_log("error", f"Error during shutdown: {str(e)}")
     
     def _compile_model(self):
         """Compile the model for faster inference if supported."""
@@ -1541,3 +1632,99 @@ class InferenceEngine:
         else:
             # Fallback: convert to string and hash
             return hash(str(features))
+    
+    def get_performance_metrics(self) -> Dict[str, Any]:
+        """Get performance metrics for the inference engine."""
+        try:
+            # Basic metrics
+            metrics = {
+                'state': self.state.value if hasattr(self.state, 'value') else str(self.state),
+                'model_loaded': self.model is not None,
+                'total_predictions': getattr(self, '_prediction_count', 0),
+                'cache_stats': {}
+            }
+            
+            # Add cache statistics if cache is available
+            if hasattr(self, 'cache') and self.cache is not None:
+                if hasattr(self.cache, 'get_stats'):
+                    metrics['cache_stats'] = self.cache.get_stats()
+                else:
+                    metrics['cache_stats'] = {'enabled': True}
+            
+            # Add batch processor metrics if available
+            if hasattr(self, 'batch_processor') and self.batch_processor is not None:
+                if hasattr(self.batch_processor, 'get_metrics'):
+                    metrics['batch_processor'] = self.batch_processor.get_metrics()
+                else:
+                    metrics['batch_processor'] = {'enabled': True}
+            
+            # Add memory pool metrics if available
+            if hasattr(self, 'memory_pool') and self.memory_pool is not None:
+                if hasattr(self.memory_pool, 'get_stats'):
+                    metrics['memory_pool'] = self.memory_pool.get_stats()
+                else:
+                    metrics['memory_pool'] = {'enabled': True}
+            
+            return metrics
+        except Exception as e:
+            self.logger.error(f"Error getting performance metrics: {e}")
+            return {'error': str(e)}
+    
+    def validate_model(self) -> Dict[str, Any]:
+        """Validate that the loaded model is working correctly."""
+        try:
+            if self.model is None:
+                self.logger.warning("No model loaded for validation")
+                return {
+                    "valid": False,
+                    "error": "No model loaded",
+                    "model_type": "None"
+                }
+            
+            # Check if model has required attributes/methods
+            if hasattr(self.model, 'predict'):
+                # Try a simple prediction with dummy data
+                try:
+                    # Create simple test data based on model info
+                    num_features = 5  # default
+                    
+                    # Try to detect the number of features from the model
+                    if hasattr(self.model, 'n_features_in_'):
+                        num_features = self.model.n_features_in_
+                    elif hasattr(self, 'model_info') and 'input_shape' in self.model_info:
+                        input_shape = self.model_info['input_shape']
+                        if isinstance(input_shape, (list, tuple)) and len(input_shape) > 1:
+                            num_features = input_shape[1]
+                    
+                    test_data = np.random.random((1, num_features)).astype(np.float32)
+                    
+                    # Try prediction
+                    _ = self.model.predict(test_data)
+                    self.logger.info("Model validation successful")
+                    return {
+                        "valid": True,
+                        "model_type": self.model_type.name if self.model_type else "Unknown",
+                        "test_prediction_successful": True
+                    }
+                except Exception as pred_error:
+                    self.logger.warning(f"Model prediction test failed: {pred_error}")
+                    return {
+                        "valid": False,
+                        "error": f"Model prediction test failed: {pred_error}",
+                        "model_type": self.model_type.name if self.model_type else "Unknown"
+                    }
+            else:
+                self.logger.warning("Model does not have predict method")
+                return {
+                    "valid": False,
+                    "error": "Model does not have predict method",
+                    "model_type": self.model_type.name if self.model_type else "Unknown"
+                }
+                
+        except Exception as e:
+            self.logger.error(f"Error validating model: {e}")
+            return {
+                "valid": False,
+                "error": f"Validation error: {e}",
+                "model_type": "Unknown"
+            }

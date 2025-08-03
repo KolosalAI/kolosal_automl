@@ -30,6 +30,11 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+try:
+    import psutil
+except ImportError:
+    psutil = None
+
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
@@ -57,16 +62,35 @@ from modules.configs import (
     PrioritizedItem
 )
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler("batch_processor_api.log")
-    ]
-)
-logger = logging.getLogger("batch_processor_api")
+# Configure centralized logging
+try:
+    from modules.logging_config import get_logger, setup_root_logging
+    setup_root_logging()
+    logger = get_logger(
+        name="batch_processor_api",
+        level=logging.INFO,
+        log_file="batch_processor_api.log",
+        enable_console=True
+    )
+except ImportError:
+    # Fallback to basic logging if centralized logging not available
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.StreamHandler(),
+            logging.FileHandler("batch_processor_api.log")
+        ]
+    )
+    logger = logging.getLogger("batch_processor_api")
+
+# Global variables
+batch_processor: Optional[BatchProcessor] = None
+batch_results: Dict[str, Dict[str, Any]] = {}
+default_process_func: Optional[Callable] = None
+
+# Security setup
+api_security = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 # --- Pydantic Models ---
 
@@ -143,7 +167,7 @@ class ProcessingResponse(BaseModel):
 api_config = {
     "title": "Batch Processor API",
     "description": "High-performance batch processing API for ML workloads",
-    "version": "1.0.0",
+    "version": "0.1.4",
     "host": os.environ.get("BATCH_API_HOST", "0.0.0.0"),
     "port": int(os.environ.get("BATCH_API_PORT", "8001")),
     "debug": parse_bool_env("BATCH_API_DEBUG", "0"),
@@ -241,6 +265,55 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# API key verification
+async def verify_api_key(api_key: Optional[str] = Depends(api_security)):
+    """Verify API key if required"""
+    if not api_config["require_api_key"]:
+        return True
+    
+    if not api_key or api_key not in api_config["api_keys"]:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or missing API key",
+            headers={"WWW-Authenticate": "ApiKey"},
+        )
+    return True
+
+# Error handling middleware
+@app.middleware("http")
+async def error_handling_middleware(request: Request, call_next):
+    """Global error handling middleware"""
+    try:
+        response = await call_next(request)
+        return response
+    except Exception as e:
+        logger.error(f"Unhandled error: {str(e)}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error": "Internal server error",
+                "message": "An unexpected error occurred",
+                "timestamp": datetime.now().isoformat()
+            }
+        )
+
+# Request logging middleware
+@app.middleware("http")
+async def logging_middleware(request: Request, call_next):
+    """Request logging middleware"""
+    start_time = time.time()
+    
+    response = await call_next(request)
+    
+    process_time = time.time() - start_time
+    logger.info(
+        f"{request.method} {request.url.path} - "
+        f"Status: {response.status_code} - "
+        f"Time: {process_time:.3f}s"
+    )
+    
+    return response
+
 # Add middleware
 app.add_middleware(
     CORSMiddleware,
@@ -249,6 +322,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 # --- API Endpoints ---
@@ -266,12 +340,16 @@ async def health_check():
 @app.post("/configure", dependencies=[Depends(verify_api_key)])
 async def configure_processor(config_request: BatchProcessorConfigRequest):
     """Configure the batch processor"""
-    global batch_processor
+    global batch_processor, default_process_func
     
     try:
         # Stop existing processor if running
         if batch_processor:
             batch_processor.stop()
+        
+        # Preserve the processing function if not set
+        if default_process_func is None:
+            default_process_func = default_processing_function
         
         # Create new configuration
         config = BatchProcessorConfig(
@@ -309,6 +387,10 @@ async def start_processor():
     
     if not batch_processor:
         raise HTTPException(status_code=400, detail="Processor not configured")
+    
+    # Ensure we have a processing function
+    if default_process_func is None:
+        default_process_func = default_processing_function
     
     try:
         batch_processor.start(default_process_func)
@@ -544,6 +626,190 @@ async def update_batch_size(new_size: int = Body(..., embed=True)):
     except Exception as e:
         logger.error(f"Update batch size error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to update batch size: {str(e)}")
+
+# Additional batch processing endpoints
+
+@app.post("/submit", dependencies=[Depends(verify_api_key)])
+async def submit_batch(
+    data: List[Dict[str, Any]] = Body(...),
+    priority: str = Body("normal"),
+    metadata: Optional[Dict[str, Any]] = Body({}),
+    background_tasks: BackgroundTasks = None
+):
+    """Submit a batch for processing"""
+    global batch_processor
+    
+    if not batch_processor:
+        raise HTTPException(status_code=400, detail="Processor not configured")
+    
+    batch_id = str(uuid.uuid4())
+    
+    try:
+        # Store batch request
+        if batch_id not in batch_results:
+            batch_results[batch_id] = {
+                "status": "submitted",
+                "submitted_at": datetime.now().isoformat(),
+                "data": data,
+                "priority": priority,
+                "metadata": metadata,
+                "results": None,
+                "error": None
+            }
+        
+        # Process in background
+        if background_tasks:
+            background_tasks.add_task(process_batch_background, batch_id, data, priority)
+        
+        return {
+            "batch_id": batch_id,
+            "status": "submitted",
+            "items_count": len(data),
+            "priority": priority,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Submit batch error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to submit batch: {str(e)}")
+
+@app.get("/status/{batch_id}", dependencies=[Depends(verify_api_key)])
+async def get_batch_status(batch_id: str):
+    """Get batch processing status"""
+    if batch_id not in batch_results:
+        raise HTTPException(status_code=404, detail="Batch not found")
+    
+    batch_info = batch_results[batch_id]
+    return {
+        "batch_id": batch_id,
+        "status": batch_info["status"],
+        "submitted_at": batch_info["submitted_at"],
+        "items_count": len(batch_info["data"]),
+        "priority": batch_info["priority"],
+        "timestamp": datetime.now().isoformat()
+    }
+
+@app.get("/results/{batch_id}", dependencies=[Depends(verify_api_key)])
+async def get_batch_results(batch_id: str):
+    """Get batch processing results"""
+    if batch_id not in batch_results:
+        raise HTTPException(status_code=404, detail="Batch not found")
+    
+    batch_info = batch_results[batch_id]
+    
+    if batch_info["status"] != "completed":
+        raise HTTPException(status_code=202, detail="Batch not yet completed")
+    
+    return {
+        "batch_id": batch_id,
+        "status": batch_info["status"],
+        "results": batch_info["results"],
+        "error": batch_info["error"],
+        "metadata": batch_info["metadata"],
+        "timestamp": datetime.now().isoformat()
+    }
+
+@app.get("/metrics", dependencies=[Depends(verify_api_key)])
+async def get_metrics():
+    """Get system metrics"""
+    global batch_processor
+    
+    try:
+        if batch_processor:
+            stats = batch_processor.get_stats()
+        else:
+            stats = {}
+        
+        system_metrics = {}
+        if psutil:
+            cpu_usage = psutil.cpu_percent(interval=1)
+            memory_info = psutil.virtual_memory()
+            system_metrics = {
+                "cpu_usage_percent": cpu_usage,
+                "memory_usage_percent": memory_info.percent,
+                "memory_available_mb": memory_info.available / (1024 * 1024),
+                "memory_total_mb": memory_info.total / (1024 * 1024)
+            }
+        
+        return {
+            "processor_stats": stats,
+            "system_metrics": system_metrics,
+            "batch_tracking": {
+                "total_batches": len(batch_results),
+                "completed_batches": len([b for b in batch_results.values() if b["status"] == "completed"]),
+                "pending_batches": len([b for b in batch_results.values() if b["status"] in ["submitted", "processing"]])
+            },
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Metrics error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get metrics: {str(e)}")
+
+@app.get("/analytics", dependencies=[Depends(verify_api_key)])
+async def get_performance_analytics():
+    """Get performance analytics"""
+    global batch_processor
+    
+    try:
+        analytics_data = {
+            "processing_performance": {},
+            "resource_utilization": {},
+            "error_analysis": {},
+            "throughput_metrics": {},
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        if batch_processor and hasattr(batch_processor, 'get_stats'):
+            stats = batch_processor.get_stats()
+            
+            analytics_data["processing_performance"] = {
+                "average_processing_time": stats.get("avg_processing_time", 0),
+                "average_batch_size": stats.get("avg_batch_size", 0),
+                "total_processed": stats.get("total_processed", 0),
+                "current_throughput": stats.get("throughput", 0)
+            }
+            
+            analytics_data["resource_utilization"] = {
+                "queue_utilization": min(1.0, stats.get("queue_size", 0) / max(1, stats.get("max_queue_size", 1000))),
+                "active_workers": stats.get("active_workers", 0),
+                "memory_usage_mb": stats.get("memory_usage_mb", 0)
+            }
+        
+        return analytics_data
+    except Exception as e:
+        logger.error(f"Analytics error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get analytics: {str(e)}")
+
+# Background processing function
+async def process_batch_background(batch_id: str, data: List[Dict[str, Any]], priority: str):
+    """Process batch in background"""
+    global batch_processor, batch_results
+    
+    try:
+        batch_results[batch_id]["status"] = "processing"
+        batch_results[batch_id]["processing_started_at"] = datetime.now().isoformat()
+        
+        # Convert data and process
+        np_data = np.array([item.get("data", []) for item in data], dtype=np.float32)
+        priority_enum = get_priority_enum(priority)
+        
+        # Submit for batch processing
+        future = batch_processor.enqueue_predict(np_data, priority=priority_enum)
+        results = future.result(timeout=300.0)  # 5 minute timeout
+        
+        batch_results[batch_id].update({
+            "status": "completed",
+            "results": results.tolist() if hasattr(results, "tolist") else results,
+            "completed_at": datetime.now().isoformat(),
+            "error": None
+        })
+        
+    except Exception as e:
+        logger.error(f"Background processing error for batch {batch_id}: {str(e)}")
+        batch_results[batch_id].update({
+            "status": "failed",
+            "error": str(e),
+            "failed_at": datetime.now().isoformat()
+        })
 
 # --- Main Entry Point ---
 

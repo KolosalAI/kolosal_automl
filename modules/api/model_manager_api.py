@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends, File, UploadFile, BackgroundTasks, Query, Path as FastAPIPath
+from fastapi import FastAPI, HTTPException, Depends, File, UploadFile, BackgroundTasks, Query, Path as FastAPIPath, Body
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials, APIKeyHeader
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -23,22 +23,33 @@ sys.path.insert(0, str(project_root))
 from modules.model_manager import SecureModelManager
 from modules.configs import TaskType  # Assuming this is importable from the same location
 
-# Set up logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler("model_manager_api.log")
-    ]
-)
-logger = logging.getLogger(__name__)
+# Set up centralized logging
+try:
+    from modules.logging_config import get_logger, setup_root_logging
+    setup_root_logging()
+    logger = get_logger(
+        name="model_manager_api",
+        level=logging.INFO,
+        log_file="model_manager_api.log",
+        enable_console=True
+    )
+except ImportError:
+    # Fallback to basic logging if centralized logging not available
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.StreamHandler(),
+            logging.FileHandler("model_manager_api.log")
+        ]
+    )
+    logger = logging.getLogger(__name__)
 
 # Initialize FastAPI app
 app = FastAPI(
     title="Secure Model Manager API",
     description="API for managing machine learning models with advanced security features",
-    version="1.0.0"
+    version="0.1.4"
 )
 
 # Add CORS middleware
@@ -295,7 +306,7 @@ async def list_managers():
 @app.post("/api/managers/{manager_id}/models/save", response_model=OperationResponse, dependencies=[Depends(get_current_user)])
 async def save_model(
     manager_id: str = FastAPIPath(..., description="ID of the manager to use"),
-    request: ModelSaveRequest = None
+    request: ModelSaveRequest = Body(...)
 ):
     """
     Save a model using the specified manager.
@@ -339,7 +350,7 @@ async def save_model(
 @app.post("/api/managers/{manager_id}/models/load", response_model=OperationResponse, dependencies=[Depends(get_current_user)])
 async def load_model(
     manager_id: str = FastAPIPath(..., description="ID of the manager to use"),
-    request: ModelLoadRequest = None
+    request: ModelLoadRequest = Body(...)
 ):
     """
     Load a model using the specified manager.
@@ -606,7 +617,7 @@ async def api_info():
     """API information endpoint"""
     return {
         "name": "Secure Model Manager API",
-        "version": "1.0.0",
+        "version": "0.1.4",
         "description": "API for managing machine learning models with advanced security features",
         "docs_url": "/docs",
         "total_managers": len(manager_instances)

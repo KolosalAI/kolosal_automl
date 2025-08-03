@@ -115,7 +115,7 @@ class MLTrainingEngine:
     - Integration with InferenceEngine for deployment
     """
     
-    VERSION = "1.0.0"
+    VERSION = "0.1.4"
     
     def __init__(self, config: MLTrainingEngineConfig):
         """
@@ -134,13 +134,23 @@ class MLTrainingEngine:
         self.training_complete = False
         self._shutdown_handlers_registered = False
         
-        # Set up logging
-        logging.basicConfig(
-            level=getattr(logging, config.log_level),
-            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-        )
-        self.logger = logging.getLogger("MLTrainingEngine")
-        self.logger.setLevel(getattr(logging, config.log_level))
+        # Set up logging using centralized configuration
+        try:
+            from modules.logging_config import get_logger
+            self.logger = get_logger(
+                name="MLTrainingEngine",
+                level=getattr(logging, config.log_level),
+                log_file="ml_training_engine.log",
+                enable_console=True
+            )
+        except ImportError:
+            # Fallback to basic logging if centralized logging not available
+            logging.basicConfig(
+                level=getattr(logging, config.log_level),
+                format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+            )
+            self.logger = logging.getLogger("MLTrainingEngine")
+            self.logger.setLevel(getattr(logging, config.log_level))
         
         # Initialize experiment tracker if enabled
         if config.experiment_tracking:
@@ -290,6 +300,14 @@ class MLTrainingEngine:
                 self.batch_processor.stop()
         except Exception as e:
             self.logger.error(f"Error shutting down components: {str(e)}")
+        
+        # Clean up logging resources
+        try:
+            from modules.logging_config import cleanup_logging
+            cleanup_logging()
+        except Exception as e:
+            # Use print since logging might be shutting down
+            print(f"Error cleaning up logging: {e}")
             
         self.logger.info("Cleanup complete")
         

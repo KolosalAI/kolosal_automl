@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-kolosal AutoML Training & Inference System Version v0.1.2
+kolosal AutoML Training & Inference System Version v0.1.4
 ML Main CLI
 
 Main entry point for the kolosal AutoML system. Allows users to choose between
@@ -19,6 +19,8 @@ import argparse
 import subprocess
 from pathlib import Path
 from typing import Optional
+import msvcrt  # For Windows key detection
+import time
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent
@@ -37,7 +39,7 @@ def print_banner():
 ║  ╚═╝  ╚═╝ ╚═════╝ ╚══════╝ ╚═════╝ ╚══════╝╚═╝  ╚═╝╚══════╝   ╚═╝  ╚═╝╚═╝    ║
 ║                                                                              ║
 ║                         AutoML Training & Inference System                   ║
-║                                 Version v0.1.3                               ║
+║                                 Version v0.1.4                               ║
 ║                                                                              ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
     """
@@ -165,67 +167,328 @@ def show_system_info():
     except Exception as e:
         print(f"❌ Error getting system info: {e}")
 
-def interactive_mode():
-    """Run in interactive mode - let user choose."""
-    print_help()
+def clear_screen():
+    """Clear the terminal screen."""
+    os.system('cls' if os.name == 'nt' else 'clear')
+
+def get_key():
+    """Get a single keypress on Windows."""
+    if os.name == 'nt':
+        while True:
+            if msvcrt.kbhit():
+                key = msvcrt.getch()
+                if key == b'\x00' or key == b'\xe0':  # Special keys (arrows, etc.)
+                    key = msvcrt.getch()
+                    return ord(key)
+                else:
+                    return ord(key)
+            time.sleep(0.01)
+    else:
+        # For Unix/Linux systems, you'd need termios/tty
+        return ord(input()[0]) if input() else 0
+
+def filter_options(options, query):
+    """Filter menu options based on search query."""
+    if not query:
+        return options
+    return [opt for opt in options if query.lower() in opt['title'].lower() or query.lower() in opt['description'].lower()]
+
+def draw_cli_interface(title, options, selected_idx, search_query="", search_mode=False):
+    """Draw the CLI interface with given options."""
+    clear_screen()
+    
+    # Header
+    print(f"Kolosal CLI - {title}")
+    print("Use UP/DOWN arrows to navigate, ENTER to select, ESC or Ctrl+C to exit")
+    print("Press '/' to search, BACKSPACE to clear search")
+    print()
+    
+    # Search box
+    if search_mode:
+        print(f"Search: {search_query}_")
+    else:
+        if search_query:
+            print(f"Search: {search_query}")
+        else:
+            print("Search: (Press '/' to search)")
+    print()
+    
+    # Menu items
+    filtered_options = filter_options(options, search_query)
+    
+    for i, option in enumerate(filtered_options):
+        if i == selected_idx:
+            print(f"> {option['title']}")
+            print(f"  {option['description']}")
+        else:
+            print(f"  {option['title']}")
+            print(f"  {option['description']}")
+        print()
+    
+    # Show "... X more below" if there are more items
+    if len(filtered_options) > 10:
+        remaining = len(filtered_options) - 10
+        if selected_idx < 10:
+            print(f"... {remaining} more below")
+    
+    # Footer
+    total_options = len(filtered_options)
+    if total_options > 0:
+        current_selection = filtered_options[selected_idx] if selected_idx < len(filtered_options) else None
+        if current_selection:
+            print(f"Selected: {current_selection['title']} ({selected_idx + 1}/{total_options})")
+    
+    return filtered_options
+
+def cli_menu_handler(title, options, on_select=None):
+    """Generic CLI menu handler with search and navigation."""
+    selected_index = 0
+    search_query = ""
+    search_mode = False
     
     while True:
-        print("\n" + "="*60)
-        print("🚀 What would you like to do?")
-        print()
-        print("1. 🌐 Launch Web Interface (Gradio UI)")
-        print("2. 🔧 Start API Server (REST API)")  
-        print("3. 📋 Show System Information")
-        print("4. ❓ Show Help")
-        print("5. 🚪 Exit")
-        print()
-        
         try:
-            choice = input("Enter your choice (1-5): ").strip()
+            filtered_options = draw_cli_interface(title, options, selected_index, search_query, search_mode)
             
-            if choice == "1":
-                # Ask for additional options
-                print("\n🌐 Web Interface Options:")
-                print("1. Full mode (Training + Inference)")
-                print("2. Inference only mode")
-                
-                mode_choice = input("Choose mode (1-2, default=1): ").strip() or "1"
-                
-                if mode_choice == "2":
-                    run_gradio_app(["--inference-only"])
-                else:
-                    run_gradio_app()
-                
-            elif choice == "2":
-                # Ask for additional options
-                print("\n🔧 API Server Options:")
-                print("Press Enter for default settings or Ctrl+C to cancel")
-                
-                try:
-                    input("Press Enter to start API server...")
-                    run_api_server()
-                except KeyboardInterrupt:
-                    print("\n⏪ Returning to main menu...")
-                    continue
-                
-            elif choice == "3":
-                show_system_info()
-                
-            elif choice == "4":
-                print_help()
-                
-            elif choice == "5":
-                print("\n👋 Thank you for using kolosal AutoML!")
-                break
-                
+            if not filtered_options:
+                print("No matches found. Press any key to continue...")
+                get_key()
+                search_query = ""
+                search_mode = False
+                continue
+            
+            # Ensure selected_index is within bounds
+            if selected_index >= len(filtered_options):
+                selected_index = 0
+            
+            key = get_key()
+            
+            if search_mode:
+                if key == 27:  # ESC - exit search mode
+                    search_mode = False
+                elif key == 8:  # Backspace
+                    search_query = search_query[:-1]
+                elif key == 13:  # Enter - exit search mode
+                    search_mode = False
+                elif 32 <= key <= 126:  # Printable characters
+                    search_query += chr(key)
             else:
-                print("❌ Invalid choice. Please enter 1-5.")
-                
+                if key == 27:  # ESC - return to previous menu or exit
+                    return None
+                elif key == 72:  # Up arrow
+                    selected_index = (selected_index - 1) % len(filtered_options)
+                elif key == 80:  # Down arrow
+                    selected_index = (selected_index + 1) % len(filtered_options)
+                elif key == 13:  # Enter
+                    selected_option = filtered_options[selected_index]
+                    if on_select:
+                        result = on_select(selected_option)
+                        if result == 'exit':
+                            return 'exit'
+                        elif result == 'continue':
+                            continue
+                    return selected_option
+                elif key == 47:  # '/' - enter search mode
+                    search_mode = True
+                    search_query = ""
+                elif key == 8:  # Backspace - clear search
+                    search_query = ""
+                    selected_index = 0
+                elif key == 3:  # Ctrl+C
+                    return 'exit'
+        
         except KeyboardInterrupt:
-            print("\n\n👋 Goodbye!")
-            break
+            return 'exit'
         except EOFError:
-            print("\n\n👋 Goodbye!")
+            return 'exit'
+
+def gui_options_menu():
+    """Show GUI options submenu."""
+    gui_options = [
+        {
+            'id': 'full',
+            'title': '🎯 Full Mode (Training + Inference)',
+            'description': 'Complete ML workflow with training and inference capabilities'
+        },
+        {
+            'id': 'inference',
+            'title': '🔮 Inference Only Mode',
+            'description': 'Use pre-trained models for predictions only'
+        },
+        {
+            'id': 'back',
+            'title': '⬅️ Back to Main Menu',
+            'description': 'Return to the main menu'
+        }
+    ]
+    
+    def handle_gui_selection(option):
+        if option['id'] == 'full':
+            clear_screen()
+            print("🌐 Starting Full Mode Web Interface...")
+            run_gradio_app()
+            return 'continue'
+        elif option['id'] == 'inference':
+            clear_screen()
+            print("🔮 Starting Inference Only Mode...")
+            run_gradio_app(["--inference-only"])
+            return 'continue'
+        elif option['id'] == 'back':
+            return 'exit'
+        return 'continue'
+    
+    return cli_menu_handler("Web Interface Options", gui_options, handle_gui_selection)
+
+def api_options_menu():
+    """Show API options submenu."""
+    api_options = [
+        {
+            'id': 'default',
+            'title': '🚀 Start with Default Settings',
+            'description': 'Launch API server on localhost:8000 with default configuration'
+        },
+        {
+            'id': 'custom',
+            'title': '⚙️ Custom Configuration',
+            'description': 'Configure host, port, and other server settings'
+        },
+        {
+            'id': 'back',
+            'title': '⬅️ Back to Main Menu',
+            'description': 'Return to the main menu'
+        }
+    ]
+    
+    def handle_api_selection(option):
+        if option['id'] == 'default':
+            clear_screen()
+            print("🔧 Starting API Server with default settings...")
+            run_api_server()
+            return 'continue'
+        elif option['id'] == 'custom':
+            clear_screen()
+            print("⚙️ Custom API Configuration:")
+            print("(Feature coming soon - using default settings for now)")
+            print()
+            input("Press Enter to start with default settings...")
+            run_api_server()
+            return 'continue'
+        elif option['id'] == 'back':
+            return 'exit'
+        return 'continue'
+    
+    return cli_menu_handler("API Server Options", api_options, handle_api_selection)
+
+def system_info_menu():
+    """Show system information submenu."""
+    system_options = [
+        {
+            'id': 'full_analysis',
+            'title': '🖥️ Full System Analysis',
+            'description': 'Complete hardware and software analysis'
+        },
+        {
+            'id': 'hardware_only',
+            'title': '⚡ Hardware Information Only',
+            'description': 'Display CPU, GPU, and memory information'
+        },
+        {
+            'id': 'dependencies',
+            'title': '📦 Dependency Check',
+            'description': 'Check all required dependencies and versions'
+        },
+        {
+            'id': 'back',
+            'title': '⬅️ Back to Main Menu',
+            'description': 'Return to the main menu'
+        }
+    ]
+    
+    def handle_system_selection(option):
+        clear_screen()
+        if option['id'] == 'full_analysis':
+            print("🖥️ Running Full System Analysis...")
+            show_system_info()
+        elif option['id'] == 'hardware_only':
+            print("⚡ Hardware Information:")
+            try:
+                from modules.device_optimizer import DeviceOptimizer
+                optimizer = DeviceOptimizer()
+                optimizer.analyze_hardware()
+            except Exception as e:
+                print(f"❌ Error getting hardware info: {e}")
+        elif option['id'] == 'dependencies':
+            print("📦 Checking Dependencies...")
+            check_dependencies()
+            print("\n✅ Dependency check complete!")
+        elif option['id'] == 'back':
+            return 'exit'
+        
+        if option['id'] != 'back':
+            print("\nPress any key to continue...")
+            get_key()
+        return 'continue'
+    
+    return cli_menu_handler("System Information", system_options, handle_system_selection)
+
+def interactive_mode():
+    """Run in interactive mode with CLI interface."""
+    
+    # Main menu options
+    main_menu_options = [
+        {
+            'id': 'gui',
+            'title': '🌐 Launch Web Interface (Gradio UI)',
+            'description': 'Interactive web-based interface for ML training and inference'
+        },
+        {
+            'id': 'api', 
+            'title': '🔧 Start API Server (REST API)',
+            'description': 'RESTful API endpoints for programmatic access'
+        },
+        {
+            'id': 'system_info',
+            'title': '📋 Show System Information', 
+            'description': 'View detailed system information and hardware capabilities'
+        },
+        {
+            'id': 'help',
+            'title': '❓ Show Help',
+            'description': 'Display detailed help and usage information'
+        },
+        {
+            'id': 'exit',
+            'title': '🚪 Exit',
+            'description': 'Exit the kolosal AutoML system'
+        }
+    ]
+    
+    def handle_main_selection(option):
+        if option['id'] == 'gui':
+            result = gui_options_menu()
+            return 'continue'
+        elif option['id'] == 'api':
+            result = api_options_menu()
+            return 'continue'
+        elif option['id'] == 'system_info':
+            result = system_info_menu()
+            return 'continue'
+        elif option['id'] == 'help':
+            clear_screen()
+            print_help()
+            print("\nPress any key to continue...")
+            get_key()
+            return 'continue'
+        elif option['id'] == 'exit':
+            clear_screen()
+            print("👋 Thank you for using kolosal AutoML!")
+            return 'exit'
+        return 'continue'
+    
+    # Main menu loop
+    while True:
+        result = cli_menu_handler("Select Mode", main_menu_options, handle_main_selection)
+        if result == 'exit' or result is None:
             break
 
 def main():
@@ -254,7 +517,7 @@ Examples:
     parser.add_argument(
         "--version",
         action="version",
-        version="kolosal AutoML v0.1.3"
+        version="kolosal AutoML v0.1.4"
     )
     
     parser.add_argument(

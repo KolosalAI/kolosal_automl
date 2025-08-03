@@ -1,0 +1,47 @@
+{
+  "system": "Windows",
+  "release": "10",
+  "machine": "AMD64",
+  "processor": "Intel64 Family 6 Model 154 Stepping 3, GenuineIntel",
+  "hostname": "Laptop-Evint",
+  "python_version": "3.10.11",
+  "cpu_count_physical": 14,
+  "cpu_count_logical": 20,
+  "cpu_freq_mhz": {
+    "current": 2300.0,
+    "min": 0,
+    "max": 2300.0
+  },
+  "cpu_features": {
+    "avx": false,
+    "avx2": false,
+    "avx512": false,
+    "sse4": false,
+    "fma": false,
+    "neon": false
+  },
+  "is_intel_cpu": true,
+  "is_amd_cpu": false,
+  "is_arm_cpu": false,
+  "total_memory_gb": 63.668304443359375,
+  "available_memory_gb": 36.2461051940918,
+  "usable_memory_gb": 54.11805877685547,
+  "swap_memory_gb": 4.0,
+  "disk_total_gb": 930.5061683654785,
+  "disk_free_gb": 149.05532836914062,
+  "is_ssd": false,
+  "accelerators": [],
+  "detected_environment": "cloud",
+  "optimizer_settings": {
+    "optimization_mode": "performance",
+    "workload_type": "inference",
+    "power_efficiency": true,
+    "auto_tune": true,
+    "debug_mode": false
+  },
+  "library_availability": {
+    "onnx_available": false,
+    "threadpoolctl_available": true,
+    "treelite_available": false
+  }
+}
