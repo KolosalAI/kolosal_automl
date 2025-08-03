@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Convenience script to run benchmark comparisons from the root directory.
+Convenience script to run benchmarks from the root directory.
 This script forwards all arguments to the actual benchmark script.
 """
 
@@ -18,7 +18,7 @@ os.chdir(benchmark_dir)
 
 try:
     # Import and run the actual benchmark script
-    from scripts.run_comparison import main
+    from benchmark_runner import main
     main()
 finally:
     # Restore original working directory

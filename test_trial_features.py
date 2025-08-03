@@ -12,7 +12,7 @@ This script shows how to use the enhanced comparison runner with:
 import sys
 import json
 from pathlib import Path
-from run_comparison import load_comparison_config, get_compatible_configurations, run_custom_comparison
+from benchmark.scripts.run_comparison import load_comparison_config, get_compatible_configurations, run_custom_comparison
 
 def test_configuration_loading():
     """Test loading the updated configuration with new features."""
@@ -61,7 +61,7 @@ def test_trial_simulation():
     print("\nTesting trial result simulation...")
     
     # This would normally run actual benchmarks, but for testing we'll simulate
-    from benchmark_comparison import ComparisonBenchmarkRunner, BenchmarkResult
+    from benchmark.benchmark_comparison import ComparisonBenchmarkRunner, BenchmarkResult
     import random
     import time
     
