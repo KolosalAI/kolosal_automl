@@ -35,11 +35,37 @@ from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sklearn.pipeline import Pipeline
 from sklearn.exceptions import NotFittedError
 
-# Import new optimization modules
-from .jit_compiler import JITCompiler, get_global_jit_compiler
-from .mixed_precision import MixedPrecisionManager, get_global_mixed_precision_manager
-from .adaptive_hyperopt import AdaptiveHyperparameterOptimizer, get_global_adaptive_optimizer
-from .streaming_pipeline import StreamingDataPipeline, get_global_streaming_pipeline
+# Import new optimization modules - made lazy to improve startup performance
+# These will be imported only when needed
+def _lazy_import_optimization_modules():
+    """Lazy import optimization modules to improve startup performance."""
+    try:
+        from .jit_compiler import JITCompiler, get_global_jit_compiler
+        from .mixed_precision import MixedPrecisionManager, get_global_mixed_precision_manager
+        from .adaptive_hyperopt import AdaptiveHyperparameterOptimizer, get_global_adaptive_optimizer
+        from .streaming_pipeline import StreamingDataPipeline, get_global_streaming_pipeline
+        return {
+            'JITCompiler': JITCompiler,
+            'get_global_jit_compiler': get_global_jit_compiler,
+            'MixedPrecisionManager': MixedPrecisionManager,
+            'get_global_mixed_precision_manager': get_global_mixed_precision_manager,
+            'AdaptiveHyperparameterOptimizer': AdaptiveHyperparameterOptimizer,
+            'get_global_adaptive_optimizer': get_global_adaptive_optimizer,
+            'StreamingDataPipeline': StreamingDataPipeline,
+            'get_global_streaming_pipeline': get_global_streaming_pipeline
+        }
+    except ImportError as e:
+        # If optimization modules are not available, return None placeholders
+        return {
+            'JITCompiler': None,
+            'get_global_jit_compiler': lambda: None,
+            'MixedPrecisionManager': None,
+            'get_global_mixed_precision_manager': lambda: None,
+            'AdaptiveHyperparameterOptimizer': None,
+            'get_global_adaptive_optimizer': lambda: None,
+            'StreamingDataPipeline': None,
+            'get_global_streaming_pipeline': lambda: None
+        }
 
 # For optional dependencies
 try:
@@ -183,12 +209,15 @@ class MLTrainingEngine:
     def _init_components(self):
         """Initialize all engine components."""
         try:
-            # Initialize preprocessor with the provided configuration
-            if hasattr(self.config, 'preprocessing_config'):
+            # Initialize preprocessor only if preprocessing is explicitly configured or required
+            if hasattr(self.config, 'preprocessing_config') and (
+                hasattr(self.config, 'enable_preprocessing') and getattr(self.config, 'enable_preprocessing', True)
+            ):
                 self.preprocessor = DataPreprocessor(self.config.preprocessing_config)
                 self.logger.info("Data preprocessor initialized")
             else:
-                self.logger.info("No preprocessing configuration provided")
+                self.preprocessor = None
+                self.logger.info("Data preprocessor skipped for fast initialization")
             
             # Initialize batch processor for efficient data handling
             if hasattr(self.config, 'batch_processing_config'):
@@ -214,10 +243,14 @@ class MLTrainingEngine:
                     
             # Initialize optimization components only if explicitly enabled
             # This prevents slow initialization when optimization features are disabled
-            if (hasattr(self.config, 'enable_jit_compilation') and self.config.enable_jit_compilation) or \
-               (hasattr(self.config, 'enable_mixed_precision') and self.config.enable_mixed_precision) or \
-               (hasattr(self.config, 'enable_adaptive_hyperopt') and self.config.enable_adaptive_hyperopt) or \
-               (hasattr(self.config, 'enable_streaming') and self.config.enable_streaming):
+            optimization_enabled = (
+                (hasattr(self.config, 'enable_jit_compilation') and self.config.enable_jit_compilation) or
+                (hasattr(self.config, 'enable_mixed_precision') and self.config.enable_mixed_precision) or
+                (hasattr(self.config, 'enable_adaptive_hyperopt') and self.config.enable_adaptive_hyperopt) or
+                (hasattr(self.config, 'enable_streaming') and self.config.enable_streaming)
+            )
+            
+            if optimization_enabled:
                 self._init_optimization_components()
             else:
                 # Set optimization components to None to avoid slow global initialization
@@ -238,17 +271,49 @@ class MLTrainingEngine:
             if hasattr(self.config, 'debug_mode') and self.config.debug_mode:
                 self.logger.error(traceback.format_exc())
             
-            # Initialize fallback optimization components to ensure they exist
+            # Initialize fallback optimization components only if optimization was attempted
+            # but failed, and only for enabled features
             try:
-                if not hasattr(self, 'jit_compiler') or self.jit_compiler is None:
-                    self.jit_compiler = get_global_jit_compiler()
-                if not hasattr(self, 'mixed_precision_manager') or self.mixed_precision_manager is None:
-                    self.mixed_precision_manager = get_global_mixed_precision_manager()
-                if not hasattr(self, 'adaptive_optimizer') or self.adaptive_optimizer is None:
-                    self.adaptive_optimizer = get_global_adaptive_optimizer()
-                if not hasattr(self, 'streaming_pipeline') or self.streaming_pipeline is None:
-                    self.streaming_pipeline = get_global_streaming_pipeline()
-                self.logger.info("Fallback optimization components initialized")
+                optimization_attempted = (
+                    (hasattr(self.config, 'enable_jit_compilation') and self.config.enable_jit_compilation) or
+                    (hasattr(self.config, 'enable_mixed_precision') and self.config.enable_mixed_precision) or
+                    (hasattr(self.config, 'enable_adaptive_hyperopt') and self.config.enable_adaptive_hyperopt) or
+                    (hasattr(self.config, 'enable_streaming') and self.config.enable_streaming)
+                )
+                
+                if optimization_attempted:
+                    opt_modules = _lazy_import_optimization_modules()
+                    if not hasattr(self, 'jit_compiler') or self.jit_compiler is None:
+                        if hasattr(self.config, 'enable_jit_compilation') and self.config.enable_jit_compilation and opt_modules['get_global_jit_compiler'] is not None:
+                            self.jit_compiler = opt_modules['get_global_jit_compiler']()
+                        else:
+                            self.jit_compiler = None
+                    if not hasattr(self, 'mixed_precision_manager') or self.mixed_precision_manager is None:
+                        if hasattr(self.config, 'enable_mixed_precision') and self.config.enable_mixed_precision and opt_modules['get_global_mixed_precision_manager'] is not None:
+                            self.mixed_precision_manager = opt_modules['get_global_mixed_precision_manager']()
+                        else:
+                            self.mixed_precision_manager = None
+                    if not hasattr(self, 'adaptive_optimizer') or self.adaptive_optimizer is None:
+                        if hasattr(self.config, 'enable_adaptive_hyperopt') and self.config.enable_adaptive_hyperopt and opt_modules['get_global_adaptive_optimizer'] is not None:
+                            self.adaptive_optimizer = opt_modules['get_global_adaptive_optimizer']()
+                        else:
+                            self.adaptive_optimizer = None
+                    if not hasattr(self, 'streaming_pipeline') or self.streaming_pipeline is None:
+                        if hasattr(self.config, 'enable_streaming') and self.config.enable_streaming and opt_modules['get_global_streaming_pipeline'] is not None:
+                            self.streaming_pipeline = opt_modules['get_global_streaming_pipeline']()
+                        else:
+                            self.streaming_pipeline = None
+                    self.logger.info("Fallback optimization components initialized")
+                else:
+                    # No optimization was requested, ensure components are None
+                    if not hasattr(self, 'jit_compiler'):
+                        self.jit_compiler = None
+                    if not hasattr(self, 'mixed_precision_manager'):
+                        self.mixed_precision_manager = None
+                    if not hasattr(self, 'adaptive_optimizer'):
+                        self.adaptive_optimizer = None
+                    if not hasattr(self, 'streaming_pipeline'):
+                        self.streaming_pipeline = None
             except Exception as fallback_error:
                 self.logger.error(f"Failed to initialize fallback optimization components: {str(fallback_error)}")
                 # Set to None if even fallback fails
@@ -1515,79 +1580,71 @@ class MLTrainingEngine:
             return False, None
 
     def _init_optimization_components(self):
-        """Initialize high-impact optimization components."""
-        # Initialize all components to defaults first
-        self.jit_compiler = get_global_jit_compiler()
-        self.mixed_precision_manager = get_global_mixed_precision_manager()
-        self.adaptive_optimizer = get_global_adaptive_optimizer()
-        self.streaming_pipeline = get_global_streaming_pipeline()
+        """Initialize high-impact optimization components only when needed."""
+        # Initialize components to None first (fast)
+        self.jit_compiler = None
+        self.mixed_precision_manager = None
+        self.adaptive_optimizer = None
+        self.streaming_pipeline = None
         
         try:
-            # Initialize JIT compiler for hot path compilation
+            # Lazy import optimization modules only when actually needed
+            opt_modules = _lazy_import_optimization_modules()
+            
+            # Initialize JIT compiler only if enabled
             if hasattr(self.config, 'enable_jit_compilation') and self.config.enable_jit_compilation:
-                self.jit_compiler.initialize()
-            else:
-                self.jit_compiler = None
+                if opt_modules['get_global_jit_compiler'] is not None:
+                    self.jit_compiler = opt_modules['get_global_jit_compiler']()
+                    if hasattr(self.jit_compiler, 'initialize'):
+                        self.jit_compiler.initialize()
+                    self.logger.info("JIT compiler initialized")
+                else:
+                    self.logger.warning("JIT compilation requested but module not available")
             
-            # Initialize mixed precision manager
+            # Initialize mixed precision manager only if enabled
             if hasattr(self.config, 'enable_mixed_precision') and self.config.enable_mixed_precision:
-                self.mixed_precision_manager.initialize()
-            else:
-                self.mixed_precision_manager = None
+                if opt_modules['get_global_mixed_precision_manager'] is not None:
+                    self.mixed_precision_manager = opt_modules['get_global_mixed_precision_manager']()
+                    if hasattr(self.mixed_precision_manager, 'initialize'):
+                        self.mixed_precision_manager.initialize()
+                    self.logger.info("Mixed precision manager initialized")
+                else:
+                    self.logger.warning("Mixed precision requested but module not available")
             
-            # Initialize adaptive hyperparameter optimizer
+            # Initialize adaptive hyperparameter optimizer only if enabled
             if hasattr(self.config, 'enable_adaptive_hyperopt') and self.config.enable_adaptive_hyperopt:
-                self.adaptive_optimizer.initialize()
-            else:
-                self.adaptive_optimizer = None
+                if opt_modules['get_global_adaptive_optimizer'] is not None:
+                    self.adaptive_optimizer = opt_modules['get_global_adaptive_optimizer']()
+                    if hasattr(self.adaptive_optimizer, 'initialize'):
+                        self.adaptive_optimizer.initialize()
+                    self.logger.info("Adaptive hyperparameter optimizer initialized")
+                else:
+                    self.logger.warning("Adaptive hyperopt requested but module not available")
+            
+            # Initialize streaming pipeline only if enabled
+            if hasattr(self.config, 'enable_streaming') and self.config.enable_streaming:
+                if opt_modules['get_global_streaming_pipeline'] is not None:
+                    self.streaming_pipeline = opt_modules['get_global_streaming_pipeline']()
+                    if hasattr(self.streaming_pipeline, 'initialize'):
+                        self.streaming_pipeline.initialize()
+                    self.logger.info("Streaming pipeline initialized")
+                else:
+                    self.logger.warning("Streaming requested but module not available")
                 
         except Exception as e:
             self.logger.error(f"Error initializing optimization components: {str(e)}")
-            # Fallback to None values
+            # Fallback to None values to ensure stability
             self.jit_compiler = None
             self.mixed_precision_manager = None
             self.adaptive_optimizer = None
-    
-    def _get_best_metric_value(self, metrics):
-        """Extract the best metric value based on task type."""
-        if not metrics:
-            return 0
-            
-        # Determine which metric to use based on task and config
-        if hasattr(self.config, 'model_selection_criteria'):
-            criteria = self.config.model_selection_criteria
-            
-            if isinstance(criteria, ModelSelectionCriteria):
-                key = criteria.value
-            else:
-                key = criteria
-                
-            # Check if the metric exists
-            if key in metrics:
-                return metrics[key]
-                
-        # Default metrics by task
-        if self.config.task_type == TaskType.CLASSIFICATION:
-            if "f1" in metrics:
-                return metrics["f1"]
-            elif "accuracy" in metrics:
-                return metrics["accuracy"]
-        elif self.config.task_type == TaskType.REGRESSION:
-            # For regression, lower RMSE/MSE is better, but higher R2 is better
-            if "r2" in metrics:
-                return metrics["r2"]
-            elif "rmse" in metrics:
-                return -metrics["rmse"]  # Negative because lower is better
-            elif "mse" in metrics:
-                return -metrics["mse"]  # Negative because lower is better
-                
-        # Default to the first metric
-        return next(iter(metrics.values()))
-    
-    def train_model(self, X, y, model_type: str = None, custom_model=None, 
-                param_grid: Dict = None, model_name: str = None, X_val=None, y_val=None):
+            self.streaming_pipeline = None
+
+    def get_performance_comparison(self) -> Dict[str, Any]:
         """
-        Optimized: Train a machine learning model with hyperparameter optimization, focusing on speed and memory usage.
+        Compare performance across all trained models.
+        
+        Returns:
+            Dictionary with model comparisons and best model information
         """
         start_time = time.time()
         gc.collect()  # Clean up memory before starting
