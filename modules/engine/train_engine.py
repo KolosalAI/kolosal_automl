@@ -587,18 +587,58 @@ class MLTrainingEngine:
         Returns:
             Configured cross-validation splitter
         """
+        # Reduce CV folds for large datasets or quick training mode
+        cv_folds = self.config.cv_folds
+        if hasattr(self.config, 'quick_training') and self.config.quick_training:
+            cv_folds = min(cv_folds, 3)  # Use 3-fold CV for quick training
+            self.logger.info(f"Using {cv_folds}-fold CV for quick training mode")
+        elif hasattr(self, '_current_X') and self._current_X is not None and len(self._current_X) > 10000:
+            cv_folds = min(cv_folds, 3)  # Use 3-fold CV for large datasets
+            self.logger.info(f"Using {cv_folds}-fold CV for large dataset with {len(self._current_X)} samples")
+        
         if self.config.task_type == TaskType.CLASSIFICATION and hasattr(self.config, 'stratify') and self.config.stratify and y is not None:
             return StratifiedKFold(
-                n_splits=self.config.cv_folds, 
+                n_splits=cv_folds, 
                 shuffle=True, 
                 random_state=self.config.random_state
             )
         else:
             return KFold(
-                n_splits=self.config.cv_folds, 
+                n_splits=cv_folds, 
                 shuffle=True, 
                 random_state=self.config.random_state
             )
+
+    def _get_smart_optimization_iterations(self):
+        """
+        Determine optimal number of iterations based on dataset size and complexity.
+        
+        Returns:
+            Optimized number of iterations for hyperparameter optimization
+        """
+        base_iterations = getattr(self.config, 'optimization_iterations', 50)
+        
+        # Fast mode check - if user wants quick training
+        if hasattr(self.config, 'quick_training') and self.config.quick_training:
+            return min(base_iterations, 10)
+        
+        # Dataset size based adjustment
+        if hasattr(self, '_current_X') and self._current_X is not None:
+            n_samples = len(self._current_X)
+            n_features = self._current_X.shape[1] if hasattr(self._current_X, 'shape') else 10
+            
+            # For large datasets (>10k samples), reduce iterations significantly
+            if n_samples > 10000:
+                return min(base_iterations, 15)
+            # For medium datasets (1k-10k samples), moderate reduction
+            elif n_samples > 1000:
+                return min(base_iterations, 25)
+            # For small datasets, allow more iterations but still cap it
+            else:
+                return min(base_iterations, 35)
+        
+        # Default conservative approach
+        return min(base_iterations, 20)
 
     def _get_optimization_search(self, model, param_grid):
         """
@@ -614,12 +654,15 @@ class MLTrainingEngine:
         cv = self._get_cv_splitter()
         scoring = self._get_scoring_metric()
         
+        # Smart optimization iterations adjustment based on dataset size and complexity
+        optimization_iterations = self._get_smart_optimization_iterations()
+        
         if not hasattr(self.config, 'optimization_strategy'):
             # Default to random search if not specified
             return RandomizedSearchCV(
                 estimator=model,
                 param_distributions=param_grid,
-                n_iter=10,  # Default value
+                n_iter=min(optimization_iterations, 10),  # Cap at 10 for default
                 cv=cv,
                 n_jobs=self.config.n_jobs,
                 verbose=self.config.verbose,
@@ -644,7 +687,7 @@ class MLTrainingEngine:
             return RandomizedSearchCV(
                 estimator=model,
                 param_distributions=param_grid,
-                n_iter=self.config.optimization_iterations,
+                n_iter=optimization_iterations,
                 cv=cv,
                 n_jobs=self.config.n_jobs,
                 verbose=self.config.verbose,
@@ -660,7 +703,7 @@ class MLTrainingEngine:
                 return BayesSearchCV(
                     estimator=model,
                     search_spaces=param_grid,
-                    n_iter=self.config.optimization_iterations,
+                    n_iter=optimization_iterations,
                     cv=cv,
                     n_jobs=self.config.n_jobs,
                     verbose=self.config.verbose,
@@ -674,7 +717,7 @@ class MLTrainingEngine:
                 return RandomizedSearchCV(
                     estimator=model,
                     param_distributions=param_grid,
-                    n_iter=self.config.optimization_iterations,
+                    n_iter=optimization_iterations,
                     cv=cv,
                     n_jobs=self.config.n_jobs,
                     verbose=self.config.verbose,
@@ -689,7 +732,7 @@ class MLTrainingEngine:
                 return ASHTOptimizer(
                     estimator=model,
                     param_space=param_grid,
-                    max_iter=self.config.optimization_iterations,
+                    max_iter=optimization_iterations,
                     cv=self.config.cv_folds,
                     scoring=scoring,
                     random_state=self.config.random_state,
@@ -701,7 +744,7 @@ class MLTrainingEngine:
                 return RandomizedSearchCV(
                     estimator=model,
                     param_distributions=param_grid,
-                    n_iter=self.config.optimization_iterations,
+                    n_iter=optimization_iterations,
                     cv=cv,
                     n_jobs=self.config.n_jobs,
                     verbose=self.config.verbose,
@@ -713,10 +756,13 @@ class MLTrainingEngine:
         elif self.config.optimization_strategy == OptimizationStrategy.HYPERX:
             # Use HyperOptX if available
             if HYPEROPTX_AVAILABLE:
+                # Apply even more aggressive reduction for HyperOptX as it's very slow
+                hyperx_iterations = min(optimization_iterations, 15)  # Cap HyperOptX at 15 iterations max
+                self.logger.info(f"Using HyperOptX with {hyperx_iterations} iterations (reduced from {self.config.optimization_iterations} for performance)")
                 return HyperOptX(
                     estimator=model,
                     param_space=param_grid,
-                    max_iter=self.config.optimization_iterations,
+                    max_iter=hyperx_iterations,
                     cv=self.config.cv_folds,
                     scoring=scoring,
                     random_state=self.config.random_state,
@@ -728,7 +774,7 @@ class MLTrainingEngine:
                 return RandomizedSearchCV(
                     estimator=model,
                     param_distributions=param_grid,
-                    n_iter=self.config.optimization_iterations,
+                    n_iter=optimization_iterations,
                     cv=cv,
                     n_jobs=self.config.n_jobs,
                     verbose=self.config.verbose,
@@ -806,7 +852,7 @@ class MLTrainingEngine:
                 return RandomizedSearchCV(
                     estimator=model,
                     param_distributions=param_grid,
-                    n_iter=self.config.optimization_iterations,
+                    n_iter=optimization_iterations,
                     cv=cv,
                     n_jobs=self.config.n_jobs,
                     verbose=self.config.verbose,
@@ -825,7 +871,7 @@ class MLTrainingEngine:
                 return OptunaSearchCV(
                     estimator=model,
                     param_distributions=param_grid,
-                    n_trials=self.config.optimization_iterations,
+                    n_trials=optimization_iterations,
                     cv=cv,
                     n_jobs=self.config.n_jobs,
                     verbose=self.config.verbose,
@@ -839,7 +885,7 @@ class MLTrainingEngine:
                 return RandomizedSearchCV(
                     estimator=model,
                     param_distributions=param_grid,
-                    n_iter=self.config.optimization_iterations,
+                    n_iter=optimization_iterations,
                     cv=cv,
                     n_jobs=self.config.n_jobs,
                     verbose=self.config.verbose,
@@ -853,7 +899,7 @@ class MLTrainingEngine:
             return RandomizedSearchCV(
                 estimator=model,
                 param_distributions=param_grid,
-                n_iter=self.config.optimization_iterations if hasattr(self.config, 'optimization_iterations') else 10,
+                n_iter=optimization_iterations,
                 cv=cv,
                 n_jobs=self.config.n_jobs,
                 verbose=self.config.verbose,
@@ -1014,60 +1060,110 @@ class MLTrainingEngine:
         """Return a reasonable, *small* default grid for quick exploration."""
         model_name = model.__class__.__name__.lower()
 
+        # Check if we should use minimal grids for speed
+        use_minimal = (hasattr(self.config, 'quick_training') and self.config.quick_training) or \
+                     (hasattr(self, '_current_X') and self._current_X is not None and len(self._current_X) > 10000)
+
+        if use_minimal:
+            # Ultra-fast minimal grids for quick training or large datasets
+            minimal_grids = {
+                "randomforest": dict(
+                    n_estimators=[100],
+                    max_depth=[None, 10],
+                ),
+                "gradientboosting": dict(
+                    n_estimators=[100],
+                    learning_rate=[0.1],
+                ),
+                "xgb": dict(
+                    n_estimators=[100],
+                    learning_rate=[0.1],
+                ),
+                "lgbm": dict(
+                    n_estimators=[100],
+                    learning_rate=[0.1],
+                ),
+                "logistic": dict(
+                    C=[0.1, 1],
+                ),
+                "svc": dict(
+                    C=[1],
+                    kernel=["rbf"],
+                ),
+                "svr": dict(
+                    C=[1],
+                    kernel=["rbf"],
+                ),
+                "kneighbors": dict(
+                    n_neighbors=[5],
+                ),
+                "decisiontree": dict(
+                    max_depth=[None, 10],
+                ),
+                "ridge": dict(alpha=[1.0]),
+                "lasso": dict(alpha=[0.01]),
+                "elasticnet": dict(
+                    alpha=[0.01],
+                    l1_ratio=[0.5],
+                ),
+            }
+            
+            for key, grid in minimal_grids.items():
+                if key in model_name:
+                    self.logger.info(f"Using minimal parameter grid for {key} due to quick training mode or large dataset")
+                    return grid
+        
+        # Standard small grids for normal training
         default_grids = {
             "randomforest": dict(
-                n_estimators=[100, 300],
-                max_depth=[None, 10, 30],
-                min_samples_split=[2, 5],
+                n_estimators=[100, 200],  # Reduced from [100, 300]
+                max_depth=[None, 10],     # Reduced from [None, 10, 30]
+                min_samples_split=[2],    # Reduced from [2, 5]
             ),
             "gradientboosting": dict(
-                n_estimators=[100, 300],
-                learning_rate=[0.03, 0.1],
-                max_depth=[3, 5],
+                n_estimators=[100, 200],  # Reduced from [100, 300]
+                learning_rate=[0.1],      # Reduced from [0.03, 0.1]
+                max_depth=[3],            # Reduced from [3, 5]
             ),
             "xgb": dict(
-                n_estimators=[200, 400],
-                learning_rate=[0.03, 0.1],
-                max_depth=[4, 6],
-                subsample=[0.8, 1.0],
-                colsample_bytree=[0.8, 1.0],
+                n_estimators=[100, 200],  # Reduced from [200, 400]
+                learning_rate=[0.1],      # Reduced from [0.03, 0.1]
+                max_depth=[4],            # Reduced from [4, 6]
+                subsample=[0.8],          # Reduced from [0.8, 1.0]
             ),
             "lgbm": dict(
-                n_estimators=[200, 400],
-                learning_rate=[0.03, 0.1],
-                max_depth=[-1, 6],
-                num_leaves=[31, 63],
+                n_estimators=[100, 200],  # Reduced from [200, 400]
+                learning_rate=[0.1],      # Reduced from [0.03, 0.1]
+                max_depth=[-1],           # Reduced from [-1, 6]
+                num_leaves=[31],          # Reduced from [31, 63]
             ),
             "logistic": dict(
-                C=[0.01, 0.1, 1, 10],
-                solver=["lbfgs", "liblinear"],
-                penalty=["l2"],          # 'none' not accepted by liblinear
+                C=[0.1, 1],               # Reduced from [0.01, 0.1, 1, 10]
+                solver=["lbfgs"],         # Reduced from ["lbfgs", "liblinear"]
             ),
             "svc": dict(
-                C=[0.1, 1, 10],
-                kernel=["rbf", "linear"],
-                gamma=["scale", 0.1],
+                C=[1, 10],                # Reduced from [0.1, 1, 10]
+                kernel=["rbf"],           # Reduced from ["rbf", "linear"]
+                gamma=["scale"],          # Reduced from ["scale", 0.1]
             ),
             "svr": dict(
-                C=[0.1, 1, 10],
-                kernel=["rbf", "linear"],
-                gamma=["scale", 0.1],
+                C=[1, 10],                # Reduced from [0.1, 1, 10]
+                kernel=["rbf"],           # Reduced from ["rbf", "linear"]
+                gamma=["scale"],          # Reduced from ["scale", 0.1]
             ),
             "kneighbors": dict(
-                n_neighbors=[3, 5, 11],
-                weights=["uniform", "distance"],
-                p=[1, 2],
+                n_neighbors=[5, 11],      # Reduced from [3, 5, 11]
+                weights=["uniform"],      # Reduced from ["uniform", "distance"]
             ),
             "decisiontree": dict(
-                max_depth=[None, 10, 30],
-                min_samples_split=[2, 5],
-                min_samples_leaf=[1, 3],
+                max_depth=[None, 10],     # Reduced from [None, 10, 30]
+                min_samples_split=[2],    # Reduced from [2, 5]
             ),
-            "ridge": dict(alpha=[0.1, 1.0, 10.0]),
-            "lasso": dict(alpha=[0.001, 0.01, 0.1]),
+            "ridge": dict(alpha=[1.0]),   # Reduced from [0.1, 1.0, 10.0]
+            "lasso": dict(alpha=[0.01]),  # Reduced from [0.001, 0.01, 0.1]
             "elasticnet": dict(
-                alpha=[0.001, 0.01, 0.1],
-                l1_ratio=[0.2, 0.5, 0.8],
+                alpha=[0.01],             # Reduced from [0.001, 0.01, 0.1]
+                l1_ratio=[0.5],           # Reduced from [0.2, 0.5, 0.8]
             ),
         }
 
@@ -1080,7 +1176,7 @@ class MLTrainingEngine:
             numeric_params = {k: v for k, v in model.get_params().items()
                             if isinstance(v, (int, float)) and k != "random_state"}
             return {k: [v, v * 2] if isinstance(v, (int, float)) and v else [v]
-                    for k, v in list(numeric_params.items())[:4]}
+                    for k, v in list(numeric_params.items())[:2]}  # Reduced from 4 to 2 params
         except Exception:
             self.logger.warning("No default grid found; using empty grid")
             return {}
@@ -1638,351 +1734,6 @@ class MLTrainingEngine:
             self.mixed_precision_manager = None
             self.adaptive_optimizer = None
             self.streaming_pipeline = None
-
-    def get_performance_comparison(self) -> Dict[str, Any]:
-        """
-        Compare performance across all trained models.
-        
-        Returns:
-            Dictionary with model comparisons and best model information
-        """
-        start_time = time.time()
-        gc.collect()  # Clean up memory before starting
-
-        # Store current training data for adaptive optimization
-        self._current_X = X
-        self._current_y = y
-        
-        # Handle large datasets with streaming pipeline
-        use_streaming = (hasattr(self.config, 'enable_streaming') and self.config.enable_streaming and 
-                        isinstance(X, pd.DataFrame) and len(X) > getattr(self.config, 'streaming_threshold', 10000) and
-                        hasattr(self, 'streaming_pipeline') and self.streaming_pipeline is not None)
-        
-        if use_streaming:
-            self.logger.info(f"Using streaming pipeline for large dataset with {len(X)} samples")
-            
-            # Use streaming preprocessing if enabled
-            def preprocess_chunk(chunk):
-                if self.preprocessor:
-                    return self.preprocessor.fit_transform(chunk)
-                return chunk
-            
-            # Process data in streaming fashion
-            try:
-                with self.streaming_pipeline.monitoring_context():
-                    processed_chunks = list(self.streaming_pipeline.process_dataframe_stream(
-                        X, preprocess_chunk
-                    ))
-                    X_processed = pd.concat(processed_chunks, ignore_index=True)
-            except Exception as e:
-                self.logger.warning(f"Streaming processing failed: {str(e)}. Using regular processing.")
-                X_processed = X
-        else:
-            X_processed = X
-        
-        # Apply mixed precision optimization for numerical data
-        if (hasattr(self.config, 'enable_mixed_precision') and self.config.enable_mixed_precision and
-            hasattr(self, 'mixed_precision_manager') and self.mixed_precision_manager is not None):
-            if isinstance(X_processed, np.ndarray):
-                try:
-                    X_processed = self.mixed_precision_manager.optimize_numpy_precision(X_processed)
-                    self.logger.info("Applied mixed precision optimization to training data")
-                except Exception as e:
-                    self.logger.warning(f"Mixed precision optimization failed: {str(e)}")
-
-        # Extract feature names if available
-        feature_names = self._extract_feature_names(X_processed)
-        self._last_feature_names = feature_names
-
-        # Determine model type based on task
-        task_key = self.config.task_type.value
-
-        # Validate inputs
-        if custom_model is None and model_type is None:
-            if task_key == "classification":
-                model_type = "random_forest"
-            elif task_key == "regression":
-                model_type = "random_forest"
-            else:
-                raise ValueError(f"Please specify model_type or custom_model for task type: {task_key}")
-
-        # Set model name
-        if model_name is None:
-            if custom_model is not None:
-                model_name = f"{custom_model.__class__.__name__}_{int(time.time())}"
-            else:
-                model_name = f"{model_type}_{int(time.time())}"
-
-        # Get model class
-        if custom_model is not None:
-            model = custom_model
-            self.logger.info(f"Using custom model: {model.__class__.__name__}")
-        else:
-            if task_key not in self._model_registry:
-                raise ValueError(f"No models registered for task type: {task_key}")
-            if model_type not in self._model_registry[task_key]:
-                raise ValueError(f"Model type '{model_type}' not found for {task_key}. " 
-                            f"Available models: {', '.join(self._model_registry[task_key].keys())}")
-            model_class = self._model_registry[task_key][model_type]
-            # Set n_jobs=-1 if supported for parallelism
-            default_params = {"random_state": self.config.random_state} if hasattr(model_class, "random_state") else {}
-            if hasattr(model_class, "n_jobs"):
-                default_params["n_jobs"] = -1
-            model = model_class(**default_params)
-            self.logger.info(f"Initialized {model_type} model for {task_key}")
-
-        # Get default parameter grid if not provided
-        if param_grid is None:
-            param_grid = self._get_default_param_grid(model)
-
-        # Start experiment tracking if enabled
-        if self.tracker:
-            model_info = {
-                "model_type": model_type or model.__class__.__name__,
-                "model_class": f"{model.__class__.__module__}.{model.__class__.__name__}",
-                "task_type": task_key
-            }
-            self.tracker.start_experiment(
-                config=self.config.to_dict() if hasattr(self.config, 'to_dict') else vars(self.config),
-                model_info=model_info
-            )
-
-        # Set up the feature selector if enabled
-        if hasattr(self.config, 'feature_selection') and self.config.feature_selection:
-            self.feature_selector = self._get_feature_selector(X, y)
-            if self.feature_selector:
-                self.logger.info(f"Feature selection enabled: {getattr(self.config, 'feature_selection_method', 'default')}")
-
-        # Create training pipeline
-        pipeline = self._create_pipeline(model)
-
-        # Split data for validation if not provided
-        if (X_val is None or y_val is None) and hasattr(self.config, 'test_size') and self.config.test_size > 0:
-            split_kwargs = dict(test_size=self.config.test_size, random_state=self.config.random_state)
-            if self.config.task_type == TaskType.CLASSIFICATION and getattr(self.config, 'stratify', False):
-                split_kwargs['stratify'] = y
-            X_train, X_val, y_train, y_val = train_test_split(X, y, **split_kwargs)
-            self.logger.info(f"Data split: {X_train.shape[0]} training samples, {X_val.shape[0]} validation samples")
-        else:
-            X_train, y_train = X, y
-            self.logger.info(f"Using provided validation data: {X_val.shape[0]} validation samples" if X_val is not None else "No validation data")
-
-        # Convert data to numpy arrays (no copy if possible)
-        def to_numpy_safe(arr):
-            if hasattr(arr, 'to_numpy'):
-                return arr.to_numpy(copy=False)
-            elif hasattr(arr, 'values'):
-                return arr.values
-            return arr
-        X_train = to_numpy_safe(X_train)
-        y_train = to_numpy_safe(y_train)
-        X_val = to_numpy_safe(X_val) if X_val is not None else None
-        y_val = to_numpy_safe(y_val) if y_val is not None else None
-
-        # Fit preprocessor if available
-        if self.preprocessor:
-            try:
-                self.logger.info("Fitting preprocessor...")
-                self.preprocessor.fit(X_train, y_train)
-                X_train_processed = self.preprocessor.transform(X_train)
-                X_val_processed = self.preprocessor.transform(X_val) if X_val is not None else None
-                self.logger.info("Preprocessor fitted successfully")
-            except Exception as e:
-                self.logger.error(f"Error fitting preprocessor: {str(e)}")
-                if getattr(self.config, 'debug_mode', False):
-                    self.logger.error(traceback.format_exc())
-                X_train_processed = X_train
-                X_val_processed = X_val
-        else:
-            X_train_processed = X_train
-            X_val_processed = X_val
-        del X_train, X_val  # Free memory
-        gc.collect()
-
-        # Fit feature selector if available
-        selected_feature_names = feature_names
-        if self.feature_selector:
-            try:
-                self.logger.info("Fitting feature selector...")
-                self.feature_selector.fit(X_train_processed, y_train)
-                X_train_processed = self.feature_selector.transform(X_train_processed)
-                if X_val_processed is not None:
-                    X_val_processed = self.feature_selector.transform(X_val_processed)
-                if hasattr(self.feature_selector, 'get_support'):
-                    feature_indices = self.feature_selector.get_support(indices=True)
-                    selected_feature_names = [feature_names[i] for i in feature_indices] if feature_names else None
-                    self.logger.info(f"Selected {len(feature_indices)} features out of {len(feature_names)}")
-                    if self.tracker and selected_feature_names:
-                        self.tracker.log_metrics({
-                            "selected_feature_count": len(feature_indices),
-                            "total_feature_count": len(feature_names)
-                        }, step="feature_selection")
-            except Exception as e:
-                self.logger.error(f"Error fitting feature selector: {str(e)}")
-                if getattr(self.config, 'debug_mode', False):
-                    self.logger.error(traceback.format_exc())
-                selected_feature_names = feature_names
-        # del y_train  # Free memory (moved to after training)
-        gc.collect()
-
-        # Configure hyperparameter optimization
-        if param_grid and len(param_grid) > 0:
-            self.logger.info(f"Starting hyperparameter optimization with {getattr(self.config, 'optimization_strategy', 'default strategy')}")
-            try:
-                optimizer = self._get_optimization_search(model, param_grid)
-                if hasattr(optimizer, 'n_jobs'):
-                    optimizer.n_jobs = -1
-                if self.tracker:
-                    self.tracker.log_metrics({
-                        "param_combinations": getattr(optimizer, 'n_iter', 'grid'),
-                        "cv_folds": self.config.cv_folds,
-                        "scoring": str(getattr(optimizer, 'scoring', 'default'))
-                    }, step="optimization_setup")
-                fit_params = {}
-                if getattr(self.config, 'early_stopping', False) and hasattr(model, 'early_stopping') and X_val_processed is not None:
-                    fit_params['eval_set'] = [(X_train_processed, y_train), (X_val_processed, y_val)]
-                    fit_params['early_stopping_rounds'] = getattr(self.config, 'early_stopping_rounds', 10)
-                    fit_params['verbose'] = bool(self.config.verbose)
-                optimization_start = time.time()
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore")
-                    optimizer.fit(X_train_processed, y_train, **fit_params)
-                optimization_time = time.time() - optimization_start
-                best_model = getattr(optimizer, 'best_estimator_', optimizer.estimator)
-                best_params = getattr(optimizer, 'best_params_', optimizer.get_params())
-                if hasattr(optimizer, 'cv_results_'):
-                    cv_results = optimizer.cv_results_
-                    mean_test_score = np.mean(cv_results['mean_test_score'])
-                    std_test_score = np.mean(cv_results['std_test_score'])
-                    if self.tracker:
-                        self.tracker.log_metrics({
-                            "mean_cv_score": mean_test_score,
-                            "std_cv_score": std_test_score,
-                            "optimization_time": optimization_time
-                        }, step="optimization")
-                    self.logger.info(f"Best CV score: {mean_test_score:.4f} ± {std_test_score:.4f}")
-                    self.logger.info(f"Best parameters: {best_params}")
-                best_model_info = {
-                    "model": best_model,
-                    "params": best_params,
-                    "feature_names": selected_feature_names,
-                    "training_time": time.time() - start_time,
-                    "metrics": {},
-                    "feature_importance": None
-                }
-            except Exception as e:
-                self.logger.error(f"Error during hyperparameter optimization: {str(e)}")
-                if getattr(self.config, 'debug_mode', False):
-                    self.logger.error(traceback.format_exc())
-                self.logger.info("Falling back to basic training without optimization")
-                model.fit(X_train_processed, y_train)
-                best_model_info = {
-                    "model": model,
-                    "params": model.get_params(),
-                    "feature_names": selected_feature_names,
-                    "training_time": time.time() - start_time,
-                    "metrics": {},
-                    "feature_importance": None
-                }
-        else:
-            self.logger.info("Training model without hyperparameter optimization")
-            fit_params = {}
-            if getattr(self.config, 'early_stopping', False) and hasattr(model, 'early_stopping') and X_val_processed is not None:
-                fit_params['eval_set'] = [(X_train_processed, y_train), (X_val_processed, y_val)]
-                fit_params['early_stopping_rounds'] = getattr(self.config, 'early_stopping_rounds', 10)
-                fit_params['verbose'] = bool(self.config.verbose)
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                model.fit(X_train_processed, y_train, **fit_params)
-            best_model_info = {
-                "model": model,
-                "params": model.get_params(),
-                "feature_names": selected_feature_names,
-                "training_time": time.time() - start_time,
-                "metrics": {},
-                "feature_importance": None
-            }
-        del X_train_processed  # Free memory
-        gc.collect()
-
-        # Evaluate the best model on validation data if available
-        if X_val_processed is not None and y_val is not None:
-            self.logger.info("Evaluating model on validation data...")
-            val_metrics = self._evaluate_model(best_model_info["model"], None, None, X_val_processed, y_val)
-            best_model_info["metrics"] = val_metrics
-            if self.tracker:
-                self.tracker.log_metrics(val_metrics, step="validation")
-            for metric, value in val_metrics.items():
-                if isinstance(value, (int, float)):
-                    self.logger.info(f"Validation {metric}: {value:.4f}")
-                else:
-                    self.logger.info(f"Validation {metric}: {value}")
-        del X_val_processed, y_val  # Free memory
-        gc.collect()
-
-        # Extract feature importance if available
-        feature_importance = self._get_feature_importance(best_model_info["model"])
-        if feature_importance is not None:
-            best_model_info["feature_importance"] = feature_importance
-            feature_importance_dict = {selected_feature_names[i] if i < len(selected_feature_names) else f"feature_{i}": float(importance) for i, importance in enumerate(feature_importance)}
-            if self.tracker:
-                self.tracker.log_feature_importance(
-                    feature_names=list(feature_importance_dict.keys()),
-                    importance=np.array(list(feature_importance_dict.values()))
-                )
-            top_features = sorted(feature_importance_dict.items(), key=lambda x: x[1], reverse=True)[:10]
-            self.logger.info("Top 10 features by importance:")
-            for feature, importance in top_features:
-                self.logger.info(f"  {feature}: {importance:.4f}")
-        del feature_importance  # Free memory
-        gc.collect()
-
-        # Save the model to the models registry
-        self.models[model_name] = best_model_info
-
-        # Check if this is the best model so far
-        best_metric = self._get_best_metric_value(best_model_info["metrics"]) if "metrics" in best_model_info and best_model_info["metrics"] else 0
-        if self._compare_metrics(best_metric, self.best_score):
-            self.best_model = best_model_info
-            self.best_model_name = model_name
-            self.best_score = best_metric
-            self.logger.info(f"New best model: {model_name} with score {best_metric:.4f}")
-            if getattr(self.config, 'auto_save', False):
-                self.save_model(model_name)
-
-        # Generate confusion matrix for classification tasks
-        if self.config.task_type == TaskType.CLASSIFICATION and best_model_info["metrics"] and self.tracker:
-            try:
-                y_pred = best_model_info["model"].predict(best_model_info["metrics"].get('X_val', None))
-                class_names = list(map(str, np.unique(y)))
-                self.tracker.log_confusion_matrix(y_val, y_pred, class_names=class_names)
-            except Exception as e:
-                self.logger.warning(f"Failed to generate confusion matrix: {str(e)}")
-
-        # End experiment tracking if enabled
-        if self.tracker:
-            self.tracker.end_experiment()
-            if getattr(self.config, 'generate_model_summary', False):
-                try:
-                    report_path = self.tracker.generate_report()
-                    self.logger.info(f"Model report generated: {report_path}")
-                except Exception as e:
-                    self.logger.warning(f"Failed to generate model report: {str(e)}")
-
-
-
-        self.training_complete = True
-        total_time = time.time() - start_time
-        self.logger.info(f"Model training completed in {total_time:.2f} seconds")
-        gc.collect()
-        return {
-            "model_name": model_name,
-            "model": best_model_info["model"],
-            "params": best_model_info["params"],
-            "metrics": best_model_info.get("metrics", {}),
-            "feature_importance": best_model_info.get("feature_importance", None),
-            "training_time": total_time
-        }
     
     def get_performance_comparison(self) -> Dict[str, Any]:
         """
