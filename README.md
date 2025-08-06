@@ -29,7 +29,165 @@
 - **Memory Efficiency**: 10-25% reduced memory usage
 - **Deployment**: Docker-ready with monitoring stack
 
-## 🌟 Key Features
+## �️ System Architecture
+
+### **Training & Inference Engine System Diagram**
+
+```mermaid
+graph TB
+    %% User Interfaces
+    subgraph "🌐 User Interfaces"
+        WEB[🖥️ Gradio Web Interface<br/>app.py]
+        API[🔌 REST API Server<br/>start_api.py]
+        CLI[⌨️ CLI Interface<br/>main.py]
+    end
+
+    %% Core Engine Layer
+    subgraph "🔧 Core Engine Layer"
+        TE[🚂 ML Training Engine<br/>train_engine.py]
+        IE[⚡ Inference Engine<br/>inference_engine.py]
+        BP[📦 Batch Processor<br/>batch_processor.py]
+        DP[🔄 Data Preprocessor<br/>data_preprocessor.py]
+    end
+
+    %% Optimization Layer
+    subgraph "⚡ Optimization Layer"
+        JIT[🚀 JIT Compiler<br/>jit_compiler.py]
+        MP[🎯 Mixed Precision<br/>mixed_precision.py]
+        AH[🧠 Adaptive Hyperopt<br/>adaptive_hyperopt.py]
+        Q[📊 Quantizer<br/>quantizer.py]
+    end
+
+    %% Management Layer
+    subgraph "🛡️ Management Layer"
+        MM[🗄️ Model Manager<br/>model_manager.py]
+        ET[📋 Experiment Tracker<br/>experiment_tracker.py]
+        SM[🔐 Security Manager<br/>security/*]
+        PM[📈 Performance Monitor<br/>performance_metrics.py]
+    end
+
+    %% Storage & Data
+    subgraph "💾 Storage & Data"
+        MR[(🏪 Model Registry<br/>models/)]
+        DB[(📊 Experiment DB<br/>mlruns/)]
+        CACHE[(⚡ Cache Layer<br/>lru_ttl_cache.py)]
+        TEMP[(📁 Temp Storage<br/>temp_data/)]
+    end
+
+    %% External Services
+    subgraph "🌍 External Services"
+        MLFLOW[📊 MLflow Tracking]
+        REDIS[🔄 Redis Cache]
+        PROM[📊 Prometheus Metrics]
+        GRAF[📈 Grafana Dashboard]
+    end
+
+    %% Flow connections
+    WEB --> TE
+    WEB --> IE
+    API --> TE
+    API --> IE
+    CLI --> TE
+    CLI --> IE
+
+    TE --> DP
+    TE --> BP
+    TE --> MM
+    TE --> ET
+    
+    IE --> DP
+    IE --> BP
+    IE --> MM
+    IE --> PM
+
+    TE --> JIT
+    TE --> MP
+    TE --> AH
+    IE --> JIT
+    IE --> Q
+
+    TE --> CACHE
+    IE --> CACHE
+    
+    MM --> MR
+    ET --> DB
+    ET --> MLFLOW
+    
+    PM --> PROM
+    PROM --> GRAF
+    
+    BP --> CACHE
+    DP --> TEMP
+
+    %% Security connections
+    SM -.->|Secures| MM
+    SM -.->|Validates| API
+    SM -.->|Encrypts| MR
+
+    %% Styling
+    classDef interface fill:#e1f5fe,stroke:#01579b,stroke-width:2px
+    classDef engine fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    classDef optimization fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef management fill:#e8f5e8,stroke:#1b5e20,stroke-width:2px
+    classDef storage fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+    classDef external fill:#f1f8e9,stroke:#33691e,stroke-width:2px
+
+    class WEB,API,CLI interface
+    class TE,IE,BP,DP engine
+    class JIT,MP,AH,Q optimization
+    class MM,ET,SM,PM management
+    class MR,DB,CACHE,TEMP storage
+    class MLFLOW,REDIS,PROM,GRAF external
+```
+
+### **Component Interaction Flow**
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant WebUI as 🌐 Web Interface
+    participant TrainEngine as 🚂 Training Engine
+    participant DataPrep as 🔄 Data Preprocessor
+    participant BatchProc as 📦 Batch Processor
+    participant InferEngine as ⚡ Inference Engine
+    participant ModelMgr as 🗄️ Model Manager
+
+    %% Training Flow
+    User->>WebUI: Upload Data & Configure Training
+    WebUI->>DataPrep: Preprocess Dataset
+    DataPrep->>DataPrep: Normalize, Handle Outliers, Feature Engineering
+    DataPrep-->>WebUI: Processed Data
+    
+    WebUI->>TrainEngine: Start Training with Config
+    TrainEngine->>BatchProc: Process Training Batches
+    BatchProc->>TrainEngine: Optimized Batches
+    
+    loop Hyperparameter Optimization
+        TrainEngine->>TrainEngine: ASHT/Bayesian Optimization
+        TrainEngine->>TrainEngine: Cross-Validation
+    end
+    
+    TrainEngine->>ModelMgr: Save Best Model
+    ModelMgr->>ModelMgr: Encrypt & Store Model
+    TrainEngine-->>WebUI: Training Complete + Metrics
+
+    %% Inference Flow
+    User->>WebUI: Request Prediction
+    WebUI->>InferEngine: Load Model & Predict
+    InferEngine->>ModelMgr: Retrieve Model
+    ModelMgr-->>InferEngine: Decrypted Model
+    
+    InferEngine->>DataPrep: Preprocess Input
+    DataPrep-->>InferEngine: Processed Features
+    
+    InferEngine->>BatchProc: Batch Predictions (if applicable)
+    BatchProc-->>InferEngine: Batch Results
+    
+    InferEngine-->>WebUI: Predictions + Confidence
+    WebUI-->>User: Results & Visualizations
+```
+
+## �🌟 Key Features
 
 ### 🧠 **Advanced ML Algorithms & Optimization**
 - **ASHT (Adaptive Surrogate-Assisted Hyperparameter Tuning)**: Kolosal's proprietary optimization algorithm

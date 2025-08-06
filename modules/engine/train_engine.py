@@ -160,6 +160,11 @@ class MLTrainingEngine:
         self.training_complete = False
         self._shutdown_handlers_registered = False
         
+        # Store test data for evaluation
+        self.X_test = None
+        self.y_test = None
+        self.X_test_processed = None
+        
         # Set up logging using centralized configuration
         try:
             from modules.logging_config import get_logger
@@ -1360,16 +1365,31 @@ class MLTrainingEngine:
         # Create training pipeline
         pipeline = self._create_pipeline(model)
 
-        # Split data for validation if not provided
-        if (X_val is None or y_val is None) and hasattr(self.config, 'test_size') and self.config.test_size > 0:
-            split_kwargs = dict(test_size=self.config.test_size, random_state=self.config.random_state)
+        # Always create a test split for evaluation, separate from validation split
+        test_size = getattr(self.config, 'test_size', 0.2)
+        if test_size <= 0:
+            test_size = 0.2  # Default to 20% test split
+            
+        split_kwargs = dict(test_size=test_size, random_state=self.config.random_state)
+        if self.config.task_type == TaskType.CLASSIFICATION and getattr(self.config, 'stratify', False):
+            split_kwargs['stratify'] = y
+            
+        # First split: separate test data
+        X_temp, self.X_test, y_temp, self.y_test = train_test_split(X, y, **split_kwargs)
+        self.logger.info(f"Test data split: {self.X_test.shape[0]} test samples reserved for final evaluation")
+        
+        # Second split: create validation data from remaining data if not provided
+        if (X_val is None or y_val is None):
+            # Use smaller validation size since we already reserved test data
+            val_size = min(0.25, test_size)  # Use 25% of remaining data or same as test size
+            val_split_kwargs = dict(test_size=val_size, random_state=self.config.random_state)
             if self.config.task_type == TaskType.CLASSIFICATION and getattr(self.config, 'stratify', False):
-                split_kwargs['stratify'] = y
-            X_train, X_val, y_train, y_val = train_test_split(X, y, **split_kwargs)
-            self.logger.info(f"Data split: {X_train.shape[0]} training samples, {X_val.shape[0]} validation samples")
+                val_split_kwargs['stratify'] = y_temp
+            X_train, X_val, y_train, y_val = train_test_split(X_temp, y_temp, **val_split_kwargs)
+            self.logger.info(f"Data split: {X_train.shape[0]} training samples, {X_val.shape[0]} validation samples, {self.X_test.shape[0]} test samples")
         else:
-            X_train, y_train = X, y
-            self.logger.info(f"Using provided validation data: {X_val.shape[0]} validation samples" if X_val is not None else "No validation data")
+            X_train, y_train = X_temp, y_temp
+            self.logger.info(f"Using provided validation data: {X_val.shape[0]} validation samples, {self.X_test.shape[0]} test samples reserved")
 
         # Convert data to numpy arrays (no copy if possible)
         def to_numpy_safe(arr):
@@ -1382,6 +1402,8 @@ class MLTrainingEngine:
         y_train = to_numpy_safe(y_train)
         X_val = to_numpy_safe(X_val) if X_val is not None else None
         y_val = to_numpy_safe(y_val) if y_val is not None else None
+        self.X_test = to_numpy_safe(self.X_test)
+        self.y_test = to_numpy_safe(self.y_test)
 
         # Fit preprocessor if available
         if self.preprocessor:
@@ -1390,6 +1412,7 @@ class MLTrainingEngine:
                 self.preprocessor.fit(X_train, y_train)
                 X_train_processed = self.preprocessor.transform(X_train)
                 X_val_processed = self.preprocessor.transform(X_val) if X_val is not None else None
+                self.X_test_processed = self.preprocessor.transform(self.X_test)
                 self.logger.info("Preprocessor fitted successfully")
             except Exception as e:
                 self.logger.error(f"Error fitting preprocessor: {str(e)}")
@@ -1397,10 +1420,13 @@ class MLTrainingEngine:
                     self.logger.error(traceback.format_exc())
                 X_train_processed = X_train
                 X_val_processed = X_val
+                self.X_test_processed = self.X_test
         else:
             X_train_processed = X_train
             X_val_processed = X_val
+            self.X_test_processed = self.X_test
         del X_train, X_val  # Free memory
+        # Keep X_test and y_test for later evaluation
         gc.collect()
 
         # Fit feature selector if available
@@ -1412,6 +1438,7 @@ class MLTrainingEngine:
                 X_train_processed = self.feature_selector.transform(X_train_processed)
                 if X_val_processed is not None:
                     X_val_processed = self.feature_selector.transform(X_val_processed)
+                self.X_test_processed = self.feature_selector.transform(self.X_test_processed)
                 if hasattr(self.feature_selector, 'get_support'):
                     feature_indices = self.feature_selector.get_support(indices=True)
                     selected_feature_names = [feature_names[i] for i in feature_indices] if feature_names else None
@@ -1521,6 +1548,17 @@ class MLTrainingEngine:
                     self.logger.info(f"Validation {metric}: {value:.4f}")
                 else:
                     self.logger.info(f"Validation {metric}: {value}")
+        
+        # Generate confusion matrix for classification tasks before clearing data
+        validation_y_val = y_val  # Store reference before clearing
+        if self.config.task_type == TaskType.CLASSIFICATION and best_model_info["metrics"] and self.tracker and X_val_processed is not None and validation_y_val is not None:
+            try:
+                y_pred = best_model_info["model"].predict(X_val_processed)
+                class_names = list(map(str, np.unique(validation_y_val)))
+                self.tracker.log_confusion_matrix(validation_y_val, y_pred, class_names=class_names)
+            except Exception as e:
+                self.logger.warning(f"Failed to generate confusion matrix: {str(e)}")
+                
         del X_val_processed, y_val  # Free memory
         gc.collect()
 
@@ -1553,15 +1591,6 @@ class MLTrainingEngine:
             self.logger.info(f"New best model: {model_name} with score {best_metric:.4f}")
             if getattr(self.config, 'auto_save', False):
                 self.save_model(model_name)
-
-        # Generate confusion matrix for classification tasks
-        if self.config.task_type == TaskType.CLASSIFICATION and best_model_info["metrics"] and self.tracker:
-            try:
-                y_pred = best_model_info["model"].predict(best_model_info["metrics"].get('X_val', None))
-                class_names = list(map(str, np.unique(y)))
-                self.tracker.log_confusion_matrix(y_val, y_pred, class_names=class_names)
-            except Exception as e:
-                self.logger.warning(f"Failed to generate confusion matrix: {str(e)}")
 
         # End experiment tracking if enabled
         if self.tracker:
@@ -1838,8 +1867,8 @@ class MLTrainingEngine:
         
         Args:
             model_name: Name of the model to evaluate (uses best model if None)
-            X_test: Test features
-            y_test: Test targets  
+            X_test: Test features (uses stored test data if None)
+            y_test: Test targets (uses stored test data if None)
             detailed: Whether to compute additional detailed metrics
             
         Returns:
@@ -1858,8 +1887,14 @@ class MLTrainingEngine:
                 model = self.models[model_name]["model"]
                 actual_model_name = model_name
             
+            # Use stored test data if not provided
             if X_test is None or y_test is None:
-                return {"error": "Test data (X_test, y_test) must be provided"}
+                if self.X_test_processed is not None and self.y_test is not None:
+                    X_test = self.X_test_processed
+                    y_test = self.y_test
+                    self.logger.info("Using stored test data for evaluation")
+                else:
+                    return {"error": "No test data available. Either provide X_test and y_test, or train a model first to create test data automatically."}
             
             # Perform evaluation
             start_time = time.time()
@@ -1908,6 +1943,27 @@ class MLTrainingEngine:
         except Exception as e:
             self.logger.error(f"Error evaluating model: {str(e)}")
             return {"error": str(e)}
+    
+    def get_test_data_info(self) -> Dict[str, Any]:
+        """
+        Get information about the stored test data.
+        
+        Returns:
+            Dictionary with test data information
+        """
+        if self.X_test is None or self.y_test is None:
+            return {
+                "available": False,
+                "message": "No test data available. Train a model first to automatically create test data."
+            }
+        
+        return {
+            "available": True,
+            "X_test_shape": self.X_test.shape if hasattr(self.X_test, 'shape') else len(self.X_test),
+            "y_test_shape": self.y_test.shape if hasattr(self.y_test, 'shape') else len(self.y_test),
+            "processed": self.X_test_processed is not None,
+            "message": f"Test data available: {len(self.y_test)} samples"
+        }
     
     def get_best_model(self) -> Tuple[Optional[str], Optional[Dict]]:
         """
@@ -2060,6 +2116,11 @@ class MLTrainingEngine:
                 delattr(self, '_current_y')
             if hasattr(self, '_last_feature_names'):
                 delattr(self, '_last_feature_names')
+            
+            # Clear stored test data
+            self.X_test = None
+            self.y_test = None
+            self.X_test_processed = None
                 
             # Force garbage collection
             gc.collect()
