@@ -1015,16 +1015,16 @@ class MLTrainingEngineConfig:
         security_config: Dict = None,
         metadata: Dict = None,
         
-        # High-impact optimization settings
-        enable_jit_compilation: bool = True,
+        # High-impact optimization settings (disabled by default for fast initialization)
+        enable_jit_compilation: bool = False,  # Can be enabled when needed for performance
         jit_min_calls: int = 10,
         jit_cache_size: int = 128,
-        enable_mixed_precision: bool = True,
+        enable_mixed_precision: bool = False,  # Can be enabled when needed for performance
         use_fp16: bool = True,
-        enable_adaptive_hyperopt: bool = True,
+        enable_adaptive_hyperopt: bool = False,  # Can be enabled when needed for advanced optimization
         hyperopt_backend: str = 'optuna',
         max_trials: int = 100,
-        enable_streaming: bool = True,
+        enable_streaming: bool = False,  # Can be enabled when needed for large datasets
         streaming_batch_size: int = 1000,
         streaming_chunk_size: int = 1000,
         streaming_threshold: int = 5000

@@ -212,8 +212,20 @@ class MLTrainingEngine:
                 if self.config.explainability_config.default_method == "shap" and not SHAP_AVAILABLE:
                     self.logger.warning("SHAP is configured as the default explainer but is not installed")
                     
-            # Initialize optimization components
-            self._init_optimization_components()
+            # Initialize optimization components only if explicitly enabled
+            # This prevents slow initialization when optimization features are disabled
+            if (hasattr(self.config, 'enable_jit_compilation') and self.config.enable_jit_compilation) or \
+               (hasattr(self.config, 'enable_mixed_precision') and self.config.enable_mixed_precision) or \
+               (hasattr(self.config, 'enable_adaptive_hyperopt') and self.config.enable_adaptive_hyperopt) or \
+               (hasattr(self.config, 'enable_streaming') and self.config.enable_streaming):
+                self._init_optimization_components()
+            else:
+                # Set optimization components to None to avoid slow global initialization
+                self.jit_compiler = None
+                self.mixed_precision_manager = None
+                self.adaptive_optimizer = None
+                self.streaming_pipeline = None
+                self.logger.info("Optimization components disabled for fast initialization")
             
             # Initialize thread pool for parallel operations
             if self.config.n_jobs != 1:
