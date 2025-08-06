@@ -1269,3 +1269,52 @@ class MLTrainingEngineConfig:
         config_dict["monitoring_config"] = self.monitoring_config.to_dict()
         
         return config_dict
+
+
+# Export all configuration classes and enums
+__all__ = [
+    # Quantization
+    "QuantizationType",
+    "QuantizationMode", 
+    "QuantizationConfig",
+    
+    # Engine enums and configs
+    "TaskType",
+    "OptimizationStrategy",
+    "ModelType",
+    "EngineState",
+    "NormalizationType",
+    "BatchProcessingStrategy",
+    "BatchPriority",
+    "ModelSelectionCriteria",
+    
+    # Configuration classes
+    "PreprocessorConfig",
+    "BatchProcessorConfig",
+    "InferenceEngineConfig",
+    "MLTrainingEngineConfig",
+    "MonitoringConfig",
+    "ExplainabilityConfig",
+    
+    # Constants
+    "CHECKPOINT_PATH",
+    "MODEL_REGISTRY_PATH",
+]
+
+# Import adaptive preprocessing config for convenience
+# This allows: from modules.configs import AdaptivePreprocessorConfig
+try:
+    from .engine.adaptive_preprocessing import AdaptivePreprocessorConfig
+    __all__.append("AdaptivePreprocessorConfig")
+except ImportError:
+    # If not available, create a helpful error message
+    def AdaptivePreprocessorConfig(*args, **kwargs):
+        raise ImportError(
+            "AdaptivePreprocessorConfig is not available. "
+            "This is likely because optimization modules have dependency issues. "
+            "Try: pip install psutil pandas numpy or import from modules.engine instead."
+        )
+
+# Note: AdaptivePreprocessorConfig is available in modules.engine, not modules.configs
+# Import it with: from modules.engine import AdaptivePreprocessorConfig
+# or from modules import AdaptivePreprocessorConfig (if optimization modules are available)

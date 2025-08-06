@@ -15,7 +15,7 @@ from .model_manager import SecureModelManager
 __version__ = "0.1.4"
 __author__ = "Kolosal AI Team"
 
-# Package metadata
+# Package metadata - build dynamically based on what's available
 __all__ = [
     # From configs
     "TaskType",
@@ -38,7 +38,7 @@ __all__ = [
     "MonitoringConfig",
     "ExplainabilityConfig",
     
-    # From engine
+    # From engine - core components
     "InferenceEngine",
     "MLTrainingEngine",
     "BatchProcessor",
@@ -50,4 +50,34 @@ __all__ = [
     
     # Utils
     "LRUTTLCache",
+    
+    # Availability flag
+    "OPTIMIZATION_MODULES_AVAILABLE",
 ]
+
+# Add optimization modules if they're available
+try:
+    # These imports will only succeed if the optimization modules are properly available
+    from .engine import OPTIMIZATION_MODULES_AVAILABLE
+    if OPTIMIZATION_MODULES_AVAILABLE:
+        # Import the optimization components
+        from .engine import (
+            OptimizedDataLoader, DatasetSize, LoadingStrategy, load_data_optimized,
+            AdaptivePreprocessorConfig, PreprocessorConfigOptimizer,
+            MemoryAwareDataProcessor, create_memory_aware_processor
+        )
+        
+        # Add them to __all__
+        __all__.extend([
+            "OptimizedDataLoader",
+            "DatasetSize", 
+            "LoadingStrategy",
+            "load_data_optimized",
+            "AdaptivePreprocessorConfig",
+            "PreprocessorConfigOptimizer", 
+            "MemoryAwareDataProcessor",
+            "create_memory_aware_processor",
+        ])
+except (ImportError, AttributeError):
+    # If optimization modules aren't available, that's okay
+    OPTIMIZATION_MODULES_AVAILABLE = False

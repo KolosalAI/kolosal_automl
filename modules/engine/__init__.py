@@ -25,6 +25,15 @@ try:
     OPTIMIZATION_MODULES_AVAILABLE = True
 except ImportError as e:
     # Graceful fallback if optimization modules have dependency issues
+    print(f"Warning: Optimization modules not available: {e}")
+    OptimizedDataLoader = None
+    DatasetSize = None
+    LoadingStrategy = None
+    load_data_optimized = None
+    AdaptivePreprocessorConfig = None
+    PreprocessorConfigOptimizer = None
+    MemoryAwareDataProcessor = None
+    create_memory_aware_processor = None
     OPTIMIZATION_MODULES_AVAILABLE = False
 
 # Import utilities
@@ -35,6 +44,7 @@ from .utils import (
     _return_none,
 )
 
+# Build __all__ dynamically based on what's available
 __all__ = [
     # Core engines
     "InferenceEngine",
@@ -45,17 +55,6 @@ __all__ = [
     "DataPreprocessor",
     "Quantizer",
     
-    # Optimization modules (if available)
-    "OptimizedDataLoader",
-    "DatasetSize", 
-    "LoadingStrategy",
-    "load_data_optimized",
-    "AdaptivePreprocessorConfig",
-    "PreprocessorConfigOptimizer", 
-    "MemoryAwareDataProcessor",
-    "create_memory_aware_processor",
-    "OPTIMIZATION_MODULES_AVAILABLE",
-    
     # Utilities
     "LRUTTLCache",
     
@@ -64,7 +63,23 @@ __all__ = [
     "_scrub",
     "_patch_pickle_for_locks",
     "_return_none",
+    
+    # Availability flag
+    "OPTIMIZATION_MODULES_AVAILABLE",
 ]
+
+# Add optimization modules to __all__ if they're available
+if OPTIMIZATION_MODULES_AVAILABLE:
+    __all__.extend([
+        "OptimizedDataLoader",
+        "DatasetSize", 
+        "LoadingStrategy",
+        "load_data_optimized",
+        "AdaptivePreprocessorConfig",
+        "PreprocessorConfigOptimizer", 
+        "MemoryAwareDataProcessor",
+        "create_memory_aware_processor",
+    ])
 
 # Version info
 __version__ = "0.1.4"
