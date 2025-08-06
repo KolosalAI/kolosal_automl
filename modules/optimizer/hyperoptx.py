@@ -2,8 +2,9 @@ import numpy as np
 import math
 import pandas as pd
 from sklearn.model_selection import cross_val_score, ParameterSampler
-from sklearn.base import clone
+from sklearn.base import clone, BaseEstimator
 from sklearn.preprocessing import StandardScaler
+from sklearn.exceptions import NotFittedError
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import Matern, RBF, ConstantKernel, WhiteKernel
@@ -32,7 +33,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-class HyperOptX:
+class HyperOptX(BaseEstimator):
     """
     Advanced Hyperparameter Optimization with Multi-Stage Optimization and Meta-Learning
     
@@ -941,8 +942,16 @@ class HyperOptX:
         if x.ndim == 1:
             x = x.reshape(1, -1)
             
-        # Scale features
-        x_scaled = self.scaler.transform(x)
+        # Scale features (only if scaler is fitted)
+        try:
+            x_scaled = self.scaler.transform(x)
+        except NotFittedError:
+            # If scaler is not fitted yet, use original features
+            # This can happen early in optimization before surrogate models are trained
+            x_scaled = x
+        except Exception:
+            # Fallback for any other scaling errors
+            x_scaled = x
         
         # Check which acquisition function to use based on iteration
         acq_type = self._select_acquisition_function()
@@ -1355,7 +1364,12 @@ class HyperOptX:
             # Evaluate all configs with surrogate
             X_configs = self._configs_to_features(configs)
             if X_configs.shape[0] > 0:
-                X_scaled = self.scaler.transform(X_configs)
+                try:
+                    X_scaled = self.scaler.transform(X_configs)
+                except (NotFittedError, ValueError):
+                    # If scaler not fitted, use original features
+                    X_scaled = X_configs
+                    
                 acq_values = []
                 
                 # Batch evaluation for efficiency
@@ -1433,7 +1447,12 @@ class HyperOptX:
             # Evaluate all configurations using the surrogate model.
             X_configs = self._configs_to_features(configs)
             if X_configs.shape[0] > 0:
-                X_scaled = self.scaler.transform(X_configs)
+                try:
+                    X_scaled = self.scaler.transform(X_configs)
+                except (NotFittedError, ValueError):
+                    # If scaler not fitted, use original features
+                    X_scaled = X_configs
+                    
                 acq_values = []
                 # Evaluate the acquisition function on each configuration.
                 for i in range(X_scaled.shape[0]):
@@ -1451,7 +1470,12 @@ class HyperOptX:
         # Evaluate the sampled configurations.
         X_configs = self._configs_to_features(configs)
         if X_configs.shape[0] > 0:
-            X_scaled = self.scaler.transform(X_configs)
+            try:
+                X_scaled = self.scaler.transform(X_configs)
+            except (NotFittedError, ValueError):
+                # If scaler not fitted, use original features
+                X_scaled = X_configs
+                
             acq_values = [-self._acquisition_function(X_scaled[i:i+1], surrogate_models, best_f)
                         for i in range(X_scaled.shape[0])]
             best_idx = int(np.argmax(acq_values))
@@ -1530,7 +1554,11 @@ class HyperOptX:
                 full_config = cat_config.copy()
                 config_features = self._encode_config(full_config)
                 if config_features.shape[1] > 0:
-                    scaled_features = self.scaler.transform(config_features)
+                    try:
+                        scaled_features = self.scaler.transform(config_features)
+                    except (NotFittedError, ValueError):
+                        # If scaler not fitted, use original features
+                        scaled_features = config_features
                     acq_value = -self._acquisition_function(scaled_features, surrogate_models, best_f)
                     if acq_value > best_overall_acq:
                         best_overall_acq = acq_value
@@ -1549,7 +1577,11 @@ class HyperOptX:
                 
                 # Encode and evaluate
                 config_features = self._encode_config(full_config)
-                scaled_features = self.scaler.transform(config_features)
+                try:
+                    scaled_features = self.scaler.transform(config_features)
+                except (NotFittedError, ValueError):
+                    # If scaler not fitted, use original features
+                    scaled_features = config_features
                 return self._acquisition_function(scaled_features, surrogate_models, best_f)
             
             # Multiple starting points
@@ -2009,7 +2041,12 @@ class HyperOptX:
         if X_configs.shape[0] == 0 or X_configs.shape[1] == 0:
             return
             
-        X_scaled = self.scaler.transform(X_configs)
+        # Scale features (only if scaler is fitted)
+        try:
+            X_scaled = self.scaler.transform(X_configs)
+        except (NotFittedError, ValueError):
+            # If scaler is not fitted yet or other errors, skip predictions
+            return
         
         # Get predictions from surrogate models
         if self.ensemble_surrogate and len(self.active_surrogates) > 1:
@@ -2635,6 +2672,94 @@ class HyperOptX:
             logger.info(f"HyperOptX speedup: {summary['speedup']:.3f}x")
 
         return results
+
+    def get_params(self, deep=True):
+        """
+        Get parameters for this optimizer.
+        
+        This method is included for compatibility with scikit-learn's 
+        BaseEstimator interface.
+        
+        Parameters:
+        -----------
+        deep : bool, default=True
+            If True, will return the parameters for this optimizer and
+            contained subobjects that are estimators.
+            
+        Returns:
+        --------
+        params : dict
+            Parameter names mapped to their values.
+        """
+        # Return the initialization parameters
+        params = {
+            'estimator': self.estimator,
+            'param_space': self.param_space,
+            'max_iter': self.max_iter,
+            'cv': self.cv,
+            'scoring': self.scoring,
+            'random_state': self.random_state,
+            'n_jobs': self.n_jobs,
+            'verbose': self.verbose,
+            'maximize': self.maximize,
+            'time_budget': self.time_budget,
+            'ensemble_surrogate': self.ensemble_surrogate,
+            'transfer_learning': self.transfer_learning,
+            'optimization_strategy': self.optimization_strategy,
+            'early_stopping': self.early_stopping,
+            'meta_learning': self.meta_learning,
+            'constraint_handling': self.constraint_handling
+        }
+        
+        if deep and hasattr(self.estimator, 'get_params'):
+            # Include estimator parameters with 'estimator__' prefix
+            estimator_params = self.estimator.get_params(deep=True)
+            for key, value in estimator_params.items():
+                params[f'estimator__{key}'] = value
+        
+        return params
+
+    def set_params(self, **params):
+        """
+        Set the parameters of this optimizer.
+        
+        This method is included for compatibility with scikit-learn's 
+        BaseEstimator interface.
+        
+        Parameters:
+        -----------
+        **params : dict
+            Optimizer parameters.
+            
+        Returns:
+        --------
+        self : object
+            Optimizer instance.
+        """
+        # Separate estimator parameters from optimizer parameters
+        estimator_params = {}
+        optimizer_params = {}
+        
+        for key, value in params.items():
+            if key.startswith('estimator__'):
+                # Remove the 'estimator__' prefix for estimator parameters
+                estimator_key = key[len('estimator__'):]
+                estimator_params[estimator_key] = value
+            else:
+                optimizer_params[key] = value
+        
+        # Set estimator parameters
+        if estimator_params and hasattr(self.estimator, 'set_params'):
+            self.estimator.set_params(**estimator_params)
+        
+        # Set optimizer parameters
+        for key, value in optimizer_params.items():
+            if hasattr(self, key):
+                setattr(self, key, value)
+            else:
+                raise ValueError(f"Invalid parameter {key} for optimizer {self.__class__.__name__}")
+        
+        return self
 
 
 

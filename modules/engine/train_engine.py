@@ -1480,7 +1480,15 @@ class MLTrainingEngine:
                     optimizer.fit(X_train_processed, y_train, **fit_params)
                 optimization_time = time.time() - optimization_start
                 best_model = getattr(optimizer, 'best_estimator_', optimizer.estimator)
-                best_params = getattr(optimizer, 'best_params_', optimizer.get_params())
+                # Try to get best_params_ first, then fall back to get_params() if available
+                if hasattr(optimizer, 'best_params_') and optimizer.best_params_ is not None:
+                    best_params = optimizer.best_params_
+                elif hasattr(optimizer, 'get_params'):
+                    best_params = optimizer.get_params()
+                else:
+                    # Final fallback for optimizers that don't implement either
+                    best_params = {}
+                    self.logger.warning(f"Optimizer {type(optimizer).__name__} doesn't provide best_params_ or get_params()")
                 if hasattr(optimizer, 'cv_results_'):
                     cv_results = optimizer.cv_results_
                     mean_test_score = np.mean(cv_results['mean_test_score'])
