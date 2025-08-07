@@ -10,7 +10,7 @@ This subpackage contains all the core engine components for machine learning:
 - Various utilities and caching mechanisms
 """
 
-from .inference_engine import InferenceEngine
+from .inference_engine import InferenceEngine, InferenceServer
 from .train_engine import MLTrainingEngine
 from .batch_processor import BatchProcessor
 from .data_preprocessor import DataPreprocessor
@@ -48,6 +48,7 @@ from .utils import (
 __all__ = [
     # Core engines
     "InferenceEngine",
+    "InferenceServer",
     "MLTrainingEngine",
     
     # Processors

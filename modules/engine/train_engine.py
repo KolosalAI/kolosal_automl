@@ -361,12 +361,15 @@ class MLTrainingEngine:
             if hasattr(self, 'logger') and self.logger:
                 # Check if logger handlers are still valid
                 for handler in self.logger.handlers:
-                    if hasattr(handler, 'stream') and hasattr(handler.stream, 'closed'):
-                        if handler.stream.closed:
+                    if hasattr(handler, 'stream'):
+                        # Check if stream is None or closed
+                        if handler.stream is None:
+                            return  # Skip logging if stream is None
+                        if hasattr(handler.stream, 'closed') and handler.stream.closed:
                             return  # Skip logging if stream is closed
                 
                 getattr(self.logger, level)(message)
-        except (ValueError, OSError, AttributeError):
+        except (ValueError, OSError, AttributeError, TypeError):
             # Silently ignore logging errors during shutdown
             pass
     
@@ -398,15 +401,16 @@ class MLTrainingEngine:
         except Exception as e:
             self.logger.error(f"Error shutting down components: {str(e)}")
         
-        # Clean up logging resources
+        # Log cleanup completion before cleaning up logging resources
+        self._safe_log("info", "Cleanup complete")
+        
+        # Clean up logging resources (do this last)
         try:
             from modules.logging_config import cleanup_logging
             cleanup_logging()
         except Exception as e:
             # Use print since logging might be shutting down
             print(f"Error cleaning up logging: {e}")
-            
-        self.logger.info("Cleanup complete")
         
     def _register_model_types(self):
         """Register built-in model types for auto discovery."""
@@ -582,6 +586,56 @@ class MLTrainingEngine:
         
         return Pipeline(steps)
     
+    def _can_stratify(self, y, n_splits=None, min_samples_per_class=2):
+        """
+        Check if stratification is safe to use with the given target variable.
+        
+        Args:
+            y: Target variable
+            n_splits: Number of splits (for CV) or None for train_test_split
+            min_samples_per_class: Minimum samples required per class
+            
+        Returns:
+            Boolean indicating if stratification can be safely used
+        """
+        if y is None:
+            return False
+            
+        try:
+            import numpy as np
+            from collections import Counter
+            
+            # Convert to numpy array if needed
+            if hasattr(y, 'values'):
+                y_array = y.values
+            else:
+                y_array = np.array(y)
+            
+            # Count samples per class
+            class_counts = Counter(y_array)
+            min_class_count = min(class_counts.values())
+            
+            # For cross-validation, each class needs at least n_splits samples
+            if n_splits is not None:
+                required_samples = max(n_splits, min_samples_per_class)
+            else:
+                # For train_test_split, need at least 2 samples per class
+                required_samples = min_samples_per_class
+            
+            if min_class_count < required_samples:
+                self.logger.warning(
+                    f"Cannot use stratification: class with only {min_class_count} samples found, "
+                    f"but {required_samples} samples per class are required. "
+                    f"Class distribution: {dict(class_counts)}"
+                )
+                return False
+            
+            return True
+            
+        except Exception as e:
+            self.logger.warning(f"Error checking stratification compatibility: {str(e)}")
+            return False
+    
     def _get_cv_splitter(self, y=None):
         """
         Get appropriate cross-validation splitter based on task type.
@@ -601,13 +655,18 @@ class MLTrainingEngine:
             cv_folds = min(cv_folds, 3)  # Use 3-fold CV for large datasets
             self.logger.info(f"Using {cv_folds}-fold CV for large dataset with {len(self._current_X)} samples")
         
-        if self.config.task_type == TaskType.CLASSIFICATION and hasattr(self.config, 'stratify') and self.config.stratify and y is not None:
+        if (self.config.task_type == TaskType.CLASSIFICATION and 
+            hasattr(self.config, 'stratify') and self.config.stratify and 
+            y is not None and self._can_stratify(y, n_splits=cv_folds)):
             return StratifiedKFold(
                 n_splits=cv_folds, 
                 shuffle=True, 
                 random_state=self.config.random_state
             )
         else:
+            if (self.config.task_type == TaskType.CLASSIFICATION and 
+                hasattr(self.config, 'stratify') and self.config.stratify):
+                self.logger.info("Using regular KFold instead of StratifiedKFold due to class distribution")
             return KFold(
                 n_splits=cv_folds, 
                 shuffle=True, 
@@ -1371,8 +1430,13 @@ class MLTrainingEngine:
             test_size = 0.2  # Default to 20% test split
             
         split_kwargs = dict(test_size=test_size, random_state=self.config.random_state)
-        if self.config.task_type == TaskType.CLASSIFICATION and getattr(self.config, 'stratify', False):
+        if (self.config.task_type == TaskType.CLASSIFICATION and 
+            getattr(self.config, 'stratify', False) and 
+            self._can_stratify(y)):
             split_kwargs['stratify'] = y
+        elif (self.config.task_type == TaskType.CLASSIFICATION and 
+              getattr(self.config, 'stratify', False)):
+            self.logger.info("Using regular train_test_split instead of stratified due to class distribution")
             
         # First split: separate test data
         X_temp, self.X_test, y_temp, self.y_test = train_test_split(X, y, **split_kwargs)
@@ -1383,8 +1447,13 @@ class MLTrainingEngine:
             # Use smaller validation size since we already reserved test data
             val_size = min(0.25, test_size)  # Use 25% of remaining data or same as test size
             val_split_kwargs = dict(test_size=val_size, random_state=self.config.random_state)
-            if self.config.task_type == TaskType.CLASSIFICATION and getattr(self.config, 'stratify', False):
+            if (self.config.task_type == TaskType.CLASSIFICATION and 
+                getattr(self.config, 'stratify', False) and 
+                self._can_stratify(y_temp)):
                 val_split_kwargs['stratify'] = y_temp
+            elif (self.config.task_type == TaskType.CLASSIFICATION and 
+                  getattr(self.config, 'stratify', False)):
+                self.logger.info("Using regular validation split instead of stratified due to class distribution")
             X_train, X_val, y_train, y_val = train_test_split(X_temp, y_temp, **val_split_kwargs)
             self.logger.info(f"Data split: {X_train.shape[0]} training samples, {X_val.shape[0]} validation samples, {self.X_test.shape[0]} test samples")
         else:

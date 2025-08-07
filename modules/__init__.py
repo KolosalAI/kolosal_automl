@@ -8,9 +8,22 @@ This package contains all the core modules for the ML pipeline including:
 - Batch processing and quantization
 """
 
+# Optional: Compile to bytecode on first import for better performance
+import os
+_AUTO_COMPILE = os.environ.get("KOLOSAL_AUTO_COMPILE", "false").lower() == "true"
+
+if _AUTO_COMPILE:
+    try:
+        from .compiler import compile_on_import
+        compile_on_import()
+    except ImportError:
+        # Silently continue if compiler module is not available
+        pass
+
 from .configs import *
 from .engine import *
 from .model_manager import SecureModelManager
+from .ui import DataPreviewGenerator, SampleDataLoader
 
 __version__ = "0.1.4"
 __author__ = "Kolosal AI Team"
@@ -47,6 +60,10 @@ __all__ = [
     
     # From model_manager
     "SecureModelManager",
+    
+    # From UI
+    "DataPreviewGenerator",
+    "SampleDataLoader",
     
     # Utils
     "LRUTTLCache",

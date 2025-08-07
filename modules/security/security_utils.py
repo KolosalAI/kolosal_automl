@@ -16,6 +16,7 @@ Version: 0.2.0
 import re
 import secrets
 import string
+import logging
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime, timedelta
 import hashlib
@@ -528,3 +529,147 @@ def create_error_response(status_code: int, message: str) -> dict:
             }
     
     return ErrorResponse(status_code, message)
+
+
+# Additional Security Wrapper Functions for App Integration
+
+def security_wrapper(func):
+    """
+    Security wrapper decorator for functions that need security auditing
+    
+    Args:
+        func: Function to wrap with security logging
+        
+    Returns:
+        Wrapped function with security logging
+    """
+    import functools
+    import logging
+    
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            # Log function call for security auditing
+            logger = logging.getLogger(__name__)
+            logger.debug(f"SECURITY_WRAPPER: Executing {func.__name__}")
+            
+            result = func(*args, **kwargs)
+            
+            logger.debug(f"SECURITY_WRAPPER: {func.__name__} completed successfully")
+            return result
+            
+        except Exception as e:
+            logger = logging.getLogger(__name__)
+            logger.error(f"SECURITY_WRAPPER: Error in {func.__name__}: {str(e)}")
+            raise
+            
+    return wrapper
+
+
+def validate_file_upload(file_path: str, allowed_extensions: List[str]) -> bool:
+    """
+    Validate file upload for security
+    
+    Args:
+        file_path: Path to the uploaded file
+        allowed_extensions: List of allowed file extensions (with dots)
+        
+    Returns:
+        True if file is valid, False otherwise
+    """
+    try:
+        import os
+        from pathlib import Path
+        
+        if not file_path or not os.path.exists(file_path):
+            return False
+            
+        # Check file extension
+        file_ext = Path(file_path).suffix.lower()
+        if file_ext not in [ext.lower() for ext in allowed_extensions]:
+            return False
+            
+        # Check file size (max 100MB)
+        max_size = 100 * 1024 * 1024  # 100MB
+        if os.path.getsize(file_path) > max_size:
+            return False
+            
+        # Additional security checks could be added here
+        # - File content validation
+        # - Virus scanning
+        # - Magic number validation
+        
+        return True
+        
+    except Exception as e:
+        logging.getLogger(__name__).error(f"File validation error: {e}")
+        return False
+
+
+def secure_data_processing(data):
+    """
+    Apply security measures to data processing
+    
+    Args:
+        data: Data to process securely
+        
+    Returns:
+        Processed data with security measures applied
+    """
+    try:
+        # For now, just return the data as-is
+        # In a real implementation, this could include:
+        # - Data sanitization
+        # - PII detection and masking
+        # - Data validation
+        # - Rate limiting
+        
+        return data
+        
+    except Exception as e:
+        logging.getLogger(__name__).error(f"Secure data processing error: {e}")
+        return data
+
+
+def create_security_headers() -> Dict[str, str]:
+    """
+    Create security headers for HTTP responses
+    
+    Returns:
+        Dictionary of security headers
+    """
+    return {
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "DENY", 
+        "X-XSS-Protection": "1; mode=block",
+        "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+        "Content-Security-Policy": "default-src 'self'",
+        "Referrer-Policy": "strict-origin-when-cross-origin"
+    }
+
+
+def get_auth_config():
+    """
+    Get authentication configuration for the application
+    
+    Returns:
+        Authentication configuration function or None
+    """
+    try:
+        import os
+        
+        # Check if authentication is enabled via environment variable
+        if os.environ.get("KOLOSAL_AUTH_ENABLED", "false").lower() == "true":
+            username = os.environ.get("KOLOSAL_AUTH_USERNAME", "admin")
+            password = os.environ.get("KOLOSAL_AUTH_PASSWORD", "")
+            
+            if password:
+                def auth_function(user, pwd):
+                    return user == username and pwd == password
+                return auth_function
+                
+        return None
+        
+    except Exception as e:
+        logging.getLogger(__name__).error(f"Auth config error: {e}")
+        return None

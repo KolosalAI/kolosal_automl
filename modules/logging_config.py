@@ -22,6 +22,9 @@ class SafeStreamHandler(logging.StreamHandler):
             # Check if stream is closed before attempting to write
             if hasattr(self.stream, 'closed') and self.stream.closed:
                 return
+            # Also check if stream is None
+            if self.stream is None:
+                return
             super().emit(record)
         except (ValueError, OSError, AttributeError):
             # Silently ignore errors from closed streams during shutdown
@@ -149,8 +152,13 @@ class LoggingManager:
             file_handler.setLevel(level)
             file_handler.setFormatter(formatter)
             
-            self._file_handlers[log_file] = file_handler
-            return file_handler
+            # Verify that the handler was created properly
+            if hasattr(file_handler, 'stream') and file_handler.stream is not None:
+                self._file_handlers[log_file] = file_handler
+                return file_handler
+            else:
+                # Handler creation failed, return None
+                return None
             
         except Exception as e:
             # If file handler creation fails, log to console and continue
@@ -168,7 +176,7 @@ class LoggingManager:
         # Close all file handlers
         for handler_name, handler in self._file_handlers.items():
             try:
-                if hasattr(handler, 'stream') and not handler.stream.closed:
+                if hasattr(handler, 'stream') and handler.stream is not None and hasattr(handler.stream, 'closed') and not handler.stream.closed:
                     handler.close()
             except Exception as e:
                 # Use print instead of logging since we're shutting down
@@ -180,12 +188,15 @@ class LoggingManager:
                 # Remove all handlers
                 for handler in logger.handlers[:]:
                     logger.removeHandler(handler)
-                    # Only close if not already closed
-                    if hasattr(handler, 'close') and hasattr(handler, 'stream'):
-                        if not getattr(handler.stream, 'closed', True):
+                    # Only close if not already closed and stream exists
+                    if hasattr(handler, 'close') and hasattr(handler, 'stream') and handler.stream is not None:
+                        if hasattr(handler.stream, 'closed') and not handler.stream.closed:
                             handler.close()
                     elif hasattr(handler, 'close'):
-                        handler.close()
+                        try:
+                            handler.close()
+                        except Exception:
+                            pass  # Ignore errors when closing handlers
             except Exception as e:
                 print(f"Error cleaning up logger {logger_name}: {e}")
         

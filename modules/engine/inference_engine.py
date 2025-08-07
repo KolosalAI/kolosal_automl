@@ -1721,6 +1721,7 @@ class InferenceEngine:
                     "model_type": self.model_type.name if self.model_type else "Unknown"
                 }
                 
+                
         except Exception as e:
             self.logger.error(f"Error validating model: {e}")
             return {
@@ -1728,3 +1729,150 @@ class InferenceEngine:
                 "error": f"Validation error: {e}",
                 "model_type": "Unknown"
             }
+
+
+class InferenceServer:
+    """
+    High-level inference server for model serving
+    Provides a simple interface for loading and serving models
+    """
+    
+    def __init__(self):
+        """Initialize the inference server"""
+        self.inference_engine = None
+        self.is_loaded = False
+        self.current_model_path = None
+        self.logger = logging.getLogger(__name__)
+        
+    def load_model_from_path(self, model_file, password: Optional[str] = None) -> str:
+        """
+        Load a model from file path
+        
+        Args:
+            model_file: Model file (either path string or file object)
+            password: Optional password for encrypted models
+            
+        Returns:
+            Status message
+        """
+        try:
+            if hasattr(model_file, 'name'):
+                # It's a file object from Gradio
+                model_path = model_file.name
+            else:
+                # It's a string path
+                model_path = model_file
+                
+            if not os.path.exists(model_path):
+                return "❌ Model file not found"
+            
+            # Create inference engine with default config
+            from ..configs import InferenceEngineConfig, OptimizationMode
+            config = InferenceEngineConfig(
+                optimization_mode=OptimizationMode.BALANCED,
+                enable_caching=True,
+                cache_size=100
+            )
+            
+            self.inference_engine = InferenceEngine(config)
+            
+            # Load the model
+            success = self.inference_engine.load_model(model_path)
+            
+            if success:
+                self.is_loaded = True
+                self.current_model_path = model_path
+                model_info = self.inference_engine.get_model_info()
+                return f"✅ Model loaded successfully!\n\nModel Info:\n{json.dumps(model_info, indent=2)}"
+            else:
+                return "❌ Failed to load model"
+                
+        except Exception as e:
+            self.logger.error(f"Error loading model: {e}")
+            return f"❌ Error loading model: {str(e)}"
+    
+    def predict(self, input_data: str) -> str:
+        """
+        Make prediction with the loaded model
+        
+        Args:
+            input_data: Input data as string (comma-separated or JSON)
+            
+        Returns:
+            Prediction result as formatted string
+        """
+        try:
+            if not self.is_loaded or not self.inference_engine:
+                return "❌ No model loaded. Please load a model first."
+            
+            # Parse input data
+            try:
+                if input_data.strip().startswith('[') or input_data.strip().startswith('{'):
+                    # JSON format
+                    data = json.loads(input_data)
+                    if isinstance(data, list):
+                        input_array = np.array(data).reshape(1, -1)
+                    elif isinstance(data, dict):
+                        # Convert dict to array (assuming it's feature dict)
+                        input_array = np.array(list(data.values())).reshape(1, -1)
+                    else:
+                        return "❌ Invalid JSON format"
+                else:
+                    # Comma-separated values
+                    data = [float(x.strip()) for x in input_data.split(',') if x.strip()]
+                    input_array = np.array(data).reshape(1, -1)
+                    
+            except Exception as parse_error:
+                return f"❌ Error parsing input: {str(parse_error)}\nExpected: comma-separated values or JSON array/object"
+            
+            # Make prediction
+            result = self.inference_engine.predict(input_array)
+            
+            if result is None:
+                return "❌ Prediction failed"
+            
+            # Format result
+            if isinstance(result, np.ndarray):
+                if len(result.shape) == 1:
+                    prediction = result[0]
+                else:
+                    prediction = result[0]  # First row
+            else:
+                prediction = result
+            
+            # Get model info for context
+            model_info = self.inference_engine.get_model_info()
+            
+            formatted_result = f"""
+🔮 Prediction Result:
+
+📥 Input: {input_data}
+📤 Prediction: {prediction}
+🎯 Model: {model_info.get('model_type', 'Unknown')}
+📊 Input Shape: {input_array.shape}
+⏱️ Model Path: {os.path.basename(self.current_model_path)}
+
+✅ Prediction completed successfully!
+            """
+            
+            return formatted_result
+            
+        except Exception as e:
+            self.logger.error(f"Error making prediction: {e}")
+            return f"❌ Prediction error: {str(e)}"
+    
+    def get_model_info(self) -> Dict[str, Any]:
+        """Get information about the currently loaded model"""
+        try:
+            if not self.is_loaded or not self.inference_engine:
+                return {"status": "No model loaded"}
+            
+            model_info = self.inference_engine.get_model_info()
+            model_info["model_path"] = self.current_model_path
+            model_info["status"] = "Model loaded and ready"
+            
+            return model_info
+            
+        except Exception as e:
+            self.logger.error(f"Error getting model info: {e}")
+            return {"error": str(e)}

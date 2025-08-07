@@ -186,6 +186,7 @@ Issues = "https://github.com/Genta-Technology/kolosal-automl/issues"
 kolosal-train = "modules.cli:train_command"
 kolosal-predict = "modules.cli:predict_command"
 kolosal-serve = "modules.cli:serve_command"
+kolosal-compile = "modules.compiler:cli_compile_command"
 
 [build-system]
 requires = ["setuptools>=65", "wheel"]

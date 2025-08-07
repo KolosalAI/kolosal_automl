@@ -279,6 +279,61 @@ def show_system_info():
     except Exception as e:
         print(f"❌ Error getting system info: {e}")
 
+def compile_project():
+    """Compile the project to bytecode for better performance."""
+    try:
+        from modules.compiler import BytecodeCompiler
+        
+        print("⚡ Compiling Python code to bytecode...")
+        print("   - This will improve startup performance")
+        print("   - Compilation may take a few moments")
+        print()
+        
+        compiler = BytecodeCompiler()
+        results = compiler.compile_project(max_workers=4, force=False)
+        
+        # Calculate totals
+        total_files = sum(len(dir_results) for dir_results in results.values())
+        total_successful = sum(
+            sum(1 for success in dir_results.values() if success)
+            for dir_results in results.values()
+        )
+        
+        if total_successful == total_files:
+            print(f"✅ Successfully compiled {total_successful} files!")
+            print("   - Startup performance should be improved")
+            print("   - You can run this again with --force to recompile all files")
+        else:
+            print(f"⚠️  Compiled {total_successful}/{total_files} files")
+            print("   - Some files may have had compilation issues")
+            print("   - Check logs for details")
+        
+    except ImportError:
+        print("❌ Compiler module not found")
+        print("   - The bytecode compiler is not available")
+    except Exception as e:
+        print(f"❌ Error during compilation: {e}")
+
+def clean_bytecode():
+    """Clean compiled bytecode files."""
+    try:
+        from modules.compiler import BytecodeCompiler
+        
+        print("🧹 Cleaning bytecode files...")
+        
+        compiler = BytecodeCompiler()
+        removed_count = compiler.clean_bytecode()
+        
+        if removed_count > 0:
+            print(f"✅ Cleaned {removed_count} bytecode files")
+        else:
+            print("✅ No bytecode files to clean")
+        
+    except ImportError:
+        print("❌ Compiler module not found")
+    except Exception as e:
+        print(f"❌ Error during cleanup: {e}")
+
 def clear_screen():
     """Clear the terminal screen."""
     os.system('cls' if os.name == 'nt' else 'clear')
@@ -777,6 +832,16 @@ def system_info_menu():
             'description': 'Check all required dependencies and versions'
         },
         {
+            'id': 'compile',
+            'title': '⚡ Compile to Bytecode',
+            'description': 'Compile Python code to bytecode for better performance'
+        },
+        {
+            'id': 'clean_bytecode',
+            'title': '🧹 Clean Bytecode',
+            'description': 'Remove all compiled bytecode files'
+        },
+        {
             'id': 'back',
             'title': '⬅️ Back to Main Menu',
             'description': 'Return to the main menu'
@@ -800,6 +865,10 @@ def system_info_menu():
             print("📦 Checking Dependencies...")
             check_dependencies()
             print("\n✅ Dependency check complete!")
+        elif option['id'] == 'compile':
+            compile_project()
+        elif option['id'] == 'clean_bytecode':
+            clean_bytecode()
         elif option['id'] == 'back':
             return 'exit'
         
@@ -901,6 +970,8 @@ Examples:
   python main.py --mode gui --help              # Show Gradio-specific help
   python main.py --mode api --help              # Show API-specific help
   python main.py --system-info                  # Show system information
+  python main.py --compile                      # Compile to bytecode for better performance
+  python main.py --clean-bytecode               # Clean compiled bytecode files
         """
     )
     
@@ -924,6 +995,18 @@ Examples:
     )
     
     parser.add_argument(
+        "--compile",
+        action="store_true",
+        help="Compile Python code to bytecode for better performance"
+    )
+    
+    parser.add_argument(
+        "--clean-bytecode",
+        action="store_true",
+        help="Clean all compiled bytecode files"
+    )
+    
+    parser.add_argument(
         "--no-banner",
         action="store_true",
         help="Skip the banner display"
@@ -943,6 +1026,16 @@ Examples:
     # Handle system info request
     if args.system_info:
         show_system_info()
+        return 0
+    
+    # Handle compilation request
+    if args.compile:
+        compile_project()
+        return 0
+    
+    # Handle bytecode cleanup request
+    if args.clean_bytecode:
+        clean_bytecode()
         return 0
     
     # Route to appropriate mode
