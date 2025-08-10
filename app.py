@@ -529,6 +529,49 @@ class MLSystemUI:
         
         # Default fallback
         return algorithm_name.lower().replace(" ", "_")
+
+    def get_all_algorithms(self) -> List[str]:
+        """Return all algorithm display names without task filtering."""
+        algorithms: List[str] = []
+        for category, models in self.ml_algorithms.items():
+            for model_name in models.keys():
+                algorithms.append(f"{category} - {model_name}")
+        return sorted(algorithms)
+
+    def get_multi_algorithm_choices(self, prefilter_by_task: bool = True):
+        """Return a Gradio update object for algorithm choices using engine registry when possible."""
+        try:
+            choices: List[str] = []
+            if prefilter_by_task and self.current_config is not None:
+                # Prefer engine registry for accurate availability
+                try:
+                    temp_engine = MLTrainingEngine(self.current_config)
+                    task_key = self.current_config.task_type.value
+                    registry = getattr(temp_engine, '_model_registry', {})
+                    choices = sorted(list(registry.get(task_key, {}).keys()))
+                except Exception as ie:
+                    logger.debug(f"Engine registry unavailable, fallback list used: {ie}")
+                    choices = self.get_algorithms_for_task(self.current_config.task_type.value)
+            elif prefilter_by_task and self.current_config is None:
+                # Fallback to a reasonable default (classification)
+                choices = self.get_algorithms_for_task('classification')
+            else:
+                # All algorithms (union of both tasks if available)
+                try:
+                    # Use engine registry if a config exists
+                    if self.current_config is not None:
+                        temp_engine = MLTrainingEngine(self.current_config)
+                        registry = getattr(temp_engine, '_model_registry', {})
+                        union = set(registry.get('classification', {}).keys()) | set(registry.get('regression', {}).keys())
+                        choices = sorted(list(union))
+                    else:
+                        choices = self.get_all_algorithms()
+                except Exception:
+                    choices = self.get_all_algorithms()
+            return gr.update(choices=choices, value=[])
+        except Exception as e:
+            logger.warning(f"Failed to get multi algorithm choices: {e}")
+            return gr.update()
     
     def get_trained_model_list(self) -> List[str]:
         """Get list of trained models"""
@@ -784,10 +827,12 @@ Preprocessing Configuration Optimized! ✅
         try:
             # Start experiment tracking
             if self.experiment_tracker and ADVANCED_FEATURES_AVAILABLE:
-                experiment_id = self.experiment_tracker.start_experiment(
-                    experiment_name=f"model_comparison_{int(time.time())}",
-                    tags={"type": "model_comparison", "target": target_column}
-                )
+                try:
+                    cfg_dict = self.current_config.to_dict() if hasattr(self.current_config, 'to_dict') else (vars(self.current_config) if self.current_config else {})
+                except Exception:
+                    cfg_dict = {}
+                model_info = {"model_type": "multi_model_comparison", "target": target_column, "models": algorithms}
+                self.experiment_tracker.start_experiment(config=cfg_dict, model_info=model_info)
             
             # Prepare data with memory optimization
             X = self.current_data.drop(columns=[target_column])
@@ -877,13 +922,14 @@ Preprocessing Configuration Optimized! ✅
                     else:
                         best_params = {}
                     
-                    # Train model
+                    # Train model; convert external best_params to a fixed param_grid for engine
+                    fixed_grid = {k: ([v] if not isinstance(v, (list, tuple, np.ndarray)) else list(v)) for k, v in (best_params or {}).items()}
                     result = self.training_engine.train_model(
                         X=X.values if hasattr(X, 'values') else X,
                         y=y.values if hasattr(y, 'values') else y,
                         model_type=model_key,
                         model_name=model_name,
-                        hyperparameters=best_params
+                        param_grid=fixed_grid if fixed_grid else None
                     )
                     
                     training_time = time.time() - start_time
@@ -912,11 +958,8 @@ Preprocessing Configuration Optimized! ✅
                     # Log experiment metrics
                     if self.experiment_tracker and ADVANCED_FEATURES_AVAILABLE:
                         metrics = result.get('metrics', {})
-                        self.experiment_tracker.log_metrics(
-                            experiment_id, 
-                            metrics, 
-                            model_name=model_name
-                        )
+                        # Use step to distinguish per-model metrics
+                        self.experiment_tracker.log_metrics(metrics, step=model_name)
                     
                     logger.info(f"✅ {algorithm} training completed")
                     
@@ -934,7 +977,7 @@ Preprocessing Configuration Optimized! ✅
             
             # End experiment
             if self.experiment_tracker and ADVANCED_FEATURES_AVAILABLE:
-                self.experiment_tracker.end_experiment(experiment_id)
+                self.experiment_tracker.end_experiment()
             
             return comparison_summary, detailed_results, visualization_data
             
@@ -1115,16 +1158,29 @@ Preprocessing Configuration Optimized! ✅
             logger.error(error_msg)
             return f"<h1>Dashboard Error</h1><p>{error_msg}</p>"
 
-    def update_algorithm_choices(self, task_type: str) -> gr.Dropdown:
-        """Update algorithm choices based on task type"""
-        algorithms = self.get_algorithms_for_task(task_type)
-        return gr.Dropdown(choices=algorithms, value=algorithms[0] if algorithms else None)
+    def update_algorithm_choices(self, task_type: str) -> gr.CheckboxGroup:
+        """Update algorithm choices for given task using engine registry."""
+        try:
+            if self.current_config is None:
+                # Create a minimal config for listing
+                task_type_enum = TaskType[task_type.upper()]
+                self.current_config = MLTrainingEngineConfig(
+                    task_type=task_type_enum,
+                    optimization_strategy=OptimizationStrategy.RANDOM_SEARCH,
+                    model_path="./models",
+                    checkpoint_path="./checkpoints"
+                )
+            temp_engine = MLTrainingEngine(self.current_config)
+            choices = sorted(list(getattr(temp_engine, '_model_registry', {}).get(task_type, {})))
+        except Exception:
+            choices = self.get_algorithms_for_task(task_type)
+        return gr.CheckboxGroup(choices=choices, value=[])
 
     def create_training_config(self, task_type: str, optimization_strategy: str, 
                              cv_folds: int, test_size: float, random_state: int,
                              enable_feature_selection: bool, normalization: str,
-                             enable_quantization: bool, optimization_mode: str) -> Tuple[str, gr.Dropdown, List[str]]:
-        """Create training configuration and update algorithm choices"""
+                             enable_quantization: bool, optimization_mode: str) -> Tuple[str]:
+        """Create training configuration (algorithm selection handled separately)."""
         if self.inference_only:
             return "Training is not available in inference-only mode.", gr.Dropdown(), []
         
@@ -1174,14 +1230,6 @@ Preprocessing Configuration Optimized! ✅
             
             self.current_config = config
             
-            # Get available algorithms for the task type
-            algorithms = self.get_algorithms_for_task(task_type)
-            algorithm_dropdown = gr.Dropdown(
-                choices=algorithms,
-                value=algorithms[0] if algorithms else None,
-                label="Available ML Algorithms"
-            )
-            
             config_text = f"""
 Configuration Created Successfully!
 
@@ -1192,12 +1240,10 @@ Configuration Created Successfully!
 - Feature Selection: {'Enabled' if enable_feature_selection else 'Disabled'}
 - Normalization: {normalization}
 - Quantization: {'Enabled' if enable_quantization else 'Disabled'}
-- Available Algorithms: {len(algorithms)} algorithms for {task_type.lower()}
-
-✅ Algorithm dropdown in Training tab has been updated!
+✅ You can now select models in the Multi-Model Training and Comparison tabs.
             """
             
-            return config_text, algorithm_dropdown, algorithms
+            return (config_text,)
             
         except Exception as e:
             error_msg = f"Error creating configuration: {str(e)}"
@@ -1206,7 +1252,7 @@ Configuration Created Successfully!
 
     def train_model(self, target_column: str, algorithm_name: str, model_name: str = None, 
                    enable_hpo: bool = True, hpo_trials: int = 50) -> Tuple[str, str, str, gr.Dropdown]:
-        """Train model with the current configuration and optional hyperparameter optimization"""
+        """Train a single model using the unified core training path (merged with multi-model)."""
         if self.inference_only:
             return "❌ Model training is disabled in inference-only mode.", "", "", gr.Dropdown()
         
@@ -1217,75 +1263,29 @@ Configuration Created Successfully!
             return f"❌ Target column '{target_column}' not found in data.", "", "", gr.Dropdown()
         
         try:
-            # Initialize training engine
-            if self.current_config is None:
-                # Create a default configuration
-                task_type = TaskType.CLASSIFICATION if self.determine_task_type(self.current_data[target_column]) == "classification" else TaskType.REGRESSION
-                
-                # Set optimization strategy based on HPO preference
-                optimization_strategy = OptimizationStrategy.BAYESIAN_OPTIMIZATION if enable_hpo else OptimizationStrategy.GRID_SEARCH
-                
-                self.current_config = MLTrainingEngineConfig(
-                    task_type=task_type,
-                    optimization_strategy=optimization_strategy,
-                    model_path="./models",
-                    checkpoint_path="./checkpoints",
-                    cv_folds=5,
-                    test_size=0.2
-                )
-            
-            self.training_engine = MLTrainingEngine(self.current_config)
-            
-            # Prepare data
-            X = self.current_data.drop(columns=[target_column])
-            y = self.current_data[target_column]
-            
-            # Handle categorical features
-            categorical_columns = X.select_dtypes(include=['object']).columns
-            if len(categorical_columns) > 0:
-                for col in categorical_columns:
-                    X[col] = pd.Categorical(X[col]).codes
-            
-            # Get model key
-            model_key = self.get_model_key_from_name(algorithm_name)
-            
-            # Generate model name if not provided
-            if not model_name:
-                timestamp = int(time.time())
-                model_name = f"{algorithm_name.split(' - ')[-1]}_{timestamp}"
-            
-            # Log HPO configuration for reference
-            if enable_hpo and ADVANCED_FEATURES_AVAILABLE:
-                search_space = create_search_space(self.current_config.task_type.value, [model_key])
-                logger.info(f"Training with HPO enabled - available search space: {list(search_space.get(model_key, {}).keys())}")
-            
-            # Train model (HPO is handled internally by training engine based on optimization strategy)
-            start_time = time.time()
-            result = self.training_engine.train_model(
-                X=X.values, 
-                y=y.values,
-                model_type=model_key,
-                model_name=model_name
+            # Use the unified multi-model path for a single algorithm
+            results, progress, total_time = self._train_algorithms(
+                target_column=target_column,
+                algorithms=[algorithm_name],
+                enable_hpo=enable_hpo,
+                hpo_trials=hpo_trials,
+                enable_parallel=False,
+                max_workers=1,
+                custom_hyperparams={},
+                prefilter_by_task=True
             )
-            
-            training_time = time.time() - start_time
-            logger.info("Training completed!")
-            
-            # Store trained model information
-            self.trained_models[model_name] = {
-                'algorithm': algorithm_name,
-                'model_key': model_key,
-                'target_column': target_column,
-                'training_time': training_time,
-                'result': result,
-                'feature_names': X.columns.tolist(),
-                'data_shape': X.shape,
-                'hpo_enabled': enable_hpo,
-                'hpo_trials': hpo_trials if enable_hpo else None,
-                'optimization_strategy': self.current_config.optimization_strategy.value
-            }
-            
-            # Generate results summary
+
+            # Extract the only result
+            alg = list(results.keys())[0] if results else algorithm_name
+            res_entry = results.get(alg, {})
+            if res_entry.get('status') != 'success':
+                err = res_entry.get('error', 'Unknown error')
+                return f"❌ Error during training: {err}", "", "", gr.Dropdown()
+
+            result = res_entry.get('result', {})
+            model_name = res_entry.get('model_name', model_name or alg)
+
+            # Build outputs similar to previous single-model format
             hpo_status = f" (HPO: {hpo_trials} trials)" if enable_hpo else " (No HPO)"
             metrics_text = f"Training Results{hpo_status}:\n\n"
             if 'metrics' in result and result['metrics']:
@@ -1294,18 +1294,16 @@ Configuration Created Successfully!
                         metrics_text += f"- {metric.replace('_', ' ').title()}: {value:.4f}\n"
                     else:
                         metrics_text += f"- {metric.replace('_', ' ').title()}: {value}\n"
-            
-            metrics_text += f"\n- Training Time: {training_time:.2f} seconds"
+            metrics_text += f"\n- Training Time: {res_entry.get('training_time', total_time):.2f} seconds"
             if enable_hpo:
                 metrics_text += f"\n- HPO Enabled: Yes ({hpo_trials} max trials)"
-                metrics_text += f"\n- Optimization Strategy: {self.current_config.optimization_strategy.value}"
-            
-            # Feature importance
+                if self.current_config is not None:
+                    metrics_text += f"\n- Optimization Strategy: {self.current_config.optimization_strategy.value}"
+
             importance_text = ""
             if 'feature_importance' in result and result['feature_importance'] is not None:
                 importance = result['feature_importance']
-                feature_names = X.columns.tolist()
-                
+                feature_names = res_entry.get('feature_names', [])
                 importance_text = "Top 10 Feature Importances:\n\n"
                 if isinstance(importance, dict):
                     sorted_features = sorted(importance.items(), key=lambda x: x[1], reverse=True)[:10]
@@ -1316,25 +1314,23 @@ Configuration Created Successfully!
                     for i, idx in enumerate(indices):
                         if idx < len(feature_names):
                             importance_text += f"- {feature_names[idx]}: {importance[idx]:.4f}\n"
-            
-            # Model summary
+
             summary_text = f"""
 Model Training Summary
 
 - Model Name: {model_name}
-- Algorithm: {algorithm_name}
-- Dataset Shape: {X.shape[0]} samples × {X.shape[1]} features
+- Algorithm: {alg}
+- Dataset Shape: {res_entry.get('data_shape', (0, 0))[0]} samples × {res_entry.get('data_shape', (0, 0))[1]} features
 - Target Column: {target_column}
 - Status: ✅ Training Completed Successfully
             """
-            
-            # Update trained models dropdown
+
             trained_models_dropdown = gr.Dropdown(
                 choices=self.get_trained_model_list(),
                 value="Select a trained model...",
                 label="Trained Models"
             )
-            
+
             return summary_text, metrics_text, importance_text, trained_models_dropdown
             
         except Exception as e:
@@ -1342,11 +1338,264 @@ Model Training Summary
             logger.error(error_msg)
             return error_msg, "", "", gr.Dropdown()
 
+    def _train_algorithms(self, target_column: str, algorithms: List[str],
+                          enable_hpo: bool, hpo_trials: int,
+                          enable_parallel: bool, max_workers: int,
+                          custom_hyperparams: Dict[str, Any],
+                          prefilter_by_task: bool) -> Tuple[Dict[str, Any], List[str], float]:
+        """Unified core training routine for one or more algorithms.
+
+        Returns: (results_dict, training_progress_lines, total_training_time)
+        """
+        if self.inference_only:
+            return {}, ["❌ Model training is disabled in inference-only mode."], 0.0
+        if self.current_data is None:
+            return {}, ["❌ Please load data first."], 0.0
+        if target_column not in self.current_data.columns:
+            return {}, [f"❌ Target column '{target_column}' not found in data."], 0.0
+        if not algorithms:
+            return {}, ["❌ Please select at least one algorithm to train."], 0.0
+
+        # Initialize training engine config if needed
+        if self.current_config is None:
+            task_type = TaskType.CLASSIFICATION if self.determine_task_type(self.current_data[target_column]) == "classification" else TaskType.REGRESSION
+            self.current_config = MLTrainingEngineConfig(
+                task_type=task_type,
+                optimization_strategy=OptimizationStrategy.BAYESIAN_OPTIMIZATION if enable_hpo else OptimizationStrategy.GRID_SEARCH,
+                model_path="./models",
+                checkpoint_path="./checkpoints",
+                cv_folds=5,
+                test_size=0.2
+            )
+
+        # Prepare data
+        X = self.current_data.drop(columns=[target_column])
+        y = self.current_data[target_column]
+
+        # Handle categorical features
+        categorical_columns = X.select_dtypes(include=['object']).columns
+        if len(categorical_columns) > 0:
+            for col in categorical_columns:
+                X[col] = pd.Categorical(X[col]).codes
+
+        # Prefilter algorithms by task, if requested (ensures compatibility)
+        training_progress: List[str] = []
+        if prefilter_by_task:
+            # Use engine registry keys to validate selections, supporting raw keys or display names
+            try:
+                temp_engine = MLTrainingEngine(self.current_config)
+                task_key = self.current_config.task_type.value
+                allowed_keys = set(getattr(temp_engine, '_model_registry', {}).get(task_key, {}).keys())
+            except Exception:
+                allowed_keys = set()
+            before = len(algorithms)
+            filtered = []
+            for a in algorithms:
+                key = self.get_model_key_from_name(a)
+                if key in allowed_keys:
+                    filtered.append(a)
+            algorithms = filtered
+            after = len(algorithms)
+            if after == 0:
+                return {}, ["❌ No compatible algorithms after task prefiltering."], 0.0
+            if after < before:
+                training_progress.append(f"🔎 Prefiltered algorithms by task: kept {after}/{before} compatible models")
+
+        # Start experiment tracking (single or multi)
+        if self.experiment_tracker and ADVANCED_FEATURES_AVAILABLE:
+            try:
+                cfg_dict = self.current_config.to_dict() if hasattr(self.current_config, 'to_dict') else (vars(self.current_config) if self.current_config else {})
+            except Exception:
+                cfg_dict = {}
+            model_info = {"model_type": "multi_model_training", "target": target_column, "num_models": len(algorithms)}
+            self.experiment_tracker.start_experiment(config=cfg_dict, model_info=model_info)
+        else:
+            pass
+
+        start_time = time.time()
+        results: Dict[str, Any] = {}
+
+        # Per-model training function
+        def train_single_model(algorithm_name):
+            try:
+                model_key = self.get_model_key_from_name(algorithm_name)
+                timestamp = int(time.time() * 1000)
+                model_name = f"{algorithm_name.split(' - ')[-1]}_{timestamp}"
+
+                model_custom_params = custom_hyperparams.get(model_key, {}) if custom_hyperparams else {}
+
+                search_space = create_search_space(self.current_config.task_type.value, [model_key])
+                if model_custom_params:
+                    if model_key in search_space:
+                        search_space[model_key].update(model_custom_params)
+                    else:
+                        search_space[model_key] = model_custom_params
+
+                model_start_time = time.time()
+                training_engine = MLTrainingEngine(self.current_config)
+                # Preserve reference for prediction convenience
+                self.training_engine = training_engine
+
+                # HPO path (best-effort)
+                if enable_hpo and self.hpo_optimizer and ADVANCED_FEATURES_AVAILABLE:
+                    try:
+                        if hasattr(self.hpo_optimizer, 'optimize'):
+                            def objective_function(params):
+                                try:
+                                    from sklearn.model_selection import cross_val_score
+                                    from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+                                    from sklearn.linear_model import LogisticRegression, LinearRegression
+                                    from sklearn.svm import SVC, SVR
+
+                                    if model_key == 'random_forest':
+                                        if self.current_config.task_type == TaskType.CLASSIFICATION:
+                                            model = RandomForestClassifier(**params, random_state=42)
+                                        else:
+                                            model = RandomForestRegressor(**params, random_state=42)
+                                    elif model_key == 'logistic_regression':
+                                        model = LogisticRegression(**params, random_state=42, max_iter=1000)
+                                    elif model_key == 'linear_regression':
+                                        model = LinearRegression(**params)
+                                    elif model_key == 'svm':
+                                        if self.current_config.task_type == TaskType.CLASSIFICATION:
+                                            model = SVC(**params, random_state=42)
+                                        else:
+                                            model = SVR(**params)
+                                    else:
+                                        if self.current_config.task_type == TaskType.CLASSIFICATION:
+                                            model = RandomForestClassifier(**params, random_state=42)
+                                        else:
+                                            model = RandomForestRegressor(**params, random_state=42)
+
+                                    cv_scores = cross_val_score(
+                                        model, X.values, y.values, cv=5,
+                                        scoring='accuracy' if self.current_config.task_type == TaskType.CLASSIFICATION else 'r2'
+                                    )
+                                    return cv_scores.mean()
+                                except Exception as e:
+                                    logger.warning(f"HPO objective error for {algorithm_name}: {e}")
+                                    return 0.0
+
+                            hpo_result = self.hpo_optimizer.optimize(
+                                objective_function=objective_function,
+                                search_space={model_key: search_space.get(model_key, {})},
+                                direction='maximize',
+                                study_name=f"training_{model_key}_{timestamp}"
+                            )
+                            best_params = getattr(hpo_result, 'best_params', search_space.get(model_key, {}))
+                        else:
+                            best_params = search_space.get(model_key, {})
+                    except Exception as e:
+                        logger.warning(f"HPO failed for {algorithm_name}: {e}")
+                        best_params = search_space.get(model_key, {})
+                else:
+                    best_params = {}
+
+                # Final training
+                fixed_grid = {k: ([v] if not isinstance(v, (list, tuple, np.ndarray)) else list(v)) for k, v in (best_params or {}).items()}
+                result = training_engine.train_model(
+                    X=X.values,
+                    y=y.values,
+                    model_type=model_key,
+                    model_name=model_name,
+                    param_grid=fixed_grid if fixed_grid else None
+                )
+
+                model_training_time = time.time() - model_start_time
+
+                # Store trained model information
+                self.trained_models[model_name] = {
+                    'algorithm': algorithm_name,
+                    'model_key': model_key,
+                    'target_column': target_column,
+                    'training_time': model_training_time,
+                    'result': result,
+                    'feature_names': X.columns.tolist(),
+                    'data_shape': X.shape,
+                    'hpo_enabled': enable_hpo,
+                    'hpo_trials': hpo_trials if enable_hpo else None,
+                    'best_params': best_params,
+                    'custom_params': model_custom_params
+                }
+
+                # Log experiment metrics
+                if self.experiment_tracker and ADVANCED_FEATURES_AVAILABLE:
+                    metrics = result.get('metrics', {})
+                    self.experiment_tracker.log_metrics(metrics, step=model_name)
+
+                return {
+                    'algorithm': algorithm_name,
+                    'model_name': model_name,
+                    'model_key': model_key,
+                    'result': result,
+                    'training_time': model_training_time,
+                    'best_params': best_params,
+                    'custom_params': model_custom_params,
+                    'hpo_enabled': enable_hpo and bool(best_params),
+                    'status': 'success',
+                    'feature_names': X.columns.tolist(),
+                    'data_shape': X.shape
+                }
+            except Exception as e:
+                logger.error(f"❌ Failed to train {algorithm_name}: {e}")
+                return {
+                    'algorithm': algorithm_name,
+                    'model_key': self.get_model_key_from_name(algorithm_name),
+                    'error': str(e),
+                    'training_time': 0,
+                    'status': 'failed'
+                }
+
+        # Train models (parallel or sequential)
+        if enable_parallel and len(algorithms) > 1:
+            training_progress.append(f"🚀 Starting parallel training of {len(algorithms)} models...")
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=min(max_workers, len(algorithms))) as executor:
+                future_to_algorithm = {executor.submit(train_single_model, alg): alg for alg in algorithms}
+                for future in future_to_algorithm:
+                    algorithm_name = future_to_algorithm[future]
+                    try:
+                        result = future.result()
+                        results[algorithm_name] = result
+                        if result.get('status') == 'success':
+                            training_progress.append(f"✅ {algorithm_name}: Completed in {result['training_time']:.2f}s")
+                        else:
+                            training_progress.append(f"❌ {algorithm_name}: Failed - {result.get('error', 'Unknown error')}")
+                    except Exception as e:
+                        results[algorithm_name] = {
+                            'algorithm': algorithm_name,
+                            'error': str(e),
+                            'status': 'failed'
+                        }
+                        training_progress.append(f"❌ {algorithm_name}: Exception - {str(e)}")
+        else:
+            training_progress.append(f"🔄 Starting sequential training of {len(algorithms)} models...")
+            for algorithm_name in algorithms:
+                training_progress.append(f"🎯 Training {algorithm_name}...")
+                result = train_single_model(algorithm_name)
+                results[algorithm_name] = result
+                if result.get('status') == 'success':
+                    training_progress.append(f"✅ {algorithm_name}: Completed in {result['training_time']:.2f}s")
+                else:
+                    training_progress.append(f"❌ {algorithm_name}: Failed - {result.get('error', 'Unknown error')}")
+
+        total_training_time = time.time() - start_time
+
+        # End experiment
+        if self.experiment_tracker and ADVANCED_FEATURES_AVAILABLE:
+            self.experiment_tracker.end_experiment()
+
+        return results, training_progress, total_training_time
+
     def train_multiple_models(self, target_column: str, algorithms: List[str], 
                              enable_hpo: bool = True, hpo_trials: int = 50,
                              enable_parallel: bool = True, max_workers: int = 4,
-                             custom_hyperparams: str = "") -> Tuple[str, str, str, gr.Dropdown]:
-        """Train multiple models simultaneously with individual hyperparameter configurations"""
+                             custom_hyperparams: str = "",
+                             prefilter_by_task: bool = True) -> Tuple[str, str, str, gr.Dropdown]:
+        """Train multiple models simultaneously with individual hyperparameter configurations.
+
+        Added: prefilter_by_task to ensure only task-compatible models are trained.
+        """
         if self.inference_only:
             return "❌ Model training is disabled in inference-only mode.", "", "", gr.Dropdown()
         
@@ -1369,228 +1618,18 @@ Model Training Summary
                 except json.JSONDecodeError as e:
                     return f"❌ Invalid JSON in custom hyperparameters: {str(e)}", "", ""
             
-            # Initialize training engine if needed
-            if self.current_config is None:
-                task_type = TaskType.CLASSIFICATION if self.determine_task_type(self.current_data[target_column]) == "classification" else TaskType.REGRESSION
-                self.current_config = MLTrainingEngineConfig(
-                    task_type=task_type,
-                    optimization_strategy=OptimizationStrategy.BAYESIAN_OPTIMIZATION if enable_hpo else OptimizationStrategy.GRID_SEARCH,
-                    model_path="./models",
-                    checkpoint_path="./checkpoints",
-                    cv_folds=5,
-                    test_size=0.2
-                )
-            
-            # Prepare data
-            X = self.current_data.drop(columns=[target_column])
-            y = self.current_data[target_column]
-            
-            # Handle categorical features
-            categorical_columns = X.select_dtypes(include=['object']).columns
-            if len(categorical_columns) > 0:
-                for col in categorical_columns:
-                    X[col] = pd.Categorical(X[col]).codes
-            
-            # Start experiment tracking
-            if self.experiment_tracker and ADVANCED_FEATURES_AVAILABLE:
-                experiment_id = self.experiment_tracker.start_experiment(
-                    experiment_name=f"multimodel_training_{int(time.time())}",
-                    tags={"type": "multimodel_training", "target": target_column, "models": len(algorithms)}
-                )
-            
-            start_time = time.time()
-            results = {}
-            training_progress = []
-            
-            # Function to train a single model
-            def train_single_model(algorithm_name):
-                try:
-                    model_key = self.get_model_key_from_name(algorithm_name)
-                    timestamp = int(time.time() * 1000)  # Use milliseconds for uniqueness
-                    model_name = f"{algorithm_name.split(' - ')[-1]}_{timestamp}"
-                    
-                    # Get custom hyperparameters for this model if specified
-                    model_custom_params = custom_hp_dict.get(model_key, {})
-                    
-                    # Create search space
-                    search_space = create_search_space(self.current_config.task_type.value, [model_key])
-                    
-                    # Merge custom parameters with default search space
-                    if model_custom_params:
-                        if model_key in search_space:
-                            search_space[model_key].update(model_custom_params)
-                        else:
-                            search_space[model_key] = model_custom_params
-                    
-                    model_start_time = time.time()
-                    
-                    # Initialize training engine for this model
-                    training_engine = MLTrainingEngine(self.current_config)
-                    
-                    # Train model
-                    if enable_hpo and self.hpo_optimizer and ADVANCED_FEATURES_AVAILABLE:
-                        # Use HPO
-                        try:
-                            if hasattr(self.hpo_optimizer, 'optimize'):
-                                def objective_function(params):
-                                    try:
-                                        from sklearn.model_selection import cross_val_score
-                                        from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
-                                        from sklearn.linear_model import LogisticRegression, LinearRegression
-                                        from sklearn.svm import SVC, SVR
-                                        
-                                        # Create model based on type with hyperparameters
-                                        if model_key == 'random_forest':
-                                            if self.current_config.task_type == TaskType.CLASSIFICATION:
-                                                model = RandomForestClassifier(**params, random_state=42)
-                                            else:
-                                                model = RandomForestRegressor(**params, random_state=42)
-                                        elif model_key == 'logistic_regression':
-                                            model = LogisticRegression(**params, random_state=42, max_iter=1000)
-                                        elif model_key == 'linear_regression':
-                                            model = LinearRegression(**params)
-                                        elif model_key == 'svm':
-                                            if self.current_config.task_type == TaskType.CLASSIFICATION:
-                                                model = SVC(**params, random_state=42)
-                                            else:
-                                                model = SVR(**params)
-                                        else:
-                                            # Default to RandomForest
-                                            if self.current_config.task_type == TaskType.CLASSIFICATION:
-                                                model = RandomForestClassifier(**params, random_state=42)
-                                            else:
-                                                model = RandomForestRegressor(**params, random_state=42)
-                                        
-                                        # Perform cross-validation
-                                        cv_scores = cross_val_score(
-                                            model, X.values, y.values, cv=5, 
-                                            scoring='accuracy' if self.current_config.task_type == TaskType.CLASSIFICATION else 'r2'
-                                        )
-                                        return cv_scores.mean()
-                                        
-                                    except Exception as e:
-                                        logger.warning(f"HPO objective error for {algorithm_name}: {e}")
-                                        return 0.0
-                                
-                                hpo_result = self.hpo_optimizer.optimize(
-                                    objective_function=objective_function,
-                                    search_space={model_key: search_space.get(model_key, {})},
-                                    direction='maximize',
-                                    study_name=f"multimodel_{model_key}_{timestamp}"
-                                )
-                                best_params = getattr(hpo_result, 'best_params', search_space.get(model_key, {}))
-                            else:
-                                # Fallback HPO simulation
-                                best_params = search_space.get(model_key, {})
-                        except Exception as e:
-                            logger.warning(f"HPO failed for {algorithm_name}: {e}")
-                            best_params = search_space.get(model_key, {})
-                    else:
-                        best_params = {}
-                    
-                    # Train the final model
-                    result = training_engine.train_model(
-                        X=X.values,
-                        y=y.values,
-                        model_type=model_key,
-                        model_name=model_name,
-                        hyperparameters=best_params
-                    )
-                    
-                    model_training_time = time.time() - model_start_time
-                    
-                    # Store trained model information
-                    self.trained_models[model_name] = {
-                        'algorithm': algorithm_name,
-                        'model_key': model_key,
-                        'target_column': target_column,
-                        'training_time': model_training_time,
-                        'result': result,
-                        'feature_names': X.columns.tolist(),
-                        'data_shape': X.shape,
-                        'hpo_enabled': enable_hpo,
-                        'hpo_trials': hpo_trials if enable_hpo else None,
-                        'best_params': best_params,
-                        'custom_params': model_custom_params
-                    }
-                    
-                    # Log experiment metrics
-                    if self.experiment_tracker and ADVANCED_FEATURES_AVAILABLE:
-                        metrics = result.get('metrics', {})
-                        self.experiment_tracker.log_metrics(
-                            experiment_id, 
-                            metrics, 
-                            model_name=model_name
-                        )
-                    
-                    return {
-                        'algorithm': algorithm_name,
-                        'model_name': model_name,
-                        'model_key': model_key,
-                        'result': result,
-                        'training_time': model_training_time,
-                        'best_params': best_params,
-                        'custom_params': model_custom_params,
-                        'hpo_enabled': enable_hpo and bool(best_params),
-                        'status': 'success'
-                    }
-                    
-                except Exception as e:
-                    logger.error(f"❌ Failed to train {algorithm_name}: {e}")
-                    return {
-                        'algorithm': algorithm_name,
-                        'model_key': self.get_model_key_from_name(algorithm_name),
-                        'error': str(e),
-                        'training_time': 0,
-                        'status': 'failed'
-                    }
-            
-            # Train models (parallel or sequential)
-            if enable_parallel and len(algorithms) > 1:
-                # Parallel training
-                training_progress.append(f"🚀 Starting parallel training of {len(algorithms)} models...")
-                
-                with ThreadPoolExecutor(max_workers=min(max_workers, len(algorithms))) as executor:
-                    future_to_algorithm = {
-                        executor.submit(train_single_model, alg): alg for alg in algorithms
-                    }
-                    
-                    for future in future_to_algorithm:
-                        algorithm_name = future_to_algorithm[future]
-                        try:
-                            result = future.result()
-                            results[algorithm_name] = result
-                            if result['status'] == 'success':
-                                training_progress.append(f"✅ {algorithm_name}: Completed in {result['training_time']:.2f}s")
-                            else:
-                                training_progress.append(f"❌ {algorithm_name}: Failed - {result.get('error', 'Unknown error')}")
-                        except Exception as e:
-                            results[algorithm_name] = {
-                                'algorithm': algorithm_name,
-                                'error': str(e),
-                                'status': 'failed'
-                            }
-                            training_progress.append(f"❌ {algorithm_name}: Exception - {str(e)}")
-            else:
-                # Sequential training
-                training_progress.append(f"🔄 Starting sequential training of {len(algorithms)} models...")
-                
-                for algorithm_name in algorithms:
-                    training_progress.append(f"🎯 Training {algorithm_name}...")
-                    result = train_single_model(algorithm_name)
-                    results[algorithm_name] = result
-                    
-                    if result['status'] == 'success':
-                        training_progress.append(f"✅ {algorithm_name}: Completed in {result['training_time']:.2f}s")
-                    else:
-                        training_progress.append(f"❌ {algorithm_name}: Failed - {result.get('error', 'Unknown error')}")
-            
-            total_training_time = time.time() - start_time
-            
-            # End experiment
-            if self.experiment_tracker and ADVANCED_FEATURES_AVAILABLE:
-                self.experiment_tracker.end_experiment(experiment_id)
-            
+            # Delegate to unified core
+            results, training_progress, total_training_time = self._train_algorithms(
+                target_column=target_column,
+                algorithms=list(algorithms) if isinstance(algorithms, list) else [],
+                enable_hpo=enable_hpo,
+                hpo_trials=hpo_trials,
+                enable_parallel=enable_parallel,
+                max_workers=max_workers,
+                custom_hyperparams=custom_hp_dict,
+                prefilter_by_task=prefilter_by_task
+            )
+
             # Generate results
             progress_text = "\n".join(training_progress)
             progress_text += f"\n\n🏁 Total Training Time: {total_training_time:.2f} seconds"
@@ -1924,69 +1963,42 @@ def create_ui(inference_only: bool = False):
                 
                 # Training Tab
                 with gr.Tab("🚀 Training", id="training"):
-                    with gr.Tabs():
-                        # Single Model Training
-                        with gr.Tab("🤖 Single Model", id="single_training"):
-                            with gr.Row():
-                                with gr.Column():
-                                    gr.Markdown("## Single Model Training")
-                                    target_column = gr.Textbox(label="Target Column Name", placeholder="e.g., target, label, price")
-                                    algorithm_dropdown = gr.Dropdown(
-                                        choices=["Please create configuration first"], 
-                                        label="Select Algorithm"
-                                    )
-                                    model_name = gr.Textbox(label="Model Name (optional)", placeholder="my_model")
-                                    
-                                    # Hyperparameter Optimization Options
-                                    gr.Markdown("### 🎯 Hyperparameter Optimization")
-                                    enable_hpo = gr.Checkbox(label="Enable Hyperparameter Optimization", value=True)
-                                    with gr.Row():
-                                        hpo_trials = gr.Slider(minimum=10, maximum=200, value=50, step=10, label="HPO Trials")
-                                        hpo_timeout = gr.Slider(minimum=60, maximum=1200, value=300, step=60, label="HPO Timeout (seconds)")
-                                    
-                                    train_btn = gr.Button("Train Model", variant="primary")
-                                    
-                                with gr.Column():
-                                    training_output = gr.Textbox(label="Training Results", lines=10, interactive=False)
-                                    metrics_output = gr.Textbox(label="Model Metrics", lines=8, interactive=False)
-                                    importance_output = gr.Textbox(label="Feature Importance", lines=6, interactive=False)
-                        
-                        # Multi-Model Training
-                        with gr.Tab("🚀 Multi-Model Training", id="multi_training"):
-                            with gr.Row():
-                                with gr.Column():
-                                    gr.Markdown("## Multi-Model Training Configuration")
-                                    multi_target_column = gr.Textbox(label="Target Column Name", placeholder="e.g., target, label, price")
-                                    
-                                    gr.Markdown("### 📋 Model Selection")
-                                    multi_algorithms = gr.CheckboxGroup(
-                                        choices=[],
-                                        label="Select Models to Train",
-                                        value=[]
-                                    )
-                                    
-                                    gr.Markdown("### ⚙️ Global Settings")
-                                    multi_enable_hpo = gr.Checkbox(label="Enable HPO for All Models", value=True)
-                                    multi_hpo_trials = gr.Slider(minimum=10, maximum=200, value=50, step=10, label="HPO Trials per Model")
-                                    multi_parallel_training = gr.Checkbox(label="Enable Parallel Training", value=True)
-                                    multi_max_workers = gr.Slider(minimum=1, maximum=8, value=4, step=1, label="Max Parallel Workers")
-                                    
-                                    # Model-specific hyperparameters
-                                    gr.Markdown("### 🔧 Model-Specific Hyperparameters")
-                                    custom_hyperparams = gr.Textbox(
-                                        label="Custom Hyperparameters (JSON)",
-                                        placeholder='{"random_forest": {"n_estimators": [100, 200], "max_depth": [5, 10]}, "xgboost": {"learning_rate": [0.01, 0.1]}}',
-                                        lines=5
-                                    )
-                                    
-                                    multi_train_btn = gr.Button("Start Multi-Model Training", variant="primary")
-                                    
-                                with gr.Column():
-                                    multi_training_output = gr.Textbox(label="Multi-Training Progress", lines=12, interactive=False)
-                                    multi_results_summary = gr.Textbox(label="Training Summary", lines=10, interactive=False)
+                    with gr.Row():
+                        with gr.Column():
+                            gr.Markdown("## Multi-Model Training Configuration")
+                            multi_target_column = gr.Textbox(label="Target Column Name", placeholder="e.g., target, label, price")
                             
-                            with gr.Row():
-                                multi_detailed_results = gr.Textbox(label="Detailed Results", lines=15, interactive=False)
+                            gr.Markdown("### 📋 Model Selection")
+                            multi_prefilter_by_task = gr.Checkbox(label="Prefilter models by task", value=True)
+                            multi_algorithms = gr.Dropdown(
+                                choices=[],
+                                label="Select Models to Train",
+                                value=[],
+                                multiselect=True
+                            )
+                            
+                            gr.Markdown("### ⚙️ Global Settings")
+                            multi_enable_hpo = gr.Checkbox(label="Enable HPO for All Models", value=True)
+                            multi_hpo_trials = gr.Slider(minimum=10, maximum=200, value=50, step=10, label="HPO Trials per Model")
+                            multi_parallel_training = gr.Checkbox(label="Enable Parallel Training", value=True)
+                            multi_max_workers = gr.Slider(minimum=1, maximum=8, value=4, step=1, label="Max Parallel Workers")
+                            
+                            # Model-specific hyperparameters
+                            gr.Markdown("### 🔧 Model-Specific Hyperparameters")
+                            custom_hyperparams = gr.Textbox(
+                                label="Custom Hyperparameters (JSON)",
+                                placeholder='{"random_forest": {"n_estimators": [100, 200], "max_depth": [5, 10]}, "xgboost": {"learning_rate": [0.01, 0.1]}}',
+                                lines=5
+                            )
+                            
+                            multi_train_btn = gr.Button("Start Multi-Model Training", variant="primary")
+                            
+                        with gr.Column():
+                            multi_training_output = gr.Textbox(label="Multi-Training Progress", lines=12, interactive=False)
+                            multi_results_summary = gr.Textbox(label="Training Summary", lines=10, interactive=False)
+
+                    with gr.Row():
+                        multi_detailed_results = gr.Textbox(label="Detailed Results", lines=15, interactive=False)
                 
                 # Model Comparison Tab
                 with gr.Tab("🏆 Model Comparison", id="comparison"):
@@ -1994,10 +2006,11 @@ def create_ui(inference_only: bool = False):
                         with gr.Column():
                             gr.Markdown("## Multi-Model Comparison")
                             comp_target_column = gr.Textbox(label="Target Column", placeholder="e.g., target, label, price")
-                            comp_algorithms = gr.CheckboxGroup(
+                            comp_algorithms = gr.Dropdown(
                                 choices=[],
                                 label="Select Algorithms to Compare",
-                                value=[]
+                                value=[],
+                                multiselect=True
                             )
                             enable_hpo_comparison = gr.Checkbox(label="Enable HPO for All Models", value=True)
                             
@@ -2066,33 +2079,34 @@ def create_ui(inference_only: bool = False):
                 app.create_training_config,
                 inputs=[task_type, optimization_strategy, cv_folds, test_size, random_state, 
                        enable_feature_selection, normalization, enable_quantization, optimization_mode],
-                outputs=[config_output, algorithm_dropdown, gr.State()]
+                outputs=[config_output]
             )
             
             # Update algorithm choices for comparison when config is created
-            algorithm_dropdown.change(
-                lambda choices: gr.update(choices=choices if choices != ["Please create configuration first"] else []),
-                inputs=algorithm_dropdown,
+            create_config_btn.click(
+                lambda: app.get_multi_algorithm_choices(True),
                 outputs=comp_algorithms
             )
             
-            # Update multi-model algorithm choices when config is created
-            algorithm_dropdown.change(
-                lambda choices: gr.update(choices=choices if choices != ["Please create configuration first"] else []),
-                inputs=algorithm_dropdown,
+            # Update multi-model algorithm choices when config is created (default prefilter=True)
+            create_config_btn.click(
+                lambda: app.get_multi_algorithm_choices(True),
+                outputs=multi_algorithms
+            )
+
+            # Toggle prefilter updates the multi-model algorithm choices
+            multi_prefilter_by_task.change(
+                app.get_multi_algorithm_choices,
+                inputs=multi_prefilter_by_task,
                 outputs=multi_algorithms
             )
             
-            train_btn.click(
-                app.train_model,
-                inputs=[target_column, algorithm_dropdown, model_name, enable_hpo, hpo_trials],
-                outputs=[training_output, metrics_output, importance_output, trained_model_dropdown]
-            )
+            # Single-model training removed; use multi-model tab instead
             
             multi_train_btn.click(
                 app.train_multiple_models,
                 inputs=[multi_target_column, multi_algorithms, multi_enable_hpo, multi_hpo_trials, 
-                       multi_parallel_training, multi_max_workers, custom_hyperparams],
+                       multi_parallel_training, multi_max_workers, custom_hyperparams, multi_prefilter_by_task],
                 outputs=[multi_training_output, multi_results_summary, multi_detailed_results, trained_model_dropdown]
             )
             
