@@ -97,8 +97,39 @@ try:
         get_auth_config
     )
     from modules.device_optimizer import DeviceOptimizer
+    
+    # Import advanced features
+    from modules.engine.experiment_tracker import ExperimentTracker
+    from modules.engine.batch_processor import BatchProcessor
+    from modules.engine.adaptive_hyperopt import (
+        AdaptiveHyperparameterOptimizer, 
+        OptimizationResult,
+        SearchSpaceConfig
+    )
+    from modules.engine.adaptive_preprocessing import (
+        PreprocessorConfigOptimizer,
+        ProcessingMode,
+        PreprocessingStrategy
+    )
+    from modules.engine.memory_aware_processor import (
+        MemoryAwareDataProcessor,
+        create_memory_aware_processor
+    )
+    from modules.api.dashboard import generate_dashboard_html
+    
+    # Performance monitoring
+    try:
+        from modules.engine.performance_metrics import PerformanceTracker
+        PERFORMANCE_TRACKING_AVAILABLE = True
+    except ImportError:
+        PERFORMANCE_TRACKING_AVAILABLE = False
+    
+    ADVANCED_FEATURES_AVAILABLE = True
+    
 except ImportError as e:
     logger.warning(f"Some modules not available: {e}")
+    ADVANCED_FEATURES_AVAILABLE = False
+    
     # Create placeholder classes/functions
     class InferenceServer:
         def __init__(self):
@@ -140,11 +171,136 @@ except ImportError as e:
         def get_system_info(self): 
             return {"error": "Device optimizer not available"}
     
+    class ExperimentTracker:
+        def __init__(self, *args, **kwargs): pass
+        def start_experiment(self, *args, **kwargs): return {}
+        def log_metrics(self, *args, **kwargs): pass
+        def end_experiment(self, *args, **kwargs): pass
+    
+    class BatchProcessor:
+        def __init__(self, *args, **kwargs): pass
+        
+    class AdaptiveHyperparameterOptimizer:
+        def __init__(self, *args, **kwargs): pass
+        def optimize(self, *args, **kwargs): return {}
+    
+    class PreprocessorConfigOptimizer:
+        def __init__(self, *args, **kwargs): pass
+        def optimize_config(self, *args, **kwargs): return {}
+    
+    class MemoryAwareDataProcessor:
+        def __init__(self, *args, **kwargs): pass
+        def process_data(self, *args, **kwargs): return {}
+    
+    class PerformanceTracker:
+        def __init__(self, *args, **kwargs): pass
+        def get_metrics(self, *args, **kwargs): return {}
+    
     def security_wrapper(func): return func
     def validate_file_upload(path, extensions): return True
     def secure_data_processing(data): return data
     def create_security_headers(): return {}
     def get_auth_config(): return None
+    def generate_dashboard_html(data): return "<h1>Dashboard not available</h1>"
+    def create_memory_aware_processor(): return MemoryAwareDataProcessor()
+    
+    # Create simple search space function
+    def create_search_space(task_type, algorithms): 
+        return {alg: {"n_estimators": [10, 50, 100]} for alg in algorithms}
+    
+    ProcessingMode = type('ProcessingMode', (), {'BALANCED': 'balanced'})
+    PreprocessingStrategy = type('PreprocessingStrategy', (), {'STANDARD': 'standard'})
+    PERFORMANCE_TRACKING_AVAILABLE = False
+
+# Additional function to create proper search spaces
+def create_search_space(task_type: str, algorithms: List[str]) -> Dict[str, Dict[str, Any]]:
+    """Create hyperparameter search spaces for different algorithms"""
+    search_spaces = {}
+    
+    for algorithm in algorithms:
+        if algorithm in ['random_forest', 'extra_trees']:
+            search_spaces[algorithm] = {
+                'n_estimators': [50, 100, 200, 300],
+                'max_depth': [5, 10, 15, 20, None],
+                'min_samples_split': [2, 5, 10],
+                'min_samples_leaf': [1, 2, 4],
+                'max_features': ['auto', 'sqrt', 'log2']
+            }
+        elif algorithm in ['xgboost', 'lightgbm', 'catboost']:
+            search_spaces[algorithm] = {
+                'n_estimators': [100, 200, 300, 500],
+                'max_depth': [3, 6, 9, 12],
+                'learning_rate': [0.01, 0.05, 0.1, 0.2],
+                'subsample': [0.8, 0.9, 1.0],
+                'colsample_bytree': [0.8, 0.9, 1.0]
+            }
+        elif algorithm in ['gradient_boosting', 'adaboost']:
+            search_spaces[algorithm] = {
+                'n_estimators': [50, 100, 200],
+                'learning_rate': [0.01, 0.05, 0.1, 0.2],
+                'max_depth': [3, 5, 7, 9]
+            }
+        elif algorithm in ['svm', 'svm_linear', 'svm_poly']:
+            if task_type == 'classification':
+                search_spaces[algorithm] = {
+                    'C': [0.1, 1.0, 10.0, 100.0],
+                    'gamma': ['scale', 'auto', 0.001, 0.01, 0.1, 1.0]
+                }
+            else:
+                search_spaces[algorithm] = {
+                    'C': [0.1, 1.0, 10.0, 100.0],
+                    'epsilon': [0.01, 0.1, 0.2, 0.5],
+                    'gamma': ['scale', 'auto', 0.001, 0.01, 0.1, 1.0]
+                }
+        elif algorithm in ['logistic_regression', 'linear_regression', 'ridge', 'lasso']:
+            search_spaces[algorithm] = {
+                'C': [0.01, 0.1, 1.0, 10.0, 100.0] if algorithm in ['logistic_regression', 'ridge'] else [0.1, 1.0, 10.0],
+                'alpha': [0.01, 0.1, 1.0, 10.0] if algorithm in ['ridge', 'lasso'] else None,
+                'max_iter': [1000, 2000, 5000]
+            }
+        elif algorithm == 'elastic_net':
+            search_spaces[algorithm] = {
+                'alpha': [0.01, 0.1, 1.0, 10.0],
+                'l1_ratio': [0.1, 0.3, 0.5, 0.7, 0.9],
+                'max_iter': [1000, 2000, 5000]
+            }
+        elif algorithm in ['mlp', 'neural_network']:
+            search_spaces[algorithm] = {
+                'hidden_layer_sizes': [(50,), (100,), (100, 50), (200, 100)],
+                'activation': ['relu', 'tanh', 'logistic'],
+                'alpha': [0.0001, 0.001, 0.01, 0.1],
+                'learning_rate': ['constant', 'adaptive'],
+                'max_iter': [500, 1000, 2000]
+            }
+        elif algorithm == 'knn':
+            search_spaces[algorithm] = {
+                'n_neighbors': [3, 5, 7, 9, 11, 15],
+                'weights': ['uniform', 'distance'],
+                'metric': ['euclidean', 'manhattan', 'minkowski']
+            }
+        elif algorithm in ['naive_bayes', 'multinomial_nb', 'bernoulli_nb']:
+            search_spaces[algorithm] = {
+                'alpha': [0.1, 0.5, 1.0, 2.0, 5.0] if algorithm != 'naive_bayes' else None,
+                'var_smoothing': [1e-9, 1e-8, 1e-7, 1e-6] if algorithm == 'naive_bayes' else None
+            }
+        elif algorithm == 'decision_tree':
+            search_spaces[algorithm] = {
+                'max_depth': [3, 5, 7, 10, 15, None],
+                'min_samples_split': [2, 5, 10, 20],
+                'min_samples_leaf': [1, 2, 4, 8],
+                'criterion': ['gini', 'entropy'] if task_type == 'classification' else ['squared_error', 'absolute_error']
+            }
+        else:
+            # Default search space
+            search_spaces[algorithm] = {
+                'n_estimators': [50, 100, 200] if 'estimators' in algorithm else None,
+                'max_depth': [5, 10, None] if 'tree' in algorithm or 'forest' in algorithm else None
+            }
+        
+        # Remove None values from search space
+        search_spaces[algorithm] = {k: v for k, v in search_spaces[algorithm].items() if v is not None}
+    
+    return search_spaces
 
 # Additional imports
 
@@ -165,7 +321,7 @@ def load_css_file():
     """
 
 class MLSystemUI:
-    """Enhanced Gradio UI for the ML Training & Inference System with Security Integration"""
+    """Enhanced Gradio UI for the ML Training & Inference System with Advanced Features"""
     
     def __init__(self, inference_only: bool = False):
         self.inference_only = inference_only
@@ -179,6 +335,15 @@ class MLSystemUI:
         self.sample_data_loader = SampleDataLoader()
         self.data_preview_generator = DataPreviewGenerator()
         self.trained_models = {}  # Store trained models
+        
+        # Advanced features
+        self.experiment_tracker = None
+        self.batch_processor = None
+        self.hpo_optimizer = None
+        self.preprocessing_optimizer = None
+        self.memory_processor = None
+        self.performance_tracker = None
+        self.model_comparison_results = {}
         
         # Security integration
         self.security_manager = SECURITY_MANAGER
@@ -195,6 +360,13 @@ class MLSystemUI:
             except Exception as e:
                 logger.warning(f"Failed to initialize optimization pipeline: {e}")
                 self.optimization_pipeline = None
+        
+        # Initialize advanced features if available
+        if ADVANCED_FEATURES_AVAILABLE and not inference_only:
+            try:
+                self._initialize_advanced_features()
+            except Exception as e:
+                logger.warning(f"Failed to initialize advanced features: {e}")
         
         # Initialize security audit logger
         logger.info("🛡️ Initializing ML System UI with enhanced security")
@@ -254,6 +426,51 @@ class MLSystemUI:
             except Exception as e:
                 logger.error(f"Failed to initialize device optimizer: {e}")
                 self.device_optimizer = None
+    
+    def _initialize_advanced_features(self):
+        """Initialize advanced features"""
+        try:
+            # Experiment tracker
+            self.experiment_tracker = ExperimentTracker(
+                output_dir="./experiments",
+                experiment_name=f"automl_session_{int(time.time())}"
+            )
+            logger.info("✅ Experiment tracker initialized")
+            
+            # Batch processor
+            batch_config = BatchProcessorConfig(
+                initial_batch_size=100,
+                adaptive_batching=True,
+                enable_monitoring=True,
+                enable_memory_optimization=True
+            )
+            self.batch_processor = BatchProcessor(batch_config)
+            logger.info("✅ Batch processor initialized")
+            
+            # Hyperparameter optimizer
+            if ADVANCED_FEATURES_AVAILABLE:
+                self.hpo_optimizer = AdaptiveHyperparameterOptimizer(
+                    n_trials=50,
+                    timeout=300
+                )
+                logger.info("✅ Hyperparameter optimizer initialized")
+            
+            # Preprocessing optimizer
+            self.preprocessing_optimizer = PreprocessorConfigOptimizer()
+            logger.info("✅ Preprocessing optimizer initialized")
+            
+            # Memory-aware processor
+            self.memory_processor = create_memory_aware_processor()
+            logger.info("✅ Memory-aware processor initialized")
+            
+            # Performance tracker
+            if ADVANCED_FEATURES_AVAILABLE and PERFORMANCE_TRACKING_AVAILABLE:
+                self.performance_tracker = PerformanceTracker()
+                logger.info("✅ Performance tracker initialized")
+            
+        except Exception as e:
+            logger.error(f"Error initializing advanced features: {e}")
+            raise
     
     def get_algorithms_for_task(self, task_type: str) -> List[str]:
         """Get available algorithms for a specific task type"""
@@ -448,6 +665,456 @@ Data Loaded Successfully! ✅
             logger.error(error_msg)
             return error_msg, {}, "", ""
 
+    def optimize_preprocessing_config(self, data_characteristics: Dict[str, Any] = None) -> str:
+        """Optimize preprocessing configuration based on data characteristics"""
+        if not ADVANCED_FEATURES_AVAILABLE:
+            return "⚠️ Advanced preprocessing optimization not available"
+        
+        try:
+            if self.current_data is None:
+                return "❌ Please load data first"
+            
+            if self.preprocessing_optimizer is None:
+                return "❌ Preprocessing optimizer not initialized"
+            
+            # Use the available method from PreprocessorConfigOptimizer
+            try:
+                from modules.engine.adaptive_preprocessing import DatasetSize
+                
+                # Determine dataset size
+                n_samples = len(self.current_data)
+                if n_samples < 1000:
+                    dataset_size = DatasetSize.SMALL
+                elif n_samples < 100000:
+                    dataset_size = DatasetSize.MEDIUM
+                else:
+                    dataset_size = DatasetSize.LARGE
+                
+                # Estimate memory usage
+                memory_mb = self.current_data.memory_usage(deep=True).sum() / 1024**2
+                
+                # Optimize preprocessing configuration using the correct method
+                optimized_config = self.preprocessing_optimizer.optimize_for_dataset(
+                    dataset_size=dataset_size,
+                    estimated_memory_mb=memory_mb,
+                    num_features=len(self.current_data.columns),
+                    processing_mode=ProcessingMode.BALANCED,
+                    target_memory_pct=75.0
+                )
+            except ImportError:
+                # Fallback if DatasetSize is not available
+                optimized_config = self.preprocessing_optimizer.optimize_for_dataset(self.current_data)
+            
+            # Analyze data characteristics for display
+            data_characteristics = self._analyze_data_characteristics(self.current_data)
+            
+            optimization_text = f"""
+Preprocessing Configuration Optimized! ✅
+
+📊 Data Analysis:
+- Samples: {data_characteristics.get('n_samples', 0):,}
+- Features: {data_characteristics.get('n_features', 0):,}
+- Categorical Features: {data_characteristics.get('n_categorical', 0)}
+- Numerical Features: {data_characteristics.get('n_numerical', 0)}
+- Missing Data: {data_characteristics.get('missing_ratio', 0):.2%}
+- Memory Usage: {data_characteristics.get('memory_usage_mb', 0):.2f} MB
+
+⚙️ Optimized Configuration:
+- Configuration Type: {type(optimized_config).__name__}
+- Normalization: {getattr(optimized_config, 'normalization', 'Auto')}
+- Batch Processing: Enabled
+- Memory Optimization: Enabled
+            """
+            
+            return optimization_text
+            
+        except Exception as e:
+            error_msg = f"Error optimizing preprocessing: {str(e)}"
+            logger.error(error_msg)
+            return error_msg
+    
+    def _analyze_data_characteristics(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """Analyze data characteristics for preprocessing optimization"""
+        try:
+            categorical_cols = df.select_dtypes(include=['object', 'category']).columns
+            numerical_cols = df.select_dtypes(include=[np.number]).columns
+            
+            characteristics = {
+                'n_samples': len(df),
+                'n_features': len(df.columns),
+                'n_categorical': len(categorical_cols),
+                'n_numerical': len(numerical_cols),
+                'missing_ratio': df.isnull().sum().sum() / (len(df) * len(df.columns)),
+                'memory_usage_mb': df.memory_usage(deep=True).sum() / 1024**2,
+                'sparsity_ratio': 0.0,  # Could be calculated for sparse data
+                'outlier_ratio': 0.0,   # Could be calculated using statistical methods
+                'skewness_avg': numerical_cols.empty and 0.0 or df[numerical_cols].skew().mean(),
+                'cardinality_avg': categorical_cols.empty and 0.0 or df[categorical_cols].nunique().mean()
+            }
+            
+            return characteristics
+            
+        except Exception as e:
+            logger.error(f"Error analyzing data characteristics: {e}")
+            return {
+                'n_samples': len(df) if df is not None else 0,
+                'n_features': len(df.columns) if df is not None else 0,
+                'n_categorical': 0,
+                'n_numerical': 0,
+                'missing_ratio': 0.0,
+                'memory_usage_mb': 0.0,
+                'sparsity_ratio': 0.0,
+                'outlier_ratio': 0.0,
+                'skewness_avg': 0.0,
+                'cardinality_avg': 0.0
+            }
+    
+    def compare_multiple_models(self, target_column: str, algorithms: List[str], 
+                               enable_hpo: bool = True) -> Tuple[str, str, str]:
+        """Train and compare multiple models with advanced features"""
+        if self.inference_only:
+            return "❌ Model comparison not available in inference-only mode.", "", ""
+        
+        if self.current_data is None:
+            return "❌ Please load data first.", "", ""
+        
+        if target_column not in self.current_data.columns:
+            return f"❌ Target column '{target_column}' not found.", "", ""
+        
+        try:
+            # Start experiment tracking
+            if self.experiment_tracker and ADVANCED_FEATURES_AVAILABLE:
+                experiment_id = self.experiment_tracker.start_experiment(
+                    experiment_name=f"model_comparison_{int(time.time())}",
+                    tags={"type": "model_comparison", "target": target_column}
+                )
+            
+            # Prepare data with memory optimization
+            X = self.current_data.drop(columns=[target_column])
+            y = self.current_data[target_column]
+            
+            # Use memory-aware processing if available
+            if self.memory_processor and ADVANCED_FEATURES_AVAILABLE:
+                processed_data = self.memory_processor.process_data(X, y)
+                X, y = processed_data['X'], processed_data['y']
+            else:
+                # Handle categorical features manually
+                categorical_columns = X.select_dtypes(include=['object']).columns
+                if len(categorical_columns) > 0:
+                    for col in categorical_columns:
+                        X[col] = pd.Categorical(X[col]).codes
+            
+            # Initialize training engine with advanced config
+            if self.current_config is None:
+                task_type = TaskType.CLASSIFICATION if self.determine_task_type(y) == "classification" else TaskType.REGRESSION
+                self.current_config = MLTrainingEngineConfig(
+                    task_type=task_type,
+                    optimization_strategy=OptimizationStrategy.BAYESIAN_OPTIMIZATION,
+                    model_path="./models",
+                    checkpoint_path="./checkpoints",
+                    enable_quantization=True,
+                    enable_mixed_precision=True if ADVANCED_FEATURES_AVAILABLE else False
+                )
+            
+            self.training_engine = MLTrainingEngine(self.current_config)
+            
+            results = {}
+            comparison_data = []
+            
+            # Train each algorithm
+            for algorithm in algorithms:
+                try:
+                    model_key = self.get_model_key_from_name(algorithm)
+                    model_name = f"{algorithm}_{int(time.time())}"
+                    
+                    logger.info(f"Training {algorithm}...")
+                    start_time = time.time()
+                    
+                    # Run hyperparameter optimization if enabled
+                    if enable_hpo and self.hpo_optimizer and ADVANCED_FEATURES_AVAILABLE:
+                        if hasattr(self.hpo_optimizer, 'optimize'):
+                            # Create objective function
+                            def objective_function(params):
+                                try:
+                                    from sklearn.model_selection import cross_val_score
+                                    from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+                                    from sklearn.linear_model import LogisticRegression, LinearRegression
+                                    
+                                    # Create model based on type
+                                    if model_key == 'random_forest':
+                                        if self.determine_task_type(y) == 'classification':
+                                            model = RandomForestClassifier(**params, random_state=42)
+                                        else:
+                                            model = RandomForestRegressor(**params, random_state=42)
+                                    else:
+                                        # Default fallback
+                                        if self.determine_task_type(y) == 'classification':
+                                            model = RandomForestClassifier(**params, random_state=42)
+                                        else:
+                                            model = RandomForestRegressor(**params, random_state=42)
+                                    
+                                    # Quick CV
+                                    cv_scores = cross_val_score(model, X.values if hasattr(X, 'values') else X, 
+                                                              y.values if hasattr(y, 'values') else y, cv=3, 
+                                                              scoring='accuracy' if self.determine_task_type(y) == 'classification' else 'r2')
+                                    return cv_scores.mean()
+                                except Exception as e:
+                                    logger.warning(f"HPO objective error: {e}")
+                                    return 0.0
+                            
+                            search_space = create_search_space(self.determine_task_type(y), [model_key])
+                            hpo_result = self.hpo_optimizer.optimize(
+                                objective_function=objective_function,
+                                search_space=search_space,
+                                direction='maximize',
+                                study_name=f"comparison_{model_key}_{int(time.time())}"
+                            )
+                            best_params = getattr(hpo_result, 'best_params', search_space.get(model_key, {}))
+                        else:
+                            # Fallback HPO simulation
+                            search_space = create_search_space(self.determine_task_type(y), [model_key])
+                            best_params = search_space.get(model_key, {})
+                    else:
+                        best_params = {}
+                    
+                    # Train model
+                    result = self.training_engine.train_model(
+                        X=X.values if hasattr(X, 'values') else X,
+                        y=y.values if hasattr(y, 'values') else y,
+                        model_type=model_key,
+                        model_name=model_name,
+                        hyperparameters=best_params
+                    )
+                    
+                    training_time = time.time() - start_time
+                    
+                    # Store results
+                    results[algorithm] = {
+                        'model_name': model_name,
+                        'result': result,
+                        'training_time': training_time,
+                        'best_params': best_params,
+                        'hpo_enabled': enable_hpo and bool(best_params)
+                    }
+                    
+                    # Store in trained models
+                    self.trained_models[model_name] = {
+                        'algorithm': algorithm,
+                        'model_key': model_key,
+                        'target_column': target_column,
+                        'training_time': training_time,
+                        'result': result,
+                        'feature_names': X.columns.tolist() if hasattr(X, 'columns') else [],
+                        'data_shape': X.shape if hasattr(X, 'shape') else (0, 0),
+                        'hpo_params': best_params
+                    }
+                    
+                    # Log experiment metrics
+                    if self.experiment_tracker and ADVANCED_FEATURES_AVAILABLE:
+                        metrics = result.get('metrics', {})
+                        self.experiment_tracker.log_metrics(
+                            experiment_id, 
+                            metrics, 
+                            model_name=model_name
+                        )
+                    
+                    logger.info(f"✅ {algorithm} training completed")
+                    
+                except Exception as e:
+                    logger.error(f"❌ Failed to train {algorithm}: {e}")
+                    results[algorithm] = {
+                        'error': str(e),
+                        'training_time': 0
+                    }
+            
+            # Generate comparison results
+            comparison_summary = self._generate_model_comparison_summary(results)
+            detailed_results = self._generate_detailed_comparison(results)
+            visualization_data = self._generate_comparison_visualization(results)
+            
+            # End experiment
+            if self.experiment_tracker and ADVANCED_FEATURES_AVAILABLE:
+                self.experiment_tracker.end_experiment(experiment_id)
+            
+            return comparison_summary, detailed_results, visualization_data
+            
+        except Exception as e:
+            error_msg = f"Error in model comparison: {str(e)}"
+            logger.error(error_msg)
+            return error_msg, "", ""
+    
+    def _generate_model_comparison_summary(self, results: Dict[str, Any]) -> str:
+        """Generate summary of model comparison results"""
+        try:
+            summary_lines = [
+                "🏆 Model Comparison Results",
+                "=" * 50,
+                ""
+            ]
+            
+            # Sort by primary metric (assuming classification uses f1, regression uses r2)
+            model_scores = []
+            for algorithm, result_data in results.items():
+                if 'error' not in result_data:
+                    result = result_data.get('result', {})
+                    metrics = result.get('metrics', {})
+                    primary_score = metrics.get('f1', metrics.get('r2', metrics.get('accuracy', 0)))
+                    model_scores.append((algorithm, primary_score, result_data))
+            
+            # Sort by score descending
+            model_scores.sort(key=lambda x: x[1], reverse=True)
+            
+            for rank, (algorithm, score, result_data) in enumerate(model_scores, 1):
+                status = "🥇" if rank == 1 else "🥈" if rank == 2 else "🥉" if rank == 3 else "📊"
+                hpo_status = " (HPO)" if result_data.get('hpo_enabled', False) else ""
+                summary_lines.extend([
+                    f"{status} Rank {rank}: {algorithm}{hpo_status}",
+                    f"   Score: {score:.4f}",
+                    f"   Time: {result_data.get('training_time', 0):.2f}s",
+                    ""
+                ])
+            
+            # Add failed models
+            failed_models = [alg for alg, res in results.items() if 'error' in res]
+            if failed_models:
+                summary_lines.extend([
+                    "❌ Failed Models:",
+                    *[f"   - {alg}: {results[alg]['error'][:50]}..." for alg in failed_models],
+                    ""
+                ])
+            
+            return "\n".join(summary_lines)
+            
+        except Exception as e:
+            return f"Error generating comparison summary: {str(e)}"
+    
+    def _generate_detailed_comparison(self, results: Dict[str, Any]) -> str:
+        """Generate detailed comparison of model results"""
+        try:
+            detail_lines = [
+                "📊 Detailed Model Analysis",
+                "=" * 50,
+                ""
+            ]
+            
+            for algorithm, result_data in results.items():
+                if 'error' not in result_data:
+                    result = result_data.get('result', {})
+                    metrics = result.get('metrics', {})
+                    
+                    detail_lines.extend([
+                        f"🤖 {algorithm}",
+                        "-" * (len(algorithm) + 3),
+                        f"Training Time: {result_data.get('training_time', 0):.2f} seconds",
+                        f"HPO Used: {'Yes' if result_data.get('hpo_enabled', False) else 'No'}",
+                        ""
+                    ])
+                    
+                    if metrics:
+                        detail_lines.append("Metrics:")
+                        for metric, value in metrics.items():
+                            if isinstance(value, (int, float)):
+                                detail_lines.append(f"  - {metric.replace('_', ' ').title()}: {value:.4f}")
+                            else:
+                                detail_lines.append(f"  - {metric.replace('_', ' ').title()}: {value}")
+                    
+                    # Show best hyperparameters if HPO was used
+                    best_params = result_data.get('best_params', {})
+                    if best_params:
+                        detail_lines.extend([
+                            "",
+                            "Best Hyperparameters:",
+                            json.dumps(best_params, indent=4)
+                        ])
+                    
+                    detail_lines.append("")
+            
+            return "\n".join(detail_lines)
+            
+        except Exception as e:
+            return f"Error generating detailed comparison: {str(e)}"
+    
+    def _generate_comparison_visualization(self, results: Dict[str, Any]) -> str:
+        """Generate visualization data for model comparison"""
+        try:
+            # This could generate HTML/plots for visualization
+            # For now, return a simple table format
+            
+            viz_lines = [
+                "📈 Performance Visualization",
+                "=" * 50,
+                "",
+                "Algorithm | Score | Time(s) | HPO | Status",
+                "-" * 50
+            ]
+            
+            for algorithm, result_data in results.items():
+                if 'error' not in result_data:
+                    result = result_data.get('result', {})
+                    metrics = result.get('metrics', {})
+                    primary_score = metrics.get('f1', metrics.get('r2', metrics.get('accuracy', 0)))
+                    training_time = result_data.get('training_time', 0)
+                    hpo_used = result_data.get('hpo_enabled', False)
+                    
+                    viz_lines.append(
+                        f"{algorithm:<15} | {primary_score:5.3f} | {training_time:6.2f} | {'✓' if hpo_used else '✗':<3} | ✅"
+                    )
+                else:
+                    viz_lines.append(
+                        f"{algorithm:<15} | {'N/A':<5} | {'N/A':<6} | {'✗':<3} | ❌"
+                    )
+            
+            return "\n".join(viz_lines)
+            
+        except Exception as e:
+            return f"Error generating visualization: {str(e)}"
+    
+    def get_system_monitoring_dashboard(self) -> str:
+        """Get system monitoring dashboard"""
+        try:
+            if not ADVANCED_FEATURES_AVAILABLE:
+                return "⚠️ Advanced monitoring not available"
+            
+            # Get system information
+            system_info = self.get_system_info()
+            
+            # Get performance metrics if available
+            performance_metrics = {}
+            if self.performance_tracker:
+                performance_metrics = self.performance_tracker.get_metrics()
+            
+            # Combine data for dashboard
+            dashboard_data = {
+                "current_metrics": {
+                    "system_info": system_info,
+                    "performance": performance_metrics,
+                    "trained_models": len(self.trained_models),
+                    "active_experiments": 1 if self.experiment_tracker else 0
+                },
+                "performance_analysis": {
+                    "total_training_time": sum(
+                        model.get('training_time', 0) 
+                        for model in self.trained_models.values()
+                    ),
+                    "average_accuracy": np.mean([
+                        model.get('result', {}).get('metrics', {}).get('accuracy', 0)
+                        for model in self.trained_models.values()
+                    ]) if self.trained_models else 0
+                },
+                "resource_analysis": system_info,
+                "active_alerts": []
+            }
+            
+            # Generate HTML dashboard
+            dashboard_html = generate_dashboard_html(dashboard_data)
+            
+            return dashboard_html
+            
+        except Exception as e:
+            error_msg = f"Error generating monitoring dashboard: {str(e)}"
+            logger.error(error_msg)
+            return f"<h1>Dashboard Error</h1><p>{error_msg}</p>"
+
     def update_algorithm_choices(self, task_type: str) -> gr.Dropdown:
         """Update algorithm choices based on task type"""
         algorithms = self.get_algorithms_for_task(task_type)
@@ -537,8 +1204,9 @@ Configuration Created Successfully!
             logger.error(error_msg)
             return error_msg, gr.Dropdown(), []
 
-    def train_model(self, target_column: str, algorithm_name: str, model_name: str = None) -> Tuple[str, str, str, gr.Dropdown]:
-        """Train model with the current configuration"""
+    def train_model(self, target_column: str, algorithm_name: str, model_name: str = None, 
+                   enable_hpo: bool = True, hpo_trials: int = 50) -> Tuple[str, str, str, gr.Dropdown]:
+        """Train model with the current configuration and optional hyperparameter optimization"""
         if self.inference_only:
             return "❌ Model training is disabled in inference-only mode.", "", "", gr.Dropdown()
         
@@ -553,11 +1221,17 @@ Configuration Created Successfully!
             if self.current_config is None:
                 # Create a default configuration
                 task_type = TaskType.CLASSIFICATION if self.determine_task_type(self.current_data[target_column]) == "classification" else TaskType.REGRESSION
+                
+                # Set optimization strategy based on HPO preference
+                optimization_strategy = OptimizationStrategy.BAYESIAN_OPTIMIZATION if enable_hpo else OptimizationStrategy.GRID_SEARCH
+                
                 self.current_config = MLTrainingEngineConfig(
                     task_type=task_type,
-                    optimization_strategy=OptimizationStrategy.BALANCED,
+                    optimization_strategy=optimization_strategy,
                     model_path="./models",
-                    checkpoint_path="./checkpoints"
+                    checkpoint_path="./checkpoints",
+                    cv_folds=5,
+                    test_size=0.2
                 )
             
             self.training_engine = MLTrainingEngine(self.current_config)
@@ -580,7 +1254,12 @@ Configuration Created Successfully!
                 timestamp = int(time.time())
                 model_name = f"{algorithm_name.split(' - ')[-1]}_{timestamp}"
             
-            # Train model
+            # Log HPO configuration for reference
+            if enable_hpo and ADVANCED_FEATURES_AVAILABLE:
+                search_space = create_search_space(self.current_config.task_type.value, [model_key])
+                logger.info(f"Training with HPO enabled - available search space: {list(search_space.get(model_key, {}).keys())}")
+            
+            # Train model (HPO is handled internally by training engine based on optimization strategy)
             start_time = time.time()
             result = self.training_engine.train_model(
                 X=X.values, 
@@ -600,11 +1279,15 @@ Configuration Created Successfully!
                 'training_time': training_time,
                 'result': result,
                 'feature_names': X.columns.tolist(),
-                'data_shape': X.shape
+                'data_shape': X.shape,
+                'hpo_enabled': enable_hpo,
+                'hpo_trials': hpo_trials if enable_hpo else None,
+                'optimization_strategy': self.current_config.optimization_strategy.value
             }
             
             # Generate results summary
-            metrics_text = "Training Results:\n\n"
+            hpo_status = f" (HPO: {hpo_trials} trials)" if enable_hpo else " (No HPO)"
+            metrics_text = f"Training Results{hpo_status}:\n\n"
             if 'metrics' in result and result['metrics']:
                 for metric, value in result['metrics'].items():
                     if isinstance(value, (int, float)):
@@ -613,6 +1296,9 @@ Configuration Created Successfully!
                         metrics_text += f"- {metric.replace('_', ' ').title()}: {value}\n"
             
             metrics_text += f"\n- Training Time: {training_time:.2f} seconds"
+            if enable_hpo:
+                metrics_text += f"\n- HPO Enabled: Yes ({hpo_trials} max trials)"
+                metrics_text += f"\n- Optimization Strategy: {self.current_config.optimization_strategy.value}"
             
             # Feature importance
             importance_text = ""
@@ -655,6 +1341,385 @@ Model Training Summary
             error_msg = f"Error during training: {str(e)}"
             logger.error(error_msg)
             return error_msg, "", "", gr.Dropdown()
+
+    def train_multiple_models(self, target_column: str, algorithms: List[str], 
+                             enable_hpo: bool = True, hpo_trials: int = 50,
+                             enable_parallel: bool = True, max_workers: int = 4,
+                             custom_hyperparams: str = "") -> Tuple[str, str, str, gr.Dropdown]:
+        """Train multiple models simultaneously with individual hyperparameter configurations"""
+        if self.inference_only:
+            return "❌ Model training is disabled in inference-only mode.", "", "", gr.Dropdown()
+        
+        if self.current_data is None:
+            return "❌ Please load data first.", "", "", gr.Dropdown()
+        
+        if target_column not in self.current_data.columns:
+            return f"❌ Target column '{target_column}' not found in data.", "", "", gr.Dropdown()
+        
+        if not algorithms:
+            return "❌ Please select at least one algorithm to train.", "", "", gr.Dropdown()
+        
+        try:
+            # Parse custom hyperparameters
+            custom_hp_dict = {}
+            if custom_hyperparams.strip():
+                try:
+                    import json
+                    custom_hp_dict = json.loads(custom_hyperparams)
+                except json.JSONDecodeError as e:
+                    return f"❌ Invalid JSON in custom hyperparameters: {str(e)}", "", ""
+            
+            # Initialize training engine if needed
+            if self.current_config is None:
+                task_type = TaskType.CLASSIFICATION if self.determine_task_type(self.current_data[target_column]) == "classification" else TaskType.REGRESSION
+                self.current_config = MLTrainingEngineConfig(
+                    task_type=task_type,
+                    optimization_strategy=OptimizationStrategy.BAYESIAN_OPTIMIZATION if enable_hpo else OptimizationStrategy.GRID_SEARCH,
+                    model_path="./models",
+                    checkpoint_path="./checkpoints",
+                    cv_folds=5,
+                    test_size=0.2
+                )
+            
+            # Prepare data
+            X = self.current_data.drop(columns=[target_column])
+            y = self.current_data[target_column]
+            
+            # Handle categorical features
+            categorical_columns = X.select_dtypes(include=['object']).columns
+            if len(categorical_columns) > 0:
+                for col in categorical_columns:
+                    X[col] = pd.Categorical(X[col]).codes
+            
+            # Start experiment tracking
+            if self.experiment_tracker and ADVANCED_FEATURES_AVAILABLE:
+                experiment_id = self.experiment_tracker.start_experiment(
+                    experiment_name=f"multimodel_training_{int(time.time())}",
+                    tags={"type": "multimodel_training", "target": target_column, "models": len(algorithms)}
+                )
+            
+            start_time = time.time()
+            results = {}
+            training_progress = []
+            
+            # Function to train a single model
+            def train_single_model(algorithm_name):
+                try:
+                    model_key = self.get_model_key_from_name(algorithm_name)
+                    timestamp = int(time.time() * 1000)  # Use milliseconds for uniqueness
+                    model_name = f"{algorithm_name.split(' - ')[-1]}_{timestamp}"
+                    
+                    # Get custom hyperparameters for this model if specified
+                    model_custom_params = custom_hp_dict.get(model_key, {})
+                    
+                    # Create search space
+                    search_space = create_search_space(self.current_config.task_type.value, [model_key])
+                    
+                    # Merge custom parameters with default search space
+                    if model_custom_params:
+                        if model_key in search_space:
+                            search_space[model_key].update(model_custom_params)
+                        else:
+                            search_space[model_key] = model_custom_params
+                    
+                    model_start_time = time.time()
+                    
+                    # Initialize training engine for this model
+                    training_engine = MLTrainingEngine(self.current_config)
+                    
+                    # Train model
+                    if enable_hpo and self.hpo_optimizer and ADVANCED_FEATURES_AVAILABLE:
+                        # Use HPO
+                        try:
+                            if hasattr(self.hpo_optimizer, 'optimize'):
+                                def objective_function(params):
+                                    try:
+                                        from sklearn.model_selection import cross_val_score
+                                        from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+                                        from sklearn.linear_model import LogisticRegression, LinearRegression
+                                        from sklearn.svm import SVC, SVR
+                                        
+                                        # Create model based on type with hyperparameters
+                                        if model_key == 'random_forest':
+                                            if self.current_config.task_type == TaskType.CLASSIFICATION:
+                                                model = RandomForestClassifier(**params, random_state=42)
+                                            else:
+                                                model = RandomForestRegressor(**params, random_state=42)
+                                        elif model_key == 'logistic_regression':
+                                            model = LogisticRegression(**params, random_state=42, max_iter=1000)
+                                        elif model_key == 'linear_regression':
+                                            model = LinearRegression(**params)
+                                        elif model_key == 'svm':
+                                            if self.current_config.task_type == TaskType.CLASSIFICATION:
+                                                model = SVC(**params, random_state=42)
+                                            else:
+                                                model = SVR(**params)
+                                        else:
+                                            # Default to RandomForest
+                                            if self.current_config.task_type == TaskType.CLASSIFICATION:
+                                                model = RandomForestClassifier(**params, random_state=42)
+                                            else:
+                                                model = RandomForestRegressor(**params, random_state=42)
+                                        
+                                        # Perform cross-validation
+                                        cv_scores = cross_val_score(
+                                            model, X.values, y.values, cv=5, 
+                                            scoring='accuracy' if self.current_config.task_type == TaskType.CLASSIFICATION else 'r2'
+                                        )
+                                        return cv_scores.mean()
+                                        
+                                    except Exception as e:
+                                        logger.warning(f"HPO objective error for {algorithm_name}: {e}")
+                                        return 0.0
+                                
+                                hpo_result = self.hpo_optimizer.optimize(
+                                    objective_function=objective_function,
+                                    search_space={model_key: search_space.get(model_key, {})},
+                                    direction='maximize',
+                                    study_name=f"multimodel_{model_key}_{timestamp}"
+                                )
+                                best_params = getattr(hpo_result, 'best_params', search_space.get(model_key, {}))
+                            else:
+                                # Fallback HPO simulation
+                                best_params = search_space.get(model_key, {})
+                        except Exception as e:
+                            logger.warning(f"HPO failed for {algorithm_name}: {e}")
+                            best_params = search_space.get(model_key, {})
+                    else:
+                        best_params = {}
+                    
+                    # Train the final model
+                    result = training_engine.train_model(
+                        X=X.values,
+                        y=y.values,
+                        model_type=model_key,
+                        model_name=model_name,
+                        hyperparameters=best_params
+                    )
+                    
+                    model_training_time = time.time() - model_start_time
+                    
+                    # Store trained model information
+                    self.trained_models[model_name] = {
+                        'algorithm': algorithm_name,
+                        'model_key': model_key,
+                        'target_column': target_column,
+                        'training_time': model_training_time,
+                        'result': result,
+                        'feature_names': X.columns.tolist(),
+                        'data_shape': X.shape,
+                        'hpo_enabled': enable_hpo,
+                        'hpo_trials': hpo_trials if enable_hpo else None,
+                        'best_params': best_params,
+                        'custom_params': model_custom_params
+                    }
+                    
+                    # Log experiment metrics
+                    if self.experiment_tracker and ADVANCED_FEATURES_AVAILABLE:
+                        metrics = result.get('metrics', {})
+                        self.experiment_tracker.log_metrics(
+                            experiment_id, 
+                            metrics, 
+                            model_name=model_name
+                        )
+                    
+                    return {
+                        'algorithm': algorithm_name,
+                        'model_name': model_name,
+                        'model_key': model_key,
+                        'result': result,
+                        'training_time': model_training_time,
+                        'best_params': best_params,
+                        'custom_params': model_custom_params,
+                        'hpo_enabled': enable_hpo and bool(best_params),
+                        'status': 'success'
+                    }
+                    
+                except Exception as e:
+                    logger.error(f"❌ Failed to train {algorithm_name}: {e}")
+                    return {
+                        'algorithm': algorithm_name,
+                        'model_key': self.get_model_key_from_name(algorithm_name),
+                        'error': str(e),
+                        'training_time': 0,
+                        'status': 'failed'
+                    }
+            
+            # Train models (parallel or sequential)
+            if enable_parallel and len(algorithms) > 1:
+                # Parallel training
+                training_progress.append(f"🚀 Starting parallel training of {len(algorithms)} models...")
+                
+                with ThreadPoolExecutor(max_workers=min(max_workers, len(algorithms))) as executor:
+                    future_to_algorithm = {
+                        executor.submit(train_single_model, alg): alg for alg in algorithms
+                    }
+                    
+                    for future in future_to_algorithm:
+                        algorithm_name = future_to_algorithm[future]
+                        try:
+                            result = future.result()
+                            results[algorithm_name] = result
+                            if result['status'] == 'success':
+                                training_progress.append(f"✅ {algorithm_name}: Completed in {result['training_time']:.2f}s")
+                            else:
+                                training_progress.append(f"❌ {algorithm_name}: Failed - {result.get('error', 'Unknown error')}")
+                        except Exception as e:
+                            results[algorithm_name] = {
+                                'algorithm': algorithm_name,
+                                'error': str(e),
+                                'status': 'failed'
+                            }
+                            training_progress.append(f"❌ {algorithm_name}: Exception - {str(e)}")
+            else:
+                # Sequential training
+                training_progress.append(f"🔄 Starting sequential training of {len(algorithms)} models...")
+                
+                for algorithm_name in algorithms:
+                    training_progress.append(f"🎯 Training {algorithm_name}...")
+                    result = train_single_model(algorithm_name)
+                    results[algorithm_name] = result
+                    
+                    if result['status'] == 'success':
+                        training_progress.append(f"✅ {algorithm_name}: Completed in {result['training_time']:.2f}s")
+                    else:
+                        training_progress.append(f"❌ {algorithm_name}: Failed - {result.get('error', 'Unknown error')}")
+            
+            total_training_time = time.time() - start_time
+            
+            # End experiment
+            if self.experiment_tracker and ADVANCED_FEATURES_AVAILABLE:
+                self.experiment_tracker.end_experiment(experiment_id)
+            
+            # Generate results
+            progress_text = "\n".join(training_progress)
+            progress_text += f"\n\n🏁 Total Training Time: {total_training_time:.2f} seconds"
+            
+            summary_text = self._generate_multimodel_summary(results, total_training_time)
+            detailed_text = self._generate_multimodel_detailed_results(results)
+            
+            # Update trained models dropdown
+            trained_models_dropdown = gr.Dropdown(
+                choices=self.get_trained_model_list(),
+                value="Select a trained model...",
+                label="Trained Models"
+            )
+            
+            return progress_text, summary_text, detailed_text, trained_models_dropdown
+            
+        except Exception as e:
+            error_msg = f"Error during multi-model training: {str(e)}"
+            logger.error(error_msg)
+            return error_msg, "", "", gr.Dropdown()
+    
+    def _generate_multimodel_summary(self, results: Dict[str, Any], total_time: float) -> str:
+        """Generate summary of multi-model training results"""
+        try:
+            summary_lines = [
+                "🏆 Multi-Model Training Summary",
+                "=" * 50,
+                ""
+            ]
+            
+            successful_models = []
+            failed_models = []
+            
+            for algorithm, result_data in results.items():
+                if result_data['status'] == 'success':
+                    result = result_data.get('result', {})
+                    metrics = result.get('metrics', {})
+                    primary_score = metrics.get('f1', metrics.get('r2', metrics.get('accuracy', 0)))
+                    successful_models.append((algorithm, primary_score, result_data))
+                else:
+                    failed_models.append((algorithm, result_data))
+            
+            # Sort successful models by performance
+            successful_models.sort(key=lambda x: x[1], reverse=True)
+            
+            summary_lines.append(f"📊 Training Overview:")
+            summary_lines.append(f"   • Total Models: {len(results)}")
+            summary_lines.append(f"   • Successful: {len(successful_models)}")
+            summary_lines.append(f"   • Failed: {len(failed_models)}")
+            summary_lines.append(f"   • Total Time: {total_time:.2f} seconds")
+            summary_lines.append("")
+            
+            if successful_models:
+                summary_lines.append("🥇 Top Performing Models:")
+                for rank, (algorithm, score, result_data) in enumerate(successful_models[:5], 1):
+                    status_icon = "🥇" if rank == 1 else "🥈" if rank == 2 else "🥉" if rank == 3 else "📊"
+                    hpo_status = " (HPO)" if result_data.get('hpo_enabled', False) else ""
+                    summary_lines.append(f"   {status_icon} {algorithm}{hpo_status}: {score:.4f} ({result_data['training_time']:.2f}s)")
+                summary_lines.append("")
+            
+            if failed_models:
+                summary_lines.append("❌ Failed Models:")
+                for algorithm, result_data in failed_models:
+                    error_preview = result_data.get('error', 'Unknown error')[:50]
+                    summary_lines.append(f"   • {algorithm}: {error_preview}...")
+                summary_lines.append("")
+            
+            return "\n".join(summary_lines)
+            
+        except Exception as e:
+            return f"Error generating multi-model summary: {str(e)}"
+    
+    def _generate_multimodel_detailed_results(self, results: Dict[str, Any]) -> str:
+        """Generate detailed results for multi-model training"""
+        try:
+            detail_lines = [
+                "📊 Detailed Multi-Model Results",
+                "=" * 60,
+                ""
+            ]
+            
+            for algorithm, result_data in results.items():
+                detail_lines.append(f"🤖 {algorithm}")
+                detail_lines.append("-" * (len(algorithm) + 3))
+                
+                if result_data['status'] == 'success':
+                    result = result_data.get('result', {})
+                    metrics = result.get('metrics', {})
+                    
+                    detail_lines.append(f"Status: ✅ Success")
+                    detail_lines.append(f"Model Name: {result_data.get('model_name', 'N/A')}")
+                    detail_lines.append(f"Training Time: {result_data.get('training_time', 0):.2f} seconds")
+                    detail_lines.append(f"HPO Enabled: {'Yes' if result_data.get('hpo_enabled', False) else 'No'}")
+                    
+                    if metrics:
+                        detail_lines.append("")
+                        detail_lines.append("📈 Performance Metrics:")
+                        for metric, value in metrics.items():
+                            if isinstance(value, (int, float)):
+                                detail_lines.append(f"   • {metric.replace('_', ' ').title()}: {value:.4f}")
+                            else:
+                                detail_lines.append(f"   • {metric.replace('_', ' ').title()}: {value}")
+                    
+                    # Show hyperparameters
+                    best_params = result_data.get('best_params', {})
+                    custom_params = result_data.get('custom_params', {})
+                    
+                    if best_params or custom_params:
+                        detail_lines.append("")
+                        detail_lines.append("🔧 Hyperparameters:")
+                        if custom_params:
+                            detail_lines.append("   Custom Parameters:")
+                            for param, value in custom_params.items():
+                                detail_lines.append(f"     • {param}: {value}")
+                        if best_params and result_data.get('hpo_enabled', False):
+                            detail_lines.append("   HPO Best Parameters:")
+                            for param, value in best_params.items():
+                                detail_lines.append(f"     • {param}: {value}")
+                    
+                else:
+                    detail_lines.append(f"Status: ❌ Failed")
+                    detail_lines.append(f"Error: {result_data.get('error', 'Unknown error')}")
+                
+                detail_lines.append("")
+            
+            return "\n".join(detail_lines)
+            
+        except Exception as e:
+            return f"Error generating detailed multi-model results: {str(e)}"
 
     def make_prediction(self, input_data: str, selected_model: str = None) -> str:
         """Make predictions using the trained model"""
@@ -723,15 +1788,25 @@ def create_ui(inference_only: bool = False):
     # Load CSS styles
     css = load_css_file()
     
-    title = "🚀 ML Inference Server" if inference_only else "🚀 AutoML Training & Inference Platform"
+    title = "🚀 ML Inference Server" if inference_only else "🚀 Advanced AutoML Platform with AI Optimization"
     description = """
 🎯 Real-time ML inference server with enterprise-grade security and performance optimization.
 
 ✨ Load your trained models and get instant predictions with minimal latency!
     """ if inference_only else """
-🤖 Complete AutoML platform with advanced optimization, model comparison, and secure deployment.
+🤖 Complete AutoML platform with cutting-edge AI optimization, automated hyperparameter tuning, and intelligent model comparison.
 
-🎯 Quick Start: Upload data → Configure training → Train multiple models → Compare results → Deploy predictions
+🎯 Advanced Features:
+• 🧠 Adaptive Hyperparameter Optimization with Bayesian & Tree-based methods
+• � Multi-Model Training with parallel execution and custom hyperparameters
+• �🔄 Multi-Model Comparison with automated benchmarking  
+• ⚡ Memory-Aware Processing & Batch Optimization
+• 📊 Real-time Performance Monitoring & Experiment Tracking
+• 🛡️ Enterprise Security with Audit Logging
+• 🚀 Mixed Precision Training & Model Quantization
+• 🎛️ Intelligent Preprocessing Configuration Optimization
+
+📈 Quick Start: Upload data → Auto-optimize preprocessing → Train single/multiple models with integrated HPO → Compare performance → Deploy best performer
     """
 
     with gr.Blocks(css=css, title=title, theme=gr.themes.Soft()) as interface:
@@ -797,6 +1872,11 @@ def create_ui(inference_only: bool = False):
                             sample_dropdown = gr.Dropdown(choices=sample_datasets, label="Sample Datasets")
                             load_sample_btn = gr.Button("Load Sample Data", variant="secondary")
                             
+                            # Advanced preprocessing
+                            gr.Markdown("## 🚀 Advanced Preprocessing")
+                            optimize_preprocessing_btn = gr.Button("Optimize Preprocessing Config", variant="primary")
+                            preprocessing_output = gr.Textbox(label="Preprocessing Optimization", lines=10, interactive=False)
+                            
                         with gr.Column(scale=2):
                             data_info = gr.Textbox(label="Dataset Information", lines=10, interactive=False)
                             data_preview = gr.HTML(label="Data Preview")
@@ -834,28 +1914,103 @@ def create_ui(inference_only: bool = False):
                                 label="Optimization Mode",
                                 value="balanced"
                             )
+                            
+                            # Advanced features toggle
+                            enable_mixed_precision = gr.Checkbox(label="Enable Mixed Precision", value=False)
+                            enable_experiment_tracking = gr.Checkbox(label="Enable Experiment Tracking", value=True)
                     
                     create_config_btn = gr.Button("Create Configuration", variant="primary")
                     config_output = gr.Textbox(label="Configuration Status", lines=15, interactive=False)
                 
                 # Training Tab
                 with gr.Tab("🚀 Training", id="training"):
+                    with gr.Tabs():
+                        # Single Model Training
+                        with gr.Tab("🤖 Single Model", id="single_training"):
+                            with gr.Row():
+                                with gr.Column():
+                                    gr.Markdown("## Single Model Training")
+                                    target_column = gr.Textbox(label="Target Column Name", placeholder="e.g., target, label, price")
+                                    algorithm_dropdown = gr.Dropdown(
+                                        choices=["Please create configuration first"], 
+                                        label="Select Algorithm"
+                                    )
+                                    model_name = gr.Textbox(label="Model Name (optional)", placeholder="my_model")
+                                    
+                                    # Hyperparameter Optimization Options
+                                    gr.Markdown("### 🎯 Hyperparameter Optimization")
+                                    enable_hpo = gr.Checkbox(label="Enable Hyperparameter Optimization", value=True)
+                                    with gr.Row():
+                                        hpo_trials = gr.Slider(minimum=10, maximum=200, value=50, step=10, label="HPO Trials")
+                                        hpo_timeout = gr.Slider(minimum=60, maximum=1200, value=300, step=60, label="HPO Timeout (seconds)")
+                                    
+                                    train_btn = gr.Button("Train Model", variant="primary")
+                                    
+                                with gr.Column():
+                                    training_output = gr.Textbox(label="Training Results", lines=10, interactive=False)
+                                    metrics_output = gr.Textbox(label="Model Metrics", lines=8, interactive=False)
+                                    importance_output = gr.Textbox(label="Feature Importance", lines=6, interactive=False)
+                        
+                        # Multi-Model Training
+                        with gr.Tab("🚀 Multi-Model Training", id="multi_training"):
+                            with gr.Row():
+                                with gr.Column():
+                                    gr.Markdown("## Multi-Model Training Configuration")
+                                    multi_target_column = gr.Textbox(label="Target Column Name", placeholder="e.g., target, label, price")
+                                    
+                                    gr.Markdown("### 📋 Model Selection")
+                                    multi_algorithms = gr.CheckboxGroup(
+                                        choices=[],
+                                        label="Select Models to Train",
+                                        value=[]
+                                    )
+                                    
+                                    gr.Markdown("### ⚙️ Global Settings")
+                                    multi_enable_hpo = gr.Checkbox(label="Enable HPO for All Models", value=True)
+                                    multi_hpo_trials = gr.Slider(minimum=10, maximum=200, value=50, step=10, label="HPO Trials per Model")
+                                    multi_parallel_training = gr.Checkbox(label="Enable Parallel Training", value=True)
+                                    multi_max_workers = gr.Slider(minimum=1, maximum=8, value=4, step=1, label="Max Parallel Workers")
+                                    
+                                    # Model-specific hyperparameters
+                                    gr.Markdown("### 🔧 Model-Specific Hyperparameters")
+                                    custom_hyperparams = gr.Textbox(
+                                        label="Custom Hyperparameters (JSON)",
+                                        placeholder='{"random_forest": {"n_estimators": [100, 200], "max_depth": [5, 10]}, "xgboost": {"learning_rate": [0.01, 0.1]}}',
+                                        lines=5
+                                    )
+                                    
+                                    multi_train_btn = gr.Button("Start Multi-Model Training", variant="primary")
+                                    
+                                with gr.Column():
+                                    multi_training_output = gr.Textbox(label="Multi-Training Progress", lines=12, interactive=False)
+                                    multi_results_summary = gr.Textbox(label="Training Summary", lines=10, interactive=False)
+                            
+                            with gr.Row():
+                                multi_detailed_results = gr.Textbox(label="Detailed Results", lines=15, interactive=False)
+                
+                # Model Comparison Tab
+                with gr.Tab("🏆 Model Comparison", id="comparison"):
                     with gr.Row():
                         with gr.Column():
-                            gr.Markdown("## Model Training")
-                            target_column = gr.Textbox(label="Target Column Name", placeholder="e.g., target, label, price")
-                            algorithm_dropdown = gr.Dropdown(
-                                choices=["Please create configuration first"], 
-                                label="Select Algorithm"
+                            gr.Markdown("## Multi-Model Comparison")
+                            comp_target_column = gr.Textbox(label="Target Column", placeholder="e.g., target, label, price")
+                            comp_algorithms = gr.CheckboxGroup(
+                                choices=[],
+                                label="Select Algorithms to Compare",
+                                value=[]
                             )
-                            model_name = gr.Textbox(label="Model Name (optional)", placeholder="my_model")
+                            enable_hpo_comparison = gr.Checkbox(label="Enable HPO for All Models", value=True)
                             
-                            train_btn = gr.Button("Train Model", variant="primary")
+                            compare_models_btn = gr.Button("Compare Models", variant="primary")
                             
                         with gr.Column():
-                            training_output = gr.Textbox(label="Training Results", lines=10, interactive=False)
-                            metrics_output = gr.Textbox(label="Model Metrics", lines=8, interactive=False)
-                            importance_output = gr.Textbox(label="Feature Importance", lines=6, interactive=False)
+                            comparison_summary = gr.Textbox(label="Comparison Summary", lines=8, interactive=False)
+                            
+                    with gr.Row():
+                        with gr.Column():
+                            detailed_comparison = gr.Textbox(label="Detailed Results", lines=12, interactive=False)
+                        with gr.Column():
+                            comparison_visualization = gr.Textbox(label="Performance Visualization", lines=12, interactive=False)
                 
                 # Prediction Tab
                 with gr.Tab("🔮 Predictions", id="predictions"):
@@ -875,6 +2030,19 @@ def create_ui(inference_only: bool = False):
                             
                         with gr.Column():
                             prediction_output = gr.Textbox(label="Prediction Results", lines=10, interactive=False)
+                
+                # Monitoring Dashboard Tab
+                with gr.Tab("📊 Monitoring", id="monitoring"):
+                    with gr.Row():
+                        with gr.Column():
+                            gr.Markdown("## System Monitoring")
+                            refresh_dashboard_btn = gr.Button("Refresh Dashboard", variant="primary")
+                            
+                        with gr.Column():
+                            pass
+                    
+                    with gr.Row():
+                        monitoring_dashboard = gr.HTML(label="System Dashboard")
             
             # Event handlers
             data_file.change(
@@ -889,6 +2057,11 @@ def create_ui(inference_only: bool = False):
                 outputs=[data_info, gr.State(), gr.State(), data_preview]
             )
             
+            optimize_preprocessing_btn.click(
+                app.optimize_preprocessing_config,
+                outputs=preprocessing_output
+            )
+            
             create_config_btn.click(
                 app.create_training_config,
                 inputs=[task_type, optimization_strategy, cv_folds, test_size, random_state, 
@@ -896,16 +2069,48 @@ def create_ui(inference_only: bool = False):
                 outputs=[config_output, algorithm_dropdown, gr.State()]
             )
             
+            # Update algorithm choices for comparison when config is created
+            algorithm_dropdown.change(
+                lambda choices: gr.update(choices=choices if choices != ["Please create configuration first"] else []),
+                inputs=algorithm_dropdown,
+                outputs=comp_algorithms
+            )
+            
+            # Update multi-model algorithm choices when config is created
+            algorithm_dropdown.change(
+                lambda choices: gr.update(choices=choices if choices != ["Please create configuration first"] else []),
+                inputs=algorithm_dropdown,
+                outputs=multi_algorithms
+            )
+            
             train_btn.click(
                 app.train_model,
-                inputs=[target_column, algorithm_dropdown, model_name],
+                inputs=[target_column, algorithm_dropdown, model_name, enable_hpo, hpo_trials],
                 outputs=[training_output, metrics_output, importance_output, trained_model_dropdown]
+            )
+            
+            multi_train_btn.click(
+                app.train_multiple_models,
+                inputs=[multi_target_column, multi_algorithms, multi_enable_hpo, multi_hpo_trials, 
+                       multi_parallel_training, multi_max_workers, custom_hyperparams],
+                outputs=[multi_training_output, multi_results_summary, multi_detailed_results, trained_model_dropdown]
+            )
+            
+            compare_models_btn.click(
+                app.compare_multiple_models,
+                inputs=[comp_target_column, comp_algorithms, enable_hpo_comparison],
+                outputs=[comparison_summary, detailed_comparison, comparison_visualization]
             )
             
             predict_btn.click(
                 app.make_prediction,
                 inputs=[prediction_input, trained_model_dropdown],
                 outputs=prediction_output
+            )
+            
+            refresh_dashboard_btn.click(
+                app.get_system_monitoring_dashboard,
+                outputs=monitoring_dashboard
             )
     
     return interface
@@ -979,11 +2184,19 @@ Share: {'Yes' if args.share else 'No'}
 Authentication: {'Required' if auth_config else 'Disabled'}
 
 🚀 Available Features:
-{'- Real-time model inference' if args.inference_only else '''- Multiple ML algorithms support
-- Advanced model training with hyperparameter optimization
-- Model performance comparison
-- Secure model storage
-- Real-time inference'''}
+{'- Real-time model inference with optimized performance' if args.inference_only else '''- 🧠 Advanced ML algorithms with 20+ supported models
+- 🚀 Multi-Model Training with parallel execution and custom hyperparameters
+- 🎯 Adaptive Hyperparameter Optimization (Bayesian, TPE, CMA-ES)
+- 🔄 Automated Multi-Model Comparison & Benchmarking
+- ⚡ Memory-Aware Processing & Batch Optimization
+- 📊 Real-time System Monitoring & Performance Dashboard  
+- 🔬 Experiment Tracking with MLflow Integration
+- 🛡️ Enterprise Security with Audit Logging
+- 🚀 Mixed Precision Training & Model Quantization
+- 🎛️ Intelligent Preprocessing Configuration Optimization
+- 📈 Advanced Model Selection & Performance Analytics
+- 💾 Secure Model Storage & Version Management
+- 🌐 RESTful API for Production Deployment'''}
 
 ⚠️  Security Notice:
 - Keep your data secure

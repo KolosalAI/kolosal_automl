@@ -1,86 +1,108 @@
 """
-ML Engine Components.
+ML Engine Components (lazy-loaded).
 
-This subpackage contains all the core engine components for machine learning:
-- Inference engine for model serving
-- Training engine for model development
-- Batch processor for efficient data handling
-- Data preprocessor for feature engineering
-- Quantizer for model optimization
-- Various utilities and caching mechanisms
+This subpackage exposes core engine components while keeping import time fast
+by lazily resolving heavy submodules on first attribute access (PEP 562).
 """
 
-from .inference_engine import InferenceEngine, InferenceServer
-from .train_engine import MLTrainingEngine
-from .batch_processor import BatchProcessor
-from .data_preprocessor import DataPreprocessor
-from .quantizer import Quantizer
-from .lru_ttl_cache import LRUTTLCache
+from __future__ import annotations
 
-# Import optimization modules
-try:
-    from .optimized_data_loader import OptimizedDataLoader, DatasetSize, LoadingStrategy, load_data_optimized
-    from .adaptive_preprocessing import AdaptivePreprocessorConfig, PreprocessorConfigOptimizer
-    from .memory_aware_processor import MemoryAwareDataProcessor, create_memory_aware_processor
-    OPTIMIZATION_MODULES_AVAILABLE = True
-except ImportError as e:
-    # Graceful fallback if optimization modules have dependency issues
-    print(f"Warning: Optimization modules not available: {e}")
-    OptimizedDataLoader = None
-    DatasetSize = None
-    LoadingStrategy = None
-    load_data_optimized = None
-    AdaptivePreprocessorConfig = None
-    PreprocessorConfigOptimizer = None
-    MemoryAwareDataProcessor = None
-    create_memory_aware_processor = None
-    OPTIMIZATION_MODULES_AVAILABLE = False
+import importlib
+from typing import Any, Dict, Tuple
 
-# Import utilities
-from .utils import (
-    _json_safe,
-    _scrub,
-    _patch_pickle_for_locks,
-    _return_none,
-)
+__version__ = "0.1.4"
 
-# Build __all__ dynamically based on what's available
+# Public API surface
 __all__ = [
     # Core engines
     "InferenceEngine",
     "InferenceServer",
     "MLTrainingEngine",
-    
+
     # Processors
     "BatchProcessor",
     "DataPreprocessor",
     "Quantizer",
-    
+
     # Utilities
     "LRUTTLCache",
-    
-    # Helper functions
+
+    # Helper functions (from utils)
     "_json_safe",
     "_scrub",
     "_patch_pickle_for_locks",
     "_return_none",
-    
+
     # Availability flag
     "OPTIMIZATION_MODULES_AVAILABLE",
+
+    # Optional optimization exports
+    "OptimizedDataLoader",
+    "DatasetSize",
+    "LoadingStrategy",
+    "load_data_optimized",
+    "AdaptivePreprocessorConfig",
+    "PreprocessorConfigOptimizer",
+    "MemoryAwareDataProcessor",
+    "create_memory_aware_processor",
 ]
 
-# Add optimization modules to __all__ if they're available
-if OPTIMIZATION_MODULES_AVAILABLE:
-    __all__.extend([
-        "OptimizedDataLoader",
-        "DatasetSize", 
-        "LoadingStrategy",
-        "load_data_optimized",
-        "AdaptivePreprocessorConfig",
-        "PreprocessorConfigOptimizer", 
-        "MemoryAwareDataProcessor",
-        "create_memory_aware_processor",
-    ])
+_LAZY_MAP: Dict[str, Tuple[str, str]] = {
+    # Engines
+    "InferenceEngine": (".inference_engine", "InferenceEngine"),
+    "InferenceServer": (".inference_engine", "InferenceServer"),
+    "MLTrainingEngine": (".train_engine", "MLTrainingEngine"),
 
-# Version info
-__version__ = "0.1.4"
+    # Processors
+    "BatchProcessor": (".batch_processor", "BatchProcessor"),
+    "DataPreprocessor": (".data_preprocessor", "DataPreprocessor"),
+    "Quantizer": (".quantizer", "Quantizer"),
+    "LRUTTLCache": (".lru_ttl_cache", "LRUTTLCache"),
+
+    # Utils
+    "_json_safe": (".utils", "_json_safe"),
+    "_scrub": (".utils", "_scrub"),
+    "_patch_pickle_for_locks": (".utils", "_patch_pickle_for_locks"),
+    "_return_none": (".utils", "_return_none"),
+
+    # Optional optimization modules
+    "OptimizedDataLoader": (".optimized_data_loader", "OptimizedDataLoader"),
+    "DatasetSize": (".optimized_data_loader", "DatasetSize"),
+    "LoadingStrategy": (".optimized_data_loader", "LoadingStrategy"),
+    "load_data_optimized": (".optimized_data_loader", "load_data_optimized"),
+    "AdaptivePreprocessorConfig": (".adaptive_preprocessing", "AdaptivePreprocessorConfig"),
+    "PreprocessorConfigOptimizer": (".adaptive_preprocessing", "PreprocessorConfigOptimizer"),
+    "MemoryAwareDataProcessor": (".memory_aware_processor", "MemoryAwareDataProcessor"),
+    "create_memory_aware_processor": (".memory_aware_processor", "create_memory_aware_processor"),
+}
+
+
+def __getattr__(name: str) -> Any:  # PEP 562
+    if name == "OPTIMIZATION_MODULES_AVAILABLE":
+        available = _check_optimization_availability()
+        globals()[name] = available
+        return available
+
+    target = _LAZY_MAP.get(name)
+    if target is None:
+        raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
+
+    module_path, attr = target
+    module = importlib.import_module(module_path, package=__name__)
+    value = getattr(module, attr)
+    globals()[name] = value
+    return value
+
+
+def __dir__():
+    return sorted(list(globals().keys()) + __all__)
+
+
+def _check_optimization_availability() -> bool:
+    try:
+        importlib.import_module(".optimized_data_loader", package=__name__)
+        importlib.import_module(".adaptive_preprocessing", package=__name__)
+        importlib.import_module(".memory_aware_processor", package=__name__)
+        return True
+    except Exception:
+        return False
