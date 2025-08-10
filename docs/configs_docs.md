@@ -1125,3 +1125,40 @@ class InferenceEngineConfig:
   ```
   - **Description**:  
     Converts the configuration to a dictionary for serial
+ 
+    ---
+
+    ## New performance toggles (quick reference)
+
+    ### Inference micro-batching fallback
+    - When dynamic batching is disabled, you can still coalesce tiny requests arriving within a very small window to boost throughput with minimal added latency.
+    - Keys on InferenceEngineConfig (read as free-form fields in the engine):
+      - `enable_micro_batch_fallback` (bool) – default off.
+      - `micro_batch_min_size` (int) – target minimum before merging, e.g., 2–8.
+      - `micro_batch_max_size` (int) – cap per micro-batch, e.g., 16–64.
+      - `micro_batch_window_ms` (float) – tiny wait window in ms, e.g., 1–3.
+
+    Example snippet:
+    ```json
+    {
+      "enable_batching": false,
+      "enable_micro_batch_fallback": true,
+      "micro_batch_min_size": 4,
+      "micro_batch_max_size": 32,
+      "micro_batch_window_ms": 2.0
+    }
+    ```
+
+    ### Preprocessor float32 enforcement
+    - For large tables and CPU-bound inference, casting to float32 and enforcing C-contiguous layout can improve memory bandwidth and SIMD efficiency.
+    - Key on PreprocessorConfig (read as free-form field by the preprocessor):
+      - `enforce_float32` (bool) – default off.
+
+    Example snippet:
+    ```json
+    {
+      "normalization": "STANDARD",
+      "handle_nan": true,
+      "enforce_float32": true
+    }
+    ```

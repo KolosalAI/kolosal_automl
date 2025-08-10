@@ -18,6 +18,8 @@ from queue import Queue
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 import copy
 from types import MethodType
+import contextlib
+import os as _os
 # Import scikit-learn components
 from sklearn.base import BaseEstimator
 from sklearn.model_selection import (
@@ -271,6 +273,13 @@ class MLTrainingEngine:
                 self.thread_pool = ThreadPoolExecutor(max_workers=n_jobs, thread_name_prefix="MLTrain")
                 self.process_pool = ProcessPoolExecutor(max_workers=n_jobs)
                 self.logger.debug(f"Thread and process pools initialized with {n_jobs} workers")
+            
+            # Probe threadpoolctl availability once for training thread control
+            try:
+                import threadpoolctl  # noqa: F401
+                self._threadpoolctl_available = True
+            except Exception:
+                self._threadpoolctl_available = False
         except Exception as e:
             self.logger.error(f"Error initializing components: {str(e)}")
             if hasattr(self.config, 'debug_mode') and self.config.debug_mode:
@@ -585,6 +594,41 @@ class MLTrainingEngine:
         steps.append(('model', model))
         
         return Pipeline(steps)
+
+    @contextlib.contextmanager
+    def _thread_limits(self, max_threads: int | None):
+        """Temporarily limit BLAS/OpenMP threads to avoid oversubscription during training.
+
+        If max_threads is None, do nothing.
+        """
+        if not max_threads or max_threads <= 0:
+            # No limit requested
+            yield
+            return
+        # Preserve env
+        prev_env = {k: _os.environ.get(k) for k in (
+            "OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS", "NUMEXPR_NUM_THREADS"
+        )}
+        try:
+            _os.environ["OMP_NUM_THREADS"] = str(max_threads)
+            _os.environ["MKL_NUM_THREADS"] = str(max_threads)
+            _os.environ["OPENBLAS_NUM_THREADS"] = str(max_threads)
+            _os.environ["NUMEXPR_NUM_THREADS"] = str(max_threads)
+
+            if getattr(self, "_threadpoolctl_available", False):
+                import threadpoolctl
+                with threadpoolctl.threadpool_limits(limits=max_threads, user_api="blas"):
+                    with threadpoolctl.threadpool_limits(limits=max_threads, user_api="openmp"):
+                        yield
+            else:
+                yield
+        finally:
+            # Restore env
+            for k, v in prev_env.items():
+                if v is None:
+                    _os.environ.pop(k, None)
+                else:
+                    _os.environ[k] = v
     
     def _can_stratify(self, y, n_splits=None, min_samples_per_class=2):
         """
@@ -673,6 +717,78 @@ class MLTrainingEngine:
                 random_state=self.config.random_state
             )
 
+    def _make_lightweight_estimator_for_hpo(self, estimator: Any) -> Any:
+        """Return a copy of estimator with reduced resource usage for HPO.
+
+        This speeds up CV during search without changing the final fit budget.
+        Controlled by config.lightweight_hpo (default True) and per-cap settings.
+        """
+        try:
+            if not getattr(self.config, 'lightweight_hpo', True):
+                return estimator
+
+            params = estimator.get_params(deep=False) if hasattr(estimator, 'get_params') else {}
+            # Caps from config or sensible defaults
+            n_est_cap = int(getattr(self.config, 'hpo_n_estimators_cap', 200))
+            max_iter_cap = int(getattr(self.config, 'hpo_max_iter_cap', 200))
+
+            # Tree ensembles
+            if 'n_estimators' in params:
+                current = params.get('n_estimators') or 100
+                params['n_estimators'] = min(current, n_est_cap)
+            # Linear/NN models
+            if 'max_iter' in params:
+                current = params.get('max_iter') or max_iter_cap
+                params['max_iter'] = min(current, max_iter_cap)
+            # SVM cache size helps speed
+            if 'cache_size' in params:
+                params['cache_size'] = max(200, params.get('cache_size', 200))
+
+            # Create a new estimator instance with updated params
+            try:
+                lightweight = estimator.__class__(**params)
+                return lightweight
+            except Exception:
+                # Fallback to setting attributes in-place if constructor fails
+                for k, v in params.items():
+                    try:
+                        setattr(estimator, k, v)
+                    except Exception:
+                        pass
+                return estimator
+        except Exception:
+            return estimator
+
+    def _select_hpo_sample(self, X: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray, bool]:
+        """Optionally subsample rows for HPO to reduce time.
+
+        Returns X_opt, y_opt, used_subsample flag.
+        Controlled by config.hpo_subsample_frac (0<frac<=1) and hpo_subsample_max_rows.
+        """
+        try:
+            frac = float(getattr(self.config, 'hpo_subsample_frac', 0.0) or 0.0)
+            max_rows = getattr(self.config, 'hpo_subsample_max_rows', None)
+            if (frac is None or frac <= 0) and not max_rows:
+                return X, y, False
+
+            n = len(X)
+            target_rows = n
+            if frac and frac > 0:
+                target_rows = max(100, int(n * min(frac, 1.0)))
+            if max_rows:
+                target_rows = min(target_rows, int(max_rows))
+            if target_rows >= n:
+                return X, y, False
+
+            # Stratify if possible for classification to reduce variance
+            stratify = y if (self.config.task_type == TaskType.CLASSIFICATION and self._can_stratify(y)) else None
+            X_opt, _, y_opt, _ = train_test_split(
+                X, y, test_size=(n - target_rows) / n, random_state=self.config.random_state, stratify=stratify
+            )
+            return X_opt, y_opt, True
+        except Exception:
+            return X, y, False
+
     def _get_smart_optimization_iterations(self):
         """
         Determine optimal number of iterations based on dataset size and complexity.
@@ -680,6 +796,12 @@ class MLTrainingEngine:
         Returns:
             Optimized number of iterations for hyperparameter optimization
         """
+        # Allow a temporary override (e.g., for staged CV first-pass)
+        if hasattr(self, '_override_optimization_iterations'):
+            try:
+                return int(self._override_optimization_iterations)
+            except Exception:
+                pass
         base_iterations = getattr(self.config, 'optimization_iterations', 50)
         
         # Fast mode check - if user wants quick training
@@ -717,10 +839,10 @@ class MLTrainingEngine:
         """
         cv = self._get_cv_splitter()
         scoring = self._get_scoring_metric()
-        
+
         # Smart optimization iterations adjustment based on dataset size and complexity
         optimization_iterations = self._get_smart_optimization_iterations()
-        
+
         if not hasattr(self.config, 'optimization_strategy'):
             # Default to random search if not specified
             return RandomizedSearchCV(
@@ -735,7 +857,7 @@ class MLTrainingEngine:
                 refit=True,
                 return_train_score=True
             )
-        
+
         if self.config.optimization_strategy == OptimizationStrategy.GRID_SEARCH:
             return GridSearchCV(
                 estimator=model,
@@ -851,7 +973,7 @@ class MLTrainingEngine:
             # Use adaptive hyperparameter optimization
             try:
                 from .adaptive_hyperopt import OptimizationResult
-                
+
                 # Convert param_grid to adaptive format
                 adaptive_search_space = {}
                 for param_name, param_values in param_grid.items():
@@ -865,13 +987,13 @@ class MLTrainingEngine:
                     else:
                         # Assume it's already in the right format
                         adaptive_search_space[param_name] = param_values
-                
+
                 # Create objective function for sklearn model
                 def sklearn_objective(params):
                     try:
                         # Create model with current parameters
                         temp_model = model.set_params(**params)
-                        
+
                         # Apply JIT compilation if enabled
                         if hasattr(self, 'jit_compiler'):
                             scores = self.jit_compiler.compile_if_hot(
@@ -882,12 +1004,12 @@ class MLTrainingEngine:
                         else:
                             scores = cross_val_score(temp_model, self._current_X, self._current_y,
                                                    cv=cv, scoring=scoring, n_jobs=1)
-                        
+
                         return np.mean(scores)
                     except Exception as e:
                         self.logger.warning(f"Error in objective function: {str(e)}")
                         return float('-inf')  # Return very low score on error
-                
+
                 # Run adaptive optimization
                 result = self.adaptive_optimizer.optimize(
                     objective_function=sklearn_objective,
@@ -895,7 +1017,7 @@ class MLTrainingEngine:
                     direction='maximize',
                     study_name=f"{model.__class__.__name__}_{int(time.time())}"
                 )
-                
+
                 # Create a mock sklearn search object for compatibility
                 class AdaptiveSearchResult:
                     def __init__(self, best_params, best_score):
@@ -903,14 +1025,14 @@ class MLTrainingEngine:
                         self.best_score_ = best_score
                         self.best_estimator_ = model.set_params(**best_params)
                         self.cv_results_ = {'mean_test_score': [best_score]}
-                    
+
                     def fit(self, X, y):
                         # Already optimized, just fit the best estimator
                         self.best_estimator_.fit(X, y)
                         return self
-                
+
                 return AdaptiveSearchResult(result.best_params, result.best_score)
-                
+
             except Exception as e:
                 self.logger.warning(f"Adaptive optimization failed: {str(e)}. Falling back to RandomizedSearchCV.")
                 return RandomizedSearchCV(
@@ -931,7 +1053,34 @@ class MLTrainingEngine:
                 from sklearn.model_selection import BaseSearchCV
                 import optuna
                 from optuna.integration import OptunaSearchCV
-                
+                # Configure pruner-aware study
+                # Determine direction: sklearn scoring uses 'neg_' for loss, but we still maximize score
+                study_direction = "maximize"
+                # Allow simple pruner selection via config metadata if present
+                pruner = None
+                try:
+                    from optuna.pruners import MedianPruner, HyperbandPruner
+                    pruner_type = str(getattr(self.config, 'hpo_pruner', 'median')).lower()
+                    if pruner_type == 'hyperband':
+                        pruner = HyperbandPruner(min_resource=1, reduction_factor=3)
+                    else:
+                        pruner = MedianPruner(n_startup_trials=5, n_warmup_steps=10)
+                except Exception:
+                    pruner = None
+                # Sampler configuration
+                try:
+                    from optuna.samplers import TPESampler
+                    sampler = TPESampler(
+                        seed=self.config.random_state,
+                        multivariate=True,
+                        n_startup_trials=int(getattr(self.config, 'hpo_startup_trials', 10) or 10)
+                    )
+                except Exception:
+                    sampler = None
+                study_name = getattr(self.config, 'hpo_study_name', None)
+                study = optuna.create_study(direction=study_direction, pruner=pruner, sampler=sampler, study_name=study_name)
+
+                timeout_sec = getattr(self.config, 'hpo_time_budget_seconds', None)
                 return OptunaSearchCV(
                     estimator=model,
                     param_distributions=param_grid,
@@ -942,7 +1091,9 @@ class MLTrainingEngine:
                     random_state=self.config.random_state,
                     scoring=scoring,
                     refit=True,
-                    return_train_score=True
+                    return_train_score=True,
+                    study=study,
+                    timeout=timeout_sec if timeout_sec else None
                 )
             except ImportError:
                 self.logger.warning("Optuna not installed. Falling back to RandomizedSearchCV.")
@@ -1392,10 +1543,13 @@ class MLTrainingEngine:
                 raise ValueError(f"Model type '{model_type}' not found for {task_key}. " 
                             f"Available models: {', '.join(self._model_registry[task_key].keys())}")
             model_class = self._model_registry[task_key][model_type]
-            # Set n_jobs=-1 if supported for parallelism
+            # Set n_jobs with awareness to avoid nested parallelism during CV
             default_params = {"random_state": self.config.random_state} if hasattr(model_class, "random_state") else {}
             if hasattr(model_class, "n_jobs"):
-                default_params["n_jobs"] = -1
+                if getattr(self.config, "__dict__", {}).get("limit_estimator_n_jobs_in_cv", True) and self.config.n_jobs not in (None, 0, 1):
+                    default_params["n_jobs"] = 1
+                else:
+                    default_params["n_jobs"] = -1
             model = model_class(**default_params)
             self.logger.info(f"Initialized {model_type} model for {task_key}")
 
@@ -1482,6 +1636,24 @@ class MLTrainingEngine:
                 X_train_processed = self.preprocessor.transform(X_train)
                 X_val_processed = self.preprocessor.transform(X_val) if X_val is not None else None
                 self.X_test_processed = self.preprocessor.transform(self.X_test)
+                # Enforce float32 for large tables to reduce memory and speed up ops
+                if getattr(self.config, 'enforce_float32', False):
+                    def _as_f32(a):
+                        if a is None:
+                            return None
+                        try:
+                            if not isinstance(a, np.ndarray):
+                                return a
+                            if a.dtype != np.float32:
+                                a = a.astype(np.float32, copy=False)
+                            if not a.flags.c_contiguous:
+                                a = np.ascontiguousarray(a)
+                            return a
+                        except Exception:
+                            return a
+                    X_train_processed = _as_f32(X_train_processed)
+                    X_val_processed = _as_f32(X_val_processed)
+                    self.X_test_processed = _as_f32(self.X_test_processed)
                 self.logger.info("Preprocessor fitted successfully")
             except Exception as e:
                 self.logger.error(f"Error fitting preprocessor: {str(e)}")
@@ -1529,7 +1701,84 @@ class MLTrainingEngine:
         if param_grid and len(param_grid) > 0:
             self.logger.info(f"Starting hyperparameter optimization with {getattr(self.config, 'optimization_strategy', 'default strategy')}")
             try:
-                optimizer = self._get_optimization_search(model, param_grid)
+                # Optional staged CV: quick pass to find promising params with fewer folds
+                staged_enabled = getattr(self.config, "enable_staged_cv", False)
+                staged_trigger = int(getattr(self.config, "staged_cv_trigger_trials", 20))
+                staged_min_folds = int(getattr(self.config, "staged_cv_min_folds", 3))
+                staged_final_folds = getattr(self.config, "staged_cv_final_folds", None)
+
+                optimizer = None
+                staged_used = False
+                skip_full_optimization = False
+                if staged_enabled:
+                    # First stage
+                    original_folds = self.config.cv_folds
+                    try:
+                        self.config.cv_folds = max(2, staged_min_folds)
+                        # Override iterations for first pass
+                        self._override_optimization_iterations = min(staged_trigger, self._get_smart_optimization_iterations())
+                        optimizer = self._get_optimization_search(model, param_grid)
+                        if hasattr(optimizer, 'n_jobs'):
+                            optimizer.n_jobs = -1
+                        fit_params = {}
+                        if getattr(self.config, 'early_stopping', False) and hasattr(model, 'early_stopping') and X_val_processed is not None:
+                            fit_params['eval_set'] = [(X_train_processed, y_train), (X_val_processed, y_val)]
+                            fit_params['early_stopping_rounds'] = getattr(self.config, 'early_stopping_rounds', 10)
+                            fit_params['verbose'] = bool(self.config.verbose)
+                        optimization_start = time.time()
+                        with warnings.catch_warnings():
+                            warnings.simplefilter("ignore")
+                            # Limit BLAS threads during heavy CV to avoid oversubscription
+                            max_threads = int(getattr(self.config, "max_blas_threads", max(1, (os.cpu_count() or 4)//2))) if getattr(self.config, "enable_thread_control", True) else None
+                            with self._thread_limits(max_threads):
+                                optimizer.fit(X_train_processed, y_train, **fit_params)
+                        optimization_time = time.time() - optimization_start
+                        staged_used = True
+                        # Best params from stage 1
+                        best_stage_params = getattr(optimizer, 'best_params_', None)
+                    finally:
+                        # Restore
+                        if hasattr(self, "_override_optimization_iterations"):
+                            delattr(self, "_override_optimization_iterations")
+                        self.config.cv_folds = original_folds
+
+                    # Optionally confirm on full folds without second search
+                    if 'best_stage_params' in locals() and best_stage_params:
+                        try:
+                            confirmed_model = model.set_params(**best_stage_params)
+                            cv_confirm = self._get_cv_splitter(y=y_train)
+                            scoring = self._get_scoring_metric()
+                            with self._thread_limits(int(getattr(self.config, "max_blas_threads", max(1, (os.cpu_count() or 4)//2))) if getattr(self.config, "enable_thread_control", True) else None):
+                                scores = cross_val_score(confirmed_model, X_train_processed, y_train, cv=cv_confirm, scoring=scoring, n_jobs=1)
+                            # Robust aggregation to reduce variance
+                            if getattr(self.config, 'use_robust_cv_aggregator', False):
+                                agg = float(np.median(scores))
+                            else:
+                                agg = float(np.mean(scores))
+                            self.logger.info(f"Staged CV confirmation score: {agg:.4f}")
+                            # Fit final estimator on all training data
+                            confirmed_model.fit(X_train_processed, y_train)
+                            best_model = confirmed_model
+                            best_params = best_stage_params
+                            best_model_info = {
+                                "model": best_model,
+                                "params": best_params,
+                                "feature_names": selected_feature_names,
+                                "training_time": time.time() - start_time,
+                                "metrics": {},
+                                "feature_importance": None
+                            }
+                            skip_full_optimization = True
+                        except Exception as _e:
+                            self.logger.warning(f"Staged CV confirmation failed, fallback to single search: {_e}")
+                            staged_used = False
+
+                if skip_full_optimization:
+                    pass  # best_model_info already set
+                else:
+                    # Create a lightweight clone of the estimator for faster HPO
+                    model_for_hpo = self._make_lightweight_estimator_for_hpo(model)
+                    optimizer = self._get_optimization_search(model_for_hpo, param_grid)
                 if hasattr(optimizer, 'n_jobs'):
                     optimizer.n_jobs = -1
                 if self.tracker:
@@ -1543,10 +1792,15 @@ class MLTrainingEngine:
                     fit_params['eval_set'] = [(X_train_processed, y_train), (X_val_processed, y_val)]
                     fit_params['early_stopping_rounds'] = getattr(self.config, 'early_stopping_rounds', 10)
                     fit_params['verbose'] = bool(self.config.verbose)
+                # Optional row subsampling for HPO
+                X_opt, y_opt, used_subsample = self._select_hpo_sample(X_train_processed, y_train)
                 optimization_start = time.time()
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
-                    optimizer.fit(X_train_processed, y_train, **fit_params)
+                    # Limit BLAS threads during heavy CV to avoid oversubscription
+                    max_threads = int(getattr(self.config, "max_blas_threads", max(1, (os.cpu_count() or 4)//2))) if getattr(self.config, "enable_thread_control", True) else None
+                    with self._thread_limits(max_threads):
+                        optimizer.fit(X_opt, y_opt, **fit_params)
                 optimization_time = time.time() - optimization_start
                 best_model = getattr(optimizer, 'best_estimator_', optimizer.estimator)
                 # Try to get best_params_ first, then fall back to get_params() if available
@@ -1558,6 +1812,13 @@ class MLTrainingEngine:
                     # Final fallback for optimizers that don't implement either
                     best_params = {}
                     self.logger.warning(f"Optimizer {type(optimizer).__name__} doesn't provide best_params_ or get_params()")
+                # Always refit best params on full training data (ensures full budget if we subsampled)
+                try:
+                    final_model = model.set_params(**best_params)
+                    final_model.fit(X_train_processed, y_train)
+                    best_model = final_model
+                except Exception as _e:
+                    self.logger.warning(f"Refit on full data failed, using optimizer's estimator: {_e}")
                 if hasattr(optimizer, 'cv_results_'):
                     cv_results = optimizer.cv_results_
                     mean_test_score = np.mean(cv_results['mean_test_score'])

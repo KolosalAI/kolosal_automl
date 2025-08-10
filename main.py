@@ -1,23 +1,6 @@
 #!/usr/bin/env python3
 """
-kolosal AutoML Training & Inference System3. 📊 BENCHMARKS & COMPARISONS
-   - Standard ML baseline benchmarks
-   - Kolosal AutoML advanced benchmarks
-   - Head-to-head performance comparisons
-   - Multiple datasets and optimization strategies
-   - Comprehensive analysis and reporting
-   - Perfect for performance evaluation
-
-4. ⚖️ ML COMPARISON TOOLS
-   - Direct Standard ML vs AutoML comparisons
-   - Optimization strategy comparisons
-   - Scalability testing across dataset sizes
-   - Statistical analysis with visualizations
-   - Custom comparison configurations
-   - Perfect for research and validation
-
-5. 📋 SYSTEM INFO v0.1.4
-ML Main CLI
+kolosal AutoML Training & Inference System - Main CLI
 
 Main entry point for the kolosal AutoML system. Allows users to choose between
 running the Gradio web interface or starting the API server.
@@ -85,14 +68,7 @@ Choose how you want to run the system:
    - Scalable for production use
    - Perfect for integration with other systems
 
-3. � STANDARD ML BENCHMARK
-   - Baseline performance benchmarks
-   - Pure scikit-learn implementations
-   - Performance comparison baseline
-   - Multiple datasets and models
-   - Perfect for performance validation
-
-4. �📋 SYSTEM INFO
+3. �📋 SYSTEM INFO
    - View detailed system information
    - Check hardware capabilities
    - Verify dependencies
@@ -101,17 +77,13 @@ Choose how you want to run the system:
 💡 TIPS:
    - Use Web Interface for interactive machine learning
    - Use API Server for production deployments
-   - Use Benchmarks for performance evaluation
-   - Use Comparisons for research and validation
-   - Both modes support all ML algorithms and features
+    - Both modes support all ML algorithms and features
    - Models trained in one mode can be used in the other
 
 🔗 QUICK START:
    - Web Interface: http://localhost:7860 (default)
    - API Server: http://localhost:8000 (default)
    - API Documentation: http://localhost:8000/docs
-   - Benchmark Results: ./benchmark_results/ directory
-   - Comparison Results: ./comparison_results/ directory
 
 📚 DOCUMENTATION:
    - Web Interface: Built-in help and examples
@@ -178,89 +150,7 @@ def run_api_server(args: Optional[list] = None):
         print("❌ Error: 'uv' command not found. Please install uv or run directly with python.")
         print("   Alternative: python start_api.py")
 
-def run_standard_ml_benchmark(args: Optional[list] = None):
-    """Run the standard ML benchmark."""
-    print("📊 Starting Standard ML Benchmark...")
-    print("   - Pure scikit-learn baseline benchmarks")
-    print("   - Performance comparison baseline")
-    print("   - Results saved to ./standard_ml_results/")
-    print("   - Press Ctrl+C to stop")
-    print()
-    
-    cmd = ["uv", "run", "python", "benchmark/standard_ml_benchmark.py"]
-    if args:
-        cmd.extend(args)
-    
-    try:
-        subprocess.run(cmd, cwd=project_root)
-    except KeyboardInterrupt:
-        print("\n👋 Standard ML benchmark stopped.")
-    except FileNotFoundError:
-        print("❌ Error: 'uv' command not found. Please install uv or run directly with python.")
-        print("   Alternative: python benchmark/standard_ml_benchmark.py")
-
-def run_kolosal_automl_benchmark(args: Optional[list] = None):
-    """Run the Kolosal AutoML benchmark."""
-    print("🚀 Starting Kolosal AutoML Benchmark...")
-    print("   - Advanced AutoML training engine benchmarks")
-    print("   - Optimization strategies comparison")
-    print("   - Results saved to ./benchmark_results/")
-    print("   - Press Ctrl+C to stop")
-    print()
-    
-    cmd = ["uv", "run", "python", "benchmark/kolosal_automl_benchmark.py"]
-    if args:
-        cmd.extend(args)
-    
-    try:
-        subprocess.run(cmd, cwd=project_root)
-    except KeyboardInterrupt:
-        print("\n👋 Kolosal AutoML benchmark stopped.")
-    except FileNotFoundError:
-        print("❌ Error: 'uv' command not found. Please install uv or run directly with python.")
-        print("   Alternative: python benchmark/kolosal_automl_benchmark.py")
-
-def run_comparison_benchmark(args: Optional[list] = None):
-    """Run comparison between Standard ML and Kolosal AutoML."""
-    print("⚖️ Starting Standard ML vs Kolosal AutoML Comparison...")
-    print("   - Head-to-head performance comparison")
-    print("   - Comprehensive analysis and reporting")
-    print("   - Results saved to ./comparison_results/")
-    print("   - Press Ctrl+C to stop")
-    print()
-    
-    cmd = ["uv", "run", "python", "run_kolosal_comparison.py"]
-    if args:
-        cmd.extend(args)
-    
-    try:
-        subprocess.run(cmd, cwd=project_root)
-    except KeyboardInterrupt:
-        print("\n👋 Comparison benchmark stopped.")
-    except FileNotFoundError:
-        print("❌ Error: 'uv' command not found. Please install uv or run directly with python.")
-        print("   Alternative: python run_kolosal_comparison.py")
-
-def run_benchmark_comparison_tool(args: Optional[list] = None):
-    """Run the benchmark comparison tool."""
-    print("📈 Starting Benchmark Comparison Tool...")
-    print("   - Advanced comparison analysis")
-    print("   - Statistical significance testing")
-    print("   - Interactive visualizations")
-    print("   - Press Ctrl+C to stop")
-    print()
-    
-    cmd = ["uv", "run", "python", "benchmark/benchmark_comparison.py"]
-    if args:
-        cmd.extend(args)
-    
-    try:
-        subprocess.run(cmd, cwd=project_root)
-    except KeyboardInterrupt:
-        print("\n👋 Benchmark comparison tool stopped.")
-    except FileNotFoundError:
-        print("❌ Error: 'uv' command not found. Please install uv or run directly with python.")
-        print("   Alternative: python benchmark/benchmark_comparison.py")
+# Note: Benchmark and comparison tools have been removed from the CLI.
 
 def show_system_info():
     """Show system information."""
@@ -546,272 +436,9 @@ def api_options_menu():
     
     return cli_menu_handler("API Server Options", api_options, handle_api_selection)
 
-def benchmark_options_menu():
-    """Show benchmark options submenu."""
-    benchmark_options = [
-        {
-            'id': 'standard_default',
-            'title': '📊 Run Standard ML Benchmark (Default)',
-            'description': 'Run baseline benchmarks with default datasets and models'
-        },
-        {
-            'id': 'standard_custom',
-            'title': '⚙️ Custom Standard ML Benchmark',
-            'description': 'Configure datasets, models, and optimization strategies'
-        },
-        {
-            'id': 'kolosal_default',
-            'title': '🚀 Run Kolosal AutoML Benchmark (Default)',
-            'description': 'Run advanced AutoML benchmarks with default configuration'
-        },
-        {
-            'id': 'kolosal_custom',
-            'title': '🔧 Custom Kolosal AutoML Benchmark',
-            'description': 'Configure advanced AutoML optimization strategies'
-        },
-        {
-            'id': 'comparison_quick',
-            'title': '⚖️ Quick Comparison (Standard vs AutoML)',
-            'description': 'Fast head-to-head comparison on small datasets'
-        },
-        {
-            'id': 'comparison_comprehensive',
-            'title': '� Comprehensive Comparison Analysis',
-            'description': 'Full comparison across all datasets and models'
-        },
-        {
-            'id': 'benchmark_comparison_tool',
-            'title': '📋 Benchmark Comparison Tool',
-            'description': 'Advanced comparison analysis with statistical testing'
-        },
-        {
-            'id': 'quick_demo',
-            'title': '⚡ Quick Demo Benchmark',
-            'description': 'Fast benchmark with small datasets for testing'
-        },
-        {
-            'id': 'scalability_test',
-            'title': '📏 Scalability Testing',
-            'description': 'Test performance across different dataset sizes'
-        },
-        {
-            'id': 'back',
-            'title': '⬅️ Back to Main Menu',
-            'description': 'Return to the main menu'
-        }
-    ]
-    
-    def handle_benchmark_selection(option):
-        if option['id'] == 'standard_default':
-            clear_screen()
-            print("📊 Starting Standard ML Benchmark with default settings...")
-            run_standard_ml_benchmark()
-            return 'continue'
-        elif option['id'] == 'standard_custom':
-            clear_screen()
-            print("⚙️ Custom Standard ML Benchmark Configuration:")
-            print("Available options:")
-            print("  --datasets: iris wine breast_cancer diabetes synthetic_small_classification")
-            print("  --models: random_forest gradient_boosting logistic_regression")
-            print("  --optimization: grid_search random_search")
-            print()
-            
-            # Get user input for custom configuration
-            datasets = input("Enter datasets (space-separated, or press Enter for default): ").strip()
-            models = input("Enter models (space-separated, or press Enter for default): ").strip()
-            optimization = input("Enter optimization strategy (grid_search/random_search, or press Enter for random_search): ").strip()
-            
-            custom_args = []
-            if datasets:
-                custom_args.extend(["--datasets"] + datasets.split())
-            if models:
-                custom_args.extend(["--models"] + models.split())
-            if optimization:
-                custom_args.extend(["--optimization", optimization])
-            
-            run_standard_ml_benchmark(custom_args)
-            return 'continue'
-        elif option['id'] == 'kolosal_default':
-            clear_screen()
-            print("🚀 Starting Kolosal AutoML Benchmark with default settings...")
-            run_kolosal_automl_benchmark()
-            return 'continue'
-        elif option['id'] == 'kolosal_custom':
-            clear_screen()
-            print("🔧 Custom Kolosal AutoML Benchmark Configuration:")
-            print("Available options:")
-            print("  --datasets: iris wine breast_cancer diabetes synthetic_*")
-            print("  --models: random_forest gradient_boosting logistic_regression")
-            print("  --optimization: random_search bayesian_optimization asht")
-            print("  --device-config: cpu_only gpu_basic gpu_optimized")
-            print()
-            
-            # Get user input for custom configuration
-            datasets = input("Enter datasets (space-separated, or press Enter for default): ").strip()
-            models = input("Enter models (space-separated, or press Enter for default): ").strip()
-            optimization = input("Enter optimization strategy (random_search/bayesian_optimization/asht, or press Enter for random_search): ").strip()
-            device_config = input("Enter device config (cpu_only/gpu_basic/gpu_optimized, or press Enter for cpu_only): ").strip()
-            
-            custom_args = []
-            if datasets:
-                custom_args.extend(["--datasets"] + datasets.split())
-            if models:
-                custom_args.extend(["--models"] + models.split())
-            if optimization:
-                custom_args.extend(["--optimization", optimization])
-            if device_config:
-                custom_args.extend(["--device-config", device_config])
-            
-            run_kolosal_automl_benchmark(custom_args)
-            return 'continue'
-        elif option['id'] == 'comparison_quick':
-            clear_screen()
-            print("⚖️ Starting Quick Comparison (Standard vs AutoML)...")
-            quick_comparison_args = ["--mode", "quick"]
-            run_comparison_benchmark(quick_comparison_args)
-            return 'continue'
-        elif option['id'] == 'comparison_comprehensive':
-            clear_screen()
-            print("� Starting Comprehensive Comparison Analysis...")
-            comprehensive_args = ["--mode", "comprehensive"]
-            run_comparison_benchmark(comprehensive_args)
-            return 'continue'
-        elif option['id'] == 'benchmark_comparison_tool':
-            clear_screen()
-            print("📋 Starting Benchmark Comparison Tool...")
-            run_benchmark_comparison_tool()
-            return 'continue'
-        elif option['id'] == 'quick_demo':
-            clear_screen()
-            print("⚡ Starting Quick Demo Benchmark...")
-            quick_args = [
-                "--datasets", "iris", "wine",
-                "--models", "random_forest", "logistic_regression",
-                "--optimization", "random_search"
-            ]
-            run_standard_ml_benchmark(quick_args)
-            return 'continue'
-        elif option['id'] == 'scalability_test':
-            clear_screen()
-            print("📏 Starting Scalability Testing...")
-            scalability_args = ["--mode", "scalability"]
-            run_comparison_benchmark(scalability_args)
-            return 'continue'
-        elif option['id'] == 'back':
-            return 'exit'
-        return 'continue'
-    
-    return cli_menu_handler("Benchmark & Comparison Options", benchmark_options, handle_benchmark_selection)
+## Benchmark & comparison menus have been removed.
 
-def comparison_options_menu():
-    """Show comparison options submenu."""
-    comparison_options = [
-        {
-            'id': 'quick_comparison',
-            'title': '⚡ Quick Comparison (Standard vs AutoML)',
-            'description': 'Fast head-to-head comparison on iris and wine datasets'
-        },
-        {
-            'id': 'comprehensive_comparison',
-            'title': '📈 Comprehensive Comparison',
-            'description': 'Complete comparison across multiple datasets and models'
-        },
-        {
-            'id': 'optimization_strategies',
-            'title': '🔧 Optimization Strategies Comparison',
-            'description': 'Compare different hyperparameter optimization approaches'
-        },
-        {
-            'id': 'scalability_comparison',
-            'title': '📏 Scalability Comparison',
-            'description': 'Test and compare performance across different dataset sizes'
-        },
-        {
-            'id': 'large_scale_comparison',
-            'title': '🏢 Large Scale Comparison',
-            'description': 'Performance testing on large datasets (may take longer)'
-        },
-        {
-            'id': 'custom_comparison',
-            'title': '⚙️ Custom Comparison',
-            'description': 'Configure your own comparison parameters'
-        },
-        {
-            'id': 'comparison_tool',
-            'title': '📋 Advanced Comparison Tool',
-            'description': 'Statistical analysis and visualization tool'
-        },
-        {
-            'id': 'back',
-            'title': '⬅️ Back to Main Menu',
-            'description': 'Return to the main menu'
-        }
-    ]
-    
-    def handle_comparison_selection(option):
-        if option['id'] == 'quick_comparison':
-            clear_screen()
-            print("⚡ Starting Quick Comparison...")
-            run_comparison_benchmark(["--mode", "quick"])
-            return 'continue'
-        elif option['id'] == 'comprehensive_comparison':
-            clear_screen()
-            print("📈 Starting Comprehensive Comparison...")
-            run_comparison_benchmark(["--mode", "comprehensive"])
-            return 'continue'
-        elif option['id'] == 'optimization_strategies':
-            clear_screen()
-            print("🔧 Starting Optimization Strategies Comparison...")
-            run_comparison_benchmark(["--mode", "optimization_strategies"])
-            return 'continue'
-        elif option['id'] == 'scalability_comparison':
-            clear_screen()
-            print("📏 Starting Scalability Comparison...")
-            run_comparison_benchmark(["--mode", "scalability"])
-            return 'continue'
-        elif option['id'] == 'large_scale_comparison':
-            clear_screen()
-            print("🏢 Starting Large Scale Comparison...")
-            print("⚠️ Warning: This may take a significant amount of time and resources.")
-            confirm = input("Continue? (y/N): ").strip().lower()
-            if confirm in ['y', 'yes']:
-                run_comparison_benchmark(["--mode", "large_scale"])
-            else:
-                print("Large scale comparison cancelled.")
-            return 'continue'
-        elif option['id'] == 'custom_comparison':
-            clear_screen()
-            print("⚙️ Custom Comparison Configuration:")
-            print("Available datasets: iris wine breast_cancer diabetes synthetic_*")
-            print("Available models: random_forest gradient_boosting logistic_regression ridge lasso")
-            print("Available optimizations: random_search grid_search bayesian_optimization asht")
-            print()
-            
-            # Get user input
-            datasets = input("Enter datasets (space-separated, or press Enter for quick defaults): ").strip()
-            models = input("Enter models (space-separated, or press Enter for quick defaults): ").strip()
-            optimization = input("Enter optimization strategy (or press Enter for random_search): ").strip()
-            
-            custom_args = ["--mode", "custom"]
-            if datasets:
-                custom_args.extend(["--datasets"] + datasets.split())
-            if models:
-                custom_args.extend(["--models"] + models.split())
-            if optimization:
-                custom_args.extend(["--optimization", optimization])
-            
-            run_comparison_benchmark(custom_args)
-            return 'continue'
-        elif option['id'] == 'comparison_tool':
-            clear_screen()
-            print("📋 Starting Advanced Comparison Tool...")
-            run_benchmark_comparison_tool()
-            return 'continue'
-        elif option['id'] == 'back':
-            return 'exit'
-        return 'continue'
-    
-    return cli_menu_handler("ML Comparison Tools", comparison_options, handle_comparison_selection)
+## Comparison menus have been removed.
 
 def system_info_menu():
     """Show system information submenu."""
@@ -895,16 +522,6 @@ def interactive_mode():
             'description': 'RESTful API endpoints for programmatic access'
         },
         {
-            'id': 'benchmark',
-            'title': '📊 Benchmarks & Comparisons',
-            'description': 'Run ML benchmarks and comparison analysis (Standard ML vs AutoML)'
-        },
-        {
-            'id': 'comparison',
-            'title': '⚖️ ML Comparison Tools',
-            'description': 'Direct comparison between different ML approaches and frameworks'
-        },
-        {
             'id': 'system_info',
             'title': '📋 Show System Information', 
             'description': 'View detailed system information and hardware capabilities'
@@ -927,12 +544,6 @@ def interactive_mode():
             return 'continue'
         elif option['id'] == 'api':
             result = api_options_menu()
-            return 'continue'
-        elif option['id'] == 'benchmark':
-            result = benchmark_options_menu()
-            return 'continue'
-        elif option['id'] == 'comparison':
-            result = comparison_options_menu()
             return 'continue'
         elif option['id'] == 'system_info':
             result = system_info_menu()
@@ -965,8 +576,6 @@ Examples:
   python main.py                                # Interactive mode (choose what to run)
   python main.py --mode gui                     # Launch Gradio web interface
   python main.py --mode api                     # Start API server
-  python main.py --mode benchmark               # Run benchmark options menu
-  python main.py --mode comparison              # Run comparison options menu
   python main.py --mode gui --help              # Show Gradio-specific help
   python main.py --mode api --help              # Show API-specific help
   python main.py --system-info                  # Show system information
@@ -977,9 +586,9 @@ Examples:
     
     parser.add_argument(
         "--mode",
-        choices=["gui", "api", "interactive", "benchmark", "comparison"],
+    choices=["gui", "api", "interactive"],
         default="interactive",
-        help="Mode to run: 'gui' for Gradio interface, 'api' for REST API server, 'benchmark' for ML benchmarks, 'comparison' for ML comparisons, 'interactive' to choose"
+    help="Mode to run: 'gui' for Gradio interface, 'api' for REST API server, 'interactive' to choose"
     )
     
     parser.add_argument(
@@ -1043,10 +652,6 @@ Examples:
         run_gradio_app(unknown_args)
     elif args.mode == "api":
         run_api_server(unknown_args)
-    elif args.mode == "benchmark":
-        result = benchmark_options_menu()
-    elif args.mode == "comparison":
-        result = comparison_options_menu()
     elif args.mode == "interactive":
         interactive_mode()
     

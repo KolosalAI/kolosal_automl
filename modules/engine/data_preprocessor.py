@@ -627,6 +627,21 @@ class DataPreprocessor:
             transform_time = time.time() - start_time
             self._metrics['transform_time'].append(transform_time)
             
+            # Optional: enforce float32 dtype and contiguity for downstream efficiency
+            try:
+                if getattr(self.config, 'enforce_float32', False):
+                    if not isinstance(result, np.ndarray):
+                        result = np.array(result, dtype=np.float32)
+                    elif result.dtype != np.float32:
+                        result = result.astype(np.float32, copy=False)
+                    # Ensure C-contiguous layout for better SIMD/cache behavior
+                    if not result.flags.c_contiguous:
+                        result = np.ascontiguousarray(result)
+            except Exception as _e:
+                # Be conservative: never fail transform due to casting; log in debug only
+                if self.config.debug_mode:
+                    self.logger.debug(f"Float32/contiguity enforcement skipped: {_e}")
+
             if self.config.debug_mode:
                 self.logger.debug(f"Transformed {X.shape[0]} samples in {transform_time:.4f}s")
                 
