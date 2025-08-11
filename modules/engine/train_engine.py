@@ -429,6 +429,7 @@ class MLTrainingEngine:
         try:
             from sklearn.ensemble import (
                 RandomForestClassifier, RandomForestRegressor,
+                ExtraTreesClassifier, ExtraTreesRegressor,
                 GradientBoostingClassifier, GradientBoostingRegressor,
                 AdaBoostClassifier, AdaBoostRegressor,
                 StackingClassifier, StackingRegressor,
@@ -439,25 +440,76 @@ class MLTrainingEngine:
                 Ridge, Lasso, ElasticNet,
                 SGDClassifier, SGDRegressor
             )
-            from sklearn.svm import SVC, SVR
+            from sklearn.svm import SVC, SVR, LinearSVC, LinearSVR
             from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
             from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
-            from sklearn.naive_bayes import GaussianNB, MultinomialNB
+            from sklearn.naive_bayes import GaussianNB, MultinomialNB, BernoulliNB
             from sklearn.neural_network import MLPClassifier, MLPRegressor
+            
+            # Create a wrapper for MultinomialNB to handle negative values
+            class MultinomialNBWrapper:
+                """Wrapper for MultinomialNB that handles negative values by scaling to non-negative range."""
+                
+                def __init__(self, **kwargs):
+                    self.estimator = MultinomialNB(**kwargs)
+                    self.scaler = None
+                    
+                def fit(self, X, y):
+                    # Import MinMaxScaler locally to avoid circular imports
+                    from sklearn.preprocessing import MinMaxScaler
+                    
+                    # Check if data contains negative values
+                    if hasattr(X, 'min') and X.min() < 0:
+                        # Scale data to [0, 1] range
+                        self.scaler = MinMaxScaler(feature_range=(0, 1))
+                        X_scaled = self.scaler.fit_transform(X)
+                    else:
+                        X_scaled = X
+                    
+                    self.estimator.fit(X_scaled, y)
+                    return self
+                    
+                def predict(self, X):
+                    if self.scaler is not None:
+                        X_scaled = self.scaler.transform(X)
+                    else:
+                        X_scaled = X
+                    return self.estimator.predict(X_scaled)
+                    
+                def predict_proba(self, X):
+                    if self.scaler is not None:
+                        X_scaled = self.scaler.transform(X)
+                    else:
+                        X_scaled = X
+                    return self.estimator.predict_proba(X_scaled)
+                    
+                def get_params(self, deep=True):
+                    # Return parameters from the underlying estimator
+                    return self.estimator.get_params(deep=deep)
+                    
+                def set_params(self, **params):
+                    # Set parameters on the underlying estimator
+                    self.estimator.set_params(**params)
+                    return self
             
             # Classification models
             self._model_registry["classification"] = {
                 "random_forest": RandomForestClassifier,
+                "extra_trees": ExtraTreesClassifier,
                 "gradient_boosting": GradientBoostingClassifier,
                 "logistic_regression": LogisticRegression,
                 "svm": SVC,
+                "svm_linear": LinearSVC,
+                "svm_poly": lambda **kwargs: SVC(kernel='poly', **kwargs),
                 "knn": KNeighborsClassifier,
                 "decision_tree": DecisionTreeClassifier,
                 "adaboost": AdaBoostClassifier,
                 "sgd": SGDClassifier,
                 "naive_bayes": GaussianNB,
-                "multinomial_nb": MultinomialNB,
+                "multinomial_nb": MultinomialNBWrapper,
+                "bernoulli_nb": BernoulliNB,
                 "mlp": MLPClassifier,
+                "neural_network": MLPClassifier,  # Alias for mlp
                 "stacking": StackingClassifier,
                 "voting": VotingClassifier
             }
@@ -465,17 +517,22 @@ class MLTrainingEngine:
             # Regression models
             self._model_registry["regression"] = {
                 "random_forest": RandomForestRegressor,
+                "extra_trees": ExtraTreesRegressor,
                 "gradient_boosting": GradientBoostingRegressor,
                 "linear_regression": LinearRegression,
                 "ridge": Ridge,
                 "lasso": Lasso,
                 "elastic_net": ElasticNet,
                 "svr": SVR,
+                "svm": SVR,  # Alias for svr
+                "svm_linear": LinearSVR,
+                "svm_poly": lambda **kwargs: SVR(kernel='poly', **kwargs),
                 "knn": KNeighborsRegressor,
                 "decision_tree": DecisionTreeRegressor,
                 "adaboost": AdaBoostRegressor,
                 "sgd": SGDRegressor,
                 "mlp": MLPRegressor,
+                "neural_network": MLPRegressor,  # Alias for mlp
                 "stacking": StackingRegressor,
                 "voting": VotingRegressor
             }
@@ -2500,3 +2557,60 @@ class MLTrainingEngine:
             self.logger.error(f"Error during model evaluation: {str(e)}")
                 
         return metrics
+    
+    def predict(self, X, model_name: str = None, return_proba: bool = False) -> Tuple[bool, Union[np.ndarray, str]]:
+        """
+        Make predictions using a trained model.
+        
+        Args:
+            X: Input features for prediction
+            model_name: Name of the model to use (uses best model if None)
+            return_proba: Whether to return prediction probabilities (for classification)
+            
+        Returns:
+            Tuple of (success_status, predictions_or_error_message)
+        """
+        try:
+            # Determine which model to use
+            if model_name is None or model_name == "best":
+                if self.best_model is None:
+                    return False, "No best model available for prediction"
+                model = self.best_model.get("model") if isinstance(self.best_model, dict) else self.best_model
+                actual_model_name = self.best_model_name
+            else:
+                if model_name not in self.models:
+                    return False, f"Model '{model_name}' not found"
+                model = self.models[model_name]["model"]
+                actual_model_name = model_name
+            
+            # Prepare input data
+            X_processed = X
+            
+            # Apply preprocessing if available
+            if self.preprocessor and hasattr(self.preprocessor, 'transform'):
+                try:
+                    X_processed = self.preprocessor.transform(X_processed)
+                except Exception as e:
+                    self.logger.warning(f"Error applying preprocessor during prediction: {str(e)}")
+            
+            # Apply feature selection if available
+            if self.feature_selector and hasattr(self.feature_selector, 'transform'):
+                try:
+                    X_processed = self.feature_selector.transform(X_processed)
+                except Exception as e:
+                    self.logger.warning(f"Error applying feature selector during prediction: {str(e)}")
+            
+            # Make predictions
+            if return_proba and hasattr(model, 'predict_proba'):
+                # For classification with probability support
+                predictions = model.predict_proba(X_processed)
+            else:
+                # Standard prediction
+                predictions = model.predict(X_processed)
+            
+            self.logger.info(f"Predictions made using model '{actual_model_name}' on {len(X)} samples")
+            return True, predictions
+            
+        except Exception as e:
+            self.logger.error(f"Error making predictions: {str(e)}")
+            return False, str(e)

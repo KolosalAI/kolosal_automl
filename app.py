@@ -190,7 +190,7 @@ except ImportError as e:
     
     class MemoryAwareDataProcessor:
         def __init__(self, *args, **kwargs): pass
-        def process_data(self, *args, **kwargs): return {}
+        def process_data(self, X, y): return {'X': X, 'y': y}
     
     class PerformanceTracker:
         def __init__(self, *args, **kwargs): pass
@@ -1788,7 +1788,35 @@ Model Training Summary
                 return f"Error parsing input data: {str(e)}. Please use comma-separated values or JSON array format."
             
             # Make prediction
-            success, predictions = self.training_engine.predict(input_array)
+            if selected_model and selected_model != "Select a trained model..." and selected_model in self.trained_models:
+                # Use stored trained model
+                model_info = self.trained_models[selected_model]
+                model = model_info['result']['model']
+                
+                # Make prediction with stored model
+                try:
+                    predictions = model.predict(input_array)
+                    success = True
+                except Exception as e:
+                    success = False
+                    predictions = str(e)
+            elif self.training_engine and hasattr(self.training_engine, 'best_model_name') and self.training_engine.best_model_name is not None:
+                # Use best model from training engine
+                try:
+                    best_model_name = self.training_engine.best_model_name
+                    if best_model_name in self.training_engine.models:
+                        model = self.training_engine.models[best_model_name]['model']
+                        predictions = model.predict(input_array)
+                        success = True
+                    else:
+                        success = False
+                        predictions = f"Best model '{best_model_name}' not found in trained models"
+                except Exception as e:
+                    success = False
+                    predictions = str(e)
+            else:
+                success = False
+                predictions = "No trained model available for prediction"
             
             if not success:
                 return f"Prediction failed: {predictions}"

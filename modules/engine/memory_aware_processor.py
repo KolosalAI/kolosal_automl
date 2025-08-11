@@ -398,6 +398,32 @@ class MemoryAwareDataProcessor:
             
             return final_df
     
+    def process_data(self, X: pd.DataFrame, y: pd.Series) -> Dict[str, Any]:
+        """
+        Process features and target data with memory optimization and categorical encoding
+        
+        Args:
+            X: Feature DataFrame
+            y: Target Series
+            
+        Returns:
+            Dict containing processed X and y
+        """
+        with self.memory_context("data_preprocessing"):
+            # Make a copy to avoid modifying the original data
+            X_processed = X.copy()
+            
+            # Handle categorical features first (before memory optimization)
+            categorical_columns = X_processed.select_dtypes(include=['object']).columns
+            if len(categorical_columns) > 0:
+                for col in categorical_columns:
+                    X_processed[col] = pd.Categorical(X_processed[col]).codes
+            
+            # Then optimize memory usage
+            X_processed = self.optimize_dataframe_memory(X_processed)
+            
+            return {'X': X_processed, 'y': y}
+    
     def optimize_dataframe_memory(self, df: pd.DataFrame) -> pd.DataFrame:
         """Optimize DataFrame memory usage through dtype optimization"""
         with self.memory_context("memory_optimization"):
