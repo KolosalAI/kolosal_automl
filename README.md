@@ -1251,37 +1251,54 @@ We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.
 
 ---
 
-## 📚 Documentation & Resources
+## 📚 Documentation Hub
 
-### **Comprehensive Documentation**
-- **[Complete API Documentation](docs/COMPLETE_API_DOCUMENTATION.md)** - Full API reference with examples
-- **[Complete Documentation Index](docs/COMPLETE_DOCUMENTATION_INDEX.md)** - Centralized documentation hub
-- **[Bytecode Compilation Guide](COMPILATION_README.md)** - Performance optimization with bytecode compilation
-- **[Benchmark Documentation](benchmark/README.md)** - Performance benchmarking guide
+Our documentation is organized for easy navigation based on your role and needs:
 
-### **Deployment & Operations**
-- **Production Deployment**: Docker, monitoring stack, load balancing
-- **Security Configuration**: API keys, rate limiting, input validation
-- **Performance Optimization**: JIT compilation, mixed precision, Intel optimizations, bytecode compilation
-- **Monitoring & Analytics**: Real-time dashboards, performance metrics
+### 👋 **Getting Started**
+New to Kolosal AutoML? Start here:
+- **[📖 Getting Started Guide](docs/getting-started/)** - Installation, setup, and first steps
+- **[🚀 Quick Start](docs/getting-started/README.md)** - 5-minute setup and your first model
+- **[⚙️ Configuration](docs/getting-started/configuration.md)** - Basic system configuration
 
-### **Benchmarking & Comparison**
-- **Performance Benchmarking**: Comprehensive comparison vs standard ML
-- **Trial-based Analysis**: Statistical significance testing
-- **Scalability Testing**: Performance analysis up to 10M+ samples
-- **Professional Reporting**: HTML reports with interactive visualizations
+### 🎓 **User Guides**  
+Learn how to use Kolosal AutoML effectively:
+- **[🌐 Web Interface Guide](docs/user-guides/web-interface.md)** - Using the Gradio interface
+- **[🚂 Training Models](docs/user-guides/training-models.md)** - Complete training guide
+- **[⚡ Making Predictions](docs/user-guides/inference.md)** - Inference and predictions
+- **[📦 Batch Processing](docs/user-guides/batch-processing.md)** - High-throughput processing
 
-### **Development & Testing**
-- **Test Suite Documentation**: Unit, functional, integration testing
-- **Development Environment**: Setup, debugging, troubleshooting
-- **Contributing Guidelines**: Code standards, testing requirements
-- **API Development**: RESTful endpoints, authentication, batch processing
+### 🚀 **Production Deployment**
+Deploy to production environments:
+- **[🐳 Docker Deployment](docs/deployment/docker.md)** - Containerized deployment guide
+- **[🏭 Production Setup](docs/deployment/production.md)** - Production-ready configuration  
+- **[🔒 Security Configuration](docs/deployment/security.md)** - Enterprise security setup
+- **[📊 Monitoring & Observability](docs/deployment/monitoring.md)** - Metrics and dashboards
 
-### **Advanced Features**
-- **ASHT Optimization**: Proprietary adaptive hyperparameter tuning
-- **Batch Processing**: Enterprise-grade async processing with priority queues
-- **Memory Management**: Intelligent resource allocation and optimization
-- **Security Framework**: Enterprise-grade security with audit logging
+### 🔌 **API Integration**
+Integrate with your applications:
+- **[📋 Complete API Reference](docs/api-reference/)** - Full API documentation
+- **[🐍 Python Examples](docs/api-reference/examples/python.md)** - Python client examples
+- **[🌐 JavaScript Examples](docs/api-reference/examples/javascript.md)** - Node.js integration
+- **[⚡ cURL Examples](docs/api-reference/examples/curl.md)** - Command-line examples
+
+### 🛠️ **Technical Documentation**
+Deep dive into the platform:
+- **[🏗️ System Architecture](docs/technical/architecture.md)** - Design and components
+- **[⚡ Performance Optimization](docs/technical/performance.md)** - Speed and efficiency
+- **[🧩 Module Documentation](docs/technical/modules/)** - Detailed technical specs
+- **[🚀 Advanced Features](docs/technical/advanced-features.md)** - Power-user features
+
+### 👩‍💻 **Development & Contributing**
+For developers and contributors:
+- **[🛠️ Development Setup](docs/development/setup.md)** - Developer environment
+- **[🤝 Contributing Guide](docs/development/contributing.md)** - How to contribute
+- **[🧪 Testing Guide](docs/development/testing.md)** - Testing procedures
+
+### 📖 **Additional Resources**
+- **[🔗 Complete Documentation Index](docs/README.md)** - Full documentation hub
+- **[📊 Benchmarking Guide](benchmark/README.md)** - Performance comparisons
+- **[🏛️ Legacy Documentation](docs/legacy/)** - Previous documentation versions
 
 ---
 

@@ -170,3 +170,5 @@ model_registry/
 notebooks/
 
 .secrets
+certs/
+experiments/

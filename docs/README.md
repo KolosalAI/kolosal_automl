@@ -1,14 +1,45 @@
-# kolosal AutoML Documentation
+# 📚 Kolosal AutoML Documentation
 
-## Overview
-kolosal AutoML is a comprehensive, production-ready automated machine learning framework designed to streamline the entire ML lifecycle from data preprocessing to model deployment. Built with Python 3.10+, it provides a modern, modular architecture with both web-based and API interfaces.
+Welcome to the comprehensive documentation for **Kolosal AutoML** - a production-ready automated machine learning platform designed for enterprise-scale deployment.
 
-## Table of Contents
-1. [Quick Start](#quick-start)
-2. [Architecture Overview](#architecture-overview)
-3. [Module Documentation](#module-documentation)
-4. [API Documentation](#api-documentation)
-5. [Configuration System](#configuration-system)
+## 🎯 Quick Navigation
+
+### 👋 New to Kolosal AutoML?
+Start here to get up and running quickly:
+- [📖 **Getting Started**](getting-started/) - Installation, setup, and first steps
+- [🎓 **User Guides**](user-guides/) - Step-by-step tutorials for common tasks
+- [💻 **Web Interface Guide**](user-guides/web-interface.md) - Using the Gradio interface
+
+### 🚀 Deploy to Production
+Ready to deploy? These guides will help:
+- [🐳 **Docker Deployment**](deployment/docker.md) - Containerized deployment
+- [🏭 **Production Setup**](deployment/production.md) - Production-ready configuration
+- [🔒 **Security Configuration**](deployment/security.md) - Enterprise security setup
+- [📊 **Monitoring**](deployment/monitoring.md) - Observability and metrics
+
+### 🔧 API Integration
+Integrate with your applications:
+- [📋 **API Reference**](api-reference/) - Complete API documentation
+- [🐍 **Python Examples**](api-reference/examples/python.md) - Python client examples
+- [🌐 **JavaScript Examples**](api-reference/examples/javascript.md) - JavaScript/Node.js examples
+- [⚡ **cURL Examples**](api-reference/examples/curl.md) - Command-line examples
+
+### 🛠️ Technical Deep Dive
+Understand the internals:
+- [🏗️ **Architecture**](technical/architecture.md) - System design and components
+- [⚡ **Performance**](technical/performance.md) - Optimization and scaling
+- [🧩 **Module Documentation**](technical/modules/) - Detailed technical docs
+- [🚀 **Advanced Features**](technical/advanced-features.md) - Advanced capabilities
+
+### 👩‍💻 Development
+Contributing or customizing:
+- [🛠️ **Development Setup**](development/setup.md) - Developer environment
+- [🤝 **Contributing**](development/contributing.md) - How to contribute
+- [🧪 **Testing**](development/testing.md) - Testing guidelines
+
+## 🚀 What is Kolosal AutoML?
+
+Kolosal AutoML is a comprehensive, production-ready machine learning platform that provides:
 6. [Development Guide](#development-guide)
 7. [Production Deployment](#production-deployment)
 
@@ -627,5 +658,25 @@ uvicorn modules.api.app:app --host 0.0.0.0 --port 8000 --workers 4
 MIT License - see [LICENSE](../LICENSE) file for details.
 
 ---
+
+## ✅ Documentation Restructuring Complete
+
+**Status**: **COMPLETED** 🎉  
+**Date**: January 2025
+
+### 📊 Restructuring Results
+- **86+ markdown files** reorganized into logical structure
+- **11 new directories** created for intuitive navigation
+- **50+ new documentation files** with consolidated content
+- **Legacy files** preserved in `docs/legacy/` folder
+- **Cross-references** updated throughout documentation
+- **Modern formatting** with visual elements and clear navigation paths
+
+### 🏗️ New Structure Benefits
+- **Role-based navigation** for different user types
+- **Consolidated content** eliminating duplication
+- **Visual elements** improving readability
+- **Comprehensive examples** for all major features
+- **Scalable organization** for future growth
 
 *For detailed component documentation, refer to the individual documentation files in the respective subdirectories.*
