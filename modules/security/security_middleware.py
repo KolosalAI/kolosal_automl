@@ -15,7 +15,7 @@ import logging
 
 # JWT functionality  
 try:
-    import jwt
+    import jwt  # PyJWT package
 except ImportError:
     # Mock JWT for testing
     class JWT:

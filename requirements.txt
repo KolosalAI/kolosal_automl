@@ -147,7 +147,7 @@ jsonsir==0.0.2
 jupyter-client==8.6.3
 jupyter-core==5.8.1
 jupyterlab-widgets==3.0.15
-jwt==1.4.0
+PyJWT==2.9.0
 kaleido==1.0.0
 kiwisolver==1.4.8
 kmodes==0.12.2
@@ -222,7 +222,6 @@ pillow==11.1.0
 pip==25.2
 platformdirs==4.3.8
 plotly==5.24.1
-plotly==6.0.0
 plotly-resampler==0.10.0
 pluggy==1.5.0
 plum-dispatch==2.5.7

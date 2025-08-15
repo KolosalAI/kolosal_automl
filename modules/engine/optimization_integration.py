@@ -70,6 +70,21 @@ class OptimizedDataPipeline:
         else:
             self._initialize_fallback_components()
     
+    @property
+    def data_loader(self):
+        """Expose data_loader for testing"""
+        return self._data_loader
+    
+    @data_loader.setter
+    def data_loader(self, value):
+        """Allow setting data_loader for testing"""
+        self._data_loader = value
+    
+    @data_loader.deleter
+    def data_loader(self):
+        """Allow deleting data_loader for testing"""
+        self._data_loader = None
+    
     def _initialize_optimized_components(self):
         """Initialize optimized components"""
         try:
@@ -97,7 +112,7 @@ class OptimizedDataPipeline:
         # Fallback components would be initialized here
         pass
     
-    def load_data(self, file_path: str, **kwargs) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+    def load_data(self, file_path: str, **kwargs) -> Dict[str, Any]:
         """
         Load data with automatic optimization
         
@@ -106,42 +121,68 @@ class OptimizedDataPipeline:
             **kwargs: Additional arguments for data loading
             
         Returns:
-            Tuple of (dataframe, optimization_info)
+            Dictionary with loaded data and optimization info
         """
-        if OPTIMIZATION_AVAILABLE and self._data_loader:
-            try:
-                df, dataset_info = self._data_loader.load_data(file_path, **kwargs)
-                
-                optimization_info = {
-                    'optimized_loading': True,
-                    'size_category': dataset_info.size_category.value,
-                    'loading_strategy': dataset_info.loading_strategy.value,
-                    'memory_mb': dataset_info.actual_memory_mb,
-                    'loading_time': dataset_info.loading_time,
-                    'optimizations_applied': dataset_info.optimization_applied
-                }
-                
-                return df, optimization_info
-                
-            except Exception as e:
-                logger.warning(f"Optimized loading failed, using fallback: {e}")
-        
-        # Fallback to pandas
-        df = pd.read_csv(file_path, **kwargs) if file_path.endswith('.csv') else pd.read_parquet(file_path, **kwargs)
-        
-        optimization_info = {
-            'optimized_loading': False,
-            'fallback_used': True,
-            'memory_mb': df.memory_usage(deep=True).sum() / 1024 / 1024,
-            'rows': len(df),
-            'columns': len(df.columns)
+        result = {
+            'success': False,
+            'data': None,
+            'dataset_info': None,
+            'optimization_info': None,
+            'error': None
         }
         
-        return df, optimization_info
+        try:
+            if OPTIMIZATION_AVAILABLE and self._data_loader:
+                try:
+                    df, dataset_info = self._data_loader.load_data(file_path, **kwargs)
+                    
+                    optimization_info = {
+                        'optimized_loading': True,
+                        'size_category': dataset_info.size_category.value,
+                        'loading_strategy': dataset_info.loading_strategy.value,
+                        'memory_mb': dataset_info.actual_memory_mb,
+                        'loading_time': dataset_info.loading_time,
+                        'optimizations_applied': dataset_info.optimization_applied
+                    }
+                    
+                    result.update({
+                        'success': True,
+                        'data': df,
+                        'dataset_info': dataset_info,
+                        'optimization_info': optimization_info
+                    })
+                    
+                    return result
+                    
+                except Exception as e:
+                    logger.warning(f"Optimized loading failed, using fallback: {e}")
+            
+            # Fallback to pandas
+            df = pd.read_csv(file_path, **kwargs) if file_path.endswith('.csv') else pd.read_parquet(file_path, **kwargs)
+            
+            optimization_info = {
+                'optimized_loading': False,
+                'fallback_used': True,
+                'memory_mb': df.memory_usage(deep=True).sum() / 1024 / 1024,
+                'rows': len(df),
+                'columns': len(df.columns)
+            }
+            
+            result.update({
+                'success': True,
+                'data': df,
+                'optimization_info': optimization_info
+            })
+            
+        except Exception as e:
+            result['error'] = str(e)
+            logger.error(f"Failed to load data: {e}")
+        
+        return result
     
     def optimize_preprocessing(self, 
                              df: pd.DataFrame, 
-                             target_column: Optional[str] = None) -> DataPreprocessor:
+                             target_column: Optional[str] = None):
         """
         Create optimized preprocessor for the dataset
         
@@ -150,25 +191,47 @@ class OptimizedDataPipeline:
             target_column: Target column name (optional)
             
         Returns:
-            Optimized data preprocessor
+            Dictionary with optimization results
         """
-        if OPTIMIZATION_AVAILABLE and self.enable_adaptive_preprocessing:
-            try:
+        from modules.engine.data_preprocessor import DataPreprocessor
+        
+        try:
+            if OPTIMIZATION_AVAILABLE and self.enable_adaptive_preprocessing:
                 # Create preprocessor with optimization
                 preprocessor = DataPreprocessor()
                 
                 # Optimize for dataset if config optimizer is available
                 if self._config_optimizer:
-                    preprocessor = preprocessor.optimize_for_dataset(df)
+                    try:
+                        optimized_preprocessor = preprocessor.optimize_for_dataset(df)
+                        return {
+                            'success': True,
+                            'config': optimized_preprocessor.config.__dict__,
+                            'preprocessor': optimized_preprocessor,
+                            'recommendations': ['Adaptive preprocessing applied']
+                        }
+                    except Exception as e:
+                        logger.warning(f"Config optimization failed: {e}")
                 
-                return preprocessor
+                return {
+                    'success': True,
+                    'config': preprocessor.config.__dict__,
+                    'preprocessor': preprocessor,
+                    'recommendations': ['Default preprocessing configuration']
+                }
                 
-            except Exception as e:
-                logger.warning(f"Adaptive preprocessing failed, using default: {e}")
+        except Exception as e:
+            logger.warning(f"Adaptive preprocessing failed, using default: {e}")
         
         # Fallback to default preprocessor
-        from modules.engine.data_preprocessor import DataPreprocessor
-        return DataPreprocessor()
+        fallback_preprocessor = DataPreprocessor()
+        return {
+            'success': False,
+            'config': fallback_preprocessor.config.__dict__,
+            'preprocessor': fallback_preprocessor,
+            'recommendations': ['Fallback to default configuration due to errors'],
+            'error': str(e) if 'e' in locals() else 'Unknown error'
+        }
     
     def optimize_memory(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -234,7 +297,9 @@ class OptimizedDataPipeline:
         try:
             # Step 1: Load data with optimization
             logger.info("Loading data with optimization...")
-            df, load_info = self.load_data(file_path)
+            load_result = self.load_data(file_path)
+            df = load_result['data']
+            load_info = load_result.get('dataset_info', {})
             results['optimization_info']['loading'] = load_info
             
             # Step 2: Memory optimization
@@ -251,7 +316,9 @@ class OptimizedDataPipeline:
             
             # Step 3: Optimize preprocessing
             logger.info("Configuring optimized preprocessing...")
-            preprocessor = self.optimize_preprocessing(df_optimized, target_column)
+            preprocessing_result = self.optimize_preprocessing(df_optimized, target_column)
+            preprocessor = preprocessing_result.get('preprocessor')
+            results['optimization_info']['preprocessing_config'] = preprocessing_result
             
             if fit_preprocessor and target_column and target_column in df_optimized.columns:
                 # Prepare features and target
@@ -278,6 +345,27 @@ class OptimizedDataPipeline:
             results['errors'].append(error_msg)
         
         return results
+    
+    def get_pipeline_status(self) -> Dict[str, Any]:
+        """
+        Get current pipeline status and configuration
+        
+        Returns:
+            Dictionary with pipeline status information
+        """
+        return {
+            'optimization_available': OPTIMIZATION_AVAILABLE,
+            'components_loaded': {
+                'data_loader': self._data_loader is not None,
+                'memory_processor': self._memory_processor is not None,
+                'config_optimizer': self._config_optimizer is not None
+            },
+            'configuration': {
+                'max_memory_pct': self.max_memory_pct,
+                'enable_memory_optimization': self.enable_memory_optimization,
+                'enable_adaptive_preprocessing': self.enable_adaptive_preprocessing
+            }
+        }
 
 
 # Convenience functions for easy integration

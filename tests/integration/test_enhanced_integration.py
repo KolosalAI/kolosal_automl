@@ -611,7 +611,7 @@ class TestRunner:
                     test_method()
                     
                     class_results[method_name] = "PASSED"
-                    print(f"  ✓ {method_name} PASSED")
+                    print(f"  [PASS] {method_name} PASSED")
                     
                 except Exception as e:
                     class_results[method_name] = f"FAILED: {str(e)}"
@@ -638,7 +638,7 @@ class TestRunner:
                 total_tests += 1
                 if result == "PASSED":
                     passed_tests += 1
-                    print(f"  ✓ {method_name}")
+                    print(f"  [PASS] {method_name}")
                 else:
                     print(f"  ✗ {method_name}: {result}")
         
