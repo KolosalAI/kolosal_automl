@@ -14,7 +14,67 @@ import argparse
 import sys
 import psutil
 from pathlib import Path
-import gradio as gr
+
+# Fix for Pydantic v2 + FastAPI compatibility issue with Gradio
+import os
+import sys
+
+# Force Pydantic v1 compatibility mode EARLY
+os.environ["PYDANTIC_V1"] = "1"
+
+# Pre-import pydantic and apply all necessary patches before any other imports
+try:
+    import pydantic
+    
+    # Ensure pydantic.fields module exists and has necessary attributes
+    import pydantic.fields
+    
+    # Create all missing attributes that FastAPI might expect
+    if not hasattr(pydantic.fields, 'Undefined'):
+        # Create a proper Undefined sentinel
+        class UndefinedType:
+            _singleton = None
+            def __new__(cls):
+                if cls._singleton is None:
+                    cls._singleton = super().__new__(cls)
+                return cls._singleton
+            def __repr__(self):
+                return "Undefined"
+            def __bool__(self):
+                return False
+        
+        pydantic.fields.Undefined = UndefinedType()
+    
+    # Ensure FieldInfo exists
+    if not hasattr(pydantic.fields, 'FieldInfo'):
+        try:
+            from pydantic import Field
+            # Get the type from a dummy field
+            dummy_field = Field(default=None)
+            pydantic.fields.FieldInfo = type(dummy_field)
+        except Exception:
+            # Create a mock FieldInfo if the above fails
+            class MockFieldInfo:
+                def __init__(self, **kwargs):
+                    for k, v in kwargs.items():
+                        setattr(self, k, v)
+            pydantic.fields.FieldInfo = MockFieldInfo
+    
+    print("✅ Applied comprehensive Pydantic compatibility patches")
+    
+except Exception as e:
+    print(f"⚠️ Pydantic compatibility patches failed: {e}")
+
+# Now import FastAPI-dependent modules
+try:
+    import gradio as gr
+    print("✅ Gradio imported successfully")
+except Exception as e:
+    print(f"❌ Failed to import Gradio: {e}")
+    # Try alternative approach: install compatible versions
+    print("🔧 Consider downgrading to compatible versions:")
+    print("  pip install fastapi==0.104.1 pydantic==1.10.12")
+    sys.exit(1)
 
 # Import matplotlib with proper backend
 import matplotlib
@@ -83,11 +143,19 @@ except ImportError as e:
     SECURITY_ENV = None
     SECURITY_MANAGER = None
 
-# Import other required modules
+# Import core required modules (these must work)
 try:
-    from modules.engine.inference_engine import InferenceEngine, InferenceServer
     from modules.ui.data_preview_generator import DataPreviewGenerator
     from modules.ui.sample_data_loader import SampleDataLoader
+    CORE_UI_AVAILABLE = True
+    print("🔧 DEBUG: Core UI modules imported successfully")
+except ImportError as e:
+    print(f"🔧 DEBUG: Core UI import failed: {e}")
+    CORE_UI_AVAILABLE = False
+
+# Import other required modules  
+try:
+    from modules.engine.inference_engine import InferenceEngine, InferenceServer
     from modules.model.model_manager import SecureModelManager
     from modules.security.security_utils import (
         security_wrapper, 
@@ -97,8 +165,14 @@ try:
         get_auth_config
     )
     from modules.device_optimizer import DeviceOptimizer
+    BASIC_FEATURES_AVAILABLE = True
+    print("🔧 DEBUG: Basic features imported successfully")
+except ImportError as e:
+    print(f"🔧 DEBUG: Basic features import failed: {e}")
+    BASIC_FEATURES_AVAILABLE = False
     
-    # Import advanced features
+# Import advanced features (optional)
+try:
     from modules.engine.experiment_tracker import ExperimentTracker
     from modules.engine.batch_processor import BatchProcessor
     from modules.engine.adaptive_hyperopt import (
@@ -125,12 +199,102 @@ try:
         PERFORMANCE_TRACKING_AVAILABLE = False
     
     ADVANCED_FEATURES_AVAILABLE = True
+    print("🔧 DEBUG: Advanced features imported successfully")
     
 except ImportError as e:
-    logger.warning(f"Some modules not available: {e}")
+    print(f"🔧 DEBUG: Advanced features import failed - using fallback implementations: {e}")
+    logger.warning(f"Some advanced modules not available: {e}")
     ADVANCED_FEATURES_AVAILABLE = False
+    PERFORMANCE_TRACKING_AVAILABLE = False
+
+# Create fallback implementations only when needed
+if not CORE_UI_AVAILABLE:
+    print("🔧 DEBUG: Using fallback UI implementations")
+    class DataPreviewGenerator:
+        def generate_data_summary(self, df): 
+            return {"shape": df.shape, "columns": df.columns.tolist(), "dtypes": df.dtypes.to_dict()}
+        def format_data_preview(self, df, summary): 
+            return f"Data shape: {df.shape}<br>Columns: {', '.join(df.columns.tolist())}"
     
-    # Create placeholder classes/functions
+    class SampleDataLoader:
+        def __init__(self):
+            self.datasets = {
+                "Iris Classification": {
+                    "name": "Iris Classification",
+                    "description": "The classic iris flower dataset for multiclass classification",
+                    "task_type": "classification",
+                    "target_column": "species"
+                },
+                "Boston Housing": {
+                    "name": "Boston Housing",
+                    "description": "Boston house prices dataset for regression",
+                    "task_type": "regression",
+                    "target_column": "price"
+                },
+                "Wine Quality": {
+                    "name": "Wine Quality",
+                    "description": "Wine quality dataset for classification",
+                    "task_type": "classification",
+                    "target_column": "quality"
+                },
+                "Diabetes": {
+                    "name": "Diabetes",
+                    "description": "Diabetes dataset for regression",
+                    "task_type": "regression",
+                    "target_column": "target"
+                },
+                "Breast Cancer": {
+                    "name": "Breast Cancer",
+                    "description": "Breast cancer dataset for binary classification",
+                    "task_type": "classification",
+                    "target_column": "target"
+                }
+            }
+        
+        def load_sample_data(self, name): 
+            print(f"🔧 DEBUG: Fallback SampleDataLoader.load_sample_data called with: {name}")
+            if name == "Select a dataset..." or name is None:
+                return pd.DataFrame(), {"name": name, "description": "No dataset selected", "task_type": "none", "target_column": ""}
+            
+            # Create sample datasets based on name
+            if name == "Iris Classification":
+                df = pd.DataFrame({
+                    'sepal_length': [5.1, 4.9, 4.7, 4.6, 5.0, 5.4, 4.6, 5.0, 4.4, 4.9],
+                    'sepal_width': [3.5, 3.0, 3.2, 3.1, 3.6, 3.9, 3.4, 3.4, 2.9, 3.1], 
+                    'petal_length': [1.4, 1.4, 1.3, 1.5, 1.4, 1.7, 1.4, 1.5, 1.4, 1.5],
+                    'petal_width': [0.2, 0.2, 0.2, 0.2, 0.2, 0.4, 0.3, 0.2, 0.2, 0.1],
+                    'species': ['setosa', 'setosa', 'setosa', 'setosa', 'setosa', 
+                               'versicolor', 'versicolor', 'versicolor', 'versicolor', 'versicolor']
+                })
+            elif name == "Boston Housing":
+                df = pd.DataFrame({
+                    'crim': [0.00632, 0.02731, 0.02729, 0.03237, 0.06905],
+                    'zn': [18.0, 0.0, 0.0, 0.0, 0.0],
+                    'indus': [2.31, 7.07, 7.07, 2.18, 2.18],
+                    'nox': [0.538, 0.469, 0.469, 0.458, 0.458],
+                    'rm': [6.575, 6.421, 7.185, 6.998, 7.147],
+                    'price': [24.0, 21.6, 34.7, 33.4, 36.2]
+                })
+            else:
+                # Generic sample data
+                df = pd.DataFrame({
+                    'feature_1': [1.0, 2.0, 3.0, 4.0, 5.0],
+                    'feature_2': [2.0, 4.0, 6.0, 8.0, 10.0], 
+                    'feature_3': [0.5, 1.5, 2.5, 3.5, 4.5],
+                    'target': [0, 1, 0, 1, 0]
+                })
+            
+            metadata = self.datasets.get(name, {
+                "name": name, 
+                "description": "Sample dataset (fallback implementation)", 
+                "task_type": "classification", 
+                "target_column": "target"
+            })
+            print(f"🔧 DEBUG: Fallback returning df.shape: {df.shape}, metadata: {metadata}")
+            return df, metadata
+
+if not BASIC_FEATURES_AVAILABLE:
+    print("🔧 DEBUG: Using fallback basic implementations")
     class InferenceServer:
         def __init__(self):
             self.is_loaded = False
@@ -141,29 +305,6 @@ except ImportError as e:
         def get_model_info(self): 
             return {"error": "Not available"}
     
-    class DataPreviewGenerator:
-        def generate_data_summary(self, df): 
-            return {"shape": df.shape, "columns": df.columns.tolist()}
-        def format_data_preview(self, df, summary): 
-            return f"Data shape: {df.shape}<br>Columns: {', '.join(df.columns.tolist())}"
-    
-    class SampleDataLoader:
-        def load_sample_data(self, name): 
-            if name == "Select a dataset...":
-                return pd.DataFrame(), {"name": name, "description": "No dataset selected"}
-            # Create a simple dummy dataset
-            df = pd.DataFrame({
-                'feature_1': [1, 2, 3, 4, 5],
-                'feature_2': [2, 4, 6, 8, 10], 
-                'target': [0, 1, 0, 1, 0]
-            })
-            return df, {
-                "name": name, 
-                "description": "Sample dataset (modules not available)", 
-                "task_type": "classification", 
-                "target_column": "target"
-            }
-    
     class SecureModelManager:
         def __init__(self, *args, **kwargs): pass
         
@@ -171,6 +312,14 @@ except ImportError as e:
         def get_system_info(self): 
             return {"error": "Device optimizer not available"}
     
+    def security_wrapper(func): return func
+    def validate_file_upload(path, extensions): return True
+    def secure_data_processing(data): return data
+    def create_security_headers(): return {}
+    def get_auth_config(): return None
+
+if not ADVANCED_FEATURES_AVAILABLE:
+    print("🔧 DEBUG: Using fallback advanced implementations")
     class ExperimentTracker:
         def __init__(self, *args, **kwargs): pass
         def start_experiment(self, *args, **kwargs): return {}
@@ -196,11 +345,6 @@ except ImportError as e:
         def __init__(self, *args, **kwargs): pass
         def get_metrics(self, *args, **kwargs): return {}
     
-    def security_wrapper(func): return func
-    def validate_file_upload(path, extensions): return True
-    def secure_data_processing(data): return data
-    def create_security_headers(): return {}
-    def get_auth_config(): return None
     def generate_dashboard_html(data): return "<h1>Dashboard not available</h1>"
     def create_memory_aware_processor(): return MemoryAwareDataProcessor()
     
@@ -210,7 +354,6 @@ except ImportError as e:
     
     ProcessingMode = type('ProcessingMode', (), {'BALANCED': 'balanced'})
     PreprocessingStrategy = type('PreprocessingStrategy', (), {'STANDARD': 'standard'})
-    PERFORMANCE_TRACKING_AVAILABLE = False
 
 # Additional function to create proper search spaces
 def create_search_space(task_type: str, algorithms: List[str]) -> Dict[str, Dict[str, Any]]:
@@ -313,11 +456,77 @@ def load_css_file():
     except Exception:
         pass
     
-    # Default CSS
+    # Default CSS with data preview persistence
     return """
     /* Default styling */
     .gr-button-primary { background-color: #007bff !important; }
     .gr-box { border-radius: 8px !important; }
+    
+    /* Hide auto-refresh trigger button */
+    #auto-refresh-trigger { display: none !important; }
+    
+    /* Data status styling */
+    .data-status {
+        padding: 8px 12px;
+        border-radius: 6px;
+        background-color: #f8f9fa;
+        border: 1px solid #e9ecef;
+        margin-bottom: 10px;
+        font-weight: 500;
+    }
+    
+    /* Data preview styling */
+    .data-preview-container {
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        padding: 16px;
+        background-color: #fafafa;
+    }
+    
+    /* Tab styling for better visibility */
+    .tab-nav .tab-nav-button {
+        transition: all 0.3s ease;
+    }
+    
+    .tab-nav .tab-nav-button.selected {
+        background-color: #007bff !important;
+        color: white !important;
+    }
+    
+    /* Table styling for data preview */
+    .table {
+        width: 100%;
+        margin-bottom: 1rem;
+        background-color: transparent;
+        border-collapse: collapse;
+    }
+    
+    .table-striped tbody tr:nth-of-type(odd) {
+        background-color: rgba(0, 0, 0, 0.05);
+    }
+    
+    .table th,
+    .table td {
+        padding: 0.75rem;
+        vertical-align: top;
+        border-top: 1px solid #dee2e6;
+        text-align: left;
+    }
+    
+    .table thead th {
+        vertical-align: bottom;
+        border-bottom: 2px solid #dee2e6;
+        background-color: #f8f9fa;
+        font-weight: 600;
+    }
+    
+    /* Responsive table container */
+    .table-container {
+        overflow-x: auto;
+        max-height: 400px;
+        border: 1px solid #dee2e6;
+        border-radius: 6px;
+    }
     """
 
 class MLSystemUI:
@@ -335,6 +544,11 @@ class MLSystemUI:
         self.sample_data_loader = SampleDataLoader()
         self.data_preview_generator = DataPreviewGenerator()
         self.trained_models = {}  # Store trained models
+        
+        # Persistent data preview storage
+        self.current_data_info = ""
+        self.current_data_preview = ""
+        self.current_data_summary = {}
         
         # Advanced features
         self.experiment_tracker = None
@@ -477,10 +691,15 @@ class MLSystemUI:
         algorithms = []
         task_lower = task_type.lower()
         
+        # Filter out problematic ensemble models that need special handling
+        excluded_models = {'voting classifier', 'stacking classifier', 'voting regressor', 'stacking regressor'}
+        
         for category, models in self.ml_algorithms.items():
             for model_name, model_info in models.items():
                 if task_lower in model_info["supports"]:
-                    algorithms.append(f"{category} - {model_name}")
+                    # Skip problematic ensemble models for now
+                    if model_name.lower() not in excluded_models:
+                        algorithms.append(f"{category} - {model_name}")
         
         return sorted(algorithms)
     
@@ -608,89 +827,183 @@ class MLSystemUI:
             # Default to classification if unable to determine
             return "classification"
     
-    def load_sample_data(self, dataset_name: str) -> Tuple[str, Dict, str, str]:
+    def test_sample_data_loading(self, dataset_name: str) -> str:
+        """Simple test function to check if button clicks are working"""
+        print(f"🔄 TEST: test_sample_data_loading called with: {dataset_name}")
+        return f"TEST: Button clicked with dataset: {dataset_name}"
+    
+    def load_sample_data(self, dataset_name: str) -> Tuple[str, Dict, str, str, str]:
         """Load sample dataset with preview"""
         try:
-            if dataset_name == "Select a dataset...":
-                return "Please select a dataset", {}, "", ""
+            print(f"🔄 DEBUG: load_sample_data called with dataset_name: '{dataset_name}'")
+            logger.info(f"Loading sample dataset: {dataset_name}")
             
-            df, metadata = self.sample_data_loader.load_sample_data(dataset_name)
+            if dataset_name == "Select a dataset..." or not dataset_name or dataset_name is None:
+                print("🔄 DEBUG: Default selection or empty, returning early")
+                return "Please select a dataset", {}, "", "", "**Status:** No data loaded"
+            
+            print(f"🔄 DEBUG: Loading data for: {dataset_name}")
+            print(f"🔄 DEBUG: sample_data_loader type: {type(self.sample_data_loader)}")
+            
+            # Check if the sample data loader has the requested dataset
+            if hasattr(self.sample_data_loader, 'datasets'):
+                available_datasets = list(self.sample_data_loader.datasets.keys())
+                print(f"🔄 DEBUG: Available datasets: {available_datasets}")
+                if dataset_name not in available_datasets:
+                    print(f"🔄 DEBUG: Dataset '{dataset_name}' not found in available datasets")
+                    # Try to load anyway - fallback implementations might still work
+            
+            try:
+                df, metadata = self.sample_data_loader.load_sample_data(dataset_name)
+                print(f"🔄 DEBUG: Received df shape: {df.shape}, metadata: {metadata}")
+            except Exception as load_error:
+                print(f"🔄 DEBUG: Error loading from sample_data_loader: {load_error}")
+                # Return a helpful error message instead of crashing
+                return f"Error loading sample dataset '{dataset_name}': {str(load_error)}", {}, "", "", "**Status:** ❌ Error loading sample data"
+            
+            if df.empty:
+                print(f"🔄 DEBUG: DataFrame is empty!")
+                return "Dataset is empty", {}, "", "", "**Status:** ❌ Empty dataset"
+            
             self.current_data = df
+            print(f"🔄 DEBUG: Data loaded successfully, shape: {df.shape}")
             
             # Generate data summary and preview
-            summary = self.data_preview_generator.generate_data_summary(df)
-            preview_text = self.data_preview_generator.format_data_preview(df, summary)
+            print(f"🔄 DEBUG: Generating data summary")
+            try:
+                summary = self.data_preview_generator.generate_data_summary(df)
+                print(f"🔄 DEBUG: Summary generated: {summary}")
+            except Exception as summary_error:
+                print(f"🔄 DEBUG: Error generating summary: {summary_error}")
+                summary = {"shape": df.shape, "columns": df.columns.tolist()}
+            
+            print(f"🔄 DEBUG: Formatting data preview")
+            try:
+                preview_text = self.data_preview_generator.format_data_preview(df, summary)
+                print(f"🔄 DEBUG: Preview text length: {len(preview_text)}")
+            except Exception as preview_error:
+                print(f"🔄 DEBUG: Error formatting preview: {preview_error}")
+                preview_text = f"Data shape: {df.shape}, Columns: {df.columns.tolist()}"
             
             # Generate sample data table
-            sample_table = df.head(10).to_html(classes="table table-striped", escape=False, border=0)
+            print(f"🔄 DEBUG: Generating sample data table")
+            try:
+                sample_table = df.head(10).to_html(classes="table table-striped", escape=False, border=0)
+                print(f"🔄 DEBUG: Sample table length: {len(sample_table)}")
+            except Exception as table_error:
+                print(f"🔄 DEBUG: Error generating table: {table_error}")
+                sample_table = f"<p>Error generating table preview: {str(table_error)}</p>"
+            
+            # Ensure metadata has required fields
+            if not isinstance(metadata, dict):
+                metadata = {"name": dataset_name, "description": "Unknown", "task_type": "unknown", "target_column": "unknown"}
             
             info_text = f"""
-Sample Dataset Loaded: {metadata['name']}
+Sample Dataset Loaded: {metadata.get('name', dataset_name)}
 
-- Description: {metadata['description']}
-- Task Type: {metadata['task_type']}
-- Target Column: {metadata['target_column']}
+- Description: {metadata.get('description', 'No description available')}
+- Task Type: {metadata.get('task_type', 'Unknown')}
+- Target Column: {metadata.get('target_column', 'Unknown')}
 - Shape: {df.shape[0]} rows × {df.shape[1]} columns
 - Columns: {', '.join(df.columns.tolist()[:10])}{'...' if len(df.columns) > 10 else ''}
 - Missing Values: {df.isnull().sum().sum()} total
             """
             
-            return info_text, metadata, preview_text, sample_table
+            status_text = f"**Status:** ✅ Sample data loaded - {metadata.get('name', dataset_name)} ({df.shape[0]} rows × {df.shape[1]} columns)"
+            
+            # Store data preview persistently
+            self.current_data_info = info_text
+            self.current_data_preview = sample_table
+            self.current_data_summary = summary
+            
+            print(f"🔄 DEBUG: Returning results for {dataset_name}")
+            print(f"🔄 DEBUG: info_text length: {len(info_text)}")
+            print(f"🔄 DEBUG: metadata: {metadata}")
+            print(f"🔄 DEBUG: preview_text length: {len(preview_text)}")
+            print(f"🔄 DEBUG: status_text: {status_text}")
+            
+            result_tuple = (info_text, metadata, preview_text, sample_table, status_text)
+            print(f"🔄 DEBUG: Final result tuple length: {len(result_tuple)}")
+            print(f"🔄 DEBUG: Final result types: {[type(x) for x in result_tuple]}")
+            
+            return result_tuple
             
         except Exception as e:
             error_msg = f"Error loading sample data: {str(e)}"
+            print(f"❌ DEBUG: Exception in load_sample_data: {error_msg}")
+            print(f"❌ DEBUG: Exception type: {type(e)}")
+            print(f"❌ DEBUG: Exception traceback: {traceback.format_exc()}")
             logger.error(error_msg)
-            return error_msg, {}, "", ""
+            return error_msg, {}, "", "", "**Status:** ❌ Error loading sample data"
 
     @security_wrapper
-    def load_data(self, file) -> Tuple[str, Dict, str, str]:
+    def load_data(self, file) -> Tuple[str, Dict, str, str, str]:
         """Load dataset from uploaded file with enhanced security validation"""
         try:
+            print(f"🔄 DEBUG: load_data called with file: {file}")
             if file is None:
-                return "No file uploaded", {}, "", ""
+                print("🔄 DEBUG: No file provided")
+                return "No file uploaded", {}, "", "", "**Status:** No data loaded"
             
             file_path = file.name
+            print(f"🔄 DEBUG: File path: {file_path}")
             
             # Security validation
+            print(f"🔄 DEBUG: Validating file upload for: {file_path}")
             if not validate_file_upload(file_path, ['.csv', '.xlsx', '.xls', '.json', '.parquet']):
+                print(f"🔄 DEBUG: File validation failed for: {file_path}")
                 if self.security_manager and hasattr(self.security_manager, 'auditor'):
                     self.security_manager.auditor.logger.warning(f"FILE_UPLOAD_REJECTED: {file_path}")
-                return "❌ File upload rejected for security reasons. Please ensure you're uploading a valid data file.", {}, "", ""
+                return "❌ File upload rejected for security reasons. Please ensure you're uploading a valid data file.", {}, "", "", "**Status:** ❌ File rejected"
             
+            print(f"🔄 DEBUG: File validation passed for: {file_path}")
             # Log file upload
             if self.security_manager and hasattr(self.security_manager, 'auditor'):
                 self.security_manager.auditor.logger.info(f"FILE_UPLOAD: {os.path.basename(file_path)}")
             
             # Load data based on file extension
+            print(f"🔄 DEBUG: Loading data based on file extension")
             if file_path.endswith('.csv'):
+                print(f"🔄 DEBUG: Loading CSV file")
                 df = pd.read_csv(file_path)
             elif file_path.endswith(('.xlsx', '.xls')):
+                print(f"🔄 DEBUG: Loading Excel file")
                 df = pd.read_excel(file_path)
             elif file_path.endswith('.json'):
+                print(f"🔄 DEBUG: Loading JSON file")
                 df = pd.read_json(file_path)
             else:
-                return "Unsupported file format. Please upload CSV, Excel, or JSON files.", {}, "", ""
+                print(f"🔄 DEBUG: Unsupported file format: {file_path}")
+                return "Unsupported file format. Please upload CSV, Excel, or JSON files.", {}, "", "", "**Status:** ❌ Unsupported format"
             
+            print(f"🔄 DEBUG: Data loaded successfully, shape: {df.shape}")
             # Security validation based on dataset size
             if df.shape[0] > 1000000:  # 1M rows limit
+                print(f"🔄 DEBUG: Dataset too large: {df.shape}")
                 if self.security_manager and hasattr(self.security_manager, 'auditor'):
                     self.security_manager.auditor.logger.warning(f"LARGE_DATASET: {df.shape}")
-                return "⚠️ Dataset too large. Please use a dataset with fewer than 1 million rows.", {}, "", ""
+                return "⚠️ Dataset too large. Please use a dataset with fewer than 1 million rows.", {}, "", "", "**Status:** ⚠️ Dataset too large"
             
             if df.shape[1] > 10000:
+                print(f"🔄 DEBUG: Dataset too wide: {df.shape}")
                 if self.security_manager and hasattr(self.security_manager, 'auditor'):
                     self.security_manager.auditor.logger.warning(f"WIDE_DATASET: {df.shape}")
-                return "⚠️ Dataset too wide. Please use a dataset with fewer than 10,000 columns.", {}, "", ""
+                return "⚠️ Dataset too wide. Please use a dataset with fewer than 10,000 columns.", {}, "", "", "**Status:** ⚠️ Dataset too wide"
             
+            print(f"🔄 DEBUG: Setting current_data and generating preview")
             self.current_data = df
             
             # Generate data summary and preview
+            print(f"🔄 DEBUG: Generating data summary")
             summary = self.data_preview_generator.generate_data_summary(df)
+            print(f"🔄 DEBUG: Formatting data preview")
             preview_text = self.data_preview_generator.format_data_preview(df, summary)
             
             # Generate sample data table
+            print(f"🔄 DEBUG: Generating sample data table")
             sample_table = df.head(10).to_html(classes="table table-striped", escape=False, border=0)
             
+            print(f"🔄 DEBUG: Creating info text")
             info_text = f"""
 Data Loaded Successfully! ✅
 
@@ -701,12 +1014,64 @@ Data Loaded Successfully! ✅
 - Memory Usage: {df.memory_usage(deep=True).sum() / 1024**2:.2f} MB
             """
             
-            return info_text, summary, preview_text, sample_table
+            status_text = f"**Status:** ✅ Data loaded - {df.shape[0]:,} rows × {df.shape[1]:,} columns"
+            
+            print(f"🔄 DEBUG: Storing data preview persistently")
+            # Store data preview persistently
+            self.current_data_info = info_text
+            self.current_data_preview = sample_table
+            self.current_data_summary = summary
+            
+            print(f"🔄 DEBUG: Returning results successfully")
+            return info_text, summary, preview_text, sample_table, status_text
             
         except Exception as e:
             error_msg = f"Error loading data: {str(e)}"
+            print(f"❌ DEBUG: Exception in load_data: {error_msg}")
+            print(f"❌ DEBUG: Exception traceback: {traceback.format_exc()}")
             logger.error(error_msg)
-            return error_msg, {}, "", ""
+            return error_msg, {}, "", "", "**Status:** ❌ Error loading data"
+
+    def load_data_unified(self, file, dataset_name: str) -> Tuple[str, Dict, str, str, str]:
+        """Unified data loading function for both file uploads and sample datasets"""
+        try:
+            print(f"🔄 DEBUG: load_data_unified called with file: {file}, dataset_name: '{dataset_name}'")
+            print(f"🔄 DEBUG: file type: {type(file)}, dataset_name type: {type(dataset_name)}")
+            
+            # Handle file input - check if it's a valid file object with a name attribute
+            has_valid_file = False
+            if file is not None:
+                if hasattr(file, 'name') and file.name:
+                    print(f"🔄 DEBUG: Valid file detected: {file.name}")
+                    has_valid_file = True
+                else:
+                    print(f"🔄 DEBUG: File object exists but no valid name: {file}")
+            else:
+                print(f"🔄 DEBUG: No file provided")
+            
+            # Priority: if a valid file is provided, use it; otherwise use sample dataset
+            if has_valid_file:
+                print(f"🔄 DEBUG: Using uploaded file: {file}")
+                result = self.load_data(file)
+                print(f"🔄 DEBUG: File load result type: {type(result)}, length: {len(result) if hasattr(result, '__len__') else 'N/A'}")
+                return result
+            elif dataset_name and dataset_name not in [None, "", "Select a dataset..."]:
+                print(f"🔄 DEBUG: Using sample dataset: {dataset_name}")
+                result = self.load_sample_data(dataset_name)
+                print(f"🔄 DEBUG: Sample load result type: {type(result)}, length: {len(result) if hasattr(result, '__len__') else 'N/A'}")
+                return result
+            else:
+                print(f"🔄 DEBUG: No valid data source provided - file: {file}, dataset: {dataset_name}")
+                default_result = ("Please upload a file or select a sample dataset", {}, "", "", "**Status:** No data loaded")
+                print(f"🔄 DEBUG: Returning default result: {default_result}")
+                return default_result
+                
+        except Exception as e:
+            error_msg = f"Error loading data: {str(e)}"
+            print(f"❌ DEBUG: Exception in load_data_unified: {error_msg}")
+            print(f"❌ DEBUG: Exception traceback: {traceback.format_exc()}")
+            logger.error(error_msg)
+            return error_msg, {}, "", "", "**Status:** ❌ Error loading data"
 
     def optimize_preprocessing_config(self, data_characteristics: Dict[str, Any] = None) -> str:
         """Optimize preprocessing configuration based on data characteristics"""
@@ -1157,6 +1522,108 @@ Preprocessing Configuration Optimized! ✅
             error_msg = f"Error generating monitoring dashboard: {str(e)}"
             logger.error(error_msg)
             return f"<h1>Dashboard Error</h1><p>{error_msg}</p>"
+    
+    def refresh_data_preview(self) -> Tuple[str, str, str]:
+        """Refresh data preview from current data"""
+        try:
+            if self.current_data is None:
+                return "No data loaded", "", "**Status:** No data loaded"
+            
+            # Generate fresh data summary and preview
+            summary = self.data_preview_generator.generate_data_summary(self.current_data)
+            preview_text = self.data_preview_generator.format_data_preview(self.current_data, summary)
+            
+            # Generate sample data table
+            sample_table = self.current_data.head(10).to_html(classes="table table-striped", escape=False, border=0)
+            
+            # Update stored data preview
+            self.current_data_preview = sample_table
+            self.current_data_summary = summary
+            
+            # Generate status
+            df = self.current_data
+            status_text = f"**Status:** 🔄 Preview refreshed - {df.shape[0]:,} rows × {df.shape[1]:,} columns"
+            
+            return preview_text, sample_table, status_text
+            
+        except Exception as e:
+            error_msg = f"Error refreshing data preview: {str(e)}"
+            logger.error(error_msg)
+            return error_msg, "", "**Status:** ❌ Error refreshing preview"
+    
+    def get_current_data_preview(self) -> str:
+        """Get the current stored data preview"""
+        if self.current_data is None:
+            return "No data loaded"
+        if hasattr(self, 'current_data_preview') and self.current_data_preview:
+            return self.current_data_preview
+        else:
+            # Generate fresh preview if not stored
+            try:
+                sample_table = self.current_data.head(10).to_html(classes="table table-striped", escape=False, border=0)
+                self.current_data_preview = sample_table
+                return sample_table
+            except Exception as e:
+                return f"Error generating data preview: {str(e)}"
+    
+    def get_current_data_info(self) -> str:
+        """Get the current stored data info"""
+        if self.current_data is None:
+            return "No data loaded"
+        if hasattr(self, 'current_data_info') and self.current_data_info:
+            return self.current_data_info
+        else:
+            # Generate fresh info if not stored
+            try:
+                df = self.current_data
+                info_text = f"""
+Data Currently Loaded ✅
+
+📊 Dataset Overview:
+- Shape: {df.shape[0]:,} rows × {df.shape[1]:,} columns
+- Columns: {', '.join(df.columns.tolist()[:10])}{'...' if len(df.columns) > 10 else ''}
+- Missing Values: {df.isnull().sum().sum():,} total
+- Memory Usage: {df.memory_usage(deep=True).sum() / 1024**2:.2f} MB
+                """
+                self.current_data_info = info_text
+                return info_text
+            except Exception as e:
+                return f"Error generating data info: {str(e)}"
+    
+    def restore_data_view(self) -> Tuple[str, str, str]:
+        """Restore data info, preview, and status"""
+        if self.current_data is None:
+            return "No data loaded", "", "**Status:** No data loaded"
+        
+        data_info = self.get_current_data_info()
+        data_preview = self.get_current_data_preview()
+        
+        # Generate current status
+        df = self.current_data
+        status_text = f"**Status:** ✅ Data loaded - {df.shape[0]:,} rows × {df.shape[1]:,} columns"
+        
+        return data_info, data_preview, status_text
+
+    def test_button_functionality(self) -> str:
+        """Simple test function to verify button functionality"""
+        import time
+        timestamp = time.strftime("%H:%M:%S")
+        test_result = f"✅ Button clicked successfully at {timestamp}! The UI is working.\n\n"
+        test_result += f"🔧 Debug Info:\n"
+        test_result += f"- Sample data loader type: {type(self.sample_data_loader)}\n"
+        test_result += f"- Data preview generator type: {type(self.data_preview_generator)}\n"
+        test_result += f"- Current data: {'Loaded' if self.current_data is not None else 'None'}\n"
+        test_result += f"- Core UI available: {globals().get('CORE_UI_AVAILABLE', False)}\n"
+        test_result += f"- Basic features available: {globals().get('BASIC_FEATURES_AVAILABLE', False)}\n"
+        
+        # Test sample data loading
+        try:
+            df, metadata = self.sample_data_loader.load_sample_data("Iris Classification")
+            test_result += f"- Sample data test: ✅ Success (shape: {df.shape})\n"
+        except Exception as e:
+            test_result += f"- Sample data test: ❌ Failed ({str(e)})\n"
+        
+        return test_result
 
     def update_algorithm_choices(self, task_type: str) -> gr.CheckboxGroup:
         """Update algorithm choices for given task using engine registry."""
@@ -1185,6 +1652,11 @@ Preprocessing Configuration Optimized! ✅
             return "Training is not available in inference-only mode.", gr.Dropdown(), []
         
         try:
+            # Ensure proper type conversions from Gradio inputs
+            cv_folds = int(cv_folds) if cv_folds is not None else 5
+            test_size = float(test_size) if test_size is not None else 0.2
+            random_state = int(random_state) if random_state is not None else 42
+            
             # Map string values to enums
             task_type_enum = TaskType[task_type.upper()]
             
@@ -1365,7 +1837,8 @@ Model Training Summary
                 model_path="./models",
                 checkpoint_path="./checkpoints",
                 cv_folds=5,
-                test_size=0.2
+                test_size=0.2,
+                random_state=42
             )
 
         # Prepare data
@@ -1855,6 +2328,34 @@ def create_ui(inference_only: bool = False):
     # Load CSS styles
     css = load_css_file()
     
+    # Add JavaScript for tab handling and data preview persistence
+    js = """
+    function refreshDataPreview() {
+        // Try to trigger auto-refresh when switching to data tab
+        const autoRefreshBtn = document.getElementById('auto-refresh-trigger');
+        if (autoRefreshBtn) {
+            autoRefreshBtn.click();
+        }
+    }
+    
+    // Monitor tab changes and refresh data preview
+    document.addEventListener('DOMContentLoaded', function() {
+        // Wait for Gradio to initialize
+        setTimeout(function() {
+            const tabButtons = document.querySelectorAll('.tab-nav button');
+            tabButtons.forEach(function(button) {
+                button.addEventListener('click', function() {
+                    // Check if this is the data tab
+                    if (button.textContent.includes('Data Upload') || button.textContent.includes('📁')) {
+                        // Delay to ensure tab is loaded
+                        setTimeout(refreshDataPreview, 100);
+                    }
+                });
+            });
+        }, 1000);
+    });
+    """
+    
     title = "🚀 ML Inference Server" if inference_only else "🚀 Advanced AutoML Platform with AI Optimization"
     description = """
 🎯 Real-time ML inference server with enterprise-grade security and performance optimization.
@@ -1876,7 +2377,7 @@ def create_ui(inference_only: bool = False):
 📈 Quick Start: Upload data → Auto-optimize preprocessing → Train single/multiple models with integrated HPO → Compare performance → Deploy best performer
     """
 
-    with gr.Blocks(css=css, title=title, theme=gr.themes.Soft()) as interface:
+    with gr.Blocks(css=css, title=title, theme=gr.themes.Soft(), js=js) as interface:
         gr.HTML(f"""
             <div style="text-align: center; padding: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 10px; margin-bottom: 20px;">
                 <h1 style="margin: 0; font-size: 2.5em;">{title}</h1>
@@ -1919,7 +2420,7 @@ def create_ui(inference_only: bool = False):
             
         else:
             # Full training and inference interface
-            with gr.Tabs():
+            with gr.Tabs() as tabs:
                 # Data Upload Tab
                 with gr.Tab("📁 Data Upload", id="data"):
                     with gr.Row():
@@ -1927,7 +2428,7 @@ def create_ui(inference_only: bool = False):
                             gr.Markdown("## Upload Your Dataset")
                             data_file = gr.File(label="Choose Data File", file_types=[".csv", ".xlsx", ".json"])
                             
-                            gr.Markdown("## Or Try Sample Datasets")
+                            gr.Markdown("## Or Select Sample Dataset")
                             sample_datasets = [
                                 "Select a dataset...",
                                 "Iris Classification",
@@ -1936,8 +2437,20 @@ def create_ui(inference_only: bool = False):
                                 "Diabetes",
                                 "Breast Cancer"
                             ]
-                            sample_dropdown = gr.Dropdown(choices=sample_datasets, label="Sample Datasets")
-                            load_sample_btn = gr.Button("Load Sample Data", variant="secondary")
+                            sample_dropdown = gr.Dropdown(choices=sample_datasets, label="Sample Datasets", value="Select a dataset...")
+                            
+                            gr.Markdown("## Load Data")
+                            gr.Markdown("🔽 Click below to load your uploaded file or selected sample dataset")
+                            load_data_btn = gr.Button("Load Data", variant="primary")
+                            
+                            # Add a test button for debugging
+                            test_btn = gr.Button("🧪 Test Button (Debug)", variant="secondary", size="sm")
+                            test_output = gr.Textbox(label="Test Output", lines=2, interactive=False, visible=True)
+                            
+                            # Data status and preview controls
+                            gr.Markdown("## 📊 Data Preview Controls")
+                            data_status = gr.Markdown("**Status:** No data loaded", elem_classes=["data-status"])
+                            refresh_preview_btn = gr.Button("🔄 Refresh Data Preview", variant="secondary")
                             
                             # Advanced preprocessing
                             gr.Markdown("## 🚀 Advanced Preprocessing")
@@ -2085,17 +2598,73 @@ def create_ui(inference_only: bool = False):
                     with gr.Row():
                         monitoring_dashboard = gr.HTML(label="System Dashboard")
             
+            # Create persistent state variables for data preview (not needed now, keeping for reference)
+            # data_summary_state = gr.State()
+            # data_preview_text_state = gr.State()
+            
+            # Auto-refresh preview when data tab is selected (using a dummy button with CSS hidden)
+            with gr.Row(visible=False):
+                auto_refresh_trigger = gr.Button("Auto Refresh", elem_id="auto-refresh-trigger")
+            
             # Event handlers
-            data_file.change(
-                app.load_data,
-                inputs=data_file,
-                outputs=[data_info, gr.State(), gr.State(), data_preview]
+            # Removed automatic file loading - user must click "Load Data" button
+            
+            # Test button for debugging
+            test_btn.click(
+                app.test_button_functionality,
+                outputs=test_output
             )
             
-            load_sample_btn.click(
-                app.load_sample_data,
-                inputs=sample_dropdown,
-                outputs=[data_info, gr.State(), gr.State(), data_preview]
+            # Unified load data button - handles both file uploads and sample datasets
+            def load_data_wrapper(file, dataset_name):
+                try:
+                    result = app.load_data_unified(file, dataset_name)
+                    if len(result) == 5:
+                        info_text, metadata, preview_text, sample_table, status_text = result
+                        return info_text, sample_table, status_text
+                    else:
+                        return "Error: Invalid result format", "", "**Status:** ❌ Error"
+                except Exception as e:
+                    return f"Error loading data: {str(e)}", "", "**Status:** ❌ Error"
+            
+            load_data_btn.click(
+                load_data_wrapper,
+                inputs=[data_file, sample_dropdown],
+                outputs=[data_info, data_preview, data_status]
+            )
+            
+            # Refresh data preview when button is clicked
+            def refresh_data_wrapper():
+                try:
+                    result = app.refresh_data_preview()
+                    if len(result) == 3:
+                        preview_text, sample_table, status_text = result
+                        return sample_table, status_text
+                    else:
+                        return "Error refreshing preview", "**Status:** ❌ Error"
+                except Exception as e:
+                    return f"Error refreshing: {str(e)}", "**Status:** ❌ Error"
+            
+            refresh_preview_btn.click(
+                refresh_data_wrapper,
+                outputs=[data_preview, data_status]
+            )
+            
+            # Auto-refresh when switching to data tab
+            def restore_data_wrapper():
+                try:
+                    result = app.restore_data_view()
+                    if len(result) == 3:
+                        data_info_text, data_preview_html, status_text = result
+                        return data_info_text, data_preview_html, status_text
+                    else:
+                        return "No data loaded", "", "**Status:** No data loaded"
+                except Exception as e:
+                    return f"Error: {str(e)}", "", "**Status:** ❌ Error"
+            
+            auto_refresh_trigger.click(
+                restore_data_wrapper,
+                outputs=[data_info, data_preview, data_status]
             )
             
             optimize_preprocessing_btn.click(
