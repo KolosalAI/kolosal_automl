@@ -285,3 +285,80 @@ endif
 	@echo "$(BLUE)Importing Docker image from $(IMAGE_FILE)...$(NC)"
 	gunzip -c $(IMAGE_FILE) | docker load
 	@echo "$(GREEN)✓ Image imported$(NC)"
+
+# ---------------------------------------------------------------------
+# Benchmark Test Targets
+# ---------------------------------------------------------------------
+
+.PHONY: benchmark benchmark-quick benchmark-stress benchmark-memory benchmark-data benchmark-ui benchmark-imports benchmark-ml benchmark-throughput benchmark-inference clean-results
+
+# Main benchmark targets
+benchmark: ## Run all benchmark tests
+	python run_benchmarks.py
+
+benchmark-quick: ## Run quick benchmarks only
+	python run_benchmarks.py --quick
+
+benchmark-stress: ## Run stress tests
+	python run_benchmarks.py --stress
+
+benchmark-memory: ## Run memory tests
+	python run_benchmarks.py --memory
+
+# Category-specific benchmarks
+benchmark-data: ## Run data loading benchmarks
+	python run_benchmarks.py --category data_loading
+
+benchmark-ui: ## Run UI performance benchmarks
+	python run_benchmarks.py --category ui
+
+benchmark-imports: ## Run import/startup benchmarks
+	python run_benchmarks.py --category imports
+
+benchmark-ml: ## Run ML operation benchmarks
+	python run_benchmarks.py --category ml
+
+benchmark-throughput: ## Run throughput and concurrent processing benchmarks
+	python run_benchmarks.py --category throughput
+
+benchmark-inference: ## Run inference engine performance benchmarks
+	python run_benchmarks.py --category inference
+
+# Utility targets
+clean-results: ## Clean benchmark result files
+	@echo "$(BLUE)Cleaning benchmark results...$(NC)"
+	@if exist "tests\\benchmark\\results\\*.json" del /q "tests\\benchmark\\results\\*.json" 2>nul || echo "No result files to clean"
+	@echo "$(GREEN)✓ Results cleaned.$(NC)"
+
+# Advanced combinations
+benchmark-quick-verbose: ## Run quick benchmarks with verbose output
+	python run_benchmarks.py --quick --verbose
+
+benchmark-data-verbose: ## Run data benchmarks with verbose output
+	python run_benchmarks.py --category data_loading --verbose
+
+benchmark-all-sizes: ## Run benchmarks with different data sizes
+	@echo "$(BLUE)Running benchmarks with different data sizes...$(NC)"
+	python run_benchmarks.py --size quick
+	python run_benchmarks.py --size normal
+	python run_benchmarks.py --size large
+
+# Development targets
+test-benchmark-setup: ## Test benchmark setup
+	@echo "$(BLUE)Testing benchmark setup...$(NC)"
+	python -c "import sys; sys.path.insert(0, '.'); from tests.benchmark.conftest import BenchmarkResult; print('✅ Benchmark imports work')"
+
+install-benchmark-deps: ## Install benchmark dependencies
+	@echo "$(BLUE)Installing benchmark dependencies...$(NC)"
+	pip install pytest-benchmark pytest-timeout psutil
+
+# CI/CD targets
+benchmark-ci: ## Run CI-friendly benchmark tests
+	python run_benchmarks.py --quick --category data_loading
+	python run_benchmarks.py --quick --category ui
+
+benchmark-nightly: ## Run nightly benchmark tests
+	python run_benchmarks.py --stress
+	python run_benchmarks.py --memory
+	python run_benchmarks.py --category throughput
+	python run_benchmarks.py --category inference
