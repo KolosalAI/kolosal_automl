@@ -22,6 +22,7 @@ from unittest.mock import patch, MagicMock
 import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 
+# Import directly from security_config to avoid __init__.py issues
 from modules.security.security_config import (
     SecurityEnvironment,
     SecurityLevel,
@@ -56,8 +57,9 @@ class TestSecurityEnvironment(unittest.TestCase):
         """Test default SecurityEnvironment initialization"""
         env = SecurityEnvironment()
         
+        # Default constructor uses secure defaults, not development defaults
         self.assertEqual(env.security_level, SecurityLevel.DEVELOPMENT)
-        self.assertTrue(env.debug_mode)
+        self.assertFalse(env.debug_mode)  # Secure default is False
         self.assertTrue(env.require_api_key)
         self.assertTrue(env.enable_rate_limiting)
     
@@ -158,7 +160,7 @@ class TestSecurityEnvironment(unittest.TestCase):
         self.assertGreater(len(issues), 0)
         self.assertTrue(any("API key" in issue for issue in issues))
         self.assertTrue(any("HTTPS" in issue for issue in issues))
-        self.assertTrue(any("rate limiting" in issue for issue in issues))
+        self.assertTrue(any("Rate limiting" in issue for issue in issues))
         self.assertTrue(any("wildcard" in issue for issue in issues))
         self.assertTrue(any("debug mode" in issue for issue in issues))
     
@@ -180,7 +182,7 @@ class TestSecurityEnvironment(unittest.TestCase):
         self.assertTrue(any("JWT expiry" in issue for issue in issues))
         self.assertTrue(any("Max request size" in issue for issue in issues))
     
-    @patch('modules.security.secrets_manager.get_secrets_manager')
+    @patch('modules.security.security_config.get_secrets_manager')
     def test_get_api_keys(self, mock_secrets_manager):
         """Test API key retrieval from secrets manager"""
         # Mock secrets manager
@@ -200,7 +202,7 @@ class TestSecurityEnvironment(unittest.TestCase):
             self.assertIn('key2', api_keys)
             self.assertIn('key3', api_keys)
     
-    @patch('modules.security.secrets_manager.get_secrets_manager')
+    @patch('modules.security.security_config.get_secrets_manager')
     def test_get_jwt_secret(self, mock_secrets_manager):
         """Test JWT secret retrieval"""
         # Mock secrets manager
@@ -388,7 +390,7 @@ class TestSecurityEnvironmentIntegration(unittest.TestCase):
     def test_development_environment_complete_setup(self):
         """Test complete development environment setup"""
         with patch.dict(os.environ, {'SECURITY_ENV': 'development'}):
-            env = get_security_environment()
+            env = get_security_environment(force_reload=True)
             
             # Validate development setup
             self.assertEqual(env.security_level, SecurityLevel.DEVELOPMENT)

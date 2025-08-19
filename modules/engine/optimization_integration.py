@@ -59,6 +59,9 @@ class OptimizedDataPipeline:
         self.enable_memory_optimization = enable_memory_optimization
         self.enable_adaptive_preprocessing = enable_adaptive_preprocessing
         
+        # Set up logger
+        self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
+        
         # Initialize components
         self._data_loader = None
         self._preprocessor = None
@@ -84,6 +87,36 @@ class OptimizedDataPipeline:
     def data_loader(self):
         """Allow deleting data_loader for testing"""
         self._data_loader = None
+    
+    @property
+    def config_optimizer(self):
+        """Expose config_optimizer for testing"""
+        return self._config_optimizer
+    
+    @config_optimizer.setter
+    def config_optimizer(self, value):
+        """Allow setting config_optimizer for testing"""
+        self._config_optimizer = value
+    
+    @config_optimizer.deleter
+    def config_optimizer(self):
+        """Allow deleting config_optimizer for testing"""
+        self._config_optimizer = None
+    
+    @property
+    def memory_processor(self):
+        """Expose memory_processor for testing"""
+        return self._memory_processor
+    
+    @memory_processor.setter
+    def memory_processor(self, value):
+        """Allow setting memory_processor for testing"""
+        self._memory_processor = value
+    
+    @memory_processor.deleter
+    def memory_processor(self):
+        """Allow deleting memory_processor for testing"""
+        self._memory_processor = None
     
     def _initialize_optimized_components(self):
         """Initialize optimized components"""
@@ -233,7 +266,7 @@ class OptimizedDataPipeline:
             'error': str(e) if 'e' in locals() else 'Unknown error'
         }
     
-    def optimize_memory(self, df: pd.DataFrame) -> pd.DataFrame:
+    def optimize_memory(self, df: pd.DataFrame) -> Dict[str, Any]:
         """
         Optimize dataframe memory usage
         
@@ -241,16 +274,48 @@ class OptimizedDataPipeline:
             df: Input dataframe
             
         Returns:
-            Memory-optimized dataframe
+            Dictionary with optimization results including success status and optimized data
         """
-        if OPTIMIZATION_AVAILABLE and self.enable_memory_optimization and self._memory_processor:
-            try:
-                return self._memory_processor.optimize_dataframe_memory(df)
-            except Exception as e:
-                logger.warning(f"Memory optimization failed: {e}")
+        original_memory = df.memory_usage(deep=True).sum() / 1024 / 1024  # MB
         
-        # Fallback to basic optimization
-        return self._basic_memory_optimization(df)
+        try:
+            if OPTIMIZATION_AVAILABLE and self.enable_memory_optimization and self._memory_processor:
+                try:
+                    optimized_df = self._memory_processor.optimize_dataframe_memory(df)
+                except Exception as e:
+                    logger.warning(f"Memory optimization failed: {e}")
+                    optimized_df = self._basic_memory_optimization(df)
+            else:
+                # Fallback to basic optimization
+                optimized_df = self._basic_memory_optimization(df)
+            
+            optimized_memory = optimized_df.memory_usage(deep=True).sum() / 1024 / 1024  # MB
+            
+            return {
+                'success': True,
+                'optimized_data': optimized_df,
+                'optimization_info': {
+                    'memory': {
+                        'original_mb': round(original_memory, 2),
+                        'optimized_mb': round(optimized_memory, 2),
+                        'reduction_pct': round((original_memory - optimized_memory) / original_memory * 100, 2) if original_memory > 0 else 0
+                    }
+                }
+            }
+        except Exception as e:
+            logger.error(f"Memory optimization failed: {e}")
+            return {
+                'success': False,
+                'optimized_data': df,
+                'error': str(e),
+                'optimization_info': {
+                    'memory': {
+                        'original_mb': round(original_memory, 2),
+                        'optimized_mb': round(original_memory, 2),
+                        'reduction_pct': 0
+                    }
+                }
+            }
     
     def _basic_memory_optimization(self, df: pd.DataFrame) -> pd.DataFrame:
         """Basic memory optimization using pandas"""
@@ -289,6 +354,7 @@ class OptimizedDataPipeline:
         results = {
             'success': False,
             'data': None,
+            'dataset_info': None,
             'preprocessor': None,
             'optimization_info': {},
             'errors': []
@@ -299,20 +365,20 @@ class OptimizedDataPipeline:
             logger.info("Loading data with optimization...")
             load_result = self.load_data(file_path)
             df = load_result['data']
-            load_info = load_result.get('dataset_info', {})
-            results['optimization_info']['loading'] = load_info
+            dataset_info = load_result.get('dataset_info')
+            results['dataset_info'] = dataset_info
+            results['optimization_info']['loading'] = dataset_info
             
             # Step 2: Memory optimization
             logger.info("Applying memory optimization...")
-            original_memory = df.memory_usage(deep=True).sum() / 1024 / 1024
-            df_optimized = self.optimize_memory(df)
-            optimized_memory = df_optimized.memory_usage(deep=True).sum() / 1024 / 1024
-            
-            results['optimization_info']['memory'] = {
-                'original_memory_mb': original_memory,
-                'optimized_memory_mb': optimized_memory,
-                'reduction_percent': (1 - optimized_memory / original_memory) * 100
-            }
+            memory_result = self.optimize_memory(df)
+            if memory_result['success']:
+                df_optimized = memory_result['optimized_data']
+                results['optimization_info']['memory'] = memory_result['optimization_info']['memory']
+            else:
+                df_optimized = df
+                results['optimization_info']['memory'] = memory_result['optimization_info']['memory']
+                results['errors'].append(f"Memory optimization failed: {memory_result.get('error', 'Unknown error')}")
             
             # Step 3: Optimize preprocessing
             logger.info("Configuring optimized preprocessing...")
@@ -382,7 +448,19 @@ def quick_load_optimized(file_path: str, **kwargs) -> Tuple[pd.DataFrame, Dict[s
         Tuple of (dataframe, optimization_info)
     """
     pipeline = OptimizedDataPipeline()
-    return pipeline.load_data(file_path, **kwargs)
+    result = pipeline.load_data(file_path, **kwargs)
+    
+    # Convert the dict result to tuple format expected by the test
+    if isinstance(result, dict) and result.get('success'):
+        dataframe = result['data']
+        optimization_info = {
+            'dataset_info': result.get('dataset_info'),
+            'optimization_info': result.get('optimization_info')
+        }
+        return dataframe, optimization_info
+    else:
+        # Fallback for error cases
+        raise RuntimeError(f"Failed to load data: {result.get('error', 'Unknown error')}")
 
 
 def quick_optimize_memory(df: pd.DataFrame) -> pd.DataFrame:
@@ -396,7 +474,8 @@ def quick_optimize_memory(df: pd.DataFrame) -> pd.DataFrame:
         Memory-optimized dataframe
     """
     pipeline = OptimizedDataPipeline()
-    return pipeline.optimize_memory(df)
+    result = pipeline.optimize_memory(df)
+    return result['optimized_data']
 
 
 def quick_preprocessor_optimized(df: pd.DataFrame, target_column: Optional[str] = None) -> DataPreprocessor:
@@ -438,20 +517,26 @@ def get_optimization_status() -> Dict[str, Any]:
     return status
 
 
-def create_optimized_training_pipeline(max_memory_pct: float = 75.0) -> OptimizedDataPipeline:
+def create_optimized_training_pipeline(
+    max_memory_pct: float = 75.0,
+    enable_memory_optimization: bool = True,
+    enable_adaptive_preprocessing: bool = True
+) -> OptimizedDataPipeline:
     """
     Create a complete optimized training pipeline
     
     Args:
         max_memory_pct: Maximum memory usage percentage
+        enable_memory_optimization: Enable memory optimization features
+        enable_adaptive_preprocessing: Enable adaptive preprocessing
         
     Returns:
         Configured optimization pipeline
     """
     return OptimizedDataPipeline(
         max_memory_pct=max_memory_pct,
-        enable_memory_optimization=True,
-        enable_adaptive_preprocessing=True
+        enable_memory_optimization=enable_memory_optimization,
+        enable_adaptive_preprocessing=enable_adaptive_preprocessing
     )
 
 

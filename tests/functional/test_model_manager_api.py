@@ -8,6 +8,7 @@ from fastapi import HTTPException
 
 # Set environment variables before importing the app
 os.environ["API_KEYS"] = "test_key"
+os.environ["JWT_SECRET"] = "test_secret"
 
 # Import the FastAPI app and related classes
 from modules.api.model_manager_api import (
@@ -27,7 +28,6 @@ class TestModelManagerAPI(unittest.TestCase):
         manager_instances.clear()
         # Common headers for authenticated requests
         self.api_key_headers = {"X-API-Key": "test_key"}
-        self.bearer_headers = {"Authorization": "Bearer test_token"}
         
     def tearDown(self):
         """Clean up after each test"""
@@ -195,7 +195,7 @@ class TestModelManagerAPI(unittest.TestCase):
         response = self.client.post(
             f"/api/managers/{manager_id}/models/save",
             json=save_request,
-            headers=self.bearer_headers
+            headers=self.api_key_headers
         )
         
         # Assertions
@@ -234,7 +234,7 @@ class TestModelManagerAPI(unittest.TestCase):
         response = self.client.post(
             f"/api/managers/{manager_id}/models/save",
             json=save_request,
-            headers=self.bearer_headers
+            headers=self.api_key_headers
         )
         
         # Assertions
@@ -269,7 +269,7 @@ class TestModelManagerAPI(unittest.TestCase):
         response = self.client.post(
             f"/api/managers/{manager_id}/models/load",
             json=load_request,
-            headers=self.bearer_headers
+            headers=self.api_key_headers
         )
         
         # Assertions
@@ -308,7 +308,7 @@ class TestModelManagerAPI(unittest.TestCase):
         response = self.client.post(
             f"/api/managers/{manager_id}/models/load",
             json=load_request,
-            headers=self.bearer_headers
+            headers=self.api_key_headers
         )
         
         # Assertions
@@ -334,7 +334,7 @@ class TestModelManagerAPI(unittest.TestCase):
         # Make request
         response = self.client.get(
             f"/api/managers/{manager_id}/models",
-            headers=self.bearer_headers
+            headers=self.api_key_headers
         )
         
         # Assertions
@@ -369,7 +369,7 @@ class TestModelManagerAPI(unittest.TestCase):
                 response = self.client.post(
                     f"/api/managers/{manager_id}/verify",
                     params={"filepath": "./test_path/test_model.pkl"},
-                    headers=self.bearer_headers
+                    headers=self.api_key_headers
                 )
                 
                 # Assertions
@@ -406,7 +406,7 @@ class TestModelManagerAPI(unittest.TestCase):
         response = self.client.post(
             f"/api/managers/{manager_id}/rotate-key",
             json=rotate_request,
-            headers=self.bearer_headers
+            headers=self.api_key_headers
         )
         
         # Assertions
@@ -442,7 +442,7 @@ class TestModelManagerAPI(unittest.TestCase):
         response = self.client.post(
             f"/api/managers/{manager_id}/rotate-key",
             json=rotate_request,
-            headers=self.bearer_headers
+            headers=self.api_key_headers
         )
         
         # Assertions
@@ -475,7 +475,7 @@ class TestModelManagerAPI(unittest.TestCase):
                 f"/api/managers/{manager_id}/upload-model",
                 files={"model_file": ("test_model.pkl", file_content)},
                 params={"access_code": "test_password"},
-                headers=self.bearer_headers
+                headers=self.api_key_headers
             )
             
             # Assertions

@@ -60,19 +60,19 @@ try:
                         setattr(self, k, v)
             pydantic.fields.FieldInfo = MockFieldInfo
     
-    print("✅ Applied comprehensive Pydantic compatibility patches")
+    print("[SUCCESS] Applied comprehensive Pydantic compatibility patches")
     
 except Exception as e:
-    print(f"⚠️ Pydantic compatibility patches failed: {e}")
+    print(f"[WARNING] Pydantic compatibility patches failed: {e}")
 
 # Now import FastAPI-dependent modules
 try:
     import gradio as gr
-    print("✅ Gradio imported successfully")
+    print("[SUCCESS] Gradio imported successfully")
 except Exception as e:
-    print(f"❌ Failed to import Gradio: {e}")
+    print(f"[ERROR] Failed to import Gradio: {e}")
     # Try alternative approach: install compatible versions
-    print("🔧 Consider downgrading to compatible versions:")
+    print("[INFO] Consider downgrading to compatible versions:")
     print("  pip install fastapi==0.104.1 pydantic==1.10.12")
     sys.exit(1)
 
@@ -148,9 +148,9 @@ try:
     from modules.ui.data_preview_generator import DataPreviewGenerator
     from modules.ui.sample_data_loader import SampleDataLoader
     CORE_UI_AVAILABLE = True
-    print("🔧 DEBUG: Core UI modules imported successfully")
+    print("[DEBUG] Core UI modules imported successfully")
 except ImportError as e:
-    print(f"🔧 DEBUG: Core UI import failed: {e}")
+    print(f"[DEBUG] Core UI import failed: {e}")
     CORE_UI_AVAILABLE = False
 
 # Import other required modules  
@@ -166,9 +166,9 @@ try:
     )
     from modules.device_optimizer import DeviceOptimizer
     BASIC_FEATURES_AVAILABLE = True
-    print("🔧 DEBUG: Basic features imported successfully")
+    print("[DEBUG] Basic features imported successfully")
 except ImportError as e:
-    print(f"🔧 DEBUG: Basic features import failed: {e}")
+    print(f"[DEBUG] Basic features import failed: {e}")
     BASIC_FEATURES_AVAILABLE = False
     
 # Import advanced features (optional)
@@ -199,17 +199,17 @@ try:
         PERFORMANCE_TRACKING_AVAILABLE = False
     
     ADVANCED_FEATURES_AVAILABLE = True
-    print("🔧 DEBUG: Advanced features imported successfully")
+    print("[DEBUG] Advanced features imported successfully")
     
 except ImportError as e:
-    print(f"🔧 DEBUG: Advanced features import failed - using fallback implementations: {e}")
+    print(f"[DEBUG] Advanced features import failed - using fallback implementations: {e}")
     logger.warning(f"Some advanced modules not available: {e}")
     ADVANCED_FEATURES_AVAILABLE = False
     PERFORMANCE_TRACKING_AVAILABLE = False
 
 # Create fallback implementations only when needed
 if not CORE_UI_AVAILABLE:
-    print("🔧 DEBUG: Using fallback UI implementations")
+    print("[DEBUG] Using fallback UI implementations")
     class DataPreviewGenerator:
         def generate_data_summary(self, df): 
             return {"shape": df.shape, "columns": df.columns.tolist(), "dtypes": df.dtypes.to_dict()}
@@ -252,7 +252,7 @@ if not CORE_UI_AVAILABLE:
             }
         
         def load_sample_data(self, name): 
-            print(f"🔧 DEBUG: Fallback SampleDataLoader.load_sample_data called with: {name}")
+            print(f"[DEBUG] Fallback SampleDataLoader.load_sample_data called with: {name}")
             if name == "Select a dataset..." or name is None:
                 return pd.DataFrame(), {"name": name, "description": "No dataset selected", "task_type": "none", "target_column": ""}
             
@@ -290,18 +290,18 @@ if not CORE_UI_AVAILABLE:
                 "task_type": "classification", 
                 "target_column": "target"
             })
-            print(f"🔧 DEBUG: Fallback returning df.shape: {df.shape}, metadata: {metadata}")
+            print(f"[DEBUG] Fallback returning df.shape: {df.shape}, metadata: {metadata}")
             return df, metadata
 
 if not BASIC_FEATURES_AVAILABLE:
-    print("🔧 DEBUG: Using fallback basic implementations")
+    print("[DEBUG] Using fallback basic implementations")
     class InferenceServer:
         def __init__(self):
             self.is_loaded = False
         def load_model_from_path(self, path, password=None): 
-            return "❌ InferenceServer not available"
+            return "[ERROR] InferenceServer not available"
         def predict(self, data): 
-            return "❌ InferenceServer not available"
+            return "[ERROR] InferenceServer not available"
         def get_model_info(self): 
             return {"error": "Not available"}
     
@@ -319,7 +319,7 @@ if not BASIC_FEATURES_AVAILABLE:
     def get_auth_config(): return None
 
 if not ADVANCED_FEATURES_AVAILABLE:
-    print("🔧 DEBUG: Using fallback advanced implementations")
+    print("[DEBUG] Using fallback advanced implementations")
     class ExperimentTracker:
         def __init__(self, *args, **kwargs): pass
         def start_experiment(self, *args, **kwargs): return {}

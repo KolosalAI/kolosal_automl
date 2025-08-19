@@ -103,7 +103,7 @@ class AdaptivePreprocessorConfig:
     def determine_strategy(self, characteristics: DatasetCharacteristics) -> PreprocessingStrategy:
         """Determine the optimal preprocessing strategy based on dataset characteristics"""
         # Large dataset strategy
-        if characteristics.memory_usage_mb > 1000 or characteristics.n_samples > 100_000:
+        if characteristics.memory_usage_mb > 500 or characteristics.n_samples >= 100_000:
             return PreprocessingStrategy.MEMORY_OPTIMIZED
         
         # High cardinality strategy

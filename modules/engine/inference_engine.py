@@ -946,6 +946,48 @@ class InferenceEngine:
         except Exception as e:
             self.logger.warning(f"Model warm-up failed: {str(e)}")
     
+    def _precompute_common_values(self):
+        """Pre-compute common values for memory optimization"""
+        if not self.config.enable_memory_optimization or self.model is None:
+            return
+        
+        try:
+            self.logger.info("Pre-computing common values for memory optimization...")
+            
+            # Pre-allocate common array shapes for faster memory access
+            if hasattr(self, '_common_shapes'):
+                return  # Already computed
+            
+            # Store common array shapes based on feature count
+            feature_count = len(self.feature_names) if self.feature_names else 10
+            batch_size = self.config.max_batch_size
+            
+            self._common_shapes = {
+                'single_sample': (1, feature_count),
+                'max_batch': (batch_size, feature_count),
+                'feature_vector': (feature_count,)
+            }
+            
+            # Pre-allocate memory buffers for common operations
+            self._prediction_buffer = np.zeros((batch_size, 1), dtype=np.float32)
+            self._feature_buffer = np.zeros((batch_size, feature_count), dtype=np.float32)
+            
+            # Cache model output shape if available
+            if hasattr(self.model, 'predict'):
+                try:
+                    # Test with a single sample to determine output shape
+                    test_input = np.zeros((1, feature_count), dtype=np.float32)
+                    test_output = self.model.predict(test_input)
+                    self._output_shape = test_output.shape
+                    self.logger.debug(f"Cached output shape: {self._output_shape}")
+                except Exception as e:
+                    self.logger.debug(f"Could not determine output shape: {str(e)}")
+            
+            self.logger.info("Common values pre-computation completed")
+            
+        except Exception as e:
+            self.logger.warning(f"Pre-computation of common values failed: {str(e)}")
+    
     def predict(self, features: np.ndarray) -> Tuple[bool, np.ndarray, Dict[str, Any]]:
         """
         Make optimized prediction with input features.
@@ -1593,6 +1635,142 @@ class InferenceEngine:
             
         except Exception as e:
             self._safe_log("error", f"Error during shutdown: {str(e)}")
+
+    def _compile_model(self):
+        """Compile the model for better performance if JIT compilation is enabled"""
+        try:
+            if self.model is None:
+                return
+            
+            # For sklearn models, try to use JIT compilation if available
+            if hasattr(self.model, 'predict') and self.config.enable_jit:
+                try:
+                    # Store original predict method
+                    original_predict = self.model.predict
+                    
+                    # Try to compile with numba if available
+                    if NUMBA_AVAILABLE:
+                        from numba import jit
+                        # Only compile simple prediction functions
+                        if hasattr(self.model, '_decision_function') or hasattr(self.model, 'decision_function'):
+                            self._safe_log("info", "JIT compilation enabled for model predictions")
+                            self.compiled_model = self.model
+                        else:
+                            self.compiled_model = self.model
+                    else:
+                        self.compiled_model = self.model
+                except Exception as e:
+                    self._safe_log("warning", f"JIT compilation failed, using original model: {str(e)}")
+                    self.compiled_model = self.model
+            else:
+                self.compiled_model = self.model
+                
+        except Exception as e:
+            self._safe_log("error", f"Model compilation failed: {str(e)}")
+            self.compiled_model = self.model
+
+    def get_performance_metrics(self) -> Dict[str, Any]:
+        """Get performance metrics for the inference engine"""
+        try:
+            metrics = {
+                "state": self.state.name if hasattr(self.state, 'name') else str(self.state),
+                "model_loaded": self.model is not None,
+                "compiled_model_available": hasattr(self, 'compiled_model') and self.compiled_model is not None,
+                "memory_usage_mb": 0.0,
+                "cache_hit_rate": 0.0,
+                "total_predictions": 0,
+                "average_inference_time_ms": 0.0,
+                "last_prediction_time": None
+            }
+            
+            # Get memory usage if psutil is available
+            try:
+                import psutil
+                import os
+                process = psutil.Process(os.getpid())
+                metrics["memory_usage_mb"] = process.memory_info().rss / 1024 / 1024
+            except ImportError:
+                pass
+            
+            # Get cache statistics if available
+            if hasattr(self, 'feature_cache') and self.feature_cache:
+                try:
+                    cache_info = self.feature_cache.info()
+                    metrics["cache_hit_rate"] = cache_info.hits / (cache_info.hits + cache_info.misses) if (cache_info.hits + cache_info.misses) > 0 else 0.0
+                except AttributeError:
+                    # Simple cache without info method
+                    metrics["cache_size"] = len(self.feature_cache) if hasattr(self.feature_cache, '__len__') else 0
+            
+            # Get prediction statistics if tracked
+            if hasattr(self, '_prediction_stats'):
+                metrics.update(self._prediction_stats)
+            
+            return metrics
+            
+        except Exception as e:
+            self._safe_log("error", f"Error getting performance metrics: {str(e)}")
+            return {"error": str(e)}
+
+    def validate_model(self) -> Dict[str, Any]:
+        """Validate the loaded model and return validation results"""
+        try:
+            validation_result = {
+                "is_valid": False,
+                "model_loaded": False,
+                "model_type": None,
+                "feature_count": None,
+                "can_predict": False,
+                "errors": [],
+                "warnings": []
+            }
+            
+            if self.model is None:
+                validation_result["errors"].append("No model loaded")
+                return validation_result
+            
+            validation_result["model_loaded"] = True
+            validation_result["model_type"] = self.model_type.name if hasattr(self.model_type, 'name') else str(self.model_type)
+            
+            # Check if model has required methods
+            if not hasattr(self.model, 'predict'):
+                validation_result["errors"].append("Model does not have predict method")
+            else:
+                validation_result["can_predict"] = True
+            
+            # Check feature count
+            if hasattr(self.model, 'n_features_in_'):
+                validation_result["feature_count"] = self.model.n_features_in_
+            elif hasattr(self.model, 'feature_importances_'):
+                validation_result["feature_count"] = len(self.model.feature_importances_)
+            
+            # Test prediction with dummy data if possible
+            if validation_result["can_predict"] and validation_result["feature_count"]:
+                try:
+                    import numpy as np
+                    dummy_data = np.zeros((1, validation_result["feature_count"]))
+                    _ = self.model.predict(dummy_data)
+                    validation_result["is_valid"] = True
+                except Exception as e:
+                    validation_result["errors"].append(f"Prediction test failed: {str(e)}")
+            
+            # Check for common model attributes
+            if not hasattr(self.model, 'fit'):
+                validation_result["warnings"].append("Model does not appear to be a trained scikit-learn model")
+            
+            # Overall validation
+            if len(validation_result["errors"]) == 0:
+                validation_result["is_valid"] = True
+            
+            return validation_result
+            
+        except Exception as e:
+            self._safe_log("error", f"Error validating model: {str(e)}")
+            return {
+                "is_valid": False,
+                "model_loaded": False,
+                "errors": [f"Validation error: {str(e)}"]
+            }
+
 
 class InferenceServer:
     """

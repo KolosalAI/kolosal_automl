@@ -479,7 +479,7 @@ class TestErrorHandling(unittest.TestCase):
             self.assertIsInstance(df, pd.DataFrame)
         except Exception as e:
             # If it fails, should be a reasonable exception
-            self.assertIsInstance(e, (pd.errors.Error, ValueError))
+            self.assertIsInstance(e, (pd.errors.EmptyDataError, pd.errors.ParserError, ValueError))
     
     def test_empty_file_handling(self):
         """Test handling of empty files"""
@@ -492,7 +492,7 @@ class TestErrorHandling(unittest.TestCase):
             self.assertIsInstance(df, pd.DataFrame)
         except Exception as e:
             # Should be a reasonable exception
-            self.assertIsInstance(e, (pd.errors.Error, ValueError))
+            self.assertIsInstance(e, (pd.errors.EmptyDataError, pd.errors.ParserError, ValueError))
     
     def test_large_file_memory_management(self):
         """Test memory management with larger files"""
