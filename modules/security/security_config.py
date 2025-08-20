@@ -135,7 +135,7 @@ class SecurityEnvironment:
             enforce_https=True,
             redirect_http=True,
             hsts_enabled=True,
-            allowed_origins=[],  # Must be explicitly configured
+            allowed_origins=["https://localhost:3000"],  # Default secure origin for production
             allow_credentials=False,
             enable_audit_logging=True,
             log_security_events=True,
@@ -276,6 +276,9 @@ class SecurityEnvironment:
             
             if "*" in self.allowed_origins:
                 issues.append("Wildcard CORS origins should not be used in production")
+            
+            if not self.allowed_origins:
+                issues.append("Allowed origins must be specified in production")
             
             if self.debug_mode:
                 issues.append("Debug mode should be disabled in production")

@@ -45,6 +45,7 @@ class MockRequest:
         self.headers = headers or {}
         self.client = client or Mock(host="127.0.0.1")
         self._json_body = json_body
+        self.state = Mock()  # Add state attribute for FastAPI compatibility
         
     async def json(self):
         return self._json_body or {}

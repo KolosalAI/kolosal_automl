@@ -1705,6 +1705,13 @@ class InferenceEngine:
             if hasattr(self, '_prediction_stats'):
                 metrics.update(self._prediction_stats)
             
+            # Add memory pool information if available
+            if hasattr(self, 'memory_pool') and self.memory_pool:
+                metrics["memory_pool"] = {
+                    "allocated": getattr(self.memory_pool, 'allocated_memory', 0),
+                    "available": getattr(self.memory_pool, 'available_memory', 0)
+                }
+            
             return metrics
             
         except Exception as e:
@@ -1761,15 +1768,21 @@ class InferenceEngine:
             if len(validation_result["errors"]) == 0:
                 validation_result["is_valid"] = True
             
+            # Add backwards compatibility
+            validation_result["valid"] = validation_result["is_valid"]
+            
             return validation_result
             
         except Exception as e:
             self._safe_log("error", f"Error validating model: {str(e)}")
-            return {
+            result = {
                 "is_valid": False,
                 "model_loaded": False,
                 "errors": [f"Validation error: {str(e)}"]
             }
+            # Add backwards compatibility
+            result["valid"] = result["is_valid"]
+            return result
 
 
 class InferenceServer:

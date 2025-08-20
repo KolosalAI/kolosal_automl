@@ -161,8 +161,8 @@ class TestSecurityEnvironment(unittest.TestCase):
         self.assertTrue(any("API key" in issue for issue in issues))
         self.assertTrue(any("HTTPS" in issue for issue in issues))
         self.assertTrue(any("Rate limiting" in issue for issue in issues))
-        self.assertTrue(any("wildcard" in issue for issue in issues))
-        self.assertTrue(any("debug mode" in issue for issue in issues))
+        self.assertTrue(any("Wildcard" in issue for issue in issues))
+        self.assertTrue(any("Debug mode" in issue for issue in issues))
     
     def test_validate_general_settings(self):
         """Test validation of general settings"""
@@ -371,7 +371,7 @@ class TestSecurityEnvironmentIntegration(unittest.TestCase):
             'API_KEYS': 'prod_key_123,prod_key_456',
             'JWT_SECRET': 'production_jwt_secret_very_long_and_secure'
         }):
-            env = get_security_environment()
+            env = get_security_environment(force_reload=True)  # Force reload to pick up env vars
             
             # Validate production setup
             self.assertEqual(env.security_level, SecurityLevel.PRODUCTION)

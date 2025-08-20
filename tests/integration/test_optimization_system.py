@@ -74,7 +74,7 @@ class TestCompleteOptimizationWorkflow(unittest.TestCase):
             n_samples = 100_000
             n_features = 30
         elif size_category == "large":
-            n_samples = 500_000
+            n_samples = 1_500_000  # Changed to ensure it falls in large category (>1M)
             n_features = 50
         else:
             raise ValueError(f"Unknown size category: {size_category}")
@@ -233,7 +233,7 @@ class TestCompleteOptimizationWorkflow(unittest.TestCase):
         self.assertTrue(result['success'])
         
         df = result['data']
-        self.assertEqual(len(df), 500_000)
+        self.assertEqual(len(df), 1_500_000)
         
         # Performance expectations for large dataset
         self.assertLess(processing_time, 300.0)  # Should complete in < 5 minutes

@@ -247,11 +247,19 @@ class SecureModelManager:
                 
                 model_package["access_control"] = {
                     "salt": salt,
-                    "password_hash": password_hash,
+                    "hash": password_hash,  # Changed from password_hash to hash
                     "method": "scrypt" if self.use_scrypt else "pbkdf2",
                     "iterations": self.key_iterations if not self.use_scrypt else None,
                     "algorithm": self.hash_algorithm
                 }
+                
+                # Add scrypt-specific parameters if using scrypt
+                if self.use_scrypt:
+                    model_package["access_control"].update({
+                        "n": 2**14,
+                        "r": 8,
+                        "p": 1
+                    })
             
             # Create backup of existing file before overwriting
             if os.path.exists(filepath):

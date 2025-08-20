@@ -331,24 +331,25 @@ class TestOptimizedDataLoader(unittest.TestCase):
     @patch('modules.engine.optimized_data_loader.DASK_AVAILABLE', False)
     def test_load_medium_csv_chunked(self):
         """Test loading medium CSV file with chunked strategy"""
-        # Force chunked strategy by setting low memory threshold
+        # Force chunked strategy by explicitly setting it
         config = LoadingConfig(
-            max_memory_usage_pct=0.01,  # Very low threshold
+            strategy=LoadingStrategy.CHUNKED,
             chunk_size=50
         )
         loader = OptimizedDataLoader(config)
         
-        csv_file = self.create_test_csv(rows=200, cols=3)
+        # Create a medium-sized dataset (>10k rows to be categorized as MEDIUM)
+        csv_file = self.create_test_csv(rows=15000, cols=5)
         
         df, dataset_info = loader.load_data(str(csv_file))
         
         # Check DataFrame
         self.assertIsInstance(df, pd.DataFrame)
-        self.assertEqual(len(df), 200)
+        self.assertEqual(len(df), 15000)
         
         # Check dataset info
         self.assertIsInstance(dataset_info, DatasetInfo)
-        self.assertEqual(dataset_info.rows, 200)
+        self.assertEqual(dataset_info.rows, 15000)
         self.assertIn('chunked_loading', dataset_info.optimization_applied)
     
     def test_load_excel_file(self):

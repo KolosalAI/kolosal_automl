@@ -370,7 +370,7 @@ class TestSecureModelManagerWithRealModels(unittest.TestCase):
             model_metrics[name] = {"accuracy": accuracy, "f1": f1}
         
         # Create manager
-        tracking_config = Config()
+        tracking_config = Config(task_type=TaskType.CLASSIFICATION)
         tracking_config.model_path = os.path.join(self.test_dir, "tracking")
         os.makedirs(tracking_config.model_path, exist_ok=True)
         

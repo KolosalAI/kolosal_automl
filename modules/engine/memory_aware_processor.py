@@ -663,6 +663,8 @@ class MemoryAwareDataProcessor:
 
     def process_in_chunks(self, df: pd.DataFrame, process_func: Callable, chunk_size: int = None) -> pd.DataFrame:
         """Process DataFrame in chunks"""
+        start_time = time.time()
+        
         if chunk_size is None:
             chunk_size = self.calculate_optimal_chunk_size(df)
         
@@ -672,7 +674,14 @@ class MemoryAwareDataProcessor:
             processed_chunk = process_func(chunk)
             chunks.append(processed_chunk)
         
-        return pd.concat(chunks, ignore_index=True)
+        result = pd.concat(chunks, ignore_index=True)
+        
+        # Update processing stats
+        processing_time = time.time() - start_time
+        self._processing_stats.total_processing_time += processing_time
+        self._processing_stats.chunks_processed += len(chunks)
+        
+        return result
 
     def should_use_chunking(self, df: pd.DataFrame) -> bool:
         """Determine if chunking should be used based on data size and memory pressure"""
