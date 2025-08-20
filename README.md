@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # 🚀 Kolosal AutoML
 
 [![MIT License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -1355,3 +1356,17 @@ python main.py --mode api
 **Kolosal AutoML v0.1.4 - Transform your ML workflow with enterprise-grade automation and proven performance**
 
 </div>
+=======
+---
+title: Kolosal Automl
+emoji: ⚡
+colorFrom: green
+colorTo: pink
+sdk: gradio
+sdk_version: 5.43.1
+app_file: app.py
+pinned: false
+---
+
+Check out the configuration reference at https://huggingface.co/docs/hub/spaces-config-reference
+>>>>>>> 4d467410a0da027ba59e87850b39368ecc3b44e7
