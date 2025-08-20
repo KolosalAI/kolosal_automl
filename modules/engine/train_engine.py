@@ -510,7 +510,6 @@ class MLTrainingEngine:
                 "bernoulli_nb": BernoulliNB,
                 "mlp": MLPClassifier,
                 "neural_network": MLPClassifier,  # Alias for mlp
-                "stacking": StackingClassifier,
                 "voting": VotingClassifier
             }
             
@@ -533,7 +532,6 @@ class MLTrainingEngine:
                 "sgd": SGDRegressor,
                 "mlp": MLPRegressor,
                 "neural_network": MLPRegressor,  # Alias for mlp
-                "stacking": StackingRegressor,
                 "voting": VotingRegressor
             }
             
@@ -2557,6 +2555,125 @@ class MLTrainingEngine:
             self.logger.error(f"Error during model evaluation: {str(e)}")
                 
         return metrics
+    
+    def train_ensemble(self, X, y, methods: List[str], strategy: str = "voting") -> Dict[str, Any]:
+        """
+        Train an ensemble of models using the specified strategy.
+        
+        Args:
+            X: Training features
+            y: Training target
+            methods: List of model types to include in ensemble
+            strategy: Ensemble strategy ('voting' or 'stacking')
+            
+        Returns:
+            Dict with ensemble training results
+        """
+        try:
+            from sklearn.ensemble import VotingClassifier, VotingRegressor, StackingClassifier, StackingRegressor
+            from sklearn.linear_model import LogisticRegression, LinearRegression
+            
+            self.logger.info(f"Training ensemble with {len(methods)} models using {strategy} strategy")
+            
+            # Determine task type
+            task_type = self.config.task_type
+            
+            # Train individual models
+            trained_models = []
+            for method in methods:
+                try:
+                    self.logger.info(f"Training {method} for ensemble...")
+                    
+                    # Train individual model
+                    result = self.train_model(X=X, y=y, model_type=method, 
+                                            model_name=f"ensemble_{method}_{int(time.time())}")
+                    
+                    if result and "model" in result:
+                        model = result["model"]
+                        trained_models.append((method, model))
+                        self.logger.info(f"✅ Successfully trained {method} for ensemble")
+                    else:
+                        self.logger.warning(f"❌ Failed to train {method} for ensemble")
+                        
+                except Exception as e:
+                    self.logger.error(f"❌ Failed to train {method} for ensemble: {str(e)}")
+                    continue
+            
+            if len(trained_models) < 2:
+                raise ValueError(f"Need at least 2 models for ensemble, only got {len(trained_models)}")
+            
+            # Create ensemble model
+            ensemble_name = f"ensemble_{strategy}_{int(time.time())}"
+            
+            if strategy.lower() == "voting":
+                if task_type == TaskType.CLASSIFICATION:
+                    ensemble_model = VotingClassifier(
+                        estimators=trained_models,
+                        voting='soft'  # Use probability voting for better performance
+                    )
+                else:
+                    ensemble_model = VotingRegressor(estimators=trained_models)
+                    
+            elif strategy.lower() == "stacking":
+                # Create meta-learner for stacking
+                if task_type == TaskType.CLASSIFICATION:
+                    meta_learner = LogisticRegression(random_state=self.config.random_state)
+                    ensemble_model = StackingClassifier(
+                        estimators=trained_models,
+                        final_estimator=meta_learner,
+                        cv=3  # Use 3-fold CV for stacking
+                    )
+                else:
+                    meta_learner = LinearRegression()
+                    ensemble_model = StackingRegressor(
+                        estimators=trained_models,
+                        final_estimator=meta_learner,
+                        cv=3
+                    )
+            else:
+                raise ValueError(f"Unsupported ensemble strategy: {strategy}")
+            
+            # Train the ensemble
+            self.logger.info(f"Training {strategy} ensemble...")
+            start_time = time.time()
+            ensemble_model.fit(X, y)
+            training_time = time.time() - start_time
+            
+            # Store ensemble model
+            ensemble_info = {
+                "model": ensemble_model,
+                "strategy": strategy,
+                "base_models": methods,
+                "training_time": training_time,
+                "ensemble_size": len(trained_models)
+            }
+            
+            self.models[ensemble_name] = {
+                "model": ensemble_model,
+                "params": ensemble_model.get_params(),
+                "feature_names": self._last_feature_names,
+                "training_time": training_time,
+                "metrics": {},
+                "feature_importance": None
+            }
+            
+            self.logger.info(f"✅ Ensemble training completed in {training_time:.2f}s")
+            
+            return {
+                "success": True,
+                "ensemble_name": ensemble_name,
+                "ensemble_info": ensemble_info,
+                "message": f"Successfully trained {strategy} ensemble with {len(trained_models)} models"
+            }
+            
+        except Exception as e:
+            error_msg = f"❌ Failed to train Ensemble Methods - {strategy.title()}: {str(e)}"
+            self.logger.error(error_msg)
+            return {
+                "success": False,
+                "error": error_msg,
+                "message": error_msg
+            }
     
     def predict(self, X, model_name: str = None, return_proba: bool = False) -> Tuple[bool, Union[np.ndarray, str]]:
         """
