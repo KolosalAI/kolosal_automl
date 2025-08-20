@@ -36,12 +36,11 @@ except ImportError:
     # If CORS middleware doesn't exist, create a mock for testing
     class CORSMiddleware:
         def __init__(self, config):
-            print(f"DEBUG CORS: CORSMiddleware initialized with config: {config}")
             self.config = config
         
         async def dispatch(self, request, call_next):
-            print(f"DEBUG CORS: CORS dispatch called with request {request}")
-            # Mock implementation for testing - check origin BEFORE calling next
+            # Check if origin is allowed first
+            origin = None
             if hasattr(request, 'headers') and 'Origin' in request.headers:
                 origin = request.headers.get('Origin')
                 allowed_origins = self.config.get('allowed_origins', [])
@@ -50,20 +49,30 @@ except ImportError:
                 if '*' not in allowed_origins and origin not in allowed_origins:
                     return create_error_response(403, "CORS: Origin not allowed")
             
-            # Origin is allowed or no origin header, proceed
+            # Handle preflight requests (OPTIONS) without calling next
+            if request.method == 'OPTIONS':
+                response = create_preflight_response()
+                
+                if origin:
+                    allowed_origins = self.config.get('allowed_origins', [])
+                    if '*' in allowed_origins or origin in allowed_origins:
+                        response.headers['Access-Control-Allow-Origin'] = origin
+                        response.headers['Access-Control-Allow-Methods'] = ', '.join(self.config.get('allowed_methods', ['GET', 'POST']))
+                        response.headers['Access-Control-Allow-Headers'] = ', '.join(self.config.get('allowed_headers', ['Content-Type']))
+                        if self.config.get('allow_credentials'):
+                            response.headers['Access-Control-Allow-Credentials'] = 'true'
+                        response.headers['Access-Control-Max-Age'] = str(self.config.get('max_age', 86400))
+                
+                return response
+            
+            # For non-preflight requests, proceed normally
             response = await call_next(request)
             
             # Add CORS headers for allowed origins
-            if hasattr(request, 'headers') and 'Origin' in request.headers:
-                origin = request.headers.get('Origin')
+            if origin:
                 allowed_origins = self.config.get('allowed_origins', [])
-                print(f"DEBUG CORS: Origin={origin}, allowed_origins={allowed_origins}")
                 if '*' in allowed_origins or origin in allowed_origins:
-                    print(f"DEBUG CORS: Adding CORS header for origin {origin}")
                     response.headers['Access-Control-Allow-Origin'] = origin
-                    print(f"DEBUG CORS: Response headers after setting: {response.headers}")
-            else:
-                print(f"DEBUG CORS: No origin header found or headers missing. request.headers={getattr(request, 'headers', 'NO_HEADERS_ATTR')}")
                     
             return response
 
@@ -231,23 +240,31 @@ class SecurityAuditMiddleware:
     
     def setup_logging(self):
         import logging
-        self.logger = logging.getLogger('security_audit')
-        if not self.logger.handlers:
+        # Don't store the logger, get it fresh each time for testability
+        logger = logging.getLogger('security_audit')
+        if not logger.handlers:
             handler = logging.StreamHandler()
             formatter = logging.Formatter(
                 '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
             )
             handler.setFormatter(formatter)
-            self.logger.addHandler(handler)
-            self.logger.setLevel(logging.INFO)
+            logger.addHandler(handler)
+            logger.setLevel(logging.INFO)
+    
+    def get_logger(self):
+        """Get the logger instance - allows for easier mocking in tests"""
+        import logging
+        return logging.getLogger('security_audit')
     
     async def dispatch(self, request, call_next):
         import time
         start_time = time.time()
         
+        logger = self.get_logger()
+        
         # Log request details
         if self.config.get('log_all_requests', True):
-            self.logger.info(
+            logger.info(
                 f"Request: {request.method} {request.url.path} "
                 f"from {getattr(request.client, 'host', 'unknown')}"
             )
@@ -259,13 +276,13 @@ class SecurityAuditMiddleware:
         processing_time = time.time() - start_time
         
         if response.status_code >= 400:
-            self.logger.warning(
+            logger.warning(
                 f"Error response: {response.status_code} for "
                 f"{request.method} {request.url.path} "
                 f"(took {processing_time:.3f}s)"
             )
         elif self.config.get('log_all_requests', True):
-            self.logger.info(
+            logger.info(
                 f"Response: {response.status_code} for "
                 f"{request.method} {request.url.path} "
                 f"(took {processing_time:.3f}s)"
@@ -283,6 +300,16 @@ def create_error_response(status_code, message):
             self.body = {"error": message}
     
     return MockResponse(status_code, message)
+
+def create_preflight_response():
+    """Create a CORS preflight response"""
+    class MockResponse:
+        def __init__(self):
+            self.status_code = 200
+            self.headers = {}
+            self.body = {}
+    
+    return MockResponse()
 
 # Export all middleware classes
 __all__ = [
