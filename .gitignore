@@ -170,3 +170,7 @@ model_registry/
 notebooks/
 
 .secrets
+certs/
+experiments/
+standard_ml_results/
+temp_data/

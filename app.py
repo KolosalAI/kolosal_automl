@@ -14,7 +14,67 @@ import argparse
 import sys
 import psutil
 from pathlib import Path
-import gradio as gr
+
+# Fix for Pydantic v2 + FastAPI compatibility issue with Gradio
+import os
+import sys
+
+# Force Pydantic v1 compatibility mode EARLY
+os.environ["PYDANTIC_V1"] = "1"
+
+# Pre-import pydantic and apply all necessary patches before any other imports
+try:
+    import pydantic
+    
+    # Ensure pydantic.fields module exists and has necessary attributes
+    import pydantic.fields
+    
+    # Create all missing attributes that FastAPI might expect
+    if not hasattr(pydantic.fields, 'Undefined'):
+        # Create a proper Undefined sentinel
+        class UndefinedType:
+            _singleton = None
+            def __new__(cls):
+                if cls._singleton is None:
+                    cls._singleton = super().__new__(cls)
+                return cls._singleton
+            def __repr__(self):
+                return "Undefined"
+            def __bool__(self):
+                return False
+        
+        pydantic.fields.Undefined = UndefinedType()
+    
+    # Ensure FieldInfo exists
+    if not hasattr(pydantic.fields, 'FieldInfo'):
+        try:
+            from pydantic import Field
+            # Get the type from a dummy field
+            dummy_field = Field(default=None)
+            pydantic.fields.FieldInfo = type(dummy_field)
+        except Exception:
+            # Create a mock FieldInfo if the above fails
+            class MockFieldInfo:
+                def __init__(self, **kwargs):
+                    for k, v in kwargs.items():
+                        setattr(self, k, v)
+            pydantic.fields.FieldInfo = MockFieldInfo
+    
+    print("[SUCCESS] Applied comprehensive Pydantic compatibility patches")
+    
+except Exception as e:
+    print(f"[WARNING] Pydantic compatibility patches failed: {e}")
+
+# Now import FastAPI-dependent modules
+try:
+    import gradio as gr
+    print("[SUCCESS] Gradio imported successfully")
+except Exception as e:
+    print(f"[ERROR] Failed to import Gradio: {e}")
+    # Try alternative approach: install compatible versions
+    print("[INFO] Consider downgrading to compatible versions:")
+    print("  pip install fastapi==0.104.1 pydantic==1.10.12")
+    sys.exit(1)
 
 # Import matplotlib with proper backend
 import matplotlib
@@ -83,11 +143,19 @@ except ImportError as e:
     SECURITY_ENV = None
     SECURITY_MANAGER = None
 
-# Import other required modules
+# Import core required modules (these must work)
 try:
-    from modules.engine.inference_engine import InferenceEngine, InferenceServer
     from modules.ui.data_preview_generator import DataPreviewGenerator
     from modules.ui.sample_data_loader import SampleDataLoader
+    CORE_UI_AVAILABLE = True
+    print("[DEBUG] Core UI modules imported successfully")
+except ImportError as e:
+    print(f"[DEBUG] Core UI import failed: {e}")
+    CORE_UI_AVAILABLE = False
+
+# Import other required modules  
+try:
+    from modules.engine.inference_engine import InferenceEngine, InferenceServer
     from modules.model.model_manager import SecureModelManager
     from modules.security.security_utils import (
         security_wrapper, 
@@ -97,8 +165,14 @@ try:
         get_auth_config
     )
     from modules.device_optimizer import DeviceOptimizer
+    BASIC_FEATURES_AVAILABLE = True
+    print("[DEBUG] Basic features imported successfully")
+except ImportError as e:
+    print(f"[DEBUG] Basic features import failed: {e}")
+    BASIC_FEATURES_AVAILABLE = False
     
-    # Import advanced features
+# Import advanced features (optional)
+try:
     from modules.engine.experiment_tracker import ExperimentTracker
     from modules.engine.batch_processor import BatchProcessor
     from modules.engine.adaptive_hyperopt import (
@@ -125,44 +199,111 @@ try:
         PERFORMANCE_TRACKING_AVAILABLE = False
     
     ADVANCED_FEATURES_AVAILABLE = True
+    print("[DEBUG] Advanced features imported successfully")
     
 except ImportError as e:
-    logger.warning(f"Some modules not available: {e}")
+    print(f"[DEBUG] Advanced features import failed - using fallback implementations: {e}")
+    logger.warning(f"Some advanced modules not available: {e}")
     ADVANCED_FEATURES_AVAILABLE = False
-    
-    # Create placeholder classes/functions
-    class InferenceServer:
-        def __init__(self):
-            self.is_loaded = False
-        def load_model_from_path(self, path, password=None): 
-            return "❌ InferenceServer not available"
-        def predict(self, data): 
-            return "❌ InferenceServer not available"
-        def get_model_info(self): 
-            return {"error": "Not available"}
-    
+    PERFORMANCE_TRACKING_AVAILABLE = False
+
+# Create fallback implementations only when needed
+if not CORE_UI_AVAILABLE:
+    print("[DEBUG] Using fallback UI implementations")
     class DataPreviewGenerator:
         def generate_data_summary(self, df): 
-            return {"shape": df.shape, "columns": df.columns.tolist()}
+            return {"shape": df.shape, "columns": df.columns.tolist(), "dtypes": df.dtypes.to_dict()}
         def format_data_preview(self, df, summary): 
             return f"Data shape: {df.shape}<br>Columns: {', '.join(df.columns.tolist())}"
     
     class SampleDataLoader:
+        def __init__(self):
+            self.datasets = {
+                "Iris Classification": {
+                    "name": "Iris Classification",
+                    "description": "The classic iris flower dataset for multiclass classification",
+                    "task_type": "classification",
+                    "target_column": "species"
+                },
+                "Boston Housing": {
+                    "name": "Boston Housing",
+                    "description": "Boston house prices dataset for regression",
+                    "task_type": "regression",
+                    "target_column": "price"
+                },
+                "Wine Quality": {
+                    "name": "Wine Quality",
+                    "description": "Wine quality dataset for classification",
+                    "task_type": "classification",
+                    "target_column": "quality"
+                },
+                "Diabetes": {
+                    "name": "Diabetes",
+                    "description": "Diabetes dataset for regression",
+                    "task_type": "regression",
+                    "target_column": "target"
+                },
+                "Breast Cancer": {
+                    "name": "Breast Cancer",
+                    "description": "Breast cancer dataset for binary classification",
+                    "task_type": "classification",
+                    "target_column": "target"
+                }
+            }
+        
         def load_sample_data(self, name): 
-            if name == "Select a dataset...":
-                return pd.DataFrame(), {"name": name, "description": "No dataset selected"}
-            # Create a simple dummy dataset
-            df = pd.DataFrame({
-                'feature_1': [1, 2, 3, 4, 5],
-                'feature_2': [2, 4, 6, 8, 10], 
-                'target': [0, 1, 0, 1, 0]
-            })
-            return df, {
+            print(f"[DEBUG] Fallback SampleDataLoader.load_sample_data called with: {name}")
+            if name == "Select a dataset..." or name is None:
+                return pd.DataFrame(), {"name": name, "description": "No dataset selected", "task_type": "none", "target_column": ""}
+            
+            # Create sample datasets based on name
+            if name == "Iris Classification":
+                df = pd.DataFrame({
+                    'sepal_length': [5.1, 4.9, 4.7, 4.6, 5.0, 5.4, 4.6, 5.0, 4.4, 4.9],
+                    'sepal_width': [3.5, 3.0, 3.2, 3.1, 3.6, 3.9, 3.4, 3.4, 2.9, 3.1], 
+                    'petal_length': [1.4, 1.4, 1.3, 1.5, 1.4, 1.7, 1.4, 1.5, 1.4, 1.5],
+                    'petal_width': [0.2, 0.2, 0.2, 0.2, 0.2, 0.4, 0.3, 0.2, 0.2, 0.1],
+                    'species': ['setosa', 'setosa', 'setosa', 'setosa', 'setosa', 
+                               'versicolor', 'versicolor', 'versicolor', 'versicolor', 'versicolor']
+                })
+            elif name == "Boston Housing":
+                df = pd.DataFrame({
+                    'crim': [0.00632, 0.02731, 0.02729, 0.03237, 0.06905],
+                    'zn': [18.0, 0.0, 0.0, 0.0, 0.0],
+                    'indus': [2.31, 7.07, 7.07, 2.18, 2.18],
+                    'nox': [0.538, 0.469, 0.469, 0.458, 0.458],
+                    'rm': [6.575, 6.421, 7.185, 6.998, 7.147],
+                    'price': [24.0, 21.6, 34.7, 33.4, 36.2]
+                })
+            else:
+                # Generic sample data
+                df = pd.DataFrame({
+                    'feature_1': [1.0, 2.0, 3.0, 4.0, 5.0],
+                    'feature_2': [2.0, 4.0, 6.0, 8.0, 10.0], 
+                    'feature_3': [0.5, 1.5, 2.5, 3.5, 4.5],
+                    'target': [0, 1, 0, 1, 0]
+                })
+            
+            metadata = self.datasets.get(name, {
                 "name": name, 
-                "description": "Sample dataset (modules not available)", 
+                "description": "Sample dataset (fallback implementation)", 
                 "task_type": "classification", 
                 "target_column": "target"
-            }
+            })
+            print(f"[DEBUG] Fallback returning df.shape: {df.shape}, metadata: {metadata}")
+            return df, metadata
+
+if not BASIC_FEATURES_AVAILABLE:
+    print("[DEBUG] Using fallback basic implementations")
+    class InferenceServer:
+        def __init__(self):
+            self.is_loaded = False
+        def load_model_from_path(self, path, password=None): 
+            return "[ERROR] InferenceServer not available"
+        def predict(self, data): 
+            return "[ERROR] InferenceServer not available"
+        def get_model_info(self): 
+            return {"error": "Not available"}
     
     class SecureModelManager:
         def __init__(self, *args, **kwargs): pass
@@ -171,6 +312,14 @@ except ImportError as e:
         def get_system_info(self): 
             return {"error": "Device optimizer not available"}
     
+    def security_wrapper(func): return func
+    def validate_file_upload(path, extensions): return True
+    def secure_data_processing(data): return data
+    def create_security_headers(): return {}
+    def get_auth_config(): return None
+
+if not ADVANCED_FEATURES_AVAILABLE:
+    print("[DEBUG] Using fallback advanced implementations")
     class ExperimentTracker:
         def __init__(self, *args, **kwargs): pass
         def start_experiment(self, *args, **kwargs): return {}
@@ -190,17 +339,12 @@ except ImportError as e:
     
     class MemoryAwareDataProcessor:
         def __init__(self, *args, **kwargs): pass
-        def process_data(self, *args, **kwargs): return {}
+        def process_data(self, X, y): return {'X': X, 'y': y}
     
     class PerformanceTracker:
         def __init__(self, *args, **kwargs): pass
         def get_metrics(self, *args, **kwargs): return {}
     
-    def security_wrapper(func): return func
-    def validate_file_upload(path, extensions): return True
-    def secure_data_processing(data): return data
-    def create_security_headers(): return {}
-    def get_auth_config(): return None
     def generate_dashboard_html(data): return "<h1>Dashboard not available</h1>"
     def create_memory_aware_processor(): return MemoryAwareDataProcessor()
     
@@ -210,7 +354,6 @@ except ImportError as e:
     
     ProcessingMode = type('ProcessingMode', (), {'BALANCED': 'balanced'})
     PreprocessingStrategy = type('PreprocessingStrategy', (), {'STANDARD': 'standard'})
-    PERFORMANCE_TRACKING_AVAILABLE = False
 
 # Additional function to create proper search spaces
 def create_search_space(task_type: str, algorithms: List[str]) -> Dict[str, Dict[str, Any]]:
@@ -313,11 +456,77 @@ def load_css_file():
     except Exception:
         pass
     
-    # Default CSS
+    # Default CSS with data preview persistence
     return """
     /* Default styling */
     .gr-button-primary { background-color: #007bff !important; }
     .gr-box { border-radius: 8px !important; }
+    
+    /* Hide auto-refresh trigger button */
+    #auto-refresh-trigger { display: none !important; }
+    
+    /* Data status styling */
+    .data-status {
+        padding: 8px 12px;
+        border-radius: 6px;
+        background-color: #f8f9fa;
+        border: 1px solid #e9ecef;
+        margin-bottom: 10px;
+        font-weight: 500;
+    }
+    
+    /* Data preview styling */
+    .data-preview-container {
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        padding: 16px;
+        background-color: #fafafa;
+    }
+    
+    /* Tab styling for better visibility */
+    .tab-nav .tab-nav-button {
+        transition: all 0.3s ease;
+    }
+    
+    .tab-nav .tab-nav-button.selected {
+        background-color: #007bff !important;
+        color: white !important;
+    }
+    
+    /* Table styling for data preview */
+    .table {
+        width: 100%;
+        margin-bottom: 1rem;
+        background-color: transparent;
+        border-collapse: collapse;
+    }
+    
+    .table-striped tbody tr:nth-of-type(odd) {
+        background-color: rgba(0, 0, 0, 0.05);
+    }
+    
+    .table th,
+    .table td {
+        padding: 0.75rem;
+        vertical-align: top;
+        border-top: 1px solid #dee2e6;
+        text-align: left;
+    }
+    
+    .table thead th {
+        vertical-align: bottom;
+        border-bottom: 2px solid #dee2e6;
+        background-color: #f8f9fa;
+        font-weight: 600;
+    }
+    
+    /* Responsive table container */
+    .table-container {
+        overflow-x: auto;
+        max-height: 400px;
+        border: 1px solid #dee2e6;
+        border-radius: 6px;
+    }
     """
 
 class MLSystemUI:
@@ -335,6 +544,11 @@ class MLSystemUI:
         self.sample_data_loader = SampleDataLoader()
         self.data_preview_generator = DataPreviewGenerator()
         self.trained_models = {}  # Store trained models
+        
+        # Persistent data preview storage
+        self.current_data_info = ""
+        self.current_data_preview = ""
+        self.current_data_summary = {}
         
         # Advanced features
         self.experiment_tracker = None
@@ -477,10 +691,15 @@ class MLSystemUI:
         algorithms = []
         task_lower = task_type.lower()
         
+        # Filter out problematic ensemble models that need special handling
+        excluded_models = {'voting classifier', 'stacking classifier', 'voting regressor', 'stacking regressor'}
+        
         for category, models in self.ml_algorithms.items():
             for model_name, model_info in models.items():
                 if task_lower in model_info["supports"]:
-                    algorithms.append(f"{category} - {model_name}")
+                    # Skip problematic ensemble models for now
+                    if model_name.lower() not in excluded_models:
+                        algorithms.append(f"{category} - {model_name}")
         
         return sorted(algorithms)
     
@@ -529,6 +748,49 @@ class MLSystemUI:
         
         # Default fallback
         return algorithm_name.lower().replace(" ", "_")
+
+    def get_all_algorithms(self) -> List[str]:
+        """Return all algorithm display names without task filtering."""
+        algorithms: List[str] = []
+        for category, models in self.ml_algorithms.items():
+            for model_name in models.keys():
+                algorithms.append(f"{category} - {model_name}")
+        return sorted(algorithms)
+
+    def get_multi_algorithm_choices(self, prefilter_by_task: bool = True):
+        """Return a Gradio update object for algorithm choices using engine registry when possible."""
+        try:
+            choices: List[str] = []
+            if prefilter_by_task and self.current_config is not None:
+                # Prefer engine registry for accurate availability
+                try:
+                    temp_engine = MLTrainingEngine(self.current_config)
+                    task_key = self.current_config.task_type.value
+                    registry = getattr(temp_engine, '_model_registry', {})
+                    choices = sorted(list(registry.get(task_key, {}).keys()))
+                except Exception as ie:
+                    logger.debug(f"Engine registry unavailable, fallback list used: {ie}")
+                    choices = self.get_algorithms_for_task(self.current_config.task_type.value)
+            elif prefilter_by_task and self.current_config is None:
+                # Fallback to a reasonable default (classification)
+                choices = self.get_algorithms_for_task('classification')
+            else:
+                # All algorithms (union of both tasks if available)
+                try:
+                    # Use engine registry if a config exists
+                    if self.current_config is not None:
+                        temp_engine = MLTrainingEngine(self.current_config)
+                        registry = getattr(temp_engine, '_model_registry', {})
+                        union = set(registry.get('classification', {}).keys()) | set(registry.get('regression', {}).keys())
+                        choices = sorted(list(union))
+                    else:
+                        choices = self.get_all_algorithms()
+                except Exception:
+                    choices = self.get_all_algorithms()
+            return gr.update(choices=choices, value=[])
+        except Exception as e:
+            logger.warning(f"Failed to get multi algorithm choices: {e}")
+            return gr.update()
     
     def get_trained_model_list(self) -> List[str]:
         """Get list of trained models"""
@@ -565,89 +827,183 @@ class MLSystemUI:
             # Default to classification if unable to determine
             return "classification"
     
-    def load_sample_data(self, dataset_name: str) -> Tuple[str, Dict, str, str]:
+    def test_sample_data_loading(self, dataset_name: str) -> str:
+        """Simple test function to check if button clicks are working"""
+        print(f"🔄 TEST: test_sample_data_loading called with: {dataset_name}")
+        return f"TEST: Button clicked with dataset: {dataset_name}"
+    
+    def load_sample_data(self, dataset_name: str) -> Tuple[str, Dict, str, str, str]:
         """Load sample dataset with preview"""
         try:
-            if dataset_name == "Select a dataset...":
-                return "Please select a dataset", {}, "", ""
+            print(f"🔄 DEBUG: load_sample_data called with dataset_name: '{dataset_name}'")
+            logger.info(f"Loading sample dataset: {dataset_name}")
             
-            df, metadata = self.sample_data_loader.load_sample_data(dataset_name)
+            if dataset_name == "Select a dataset..." or not dataset_name or dataset_name is None:
+                print("🔄 DEBUG: Default selection or empty, returning early")
+                return "Please select a dataset", {}, "", "", "**Status:** No data loaded"
+            
+            print(f"🔄 DEBUG: Loading data for: {dataset_name}")
+            print(f"🔄 DEBUG: sample_data_loader type: {type(self.sample_data_loader)}")
+            
+            # Check if the sample data loader has the requested dataset
+            if hasattr(self.sample_data_loader, 'datasets'):
+                available_datasets = list(self.sample_data_loader.datasets.keys())
+                print(f"🔄 DEBUG: Available datasets: {available_datasets}")
+                if dataset_name not in available_datasets:
+                    print(f"🔄 DEBUG: Dataset '{dataset_name}' not found in available datasets")
+                    # Try to load anyway - fallback implementations might still work
+            
+            try:
+                df, metadata = self.sample_data_loader.load_sample_data(dataset_name)
+                print(f"🔄 DEBUG: Received df shape: {df.shape}, metadata: {metadata}")
+            except Exception as load_error:
+                print(f"🔄 DEBUG: Error loading from sample_data_loader: {load_error}")
+                # Return a helpful error message instead of crashing
+                return f"Error loading sample dataset '{dataset_name}': {str(load_error)}", {}, "", "", "**Status:** ❌ Error loading sample data"
+            
+            if df.empty:
+                print(f"🔄 DEBUG: DataFrame is empty!")
+                return "Dataset is empty", {}, "", "", "**Status:** ❌ Empty dataset"
+            
             self.current_data = df
+            print(f"🔄 DEBUG: Data loaded successfully, shape: {df.shape}")
             
             # Generate data summary and preview
-            summary = self.data_preview_generator.generate_data_summary(df)
-            preview_text = self.data_preview_generator.format_data_preview(df, summary)
+            print(f"🔄 DEBUG: Generating data summary")
+            try:
+                summary = self.data_preview_generator.generate_data_summary(df)
+                print(f"🔄 DEBUG: Summary generated: {summary}")
+            except Exception as summary_error:
+                print(f"🔄 DEBUG: Error generating summary: {summary_error}")
+                summary = {"shape": df.shape, "columns": df.columns.tolist()}
+            
+            print(f"🔄 DEBUG: Formatting data preview")
+            try:
+                preview_text = self.data_preview_generator.format_data_preview(df, summary)
+                print(f"🔄 DEBUG: Preview text length: {len(preview_text)}")
+            except Exception as preview_error:
+                print(f"🔄 DEBUG: Error formatting preview: {preview_error}")
+                preview_text = f"Data shape: {df.shape}, Columns: {df.columns.tolist()}"
             
             # Generate sample data table
-            sample_table = df.head(10).to_html(classes="table table-striped", escape=False, border=0)
+            print(f"🔄 DEBUG: Generating sample data table")
+            try:
+                sample_table = df.head(10).to_html(classes="table table-striped", escape=False, border=0)
+                print(f"🔄 DEBUG: Sample table length: {len(sample_table)}")
+            except Exception as table_error:
+                print(f"🔄 DEBUG: Error generating table: {table_error}")
+                sample_table = f"<p>Error generating table preview: {str(table_error)}</p>"
+            
+            # Ensure metadata has required fields
+            if not isinstance(metadata, dict):
+                metadata = {"name": dataset_name, "description": "Unknown", "task_type": "unknown", "target_column": "unknown"}
             
             info_text = f"""
-Sample Dataset Loaded: {metadata['name']}
+Sample Dataset Loaded: {metadata.get('name', dataset_name)}
 
-- Description: {metadata['description']}
-- Task Type: {metadata['task_type']}
-- Target Column: {metadata['target_column']}
+- Description: {metadata.get('description', 'No description available')}
+- Task Type: {metadata.get('task_type', 'Unknown')}
+- Target Column: {metadata.get('target_column', 'Unknown')}
 - Shape: {df.shape[0]} rows × {df.shape[1]} columns
 - Columns: {', '.join(df.columns.tolist()[:10])}{'...' if len(df.columns) > 10 else ''}
 - Missing Values: {df.isnull().sum().sum()} total
             """
             
-            return info_text, metadata, preview_text, sample_table
+            status_text = f"**Status:** ✅ Sample data loaded - {metadata.get('name', dataset_name)} ({df.shape[0]} rows × {df.shape[1]} columns)"
+            
+            # Store data preview persistently
+            self.current_data_info = info_text
+            self.current_data_preview = sample_table
+            self.current_data_summary = summary
+            
+            print(f"🔄 DEBUG: Returning results for {dataset_name}")
+            print(f"🔄 DEBUG: info_text length: {len(info_text)}")
+            print(f"🔄 DEBUG: metadata: {metadata}")
+            print(f"🔄 DEBUG: preview_text length: {len(preview_text)}")
+            print(f"🔄 DEBUG: status_text: {status_text}")
+            
+            result_tuple = (info_text, metadata, preview_text, sample_table, status_text)
+            print(f"🔄 DEBUG: Final result tuple length: {len(result_tuple)}")
+            print(f"🔄 DEBUG: Final result types: {[type(x) for x in result_tuple]}")
+            
+            return result_tuple
             
         except Exception as e:
             error_msg = f"Error loading sample data: {str(e)}"
+            print(f"❌ DEBUG: Exception in load_sample_data: {error_msg}")
+            print(f"❌ DEBUG: Exception type: {type(e)}")
+            print(f"❌ DEBUG: Exception traceback: {traceback.format_exc()}")
             logger.error(error_msg)
-            return error_msg, {}, "", ""
+            return error_msg, {}, "", "", "**Status:** ❌ Error loading sample data"
 
     @security_wrapper
-    def load_data(self, file) -> Tuple[str, Dict, str, str]:
+    def load_data(self, file) -> Tuple[str, Dict, str, str, str]:
         """Load dataset from uploaded file with enhanced security validation"""
         try:
+            print(f"🔄 DEBUG: load_data called with file: {file}")
             if file is None:
-                return "No file uploaded", {}, "", ""
+                print("🔄 DEBUG: No file provided")
+                return "No file uploaded", {}, "", "", "**Status:** No data loaded"
             
             file_path = file.name
+            print(f"🔄 DEBUG: File path: {file_path}")
             
             # Security validation
+            print(f"🔄 DEBUG: Validating file upload for: {file_path}")
             if not validate_file_upload(file_path, ['.csv', '.xlsx', '.xls', '.json', '.parquet']):
+                print(f"🔄 DEBUG: File validation failed for: {file_path}")
                 if self.security_manager and hasattr(self.security_manager, 'auditor'):
                     self.security_manager.auditor.logger.warning(f"FILE_UPLOAD_REJECTED: {file_path}")
-                return "❌ File upload rejected for security reasons. Please ensure you're uploading a valid data file.", {}, "", ""
+                return "❌ File upload rejected for security reasons. Please ensure you're uploading a valid data file.", {}, "", "", "**Status:** ❌ File rejected"
             
+            print(f"🔄 DEBUG: File validation passed for: {file_path}")
             # Log file upload
             if self.security_manager and hasattr(self.security_manager, 'auditor'):
                 self.security_manager.auditor.logger.info(f"FILE_UPLOAD: {os.path.basename(file_path)}")
             
             # Load data based on file extension
+            print(f"🔄 DEBUG: Loading data based on file extension")
             if file_path.endswith('.csv'):
+                print(f"🔄 DEBUG: Loading CSV file")
                 df = pd.read_csv(file_path)
             elif file_path.endswith(('.xlsx', '.xls')):
+                print(f"🔄 DEBUG: Loading Excel file")
                 df = pd.read_excel(file_path)
             elif file_path.endswith('.json'):
+                print(f"🔄 DEBUG: Loading JSON file")
                 df = pd.read_json(file_path)
             else:
-                return "Unsupported file format. Please upload CSV, Excel, or JSON files.", {}, "", ""
+                print(f"🔄 DEBUG: Unsupported file format: {file_path}")
+                return "Unsupported file format. Please upload CSV, Excel, or JSON files.", {}, "", "", "**Status:** ❌ Unsupported format"
             
+            print(f"🔄 DEBUG: Data loaded successfully, shape: {df.shape}")
             # Security validation based on dataset size
             if df.shape[0] > 1000000:  # 1M rows limit
+                print(f"🔄 DEBUG: Dataset too large: {df.shape}")
                 if self.security_manager and hasattr(self.security_manager, 'auditor'):
                     self.security_manager.auditor.logger.warning(f"LARGE_DATASET: {df.shape}")
-                return "⚠️ Dataset too large. Please use a dataset with fewer than 1 million rows.", {}, "", ""
+                return "⚠️ Dataset too large. Please use a dataset with fewer than 1 million rows.", {}, "", "", "**Status:** ⚠️ Dataset too large"
             
             if df.shape[1] > 10000:
+                print(f"🔄 DEBUG: Dataset too wide: {df.shape}")
                 if self.security_manager and hasattr(self.security_manager, 'auditor'):
                     self.security_manager.auditor.logger.warning(f"WIDE_DATASET: {df.shape}")
-                return "⚠️ Dataset too wide. Please use a dataset with fewer than 10,000 columns.", {}, "", ""
+                return "⚠️ Dataset too wide. Please use a dataset with fewer than 10,000 columns.", {}, "", "", "**Status:** ⚠️ Dataset too wide"
             
+            print(f"🔄 DEBUG: Setting current_data and generating preview")
             self.current_data = df
             
             # Generate data summary and preview
+            print(f"🔄 DEBUG: Generating data summary")
             summary = self.data_preview_generator.generate_data_summary(df)
+            print(f"🔄 DEBUG: Formatting data preview")
             preview_text = self.data_preview_generator.format_data_preview(df, summary)
             
             # Generate sample data table
+            print(f"🔄 DEBUG: Generating sample data table")
             sample_table = df.head(10).to_html(classes="table table-striped", escape=False, border=0)
             
+            print(f"🔄 DEBUG: Creating info text")
             info_text = f"""
 Data Loaded Successfully! ✅
 
@@ -658,12 +1014,64 @@ Data Loaded Successfully! ✅
 - Memory Usage: {df.memory_usage(deep=True).sum() / 1024**2:.2f} MB
             """
             
-            return info_text, summary, preview_text, sample_table
+            status_text = f"**Status:** ✅ Data loaded - {df.shape[0]:,} rows × {df.shape[1]:,} columns"
+            
+            print(f"🔄 DEBUG: Storing data preview persistently")
+            # Store data preview persistently
+            self.current_data_info = info_text
+            self.current_data_preview = sample_table
+            self.current_data_summary = summary
+            
+            print(f"🔄 DEBUG: Returning results successfully")
+            return info_text, summary, preview_text, sample_table, status_text
             
         except Exception as e:
             error_msg = f"Error loading data: {str(e)}"
+            print(f"❌ DEBUG: Exception in load_data: {error_msg}")
+            print(f"❌ DEBUG: Exception traceback: {traceback.format_exc()}")
             logger.error(error_msg)
-            return error_msg, {}, "", ""
+            return error_msg, {}, "", "", "**Status:** ❌ Error loading data"
+
+    def load_data_unified(self, file, dataset_name: str) -> Tuple[str, Dict, str, str, str]:
+        """Unified data loading function for both file uploads and sample datasets"""
+        try:
+            print(f"🔄 DEBUG: load_data_unified called with file: {file}, dataset_name: '{dataset_name}'")
+            print(f"🔄 DEBUG: file type: {type(file)}, dataset_name type: {type(dataset_name)}")
+            
+            # Handle file input - check if it's a valid file object with a name attribute
+            has_valid_file = False
+            if file is not None:
+                if hasattr(file, 'name') and file.name:
+                    print(f"🔄 DEBUG: Valid file detected: {file.name}")
+                    has_valid_file = True
+                else:
+                    print(f"🔄 DEBUG: File object exists but no valid name: {file}")
+            else:
+                print(f"🔄 DEBUG: No file provided")
+            
+            # Priority: if a valid file is provided, use it; otherwise use sample dataset
+            if has_valid_file:
+                print(f"🔄 DEBUG: Using uploaded file: {file}")
+                result = self.load_data(file)
+                print(f"🔄 DEBUG: File load result type: {type(result)}, length: {len(result) if hasattr(result, '__len__') else 'N/A'}")
+                return result
+            elif dataset_name and dataset_name not in [None, "", "Select a dataset..."]:
+                print(f"🔄 DEBUG: Using sample dataset: {dataset_name}")
+                result = self.load_sample_data(dataset_name)
+                print(f"🔄 DEBUG: Sample load result type: {type(result)}, length: {len(result) if hasattr(result, '__len__') else 'N/A'}")
+                return result
+            else:
+                print(f"🔄 DEBUG: No valid data source provided - file: {file}, dataset: {dataset_name}")
+                default_result = ("Please upload a file or select a sample dataset", {}, "", "", "**Status:** No data loaded")
+                print(f"🔄 DEBUG: Returning default result: {default_result}")
+                return default_result
+                
+        except Exception as e:
+            error_msg = f"Error loading data: {str(e)}"
+            print(f"❌ DEBUG: Exception in load_data_unified: {error_msg}")
+            print(f"❌ DEBUG: Exception traceback: {traceback.format_exc()}")
+            logger.error(error_msg)
+            return error_msg, {}, "", "", "**Status:** ❌ Error loading data"
 
     def optimize_preprocessing_config(self, data_characteristics: Dict[str, Any] = None) -> str:
         """Optimize preprocessing configuration based on data characteristics"""
@@ -784,10 +1192,12 @@ Preprocessing Configuration Optimized! ✅
         try:
             # Start experiment tracking
             if self.experiment_tracker and ADVANCED_FEATURES_AVAILABLE:
-                experiment_id = self.experiment_tracker.start_experiment(
-                    experiment_name=f"model_comparison_{int(time.time())}",
-                    tags={"type": "model_comparison", "target": target_column}
-                )
+                try:
+                    cfg_dict = self.current_config.to_dict() if hasattr(self.current_config, 'to_dict') else (vars(self.current_config) if self.current_config else {})
+                except Exception:
+                    cfg_dict = {}
+                model_info = {"model_type": "multi_model_comparison", "target": target_column, "models": algorithms}
+                self.experiment_tracker.start_experiment(config=cfg_dict, model_info=model_info)
             
             # Prepare data with memory optimization
             X = self.current_data.drop(columns=[target_column])
@@ -877,13 +1287,14 @@ Preprocessing Configuration Optimized! ✅
                     else:
                         best_params = {}
                     
-                    # Train model
+                    # Train model; convert external best_params to a fixed param_grid for engine
+                    fixed_grid = {k: ([v] if not isinstance(v, (list, tuple, np.ndarray)) else list(v)) for k, v in (best_params or {}).items()}
                     result = self.training_engine.train_model(
                         X=X.values if hasattr(X, 'values') else X,
                         y=y.values if hasattr(y, 'values') else y,
                         model_type=model_key,
                         model_name=model_name,
-                        hyperparameters=best_params
+                        param_grid=fixed_grid if fixed_grid else None
                     )
                     
                     training_time = time.time() - start_time
@@ -912,11 +1323,8 @@ Preprocessing Configuration Optimized! ✅
                     # Log experiment metrics
                     if self.experiment_tracker and ADVANCED_FEATURES_AVAILABLE:
                         metrics = result.get('metrics', {})
-                        self.experiment_tracker.log_metrics(
-                            experiment_id, 
-                            metrics, 
-                            model_name=model_name
-                        )
+                        # Use step to distinguish per-model metrics
+                        self.experiment_tracker.log_metrics(metrics, step=model_name)
                     
                     logger.info(f"✅ {algorithm} training completed")
                     
@@ -934,7 +1342,7 @@ Preprocessing Configuration Optimized! ✅
             
             # End experiment
             if self.experiment_tracker and ADVANCED_FEATURES_AVAILABLE:
-                self.experiment_tracker.end_experiment(experiment_id)
+                self.experiment_tracker.end_experiment()
             
             return comparison_summary, detailed_results, visualization_data
             
@@ -1114,21 +1522,141 @@ Preprocessing Configuration Optimized! ✅
             error_msg = f"Error generating monitoring dashboard: {str(e)}"
             logger.error(error_msg)
             return f"<h1>Dashboard Error</h1><p>{error_msg}</p>"
+    
+    def refresh_data_preview(self) -> Tuple[str, str, str]:
+        """Refresh data preview from current data"""
+        try:
+            if self.current_data is None:
+                return "No data loaded", "", "**Status:** No data loaded"
+            
+            # Generate fresh data summary and preview
+            summary = self.data_preview_generator.generate_data_summary(self.current_data)
+            preview_text = self.data_preview_generator.format_data_preview(self.current_data, summary)
+            
+            # Generate sample data table
+            sample_table = self.current_data.head(10).to_html(classes="table table-striped", escape=False, border=0)
+            
+            # Update stored data preview
+            self.current_data_preview = sample_table
+            self.current_data_summary = summary
+            
+            # Generate status
+            df = self.current_data
+            status_text = f"**Status:** 🔄 Preview refreshed - {df.shape[0]:,} rows × {df.shape[1]:,} columns"
+            
+            return preview_text, sample_table, status_text
+            
+        except Exception as e:
+            error_msg = f"Error refreshing data preview: {str(e)}"
+            logger.error(error_msg)
+            return error_msg, "", "**Status:** ❌ Error refreshing preview"
+    
+    def get_current_data_preview(self) -> str:
+        """Get the current stored data preview"""
+        if self.current_data is None:
+            return "No data loaded"
+        if hasattr(self, 'current_data_preview') and self.current_data_preview:
+            return self.current_data_preview
+        else:
+            # Generate fresh preview if not stored
+            try:
+                sample_table = self.current_data.head(10).to_html(classes="table table-striped", escape=False, border=0)
+                self.current_data_preview = sample_table
+                return sample_table
+            except Exception as e:
+                return f"Error generating data preview: {str(e)}"
+    
+    def get_current_data_info(self) -> str:
+        """Get the current stored data info"""
+        if self.current_data is None:
+            return "No data loaded"
+        if hasattr(self, 'current_data_info') and self.current_data_info:
+            return self.current_data_info
+        else:
+            # Generate fresh info if not stored
+            try:
+                df = self.current_data
+                info_text = f"""
+Data Currently Loaded ✅
 
-    def update_algorithm_choices(self, task_type: str) -> gr.Dropdown:
-        """Update algorithm choices based on task type"""
-        algorithms = self.get_algorithms_for_task(task_type)
-        return gr.Dropdown(choices=algorithms, value=algorithms[0] if algorithms else None)
+📊 Dataset Overview:
+- Shape: {df.shape[0]:,} rows × {df.shape[1]:,} columns
+- Columns: {', '.join(df.columns.tolist()[:10])}{'...' if len(df.columns) > 10 else ''}
+- Missing Values: {df.isnull().sum().sum():,} total
+- Memory Usage: {df.memory_usage(deep=True).sum() / 1024**2:.2f} MB
+                """
+                self.current_data_info = info_text
+                return info_text
+            except Exception as e:
+                return f"Error generating data info: {str(e)}"
+    
+    def restore_data_view(self) -> Tuple[str, str, str]:
+        """Restore data info, preview, and status"""
+        if self.current_data is None:
+            return "No data loaded", "", "**Status:** No data loaded"
+        
+        data_info = self.get_current_data_info()
+        data_preview = self.get_current_data_preview()
+        
+        # Generate current status
+        df = self.current_data
+        status_text = f"**Status:** ✅ Data loaded - {df.shape[0]:,} rows × {df.shape[1]:,} columns"
+        
+        return data_info, data_preview, status_text
+
+    def test_button_functionality(self) -> str:
+        """Simple test function to verify button functionality"""
+        import time
+        timestamp = time.strftime("%H:%M:%S")
+        test_result = f"✅ Button clicked successfully at {timestamp}! The UI is working.\n\n"
+        test_result += f"🔧 Debug Info:\n"
+        test_result += f"- Sample data loader type: {type(self.sample_data_loader)}\n"
+        test_result += f"- Data preview generator type: {type(self.data_preview_generator)}\n"
+        test_result += f"- Current data: {'Loaded' if self.current_data is not None else 'None'}\n"
+        test_result += f"- Core UI available: {globals().get('CORE_UI_AVAILABLE', False)}\n"
+        test_result += f"- Basic features available: {globals().get('BASIC_FEATURES_AVAILABLE', False)}\n"
+        
+        # Test sample data loading
+        try:
+            df, metadata = self.sample_data_loader.load_sample_data("Iris Classification")
+            test_result += f"- Sample data test: ✅ Success (shape: {df.shape})\n"
+        except Exception as e:
+            test_result += f"- Sample data test: ❌ Failed ({str(e)})\n"
+        
+        return test_result
+
+    def update_algorithm_choices(self, task_type: str) -> gr.CheckboxGroup:
+        """Update algorithm choices for given task using engine registry."""
+        try:
+            if self.current_config is None:
+                # Create a minimal config for listing
+                task_type_enum = TaskType[task_type.upper()]
+                self.current_config = MLTrainingEngineConfig(
+                    task_type=task_type_enum,
+                    optimization_strategy=OptimizationStrategy.RANDOM_SEARCH,
+                    model_path="./models",
+                    checkpoint_path="./checkpoints"
+                )
+            temp_engine = MLTrainingEngine(self.current_config)
+            choices = sorted(list(getattr(temp_engine, '_model_registry', {}).get(task_type, {})))
+        except Exception:
+            choices = self.get_algorithms_for_task(task_type)
+        return gr.CheckboxGroup(choices=choices, value=[])
 
     def create_training_config(self, task_type: str, optimization_strategy: str, 
                              cv_folds: int, test_size: float, random_state: int,
                              enable_feature_selection: bool, normalization: str,
-                             enable_quantization: bool, optimization_mode: str) -> Tuple[str, gr.Dropdown, List[str]]:
-        """Create training configuration and update algorithm choices"""
+                             enable_quantization: bool, optimization_mode: str) -> Tuple[str]:
+        """Create training configuration (algorithm selection handled separately)."""
         if self.inference_only:
             return "Training is not available in inference-only mode.", gr.Dropdown(), []
         
         try:
+            # Ensure proper type conversions from Gradio inputs
+            cv_folds = int(cv_folds) if cv_folds is not None else 5
+            test_size = float(test_size) if test_size is not None else 0.2
+            random_state = int(random_state) if random_state is not None else 42
+            
             # Map string values to enums
             task_type_enum = TaskType[task_type.upper()]
             
@@ -1174,14 +1702,6 @@ Preprocessing Configuration Optimized! ✅
             
             self.current_config = config
             
-            # Get available algorithms for the task type
-            algorithms = self.get_algorithms_for_task(task_type)
-            algorithm_dropdown = gr.Dropdown(
-                choices=algorithms,
-                value=algorithms[0] if algorithms else None,
-                label="Available ML Algorithms"
-            )
-            
             config_text = f"""
 Configuration Created Successfully!
 
@@ -1192,12 +1712,10 @@ Configuration Created Successfully!
 - Feature Selection: {'Enabled' if enable_feature_selection else 'Disabled'}
 - Normalization: {normalization}
 - Quantization: {'Enabled' if enable_quantization else 'Disabled'}
-- Available Algorithms: {len(algorithms)} algorithms for {task_type.lower()}
-
-✅ Algorithm dropdown in Training tab has been updated!
+✅ You can now select models in the Multi-Model Training and Comparison tabs.
             """
             
-            return config_text, algorithm_dropdown, algorithms
+            return (config_text,)
             
         except Exception as e:
             error_msg = f"Error creating configuration: {str(e)}"
@@ -1206,7 +1724,7 @@ Configuration Created Successfully!
 
     def train_model(self, target_column: str, algorithm_name: str, model_name: str = None, 
                    enable_hpo: bool = True, hpo_trials: int = 50) -> Tuple[str, str, str, gr.Dropdown]:
-        """Train model with the current configuration and optional hyperparameter optimization"""
+        """Train a single model using the unified core training path (merged with multi-model)."""
         if self.inference_only:
             return "❌ Model training is disabled in inference-only mode.", "", "", gr.Dropdown()
         
@@ -1217,75 +1735,29 @@ Configuration Created Successfully!
             return f"❌ Target column '{target_column}' not found in data.", "", "", gr.Dropdown()
         
         try:
-            # Initialize training engine
-            if self.current_config is None:
-                # Create a default configuration
-                task_type = TaskType.CLASSIFICATION if self.determine_task_type(self.current_data[target_column]) == "classification" else TaskType.REGRESSION
-                
-                # Set optimization strategy based on HPO preference
-                optimization_strategy = OptimizationStrategy.BAYESIAN_OPTIMIZATION if enable_hpo else OptimizationStrategy.GRID_SEARCH
-                
-                self.current_config = MLTrainingEngineConfig(
-                    task_type=task_type,
-                    optimization_strategy=optimization_strategy,
-                    model_path="./models",
-                    checkpoint_path="./checkpoints",
-                    cv_folds=5,
-                    test_size=0.2
-                )
-            
-            self.training_engine = MLTrainingEngine(self.current_config)
-            
-            # Prepare data
-            X = self.current_data.drop(columns=[target_column])
-            y = self.current_data[target_column]
-            
-            # Handle categorical features
-            categorical_columns = X.select_dtypes(include=['object']).columns
-            if len(categorical_columns) > 0:
-                for col in categorical_columns:
-                    X[col] = pd.Categorical(X[col]).codes
-            
-            # Get model key
-            model_key = self.get_model_key_from_name(algorithm_name)
-            
-            # Generate model name if not provided
-            if not model_name:
-                timestamp = int(time.time())
-                model_name = f"{algorithm_name.split(' - ')[-1]}_{timestamp}"
-            
-            # Log HPO configuration for reference
-            if enable_hpo and ADVANCED_FEATURES_AVAILABLE:
-                search_space = create_search_space(self.current_config.task_type.value, [model_key])
-                logger.info(f"Training with HPO enabled - available search space: {list(search_space.get(model_key, {}).keys())}")
-            
-            # Train model (HPO is handled internally by training engine based on optimization strategy)
-            start_time = time.time()
-            result = self.training_engine.train_model(
-                X=X.values, 
-                y=y.values,
-                model_type=model_key,
-                model_name=model_name
+            # Use the unified multi-model path for a single algorithm
+            results, progress, total_time = self._train_algorithms(
+                target_column=target_column,
+                algorithms=[algorithm_name],
+                enable_hpo=enable_hpo,
+                hpo_trials=hpo_trials,
+                enable_parallel=False,
+                max_workers=1,
+                custom_hyperparams={},
+                prefilter_by_task=True
             )
-            
-            training_time = time.time() - start_time
-            logger.info("Training completed!")
-            
-            # Store trained model information
-            self.trained_models[model_name] = {
-                'algorithm': algorithm_name,
-                'model_key': model_key,
-                'target_column': target_column,
-                'training_time': training_time,
-                'result': result,
-                'feature_names': X.columns.tolist(),
-                'data_shape': X.shape,
-                'hpo_enabled': enable_hpo,
-                'hpo_trials': hpo_trials if enable_hpo else None,
-                'optimization_strategy': self.current_config.optimization_strategy.value
-            }
-            
-            # Generate results summary
+
+            # Extract the only result
+            alg = list(results.keys())[0] if results else algorithm_name
+            res_entry = results.get(alg, {})
+            if res_entry.get('status') != 'success':
+                err = res_entry.get('error', 'Unknown error')
+                return f"❌ Error during training: {err}", "", "", gr.Dropdown()
+
+            result = res_entry.get('result', {})
+            model_name = res_entry.get('model_name', model_name or alg)
+
+            # Build outputs similar to previous single-model format
             hpo_status = f" (HPO: {hpo_trials} trials)" if enable_hpo else " (No HPO)"
             metrics_text = f"Training Results{hpo_status}:\n\n"
             if 'metrics' in result and result['metrics']:
@@ -1294,18 +1766,16 @@ Configuration Created Successfully!
                         metrics_text += f"- {metric.replace('_', ' ').title()}: {value:.4f}\n"
                     else:
                         metrics_text += f"- {metric.replace('_', ' ').title()}: {value}\n"
-            
-            metrics_text += f"\n- Training Time: {training_time:.2f} seconds"
+            metrics_text += f"\n- Training Time: {res_entry.get('training_time', total_time):.2f} seconds"
             if enable_hpo:
                 metrics_text += f"\n- HPO Enabled: Yes ({hpo_trials} max trials)"
-                metrics_text += f"\n- Optimization Strategy: {self.current_config.optimization_strategy.value}"
-            
-            # Feature importance
+                if self.current_config is not None:
+                    metrics_text += f"\n- Optimization Strategy: {self.current_config.optimization_strategy.value}"
+
             importance_text = ""
             if 'feature_importance' in result and result['feature_importance'] is not None:
                 importance = result['feature_importance']
-                feature_names = X.columns.tolist()
-                
+                feature_names = res_entry.get('feature_names', [])
                 importance_text = "Top 10 Feature Importances:\n\n"
                 if isinstance(importance, dict):
                     sorted_features = sorted(importance.items(), key=lambda x: x[1], reverse=True)[:10]
@@ -1316,25 +1786,23 @@ Configuration Created Successfully!
                     for i, idx in enumerate(indices):
                         if idx < len(feature_names):
                             importance_text += f"- {feature_names[idx]}: {importance[idx]:.4f}\n"
-            
-            # Model summary
+
             summary_text = f"""
 Model Training Summary
 
 - Model Name: {model_name}
-- Algorithm: {algorithm_name}
-- Dataset Shape: {X.shape[0]} samples × {X.shape[1]} features
+- Algorithm: {alg}
+- Dataset Shape: {res_entry.get('data_shape', (0, 0))[0]} samples × {res_entry.get('data_shape', (0, 0))[1]} features
 - Target Column: {target_column}
 - Status: ✅ Training Completed Successfully
             """
-            
-            # Update trained models dropdown
+
             trained_models_dropdown = gr.Dropdown(
                 choices=self.get_trained_model_list(),
                 value="Select a trained model...",
                 label="Trained Models"
             )
-            
+
             return summary_text, metrics_text, importance_text, trained_models_dropdown
             
         except Exception as e:
@@ -1342,11 +1810,265 @@ Model Training Summary
             logger.error(error_msg)
             return error_msg, "", "", gr.Dropdown()
 
+    def _train_algorithms(self, target_column: str, algorithms: List[str],
+                          enable_hpo: bool, hpo_trials: int,
+                          enable_parallel: bool, max_workers: int,
+                          custom_hyperparams: Dict[str, Any],
+                          prefilter_by_task: bool) -> Tuple[Dict[str, Any], List[str], float]:
+        """Unified core training routine for one or more algorithms.
+
+        Returns: (results_dict, training_progress_lines, total_training_time)
+        """
+        if self.inference_only:
+            return {}, ["❌ Model training is disabled in inference-only mode."], 0.0
+        if self.current_data is None:
+            return {}, ["❌ Please load data first."], 0.0
+        if target_column not in self.current_data.columns:
+            return {}, [f"❌ Target column '{target_column}' not found in data."], 0.0
+        if not algorithms:
+            return {}, ["❌ Please select at least one algorithm to train."], 0.0
+
+        # Initialize training engine config if needed
+        if self.current_config is None:
+            task_type = TaskType.CLASSIFICATION if self.determine_task_type(self.current_data[target_column]) == "classification" else TaskType.REGRESSION
+            self.current_config = MLTrainingEngineConfig(
+                task_type=task_type,
+                optimization_strategy=OptimizationStrategy.BAYESIAN_OPTIMIZATION if enable_hpo else OptimizationStrategy.GRID_SEARCH,
+                model_path="./models",
+                checkpoint_path="./checkpoints",
+                cv_folds=5,
+                test_size=0.2,
+                random_state=42
+            )
+
+        # Prepare data
+        X = self.current_data.drop(columns=[target_column])
+        y = self.current_data[target_column]
+
+        # Handle categorical features
+        categorical_columns = X.select_dtypes(include=['object']).columns
+        if len(categorical_columns) > 0:
+            for col in categorical_columns:
+                X[col] = pd.Categorical(X[col]).codes
+
+        # Prefilter algorithms by task, if requested (ensures compatibility)
+        training_progress: List[str] = []
+        if prefilter_by_task:
+            # Use engine registry keys to validate selections, supporting raw keys or display names
+            try:
+                temp_engine = MLTrainingEngine(self.current_config)
+                task_key = self.current_config.task_type.value
+                allowed_keys = set(getattr(temp_engine, '_model_registry', {}).get(task_key, {}).keys())
+            except Exception:
+                allowed_keys = set()
+            before = len(algorithms)
+            filtered = []
+            for a in algorithms:
+                key = self.get_model_key_from_name(a)
+                if key in allowed_keys:
+                    filtered.append(a)
+            algorithms = filtered
+            after = len(algorithms)
+            if after == 0:
+                return {}, ["❌ No compatible algorithms after task prefiltering."], 0.0
+            if after < before:
+                training_progress.append(f"🔎 Prefiltered algorithms by task: kept {after}/{before} compatible models")
+
+        # Start experiment tracking (single or multi)
+        if self.experiment_tracker and ADVANCED_FEATURES_AVAILABLE:
+            try:
+                cfg_dict = self.current_config.to_dict() if hasattr(self.current_config, 'to_dict') else (vars(self.current_config) if self.current_config else {})
+            except Exception:
+                cfg_dict = {}
+            model_info = {"model_type": "multi_model_training", "target": target_column, "num_models": len(algorithms)}
+            self.experiment_tracker.start_experiment(config=cfg_dict, model_info=model_info)
+        else:
+            pass
+
+        start_time = time.time()
+        results: Dict[str, Any] = {}
+
+        # Per-model training function
+        def train_single_model(algorithm_name):
+            try:
+                model_key = self.get_model_key_from_name(algorithm_name)
+                timestamp = int(time.time() * 1000)
+                model_name = f"{algorithm_name.split(' - ')[-1]}_{timestamp}"
+
+                model_custom_params = custom_hyperparams.get(model_key, {}) if custom_hyperparams else {}
+
+                search_space = create_search_space(self.current_config.task_type.value, [model_key])
+                if model_custom_params:
+                    if model_key in search_space:
+                        search_space[model_key].update(model_custom_params)
+                    else:
+                        search_space[model_key] = model_custom_params
+
+                model_start_time = time.time()
+                training_engine = MLTrainingEngine(self.current_config)
+                # Preserve reference for prediction convenience
+                self.training_engine = training_engine
+
+                # HPO path (best-effort)
+                if enable_hpo and self.hpo_optimizer and ADVANCED_FEATURES_AVAILABLE:
+                    try:
+                        if hasattr(self.hpo_optimizer, 'optimize'):
+                            def objective_function(params):
+                                try:
+                                    from sklearn.model_selection import cross_val_score
+                                    from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+                                    from sklearn.linear_model import LogisticRegression, LinearRegression
+                                    from sklearn.svm import SVC, SVR
+
+                                    if model_key == 'random_forest':
+                                        if self.current_config.task_type == TaskType.CLASSIFICATION:
+                                            model = RandomForestClassifier(**params, random_state=42)
+                                        else:
+                                            model = RandomForestRegressor(**params, random_state=42)
+                                    elif model_key == 'logistic_regression':
+                                        model = LogisticRegression(**params, random_state=42, max_iter=1000)
+                                    elif model_key == 'linear_regression':
+                                        model = LinearRegression(**params)
+                                    elif model_key == 'svm':
+                                        if self.current_config.task_type == TaskType.CLASSIFICATION:
+                                            model = SVC(**params, random_state=42)
+                                        else:
+                                            model = SVR(**params)
+                                    else:
+                                        if self.current_config.task_type == TaskType.CLASSIFICATION:
+                                            model = RandomForestClassifier(**params, random_state=42)
+                                        else:
+                                            model = RandomForestRegressor(**params, random_state=42)
+
+                                    cv_scores = cross_val_score(
+                                        model, X.values, y.values, cv=5,
+                                        scoring='accuracy' if self.current_config.task_type == TaskType.CLASSIFICATION else 'r2'
+                                    )
+                                    return cv_scores.mean()
+                                except Exception as e:
+                                    logger.warning(f"HPO objective error for {algorithm_name}: {e}")
+                                    return 0.0
+
+                            hpo_result = self.hpo_optimizer.optimize(
+                                objective_function=objective_function,
+                                search_space={model_key: search_space.get(model_key, {})},
+                                direction='maximize',
+                                study_name=f"training_{model_key}_{timestamp}"
+                            )
+                            best_params = getattr(hpo_result, 'best_params', search_space.get(model_key, {}))
+                        else:
+                            best_params = search_space.get(model_key, {})
+                    except Exception as e:
+                        logger.warning(f"HPO failed for {algorithm_name}: {e}")
+                        best_params = search_space.get(model_key, {})
+                else:
+                    best_params = {}
+
+                # Final training
+                fixed_grid = {k: ([v] if not isinstance(v, (list, tuple, np.ndarray)) else list(v)) for k, v in (best_params or {}).items()}
+                result = training_engine.train_model(
+                    X=X.values,
+                    y=y.values,
+                    model_type=model_key,
+                    model_name=model_name,
+                    param_grid=fixed_grid if fixed_grid else None
+                )
+
+                model_training_time = time.time() - model_start_time
+
+                # Store trained model information
+                self.trained_models[model_name] = {
+                    'algorithm': algorithm_name,
+                    'model_key': model_key,
+                    'target_column': target_column,
+                    'training_time': model_training_time,
+                    'result': result,
+                    'feature_names': X.columns.tolist(),
+                    'data_shape': X.shape,
+                    'hpo_enabled': enable_hpo,
+                    'hpo_trials': hpo_trials if enable_hpo else None,
+                    'best_params': best_params,
+                    'custom_params': model_custom_params
+                }
+
+                # Log experiment metrics
+                if self.experiment_tracker and ADVANCED_FEATURES_AVAILABLE:
+                    metrics = result.get('metrics', {})
+                    self.experiment_tracker.log_metrics(metrics, step=model_name)
+
+                return {
+                    'algorithm': algorithm_name,
+                    'model_name': model_name,
+                    'model_key': model_key,
+                    'result': result,
+                    'training_time': model_training_time,
+                    'best_params': best_params,
+                    'custom_params': model_custom_params,
+                    'hpo_enabled': enable_hpo and bool(best_params),
+                    'status': 'success',
+                    'feature_names': X.columns.tolist(),
+                    'data_shape': X.shape
+                }
+            except Exception as e:
+                logger.error(f"❌ Failed to train {algorithm_name}: {e}")
+                return {
+                    'algorithm': algorithm_name,
+                    'model_key': self.get_model_key_from_name(algorithm_name),
+                    'error': str(e),
+                    'training_time': 0,
+                    'status': 'failed'
+                }
+
+        # Train models (parallel or sequential)
+        if enable_parallel and len(algorithms) > 1:
+            training_progress.append(f"🚀 Starting parallel training of {len(algorithms)} models...")
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=min(max_workers, len(algorithms))) as executor:
+                future_to_algorithm = {executor.submit(train_single_model, alg): alg for alg in algorithms}
+                for future in future_to_algorithm:
+                    algorithm_name = future_to_algorithm[future]
+                    try:
+                        result = future.result()
+                        results[algorithm_name] = result
+                        if result.get('status') == 'success':
+                            training_progress.append(f"✅ {algorithm_name}: Completed in {result['training_time']:.2f}s")
+                        else:
+                            training_progress.append(f"❌ {algorithm_name}: Failed - {result.get('error', 'Unknown error')}")
+                    except Exception as e:
+                        results[algorithm_name] = {
+                            'algorithm': algorithm_name,
+                            'error': str(e),
+                            'status': 'failed'
+                        }
+                        training_progress.append(f"❌ {algorithm_name}: Exception - {str(e)}")
+        else:
+            training_progress.append(f"🔄 Starting sequential training of {len(algorithms)} models...")
+            for algorithm_name in algorithms:
+                training_progress.append(f"🎯 Training {algorithm_name}...")
+                result = train_single_model(algorithm_name)
+                results[algorithm_name] = result
+                if result.get('status') == 'success':
+                    training_progress.append(f"✅ {algorithm_name}: Completed in {result['training_time']:.2f}s")
+                else:
+                    training_progress.append(f"❌ {algorithm_name}: Failed - {result.get('error', 'Unknown error')}")
+
+        total_training_time = time.time() - start_time
+
+        # End experiment
+        if self.experiment_tracker and ADVANCED_FEATURES_AVAILABLE:
+            self.experiment_tracker.end_experiment()
+
+        return results, training_progress, total_training_time
+
     def train_multiple_models(self, target_column: str, algorithms: List[str], 
                              enable_hpo: bool = True, hpo_trials: int = 50,
                              enable_parallel: bool = True, max_workers: int = 4,
-                             custom_hyperparams: str = "") -> Tuple[str, str, str, gr.Dropdown]:
-        """Train multiple models simultaneously with individual hyperparameter configurations"""
+                             custom_hyperparams: str = "",
+                             prefilter_by_task: bool = True) -> Tuple[str, str, str, gr.Dropdown]:
+        """Train multiple models simultaneously with individual hyperparameter configurations.
+
+        Added: prefilter_by_task to ensure only task-compatible models are trained.
+        """
         if self.inference_only:
             return "❌ Model training is disabled in inference-only mode.", "", "", gr.Dropdown()
         
@@ -1369,228 +2091,18 @@ Model Training Summary
                 except json.JSONDecodeError as e:
                     return f"❌ Invalid JSON in custom hyperparameters: {str(e)}", "", ""
             
-            # Initialize training engine if needed
-            if self.current_config is None:
-                task_type = TaskType.CLASSIFICATION if self.determine_task_type(self.current_data[target_column]) == "classification" else TaskType.REGRESSION
-                self.current_config = MLTrainingEngineConfig(
-                    task_type=task_type,
-                    optimization_strategy=OptimizationStrategy.BAYESIAN_OPTIMIZATION if enable_hpo else OptimizationStrategy.GRID_SEARCH,
-                    model_path="./models",
-                    checkpoint_path="./checkpoints",
-                    cv_folds=5,
-                    test_size=0.2
-                )
-            
-            # Prepare data
-            X = self.current_data.drop(columns=[target_column])
-            y = self.current_data[target_column]
-            
-            # Handle categorical features
-            categorical_columns = X.select_dtypes(include=['object']).columns
-            if len(categorical_columns) > 0:
-                for col in categorical_columns:
-                    X[col] = pd.Categorical(X[col]).codes
-            
-            # Start experiment tracking
-            if self.experiment_tracker and ADVANCED_FEATURES_AVAILABLE:
-                experiment_id = self.experiment_tracker.start_experiment(
-                    experiment_name=f"multimodel_training_{int(time.time())}",
-                    tags={"type": "multimodel_training", "target": target_column, "models": len(algorithms)}
-                )
-            
-            start_time = time.time()
-            results = {}
-            training_progress = []
-            
-            # Function to train a single model
-            def train_single_model(algorithm_name):
-                try:
-                    model_key = self.get_model_key_from_name(algorithm_name)
-                    timestamp = int(time.time() * 1000)  # Use milliseconds for uniqueness
-                    model_name = f"{algorithm_name.split(' - ')[-1]}_{timestamp}"
-                    
-                    # Get custom hyperparameters for this model if specified
-                    model_custom_params = custom_hp_dict.get(model_key, {})
-                    
-                    # Create search space
-                    search_space = create_search_space(self.current_config.task_type.value, [model_key])
-                    
-                    # Merge custom parameters with default search space
-                    if model_custom_params:
-                        if model_key in search_space:
-                            search_space[model_key].update(model_custom_params)
-                        else:
-                            search_space[model_key] = model_custom_params
-                    
-                    model_start_time = time.time()
-                    
-                    # Initialize training engine for this model
-                    training_engine = MLTrainingEngine(self.current_config)
-                    
-                    # Train model
-                    if enable_hpo and self.hpo_optimizer and ADVANCED_FEATURES_AVAILABLE:
-                        # Use HPO
-                        try:
-                            if hasattr(self.hpo_optimizer, 'optimize'):
-                                def objective_function(params):
-                                    try:
-                                        from sklearn.model_selection import cross_val_score
-                                        from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
-                                        from sklearn.linear_model import LogisticRegression, LinearRegression
-                                        from sklearn.svm import SVC, SVR
-                                        
-                                        # Create model based on type with hyperparameters
-                                        if model_key == 'random_forest':
-                                            if self.current_config.task_type == TaskType.CLASSIFICATION:
-                                                model = RandomForestClassifier(**params, random_state=42)
-                                            else:
-                                                model = RandomForestRegressor(**params, random_state=42)
-                                        elif model_key == 'logistic_regression':
-                                            model = LogisticRegression(**params, random_state=42, max_iter=1000)
-                                        elif model_key == 'linear_regression':
-                                            model = LinearRegression(**params)
-                                        elif model_key == 'svm':
-                                            if self.current_config.task_type == TaskType.CLASSIFICATION:
-                                                model = SVC(**params, random_state=42)
-                                            else:
-                                                model = SVR(**params)
-                                        else:
-                                            # Default to RandomForest
-                                            if self.current_config.task_type == TaskType.CLASSIFICATION:
-                                                model = RandomForestClassifier(**params, random_state=42)
-                                            else:
-                                                model = RandomForestRegressor(**params, random_state=42)
-                                        
-                                        # Perform cross-validation
-                                        cv_scores = cross_val_score(
-                                            model, X.values, y.values, cv=5, 
-                                            scoring='accuracy' if self.current_config.task_type == TaskType.CLASSIFICATION else 'r2'
-                                        )
-                                        return cv_scores.mean()
-                                        
-                                    except Exception as e:
-                                        logger.warning(f"HPO objective error for {algorithm_name}: {e}")
-                                        return 0.0
-                                
-                                hpo_result = self.hpo_optimizer.optimize(
-                                    objective_function=objective_function,
-                                    search_space={model_key: search_space.get(model_key, {})},
-                                    direction='maximize',
-                                    study_name=f"multimodel_{model_key}_{timestamp}"
-                                )
-                                best_params = getattr(hpo_result, 'best_params', search_space.get(model_key, {}))
-                            else:
-                                # Fallback HPO simulation
-                                best_params = search_space.get(model_key, {})
-                        except Exception as e:
-                            logger.warning(f"HPO failed for {algorithm_name}: {e}")
-                            best_params = search_space.get(model_key, {})
-                    else:
-                        best_params = {}
-                    
-                    # Train the final model
-                    result = training_engine.train_model(
-                        X=X.values,
-                        y=y.values,
-                        model_type=model_key,
-                        model_name=model_name,
-                        hyperparameters=best_params
-                    )
-                    
-                    model_training_time = time.time() - model_start_time
-                    
-                    # Store trained model information
-                    self.trained_models[model_name] = {
-                        'algorithm': algorithm_name,
-                        'model_key': model_key,
-                        'target_column': target_column,
-                        'training_time': model_training_time,
-                        'result': result,
-                        'feature_names': X.columns.tolist(),
-                        'data_shape': X.shape,
-                        'hpo_enabled': enable_hpo,
-                        'hpo_trials': hpo_trials if enable_hpo else None,
-                        'best_params': best_params,
-                        'custom_params': model_custom_params
-                    }
-                    
-                    # Log experiment metrics
-                    if self.experiment_tracker and ADVANCED_FEATURES_AVAILABLE:
-                        metrics = result.get('metrics', {})
-                        self.experiment_tracker.log_metrics(
-                            experiment_id, 
-                            metrics, 
-                            model_name=model_name
-                        )
-                    
-                    return {
-                        'algorithm': algorithm_name,
-                        'model_name': model_name,
-                        'model_key': model_key,
-                        'result': result,
-                        'training_time': model_training_time,
-                        'best_params': best_params,
-                        'custom_params': model_custom_params,
-                        'hpo_enabled': enable_hpo and bool(best_params),
-                        'status': 'success'
-                    }
-                    
-                except Exception as e:
-                    logger.error(f"❌ Failed to train {algorithm_name}: {e}")
-                    return {
-                        'algorithm': algorithm_name,
-                        'model_key': self.get_model_key_from_name(algorithm_name),
-                        'error': str(e),
-                        'training_time': 0,
-                        'status': 'failed'
-                    }
-            
-            # Train models (parallel or sequential)
-            if enable_parallel and len(algorithms) > 1:
-                # Parallel training
-                training_progress.append(f"🚀 Starting parallel training of {len(algorithms)} models...")
-                
-                with ThreadPoolExecutor(max_workers=min(max_workers, len(algorithms))) as executor:
-                    future_to_algorithm = {
-                        executor.submit(train_single_model, alg): alg for alg in algorithms
-                    }
-                    
-                    for future in future_to_algorithm:
-                        algorithm_name = future_to_algorithm[future]
-                        try:
-                            result = future.result()
-                            results[algorithm_name] = result
-                            if result['status'] == 'success':
-                                training_progress.append(f"✅ {algorithm_name}: Completed in {result['training_time']:.2f}s")
-                            else:
-                                training_progress.append(f"❌ {algorithm_name}: Failed - {result.get('error', 'Unknown error')}")
-                        except Exception as e:
-                            results[algorithm_name] = {
-                                'algorithm': algorithm_name,
-                                'error': str(e),
-                                'status': 'failed'
-                            }
-                            training_progress.append(f"❌ {algorithm_name}: Exception - {str(e)}")
-            else:
-                # Sequential training
-                training_progress.append(f"🔄 Starting sequential training of {len(algorithms)} models...")
-                
-                for algorithm_name in algorithms:
-                    training_progress.append(f"🎯 Training {algorithm_name}...")
-                    result = train_single_model(algorithm_name)
-                    results[algorithm_name] = result
-                    
-                    if result['status'] == 'success':
-                        training_progress.append(f"✅ {algorithm_name}: Completed in {result['training_time']:.2f}s")
-                    else:
-                        training_progress.append(f"❌ {algorithm_name}: Failed - {result.get('error', 'Unknown error')}")
-            
-            total_training_time = time.time() - start_time
-            
-            # End experiment
-            if self.experiment_tracker and ADVANCED_FEATURES_AVAILABLE:
-                self.experiment_tracker.end_experiment(experiment_id)
-            
+            # Delegate to unified core
+            results, training_progress, total_training_time = self._train_algorithms(
+                target_column=target_column,
+                algorithms=list(algorithms) if isinstance(algorithms, list) else [],
+                enable_hpo=enable_hpo,
+                hpo_trials=hpo_trials,
+                enable_parallel=enable_parallel,
+                max_workers=max_workers,
+                custom_hyperparams=custom_hp_dict,
+                prefilter_by_task=prefilter_by_task
+            )
+
             # Generate results
             progress_text = "\n".join(training_progress)
             progress_text += f"\n\n🏁 Total Training Time: {total_training_time:.2f} seconds"
@@ -1749,7 +2261,35 @@ Model Training Summary
                 return f"Error parsing input data: {str(e)}. Please use comma-separated values or JSON array format."
             
             # Make prediction
-            success, predictions = self.training_engine.predict(input_array)
+            if selected_model and selected_model != "Select a trained model..." and selected_model in self.trained_models:
+                # Use stored trained model
+                model_info = self.trained_models[selected_model]
+                model = model_info['result']['model']
+                
+                # Make prediction with stored model
+                try:
+                    predictions = model.predict(input_array)
+                    success = True
+                except Exception as e:
+                    success = False
+                    predictions = str(e)
+            elif self.training_engine and hasattr(self.training_engine, 'best_model_name') and self.training_engine.best_model_name is not None:
+                # Use best model from training engine
+                try:
+                    best_model_name = self.training_engine.best_model_name
+                    if best_model_name in self.training_engine.models:
+                        model = self.training_engine.models[best_model_name]['model']
+                        predictions = model.predict(input_array)
+                        success = True
+                    else:
+                        success = False
+                        predictions = f"Best model '{best_model_name}' not found in trained models"
+                except Exception as e:
+                    success = False
+                    predictions = str(e)
+            else:
+                success = False
+                predictions = "No trained model available for prediction"
             
             if not success:
                 return f"Prediction failed: {predictions}"
@@ -1788,6 +2328,34 @@ def create_ui(inference_only: bool = False):
     # Load CSS styles
     css = load_css_file()
     
+    # Add JavaScript for tab handling and data preview persistence
+    js = """
+    function refreshDataPreview() {
+        // Try to trigger auto-refresh when switching to data tab
+        const autoRefreshBtn = document.getElementById('auto-refresh-trigger');
+        if (autoRefreshBtn) {
+            autoRefreshBtn.click();
+        }
+    }
+    
+    // Monitor tab changes and refresh data preview
+    document.addEventListener('DOMContentLoaded', function() {
+        // Wait for Gradio to initialize
+        setTimeout(function() {
+            const tabButtons = document.querySelectorAll('.tab-nav button');
+            tabButtons.forEach(function(button) {
+                button.addEventListener('click', function() {
+                    // Check if this is the data tab
+                    if (button.textContent.includes('Data Upload') || button.textContent.includes('📁')) {
+                        // Delay to ensure tab is loaded
+                        setTimeout(refreshDataPreview, 100);
+                    }
+                });
+            });
+        }, 1000);
+    });
+    """
+    
     title = "🚀 ML Inference Server" if inference_only else "🚀 Advanced AutoML Platform with AI Optimization"
     description = """
 🎯 Real-time ML inference server with enterprise-grade security and performance optimization.
@@ -1809,7 +2377,7 @@ def create_ui(inference_only: bool = False):
 📈 Quick Start: Upload data → Auto-optimize preprocessing → Train single/multiple models with integrated HPO → Compare performance → Deploy best performer
     """
 
-    with gr.Blocks(css=css, title=title, theme=gr.themes.Soft()) as interface:
+    with gr.Blocks(css=css, title=title, theme=gr.themes.Soft(), js=js) as interface:
         gr.HTML(f"""
             <div style="text-align: center; padding: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 10px; margin-bottom: 20px;">
                 <h1 style="margin: 0; font-size: 2.5em;">{title}</h1>
@@ -1852,7 +2420,7 @@ def create_ui(inference_only: bool = False):
             
         else:
             # Full training and inference interface
-            with gr.Tabs():
+            with gr.Tabs() as tabs:
                 # Data Upload Tab
                 with gr.Tab("📁 Data Upload", id="data"):
                     with gr.Row():
@@ -1860,7 +2428,7 @@ def create_ui(inference_only: bool = False):
                             gr.Markdown("## Upload Your Dataset")
                             data_file = gr.File(label="Choose Data File", file_types=[".csv", ".xlsx", ".json"])
                             
-                            gr.Markdown("## Or Try Sample Datasets")
+                            gr.Markdown("## Or Select Sample Dataset")
                             sample_datasets = [
                                 "Select a dataset...",
                                 "Iris Classification",
@@ -1869,8 +2437,20 @@ def create_ui(inference_only: bool = False):
                                 "Diabetes",
                                 "Breast Cancer"
                             ]
-                            sample_dropdown = gr.Dropdown(choices=sample_datasets, label="Sample Datasets")
-                            load_sample_btn = gr.Button("Load Sample Data", variant="secondary")
+                            sample_dropdown = gr.Dropdown(choices=sample_datasets, label="Sample Datasets", value="Select a dataset...")
+                            
+                            gr.Markdown("## Load Data")
+                            gr.Markdown("🔽 Click below to load your uploaded file or selected sample dataset")
+                            load_data_btn = gr.Button("Load Data", variant="primary")
+                            
+                            # Add a test button for debugging
+                            test_btn = gr.Button("🧪 Test Button (Debug)", variant="secondary", size="sm")
+                            test_output = gr.Textbox(label="Test Output", lines=2, interactive=False, visible=True)
+                            
+                            # Data status and preview controls
+                            gr.Markdown("## 📊 Data Preview Controls")
+                            data_status = gr.Markdown("**Status:** No data loaded", elem_classes=["data-status"])
+                            refresh_preview_btn = gr.Button("🔄 Refresh Data Preview", variant="secondary")
                             
                             # Advanced preprocessing
                             gr.Markdown("## 🚀 Advanced Preprocessing")
@@ -1924,69 +2504,42 @@ def create_ui(inference_only: bool = False):
                 
                 # Training Tab
                 with gr.Tab("🚀 Training", id="training"):
-                    with gr.Tabs():
-                        # Single Model Training
-                        with gr.Tab("🤖 Single Model", id="single_training"):
-                            with gr.Row():
-                                with gr.Column():
-                                    gr.Markdown("## Single Model Training")
-                                    target_column = gr.Textbox(label="Target Column Name", placeholder="e.g., target, label, price")
-                                    algorithm_dropdown = gr.Dropdown(
-                                        choices=["Please create configuration first"], 
-                                        label="Select Algorithm"
-                                    )
-                                    model_name = gr.Textbox(label="Model Name (optional)", placeholder="my_model")
-                                    
-                                    # Hyperparameter Optimization Options
-                                    gr.Markdown("### 🎯 Hyperparameter Optimization")
-                                    enable_hpo = gr.Checkbox(label="Enable Hyperparameter Optimization", value=True)
-                                    with gr.Row():
-                                        hpo_trials = gr.Slider(minimum=10, maximum=200, value=50, step=10, label="HPO Trials")
-                                        hpo_timeout = gr.Slider(minimum=60, maximum=1200, value=300, step=60, label="HPO Timeout (seconds)")
-                                    
-                                    train_btn = gr.Button("Train Model", variant="primary")
-                                    
-                                with gr.Column():
-                                    training_output = gr.Textbox(label="Training Results", lines=10, interactive=False)
-                                    metrics_output = gr.Textbox(label="Model Metrics", lines=8, interactive=False)
-                                    importance_output = gr.Textbox(label="Feature Importance", lines=6, interactive=False)
-                        
-                        # Multi-Model Training
-                        with gr.Tab("🚀 Multi-Model Training", id="multi_training"):
-                            with gr.Row():
-                                with gr.Column():
-                                    gr.Markdown("## Multi-Model Training Configuration")
-                                    multi_target_column = gr.Textbox(label="Target Column Name", placeholder="e.g., target, label, price")
-                                    
-                                    gr.Markdown("### 📋 Model Selection")
-                                    multi_algorithms = gr.CheckboxGroup(
-                                        choices=[],
-                                        label="Select Models to Train",
-                                        value=[]
-                                    )
-                                    
-                                    gr.Markdown("### ⚙️ Global Settings")
-                                    multi_enable_hpo = gr.Checkbox(label="Enable HPO for All Models", value=True)
-                                    multi_hpo_trials = gr.Slider(minimum=10, maximum=200, value=50, step=10, label="HPO Trials per Model")
-                                    multi_parallel_training = gr.Checkbox(label="Enable Parallel Training", value=True)
-                                    multi_max_workers = gr.Slider(minimum=1, maximum=8, value=4, step=1, label="Max Parallel Workers")
-                                    
-                                    # Model-specific hyperparameters
-                                    gr.Markdown("### 🔧 Model-Specific Hyperparameters")
-                                    custom_hyperparams = gr.Textbox(
-                                        label="Custom Hyperparameters (JSON)",
-                                        placeholder='{"random_forest": {"n_estimators": [100, 200], "max_depth": [5, 10]}, "xgboost": {"learning_rate": [0.01, 0.1]}}',
-                                        lines=5
-                                    )
-                                    
-                                    multi_train_btn = gr.Button("Start Multi-Model Training", variant="primary")
-                                    
-                                with gr.Column():
-                                    multi_training_output = gr.Textbox(label="Multi-Training Progress", lines=12, interactive=False)
-                                    multi_results_summary = gr.Textbox(label="Training Summary", lines=10, interactive=False)
+                    with gr.Row():
+                        with gr.Column():
+                            gr.Markdown("## Multi-Model Training Configuration")
+                            multi_target_column = gr.Textbox(label="Target Column Name", placeholder="e.g., target, label, price")
                             
-                            with gr.Row():
-                                multi_detailed_results = gr.Textbox(label="Detailed Results", lines=15, interactive=False)
+                            gr.Markdown("### 📋 Model Selection")
+                            multi_prefilter_by_task = gr.Checkbox(label="Prefilter models by task", value=True)
+                            multi_algorithms = gr.Dropdown(
+                                choices=[],
+                                label="Select Models to Train",
+                                value=[],
+                                multiselect=True
+                            )
+                            
+                            gr.Markdown("### ⚙️ Global Settings")
+                            multi_enable_hpo = gr.Checkbox(label="Enable HPO for All Models", value=True)
+                            multi_hpo_trials = gr.Slider(minimum=10, maximum=200, value=50, step=10, label="HPO Trials per Model")
+                            multi_parallel_training = gr.Checkbox(label="Enable Parallel Training", value=True)
+                            multi_max_workers = gr.Slider(minimum=1, maximum=8, value=4, step=1, label="Max Parallel Workers")
+                            
+                            # Model-specific hyperparameters
+                            gr.Markdown("### 🔧 Model-Specific Hyperparameters")
+                            custom_hyperparams = gr.Textbox(
+                                label="Custom Hyperparameters (JSON)",
+                                placeholder='{"random_forest": {"n_estimators": [100, 200], "max_depth": [5, 10]}, "xgboost": {"learning_rate": [0.01, 0.1]}}',
+                                lines=5
+                            )
+                            
+                            multi_train_btn = gr.Button("Start Multi-Model Training", variant="primary")
+                            
+                        with gr.Column():
+                            multi_training_output = gr.Textbox(label="Multi-Training Progress", lines=12, interactive=False)
+                            multi_results_summary = gr.Textbox(label="Training Summary", lines=10, interactive=False)
+
+                    with gr.Row():
+                        multi_detailed_results = gr.Textbox(label="Detailed Results", lines=15, interactive=False)
                 
                 # Model Comparison Tab
                 with gr.Tab("🏆 Model Comparison", id="comparison"):
@@ -1994,10 +2547,11 @@ def create_ui(inference_only: bool = False):
                         with gr.Column():
                             gr.Markdown("## Multi-Model Comparison")
                             comp_target_column = gr.Textbox(label="Target Column", placeholder="e.g., target, label, price")
-                            comp_algorithms = gr.CheckboxGroup(
+                            comp_algorithms = gr.Dropdown(
                                 choices=[],
                                 label="Select Algorithms to Compare",
-                                value=[]
+                                value=[],
+                                multiselect=True
                             )
                             enable_hpo_comparison = gr.Checkbox(label="Enable HPO for All Models", value=True)
                             
@@ -2044,17 +2598,73 @@ def create_ui(inference_only: bool = False):
                     with gr.Row():
                         monitoring_dashboard = gr.HTML(label="System Dashboard")
             
+            # Create persistent state variables for data preview (not needed now, keeping for reference)
+            # data_summary_state = gr.State()
+            # data_preview_text_state = gr.State()
+            
+            # Auto-refresh preview when data tab is selected (using a dummy button with CSS hidden)
+            with gr.Row(visible=False):
+                auto_refresh_trigger = gr.Button("Auto Refresh", elem_id="auto-refresh-trigger")
+            
             # Event handlers
-            data_file.change(
-                app.load_data,
-                inputs=data_file,
-                outputs=[data_info, gr.State(), gr.State(), data_preview]
+            # Removed automatic file loading - user must click "Load Data" button
+            
+            # Test button for debugging
+            test_btn.click(
+                app.test_button_functionality,
+                outputs=test_output
             )
             
-            load_sample_btn.click(
-                app.load_sample_data,
-                inputs=sample_dropdown,
-                outputs=[data_info, gr.State(), gr.State(), data_preview]
+            # Unified load data button - handles both file uploads and sample datasets
+            def load_data_wrapper(file, dataset_name):
+                try:
+                    result = app.load_data_unified(file, dataset_name)
+                    if len(result) == 5:
+                        info_text, metadata, preview_text, sample_table, status_text = result
+                        return info_text, sample_table, status_text
+                    else:
+                        return "Error: Invalid result format", "", "**Status:** ❌ Error"
+                except Exception as e:
+                    return f"Error loading data: {str(e)}", "", "**Status:** ❌ Error"
+            
+            load_data_btn.click(
+                load_data_wrapper,
+                inputs=[data_file, sample_dropdown],
+                outputs=[data_info, data_preview, data_status]
+            )
+            
+            # Refresh data preview when button is clicked
+            def refresh_data_wrapper():
+                try:
+                    result = app.refresh_data_preview()
+                    if len(result) == 3:
+                        preview_text, sample_table, status_text = result
+                        return sample_table, status_text
+                    else:
+                        return "Error refreshing preview", "**Status:** ❌ Error"
+                except Exception as e:
+                    return f"Error refreshing: {str(e)}", "**Status:** ❌ Error"
+            
+            refresh_preview_btn.click(
+                refresh_data_wrapper,
+                outputs=[data_preview, data_status]
+            )
+            
+            # Auto-refresh when switching to data tab
+            def restore_data_wrapper():
+                try:
+                    result = app.restore_data_view()
+                    if len(result) == 3:
+                        data_info_text, data_preview_html, status_text = result
+                        return data_info_text, data_preview_html, status_text
+                    else:
+                        return "No data loaded", "", "**Status:** No data loaded"
+                except Exception as e:
+                    return f"Error: {str(e)}", "", "**Status:** ❌ Error"
+            
+            auto_refresh_trigger.click(
+                restore_data_wrapper,
+                outputs=[data_info, data_preview, data_status]
             )
             
             optimize_preprocessing_btn.click(
@@ -2066,33 +2676,34 @@ def create_ui(inference_only: bool = False):
                 app.create_training_config,
                 inputs=[task_type, optimization_strategy, cv_folds, test_size, random_state, 
                        enable_feature_selection, normalization, enable_quantization, optimization_mode],
-                outputs=[config_output, algorithm_dropdown, gr.State()]
+                outputs=[config_output]
             )
             
             # Update algorithm choices for comparison when config is created
-            algorithm_dropdown.change(
-                lambda choices: gr.update(choices=choices if choices != ["Please create configuration first"] else []),
-                inputs=algorithm_dropdown,
+            create_config_btn.click(
+                lambda: app.get_multi_algorithm_choices(True),
                 outputs=comp_algorithms
             )
             
-            # Update multi-model algorithm choices when config is created
-            algorithm_dropdown.change(
-                lambda choices: gr.update(choices=choices if choices != ["Please create configuration first"] else []),
-                inputs=algorithm_dropdown,
+            # Update multi-model algorithm choices when config is created (default prefilter=True)
+            create_config_btn.click(
+                lambda: app.get_multi_algorithm_choices(True),
+                outputs=multi_algorithms
+            )
+
+            # Toggle prefilter updates the multi-model algorithm choices
+            multi_prefilter_by_task.change(
+                app.get_multi_algorithm_choices,
+                inputs=multi_prefilter_by_task,
                 outputs=multi_algorithms
             )
             
-            train_btn.click(
-                app.train_model,
-                inputs=[target_column, algorithm_dropdown, model_name, enable_hpo, hpo_trials],
-                outputs=[training_output, metrics_output, importance_output, trained_model_dropdown]
-            )
+            # Single-model training removed; use multi-model tab instead
             
             multi_train_btn.click(
                 app.train_multiple_models,
                 inputs=[multi_target_column, multi_algorithms, multi_enable_hpo, multi_hpo_trials, 
-                       multi_parallel_training, multi_max_workers, custom_hyperparams],
+                       multi_parallel_training, multi_max_workers, custom_hyperparams, multi_prefilter_by_task],
                 outputs=[multi_training_output, multi_results_summary, multi_detailed_results, trained_model_dropdown]
             )
             

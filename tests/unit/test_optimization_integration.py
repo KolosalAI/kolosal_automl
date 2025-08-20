@@ -13,6 +13,7 @@ import unittest
 import numpy as np
 import pandas as pd
 import tempfile
+import time
 from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock
 
@@ -191,8 +192,8 @@ class TestOptimizedDataPipeline(unittest.TestCase):
         
         if result['success']:
             self.assertIn('data', result)
-            self.assertIn('preprocessing_results', result)
-            self.assertIn('memory_optimization_results', result)
+            self.assertIn('dataset_info', result)
+            self.assertIn('optimization_info', result)
             
             df = result['data']
             self.assertIsInstance(df, pd.DataFrame)

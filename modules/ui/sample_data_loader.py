@@ -12,12 +12,20 @@ from pathlib import Path
 
 try:
     from sklearn.datasets import (
-        load_iris, load_boston, load_wine, load_diabetes, 
+        load_iris, load_wine, load_diabetes, 
         load_breast_cancer, make_classification, make_regression
     )
+    # Try to import load_boston separately since it was removed in sklearn 1.2+
+    try:
+        from sklearn.datasets import load_boston
+        BOSTON_AVAILABLE = True
+    except ImportError:
+        BOSTON_AVAILABLE = False
+    
     SKLEARN_AVAILABLE = True
 except ImportError:
     SKLEARN_AVAILABLE = False
+    BOSTON_AVAILABLE = False
 
 try:
     from modules.logging_config import get_logger
@@ -112,10 +120,11 @@ class SampleDataLoader:
     
     def _load_boston(self) -> pd.DataFrame:
         """Load Boston Housing dataset"""
-        if not SKLEARN_AVAILABLE:
-            return self._create_dummy_regression_dataset(n_samples=506, n_features=13)
+        if not SKLEARN_AVAILABLE or not BOSTON_AVAILABLE:
+            return self._create_dummy_regression_dataset(n_samples=506, n_features=13, target_name="price")
         
         try:
+            from sklearn.datasets import load_boston
             data = load_boston()
             df = pd.DataFrame(data.data, columns=data.feature_names)
             df['price'] = data.target

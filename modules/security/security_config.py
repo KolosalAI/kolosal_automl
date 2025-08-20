@@ -21,8 +21,6 @@ import json
 from dataclasses import dataclass, field
 from enum import Enum
 
-from .secrets_manager import get_secrets_manager, SecretType
-
 
 class SecurityLevel(Enum):
     """Security levels for different environments"""
@@ -137,7 +135,7 @@ class SecurityEnvironment:
             enforce_https=True,
             redirect_http=True,
             hsts_enabled=True,
-            allowed_origins=[],  # Must be explicitly configured
+            allowed_origins=["https://localhost:3000"],  # Default secure origin for production
             allow_credentials=False,
             enable_audit_logging=True,
             log_security_events=True,
@@ -279,6 +277,9 @@ class SecurityEnvironment:
             if "*" in self.allowed_origins:
                 issues.append("Wildcard CORS origins should not be used in production")
             
+            if not self.allowed_origins:
+                issues.append("Allowed origins must be specified in production")
+            
             if self.debug_mode:
                 issues.append("Debug mode should be disabled in production")
         
@@ -299,6 +300,7 @@ class SecurityEnvironment:
     
     def get_api_keys(self) -> List[str]:
         """Get API keys from secrets manager or environment"""
+        from .secrets_manager import get_secrets_manager, SecretType
         secrets_manager = get_secrets_manager()
         
         # Try to get from secrets manager first
@@ -340,6 +342,7 @@ class SecurityEnvironment:
         if not self.enable_jwt:
             return None
         
+        from .secrets_manager import get_secrets_manager, SecretType
         secrets_manager = get_secrets_manager()
         
         # Try to get from secrets manager
@@ -460,3 +463,13 @@ def setup_secure_environment(env_name: Optional[str] = None) -> SecurityEnvironm
 
 # Alias for backward compatibility and convenience
 SecurityConfig = SecurityEnvironment
+
+
+# Global convenience functions for external compatibility
+def get_secrets_manager():
+    """Global function to get secrets manager - for compatibility with tests"""
+    try:
+        from .secrets_manager import get_secrets_manager as _get_secrets_manager
+        return _get_secrets_manager()
+    except ImportError:
+        return None

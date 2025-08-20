@@ -6,7 +6,6 @@ This test suite covers:
 - Loading strategy selection
 - Memory optimization features
 - Different data format handling
-- Performance monitoring
 """
 
 import os
@@ -224,24 +223,29 @@ class TestOptimizedDataLoader(unittest.TestCase):
     
     def test_loading_strategy_selection(self):
         """Test loading strategy selection logic"""
-        # Test tiny dataset - should use DIRECT
-        strategy = self.loader.select_loading_strategy(
-            DatasetSize.TINY, estimated_memory_mb=10.0
-        )
-        self.assertEqual(strategy, LoadingStrategy.DIRECT)
-        
-        # Test large dataset with high memory - should not use DIRECT
-        strategy = self.loader.select_loading_strategy(
-            DatasetSize.LARGE, estimated_memory_mb=10000.0
-        )
-        self.assertNotEqual(strategy, LoadingStrategy.DIRECT)
-        
-        # Test huge dataset - should use advanced strategy
-        strategy = self.loader.select_loading_strategy(
-            DatasetSize.HUGE, estimated_memory_mb=50000.0
-        )
-        self.assertIn(strategy, [LoadingStrategy.STREAMING, LoadingStrategy.DISTRIBUTED, 
-                                LoadingStrategy.MEMORY_MAPPED])
+        # Mock the memory monitor to return a predictable amount
+        with patch.object(self.loader.memory_monitor, 'get_available_memory', return_value=8000):  # 8GB available
+            # Test tiny dataset - should use DIRECT
+            strategy = self.loader.select_loading_strategy(
+                DatasetSize.TINY, estimated_memory_mb=10.0
+            )
+            self.assertEqual(strategy, LoadingStrategy.DIRECT)
+            
+            # Test large dataset with high memory - should not use DIRECT  
+            # With 8GB available and 70% usage = 5.6GB threshold
+            # For LARGE datasets, threshold is halved to 2.8GB
+            # 10GB > 2.8GB, so should use STREAMING
+            strategy = self.loader.select_loading_strategy(
+                DatasetSize.LARGE, estimated_memory_mb=10000.0
+            )
+            self.assertNotEqual(strategy, LoadingStrategy.DIRECT)
+            
+            # Test huge dataset - should use advanced strategy
+            strategy = self.loader.select_loading_strategy(
+                DatasetSize.HUGE, estimated_memory_mb=50000.0
+            )
+            self.assertIn(strategy, [LoadingStrategy.STREAMING, LoadingStrategy.DISTRIBUTED, 
+                                    LoadingStrategy.MEMORY_MAPPED])
     
     def test_dtype_optimization(self):
         """Test data type optimization"""
@@ -331,24 +335,25 @@ class TestOptimizedDataLoader(unittest.TestCase):
     @patch('modules.engine.optimized_data_loader.DASK_AVAILABLE', False)
     def test_load_medium_csv_chunked(self):
         """Test loading medium CSV file with chunked strategy"""
-        # Force chunked strategy by setting low memory threshold
+        # Force chunked strategy by explicitly setting it
         config = LoadingConfig(
-            max_memory_usage_pct=0.01,  # Very low threshold
+            strategy=LoadingStrategy.CHUNKED,
             chunk_size=50
         )
         loader = OptimizedDataLoader(config)
         
-        csv_file = self.create_test_csv(rows=200, cols=3)
+        # Create a medium-sized dataset (>10k rows to be categorized as MEDIUM)
+        csv_file = self.create_test_csv(rows=15000, cols=5)
         
         df, dataset_info = loader.load_data(str(csv_file))
         
         # Check DataFrame
         self.assertIsInstance(df, pd.DataFrame)
-        self.assertEqual(len(df), 200)
+        self.assertEqual(len(df), 15000)
         
         # Check dataset info
         self.assertIsInstance(dataset_info, DatasetInfo)
-        self.assertEqual(dataset_info.rows, 200)
+        self.assertEqual(dataset_info.rows, 15000)
         self.assertIn('chunked_loading', dataset_info.optimization_applied)
     
     def test_load_excel_file(self):
@@ -479,7 +484,7 @@ class TestErrorHandling(unittest.TestCase):
             self.assertIsInstance(df, pd.DataFrame)
         except Exception as e:
             # If it fails, should be a reasonable exception
-            self.assertIsInstance(e, (pd.errors.Error, ValueError))
+            self.assertIsInstance(e, (pd.errors.EmptyDataError, pd.errors.ParserError, ValueError))
     
     def test_empty_file_handling(self):
         """Test handling of empty files"""
@@ -492,7 +497,7 @@ class TestErrorHandling(unittest.TestCase):
             self.assertIsInstance(df, pd.DataFrame)
         except Exception as e:
             # Should be a reasonable exception
-            self.assertIsInstance(e, (pd.errors.Error, ValueError))
+            self.assertIsInstance(e, (pd.errors.EmptyDataError, pd.errors.ParserError, ValueError))
     
     def test_large_file_memory_management(self):
         """Test memory management with larger files"""

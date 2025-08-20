@@ -45,6 +45,7 @@ class MockRequest:
         self.headers = headers or {}
         self.client = client or Mock(host="127.0.0.1")
         self._json_body = json_body
+        self.state = Mock()  # Add state attribute for FastAPI compatibility
         
     async def json(self):
         return self._json_body or {}
@@ -500,6 +501,8 @@ class TestAuthenticationMiddleware(unittest.TestCase):
         request = MockRequest(url="http://localhost:8000/api/protected")
         
         call_next = AsyncMock()
+        mock_response = MockResponse(status_code=200)
+        call_next.return_value = mock_response
         
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
@@ -564,6 +567,8 @@ class TestAuthenticationMiddleware(unittest.TestCase):
         )
         
         call_next = AsyncMock()
+        mock_response = MockResponse(status_code=200)
+        call_next.return_value = mock_response
         
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)

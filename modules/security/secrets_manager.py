@@ -225,9 +225,28 @@ class SecretsManager:
         elif secret_type == SecretType.WEBHOOK_SECRET:
             return secrets.token_hex(length)
         elif secret_type == SecretType.DATABASE_PASSWORD:
-            # Generate a strong password with mixed characters
-            alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*"
-            return ''.join(secrets.choice(alphabet) for _ in range(length))
+            # Generate a strong password with mixed characters ensuring all types are included
+            lowercase = "abcdefghijklmnopqrstuvwxyz"
+            uppercase = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+            digits = "0123456789"
+            symbols = "!@#$%^&*"
+            
+            # Ensure at least one character from each category
+            password = [
+                secrets.choice(lowercase),
+                secrets.choice(uppercase),
+                secrets.choice(digits),
+                secrets.choice(symbols)
+            ]
+            
+            # Fill the rest with random choices from all categories
+            all_chars = lowercase + uppercase + digits + symbols
+            for _ in range(length - 4):
+                password.append(secrets.choice(all_chars))
+            
+            # Shuffle the password to avoid predictable patterns
+            secrets.SystemRandom().shuffle(password)
+            return ''.join(password)
         else:
             return secrets.token_urlsafe(length)
     

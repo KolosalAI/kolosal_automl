@@ -74,7 +74,7 @@ class TestCompleteOptimizationWorkflow(unittest.TestCase):
             n_samples = 100_000
             n_features = 30
         elif size_category == "large":
-            n_samples = 500_000
+            n_samples = 1_500_000  # Changed to ensure it falls in large category (>1M)
             n_features = 50
         else:
             raise ValueError(f"Unknown size category: {size_category}")
@@ -233,7 +233,7 @@ class TestCompleteOptimizationWorkflow(unittest.TestCase):
         self.assertTrue(result['success'])
         
         df = result['data']
-        self.assertEqual(len(df), 500_000)
+        self.assertEqual(len(df), 1_500_000)
         
         # Performance expectations for large dataset
         self.assertLess(processing_time, 300.0)  # Should complete in < 5 minutes
@@ -433,7 +433,7 @@ class TestKolosalIntegration(unittest.TestCase):
             if hasattr(preprocessor, 'optimize_for_dataset'):
                 optimized_config = preprocessor.optimize_for_dataset(df)
                 self.assertIsInstance(optimized_config, dict)
-                print("DataPreprocessor optimization integration: ✓")
+                print("DataPreprocessor optimization integration: [PASS]")
             else:
                 print("DataPreprocessor optimization integration: Not available")
                 
@@ -453,7 +453,7 @@ class TestKolosalIntegration(unittest.TestCase):
             has_adaptive_chunker = hasattr(batch_processor, '_adaptive_chunker')
             
             if has_memory_processor or has_adaptive_chunker:
-                print("BatchProcessor optimization integration: ✓")
+                print("BatchProcessor optimization integration: [PASS]")
                 
                 # Test batch processing with optimization
                 X = df.drop('target', axis=1)
@@ -478,7 +478,7 @@ class TestKolosalIntegration(unittest.TestCase):
             has_optimization_pipeline = hasattr(app, 'optimization_pipeline')
             
             if has_optimization_pipeline and app.optimization_pipeline is not None:
-                print("MLSystemUI optimization integration: ✓")
+                print("MLSystemUI optimization integration: [PASS]")
                 
                 # Test optimization status
                 status = get_optimization_status()
@@ -511,7 +511,7 @@ class TestKolosalIntegration(unittest.TestCase):
                     # This is more of a smoke test to ensure integration doesn't break
                     self.assertIsNotNone(app.optimization_pipeline)
                     
-                    print("End-to-end workflow integration: ✓")
+                    print("End-to-end workflow integration: [PASS]")
                 else:
                     print("App load_data method not available for testing")
             else:
@@ -694,14 +694,24 @@ class TestSystemIntegration(unittest.TestCase):
         with patch.object(pipeline, 'data_loader', None):
             # Should still work with fallback
             temp_file = tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False)
-            df.to_csv(temp_file.name, index=False)
-            
-            result = pipeline.load_data(temp_file.name)
-            self.assertTrue(result['success'])
-            
-            # Cleanup
-            import os
-            os.unlink(temp_file.name)
+            try:
+                df.to_csv(temp_file.name, index=False)
+                temp_file.close()  # Close file before using it
+                
+                result = pipeline.load_data(temp_file.name)
+                self.assertTrue(result['success'])
+                
+            finally:
+                # Cleanup - ensure file is closed before deletion
+                try:
+                    if not temp_file.closed:
+                        temp_file.close()
+                    import os
+                    if os.path.exists(temp_file.name):
+                        os.unlink(temp_file.name)
+                except (OSError, PermissionError):
+                    # On Windows, sometimes files are still locked
+                    pass
     
     def test_import_safety(self):
         """Test that imports are safe and don't break existing functionality"""
@@ -711,7 +721,7 @@ class TestSystemIntegration(unittest.TestCase):
             from modules.engine import optimized_data_loader
             from modules.engine import adaptive_preprocessing
             from modules.engine import memory_aware_processor
-            print("All optimization modules imported successfully ✓")
+            print("All optimization modules imported successfully [PASS]")
         except ImportError as e:
             print(f"Import warning: {e}")
             # This is acceptable - modules might not be available in all environments
@@ -721,7 +731,7 @@ class TestSystemIntegration(unittest.TestCase):
             from modules.engine.data_preprocessor import DataPreprocessor
             preprocessor = DataPreprocessor()
             self.assertIsNotNone(preprocessor)
-            print("Existing DataPreprocessor still functional ✓")
+            print("Existing DataPreprocessor still functional [PASS]")
         except Exception as e:
             self.fail(f"Existing functionality broken: {e}")
 

@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field, asdict, fields
 from enum import  Enum, auto, unique
 import os
 import numpy as np
@@ -131,10 +131,15 @@ class QuantizationConfig:
                         break
                         
         # Filter out any keys that aren't in the dataclass
-        valid_keys = {f.name for f in field(cls)}
+        valid_keys = {f.name for f in fields(cls)}
         filtered_dict = {k: v for k, v in config_copy.items() if k in valid_keys}
-        
-        return cls(**filtered_dict)
+
+        # Create instance and attach any extra keys as dynamic attributes
+        instance = cls(**filtered_dict)
+        for k, v in config_copy.items():
+            if k not in valid_keys:
+                setattr(instance, k, v)
+        return instance
 
 # -----------------------------------------------------------------------------
 # Configuration for Batch Processing
@@ -409,15 +414,19 @@ class PreprocessorConfig:
     def from_dict(cls, config_dict: Dict) -> 'PreprocessorConfig':
         """Create config from dictionary"""
         # Remove any unknown keys
-        valid_fields = {field.name for field in field(cls)}
-        filtered_dict = {k: v for k, v in config_dict.items() if k in valid_fields}
-        
+        valid_fields_set = {f.name for f in fields(cls)}
+        filtered_dict = {k: v for k, v in config_dict.items() if k in valid_fields_set}
+
         # Handle special types
         if 'dtype' in filtered_dict and isinstance(filtered_dict['dtype'], str):
             filtered_dict['dtype'] = np.dtype(filtered_dict['dtype'])
             
-        # Create instance
-        return cls(**filtered_dict)
+        # Create instance and attach any extra keys as dynamic attributes
+        instance = cls(**filtered_dict)
+        for k, v in config_dict.items():
+            if k not in valid_fields_set:
+                setattr(instance, k, v)
+        return instance
 # -----------------------------------------------------------------------------
 # Configuration for Inference Engine
 # -----------------------------------------------------------------------------
@@ -653,36 +662,59 @@ class InferenceEngineConfig:
         Returns:
             InferenceEngineConfig instance
         """
+        # Work on a shallow copy to avoid mutating caller's dict
+        cfg = dict(config_dict)
+
         # Create nested configurations if present
         quantization_config = None
-        if "quantization_config" in config_dict:
-            quantization_dict = config_dict.pop("quantization_config")
-            quantization_config = QuantizationConfig(**quantization_dict)
+        if "quantization_config" in cfg and isinstance(cfg["quantization_config"], dict):
+            quantization_dict = cfg.pop("quantization_config")
+            quantization_config = QuantizationConfig.from_dict(quantization_dict)
             
         preprocessor_config = None
-        if "preprocessor_config" in config_dict:
-            preprocessor_dict = config_dict.pop("preprocessor_config")
-            preprocessor_config = PreprocessorConfig(**preprocessor_dict)
+        if "preprocessor_config" in cfg and isinstance(cfg["preprocessor_config"], dict):
+            preprocessor_dict = cfg.pop("preprocessor_config")
+            preprocessor_config = PreprocessorConfig.from_dict(preprocessor_dict)
             
         batch_processor_config = None
-        if "batch_processor_config" in config_dict:
-            batch_dict = config_dict.pop("batch_processor_config")
+        if "batch_processor_config" in cfg and isinstance(cfg["batch_processor_config"], dict):
+            batch_dict = cfg.pop("batch_processor_config")
             # Convert string strategy to enum if needed
             if "processing_strategy" in batch_dict and isinstance(batch_dict["processing_strategy"], str):
-                batch_dict["processing_strategy"] = BatchProcessingStrategy(batch_dict["processing_strategy"])
-            batch_processor_config = BatchProcessorConfig(**batch_dict)
+                try:
+                    batch_dict["processing_strategy"] = BatchProcessingStrategy(batch_dict["processing_strategy"])
+                except Exception:
+                    pass
+            # Filter unknown keys for BatchProcessorConfig
+            valid_bp = {f.name for f in fields(BatchProcessorConfig)}
+            batch_filtered = {k: v for k, v in batch_dict.items() if k in valid_bp}
+            batch_processor_config = BatchProcessorConfig(**batch_filtered)
             
         # Handle optimization mode enum
-        if "optimization_mode" in config_dict and isinstance(config_dict["optimization_mode"], str):
-            config_dict["optimization_mode"] = OptimizationMode(config_dict["optimization_mode"])
-            
+        if "optimization_mode" in cfg and isinstance(cfg["optimization_mode"], str):
+            try:
+                cfg["optimization_mode"] = OptimizationMode(cfg["optimization_mode"])
+            except Exception:
+                pass
+
+        # Filter unknown keys for InferenceEngineConfig
+        valid_top = {f.name for f in fields(cls)}
+        filtered_top = {k: v for k, v in cfg.items() if k in valid_top}
+
         # Create config with nested objects
-        return cls(
+        instance = cls(
             quantization_config=quantization_config,
             preprocessor_config=preprocessor_config,
             batch_processor_config=batch_processor_config,
-            **config_dict
+            **filtered_top
         )
+
+        # Attach extra keys dynamically so getattr() can read custom flags
+        for k, v in cfg.items():
+            if k not in valid_top:
+                setattr(instance, k, v)
+
+        return instance
         
     def check_compatibility(self) -> Dict[str, bool]:
         """
@@ -1037,7 +1069,7 @@ class MLTrainingEngineConfig:
                 self.task_type = TaskType.CLASSIFICATION
         else:
             self.task_type = task_type
-        
+
         # Handle optimization_strategy as string or enum
         if isinstance(optimization_strategy, str):
             try:
@@ -1046,7 +1078,7 @@ class MLTrainingEngineConfig:
                 self.optimization_strategy = OptimizationStrategy.HYPERX
         else:
             self.optimization_strategy = optimization_strategy
-            
+
         # Handle model_selection_criteria as string or enum
         if isinstance(model_selection_criteria, str):
             try:
@@ -1055,13 +1087,14 @@ class MLTrainingEngineConfig:
                 self.model_selection_criteria = ModelSelectionCriteria.ACCURACY
         else:
             self.model_selection_criteria = model_selection_criteria
-            
+
         # Handle auto_ml as bool or enum
         if isinstance(auto_ml, bool):
             self.auto_ml = AutoMLMode.BASIC if auto_ml else AutoMLMode.DISABLED
         else:
             self.auto_ml = auto_ml
-            
+
+        # Basic settings
         self.random_state = random_state
         self.n_jobs = n_jobs
         self.verbose = verbose
@@ -1078,7 +1111,16 @@ class MLTrainingEngineConfig:
         self.feature_selection_method = feature_selection_method
         self.feature_selection_k = feature_selection_k
         self.feature_importance_threshold = feature_importance_threshold
-        
+
+        # Staged CV and thread control settings (safe defaults)
+        self.enable_staged_cv = False
+        self.staged_cv_trigger_trials = 20
+        self.staged_cv_min_folds = 3
+        self.staged_cv_final_folds = None
+        self.enable_thread_control = True
+        self.max_blas_threads = None
+        self.limit_estimator_n_jobs_in_cv = True
+
         # Set default configurations if none provided
         self.preprocessing_config = preprocessing_config or PreprocessorConfig(
             normalization=NormalizationType.STANDARD,
@@ -1087,7 +1129,7 @@ class MLTrainingEngineConfig:
             detect_outliers=True,
             parallel_processing=True
         )
-            
+
         self.batch_processing_config = batch_processing_config or BatchProcessorConfig(
             initial_batch_size=100,
             min_batch_size=50,
@@ -1098,33 +1140,33 @@ class MLTrainingEngineConfig:
             enable_monitoring=True,
             enable_memory_optimization=True
         )
-            
+
         self.inference_config = inference_config or InferenceEngineConfig(
             enable_intel_optimization=use_intel_optimization,
             enable_batching=True,
             enable_quantization=True,
             debug_mode=debug_mode
         )
-            
+
         self.quantization_config = quantization_config or QuantizationConfig(
             quantization_type=QuantizationType.INT8.value,
             quantization_mode=QuantizationMode.DYNAMIC_PER_BATCH.value,
             enable_cache=True,
             cache_size=256
         )
-            
+
         self.explainability_config = explainability_config or ExplainabilityConfig(
             enable_explainability=generate_prediction_explanations,
             methods=["shap", "feature_importance"],
             default_method="shap"
         )
-            
+
         self.monitoring_config = monitoring_config or MonitoringConfig(
             enable_monitoring=True,
             drift_detection=True,
             performance_tracking=True
         )
-        
+
         # Other configuration parameters
         self.model_path = model_path
         self.model_registry_url = model_registry_url
@@ -1169,7 +1211,7 @@ class MLTrainingEngineConfig:
         self.enable_telemetry = enable_telemetry
         self.backend = backend
         self.custom_callbacks = custom_callbacks or []
-        
+
         # High-impact optimization settings
         self.enable_jit_compilation = enable_jit_compilation
         self.jit_min_calls = jit_min_calls
@@ -1183,7 +1225,7 @@ class MLTrainingEngineConfig:
         self.streaming_batch_size = streaming_batch_size
         self.streaming_chunk_size = streaming_chunk_size
         self.streaming_threshold = streaming_threshold
-        
+
         self.enable_data_validation = enable_data_validation
         self.enable_security = enable_security
         self.security_config = security_config or {}
@@ -1257,6 +1299,14 @@ class MLTrainingEngineConfig:
             "enable_security": self.enable_security,
             "security_config": self.security_config,
             "metadata": self.metadata,
+            # New staged CV and thread-control flags
+            "enable_staged_cv": self.enable_staged_cv,
+            "staged_cv_trigger_trials": self.staged_cv_trigger_trials,
+            "staged_cv_min_folds": self.staged_cv_min_folds,
+            "staged_cv_final_folds": self.staged_cv_final_folds,
+            "enable_thread_control": self.enable_thread_control,
+            "max_blas_threads": self.max_blas_threads,
+            "limit_estimator_n_jobs_in_cv": self.limit_estimator_n_jobs_in_cv,
         }
         
         config_dict["optimization_metric"] = self.optimization_metric

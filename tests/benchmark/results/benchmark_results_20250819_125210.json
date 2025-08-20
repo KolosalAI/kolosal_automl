@@ -1,0 +1,159 @@
+{
+  "session_start": 1755582727.8001807,
+  "session_duration": 3.196610689163208,
+  "total_tests": 3,
+  "system_info": {
+    "cpu_count": 20,
+    "memory_total_gb": 63.668304443359375,
+    "python_version": "3.10.11 (tags/v3.10.11:7d4cc5a, Apr  5 2023, 00:38:17) [MSC v.1929 64 bit (AMD64)]",
+    "platform": "win32"
+  },
+  "results": [
+    {
+      "name": "test_inference_with_different_model_sizes",
+      "duration_ms": 1369.32,
+      "memory_before_mb": 224.23,
+      "memory_after_mb": 230.39,
+      "memory_delta_mb": 6.16,
+      "memory_peak_mb": null,
+      "cpu_percent": null,
+      "metadata": {
+        "inference_scaling_results": {
+          "small": {
+            "model_config": {
+              "n_estimators": 10,
+              "max_depth": 5
+            },
+            "avg_single_prediction_ms": 0.3986820000136504,
+            "std_single_prediction_ms": 0.05665476404653745,
+            "median_single_prediction_ms": 0.3891000005751266,
+            "predictions_per_second": 2508.264732207025,
+            "model_size_bytes": 34788,
+            "model_size_mb": 0.033176422119140625,
+            "accuracy": 0.92,
+            "batch_results": {
+              "batch_1": {
+                "batch_time_ms": 0.35989999923913274,
+                "throughput_per_sec": 2778.5496029844608,
+                "time_per_prediction_ms": 0.35989999923913274
+              },
+              "batch_10": {
+                "batch_time_ms": 0.42270000085409265,
+                "throughput_per_sec": 23657.440217161944,
+                "time_per_prediction_ms": 0.042270000085409265
+              },
+              "batch_50": {
+                "batch_time_ms": 0.37060000067867804,
+                "throughput_per_sec": 134916.35161477397,
+                "time_per_prediction_ms": 0.007412000013573561
+              },
+              "batch_100": {
+                "batch_time_ms": 0.39340000148513354,
+                "throughput_per_sec": 254194.20341252582,
+                "time_per_prediction_ms": 0.0039340000148513354
+              }
+            }
+          },
+          "medium": {
+            "model_config": {
+              "n_estimators": 50,
+              "max_depth": 10
+            },
+            "avg_single_prediction_ms": 2.2156779997385456,
+            "std_single_prediction_ms": 0.6434795220842031,
+            "median_single_prediction_ms": 2.087549999487237,
+            "predictions_per_second": 451.32911917616275,
+            "model_size_bytes": 691389,
+            "model_size_mb": 0.6593599319458008,
+            "accuracy": 0.91,
+            "batch_results": {
+              "batch_1": {
+                "batch_time_ms": 1.7822999998315936,
+                "throughput_per_sec": 561.0727711914315,
+                "time_per_prediction_ms": 1.7822999998315936
+              },
+              "batch_10": {
+                "batch_time_ms": 1.693800000793999,
+                "throughput_per_sec": 5903.884753402008,
+                "time_per_prediction_ms": 0.1693800000793999
+              },
+              "batch_50": {
+                "batch_time_ms": 1.7349000008834992,
+                "throughput_per_sec": 28820.104890505194,
+                "time_per_prediction_ms": 0.03469800001766998
+              },
+              "batch_100": {
+                "batch_time_ms": 2.71950000023935,
+                "throughput_per_sec": 36771.46533965757,
+                "time_per_prediction_ms": 0.0271950000023935
+              }
+            }
+          },
+          "large": {
+            "model_config": {
+              "n_estimators": 100,
+              "max_depth": 15
+            },
+            "avg_single_prediction_ms": 3.970633999997517,
+            "std_single_prediction_ms": 0.9177246942749965,
+            "median_single_prediction_ms": 3.659949999928358,
+            "predictions_per_second": 251.84894905967795,
+            "model_size_bytes": 1745029,
+            "model_size_mb": 1.664189338684082,
+            "accuracy": 0.92,
+            "batch_results": {
+              "batch_1": {
+                "batch_time_ms": 3.0455999985861126,
+                "throughput_per_sec": 328.3425270765167,
+                "time_per_prediction_ms": 3.0455999985861126
+              },
+              "batch_10": {
+                "batch_time_ms": 3.0798999996477505,
+                "throughput_per_sec": 3246.85866461369,
+                "time_per_prediction_ms": 0.30798999996477505
+              },
+              "batch_50": {
+                "batch_time_ms": 3.6617000005207956,
+                "throughput_per_sec": 13654.859762648117,
+                "time_per_prediction_ms": 0.07323400001041591
+              },
+              "batch_100": {
+                "batch_time_ms": 4.050900000947877,
+                "throughput_per_sec": 24685.872269520558,
+                "time_per_prediction_ms": 0.04050900000947877
+              }
+            }
+          }
+        },
+        "dataset_info": {
+          "samples": 2000,
+          "features": 20,
+          "train_size": 1600,
+          "test_size": 400
+        }
+      }
+    },
+    {
+      "name": "test_batch_vs_single_prediction_efficiency",
+      "duration_ms": 209.06,
+      "memory_before_mb": 229.3,
+      "memory_after_mb": 229.31,
+      "memory_delta_mb": 0.01,
+      "memory_peak_mb": null,
+      "cpu_percent": null,
+      "metadata": {
+        "single_prediction_stats": {
+          "avg_time_ms": 1.3438329999917187,
+          "std_time_ms": 0.5146521842887526,
+          "throughput_per_sec": 744.1400828869082,
+          "num_predictions": 100
+        },
+        "batch_prediction_stats": {
+          "batch_size": 100,
+          "total_time_ms": 1.3238999999884982,
+          "time_per_prediction_ms": 0.013238999999884982,
+          "throughput_per_sec": 75534.40592255366
+        },
+        "efficiency_comparison": {
+          "batch_vs_single_speedup": 101.50562731349753,
+          "batch_faster": 

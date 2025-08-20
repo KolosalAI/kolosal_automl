@@ -2,6 +2,7 @@ import os
 import logging
 import threading
 import numpy as np
+import pandas as pd
 import hashlib
 import json
 import pickle
@@ -627,6 +628,21 @@ class DataPreprocessor:
             transform_time = time.time() - start_time
             self._metrics['transform_time'].append(transform_time)
             
+            # Optional: enforce float32 dtype and contiguity for downstream efficiency
+            try:
+                if getattr(self.config, 'enforce_float32', False):
+                    if not isinstance(result, np.ndarray):
+                        result = np.array(result, dtype=np.float32)
+                    elif result.dtype != np.float32:
+                        result = result.astype(np.float32, copy=False)
+                    # Ensure C-contiguous layout for better SIMD/cache behavior
+                    if not result.flags.c_contiguous:
+                        result = np.ascontiguousarray(result)
+            except Exception as _e:
+                # Be conservative: never fail transform due to casting; log in debug only
+                if self.config.debug_mode:
+                    self.logger.debug(f"Float32/contiguity enforcement skipped: {_e}")
+
             if self.config.debug_mode:
                 self.logger.debug(f"Transformed {X.shape[0]} samples in {transform_time:.4f}s")
                 
@@ -762,14 +778,69 @@ class DataPreprocessor:
             Validated and converted numpy array
         """
         if self.config.enable_input_validation:
-            # Check input type
-            if not isinstance(X, (list, tuple, np.ndarray)):
+            # Check input type - accept pandas DataFrames, Series, numpy arrays, lists, and tuples
+            if not isinstance(X, (list, tuple, np.ndarray, pd.DataFrame, pd.Series)):
                 raise InputValidationError(
-                    f"Expected numpy array, list, or tuple, got {type(X)}"
+                    f"Expected numpy array, pandas DataFrame/Series, list, or tuple, got {type(X)}"
                 )
             
-            # Convert to numpy array if needed
-            if not isinstance(X, np.ndarray):
+            # Handle pandas DataFrame/Series with mixed data types
+            if isinstance(X, (pd.DataFrame, pd.Series)):
+                # Check for categorical/string columns and encode them
+                if isinstance(X, pd.DataFrame):
+                    X_processed = X.copy() if copy else X
+                    
+                    # Handle categorical and string columns
+                    for col in X_processed.columns:
+                        if X_processed[col].dtype == 'object' or pd.api.types.is_categorical_dtype(X_processed[col]):
+                            # Store encoding information during fit
+                            if operation == "fit":
+                                if not hasattr(self, '_categorical_encoders'):
+                                    self._categorical_encoders = {}
+                                
+                                # Use simple label encoding for categorical columns
+                                unique_values = X_processed[col].dropna().unique()
+                                self._categorical_encoders[col] = {val: idx for idx, val in enumerate(unique_values)}
+                            
+                            # Apply encoding
+                            if hasattr(self, '_categorical_encoders') and col in self._categorical_encoders:
+                                encoder = self._categorical_encoders[col]
+                                # Map values, using -1 for unknown values during transform
+                                X_processed[col] = X_processed[col].map(lambda x: encoder.get(x, -1) if pd.notna(x) else np.nan)
+                            else:
+                                # If no encoder available, convert to numeric codes
+                                X_processed[col] = pd.Categorical(X_processed[col]).codes.astype(float)
+                    
+                    # Convert to numpy array
+                    try:
+                        X = X_processed.values.astype(self.config.dtype)
+                    except (ValueError, TypeError) as e:
+                        self.logger.error(f"Error during fit operation: {e}")
+                        raise InputValidationError(f"Failed to convert processed DataFrame to numeric array: {e}")
+                        
+                elif isinstance(X, pd.Series):
+                    if X.dtype == 'object' or pd.api.types.is_categorical_dtype(X):
+                        # Handle categorical Series
+                        if operation == "fit":
+                            if not hasattr(self, '_categorical_encoders'):
+                                self._categorical_encoders = {}
+                            unique_values = X.dropna().unique()
+                            self._categorical_encoders['series'] = {val: idx for idx, val in enumerate(unique_values)}
+                        
+                        if hasattr(self, '_categorical_encoders') and 'series' in self._categorical_encoders:
+                            encoder = self._categorical_encoders['series']
+                            X = X.map(lambda x: encoder.get(x, -1) if pd.notna(x) else np.nan)
+                        else:
+                            X = pd.Categorical(X).codes.astype(float)
+                    
+                    try:
+                        X = X.values.astype(self.config.dtype)
+                    except (ValueError, TypeError) as e:
+                        self.logger.error(f"Error during fit operation: {e}")
+                        raise InputValidationError(f"Failed to convert processed Series to numeric array: {e}")
+            
+            # Convert to numpy array if needed (for lists, tuples, etc.)
+            elif not isinstance(X, np.ndarray):
                 try:
                     X = np.array(X, dtype=self.config.dtype)
                 except Exception as e:

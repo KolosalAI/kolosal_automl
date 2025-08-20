@@ -247,11 +247,19 @@ class SecureModelManager:
                 
                 model_package["access_control"] = {
                     "salt": salt,
-                    "password_hash": password_hash,
+                    "hash": password_hash,  # Changed from password_hash to hash
                     "method": "scrypt" if self.use_scrypt else "pbkdf2",
                     "iterations": self.key_iterations if not self.use_scrypt else None,
                     "algorithm": self.hash_algorithm
                 }
+                
+                # Add scrypt-specific parameters if using scrypt
+                if self.use_scrypt:
+                    model_package["access_control"].update({
+                        "n": 2**14,
+                        "r": 8,
+                        "p": 1
+                    })
             
             # Create backup of existing file before overwriting
             if os.path.exists(filepath):
@@ -477,7 +485,8 @@ class SecureModelManager:
                 is_better = True
         else:
             # For classification, higher score is better
-            if model_score > self.best_score:
+            # Use >= to handle case where scores are equal (prefer later loaded models)
+            if model_score >= self.best_score:
                 is_better = True
                 
         if is_better or self.best_model is None:
@@ -500,8 +509,7 @@ class SecureModelManager:
             if method == "scrypt":
                 # Using scrypt for key derivation
                 kdf = Scrypt(
-                    algorithm=hashes.SHA256(),
-                    length=32,
+                    length=64,  # Use 64 bytes to match the save logic
                     salt=ac["salt"],
                     n=ac["n"],
                     r=ac["r"],
@@ -511,14 +519,12 @@ class SecureModelManager:
                 derived_key = kdf.derive(access_code.encode('utf-8'))
             else:
                 # Using PBKDF2 for key derivation (default)
-                kdf = PBKDF2HMAC(
-                    algorithm=hashes.SHA256(),
-                    length=32,
-                    salt=ac["salt"],
-                    iterations=ac.get("iterations", 100000),
-                    backend=default_backend()
+                derived_key = hashlib.pbkdf2_hmac(
+                    ac.get("algorithm", "sha512"),  # Use the stored algorithm
+                    access_code.encode(), 
+                    ac["salt"], 
+                    ac.get("iterations", 100000)
                 )
-                derived_key = kdf.derive(access_code.encode('utf-8'))
             
             # Compare with stored hash
             stored_hash = ac["hash"]

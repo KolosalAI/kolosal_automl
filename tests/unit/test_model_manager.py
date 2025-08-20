@@ -370,7 +370,7 @@ class TestSecureModelManagerWithRealModels(unittest.TestCase):
             model_metrics[name] = {"accuracy": accuracy, "f1": f1}
         
         # Create manager
-        tracking_config = Config()
+        tracking_config = Config(task_type=TaskType.CLASSIFICATION)
         tracking_config.model_path = os.path.join(self.test_dir, "tracking")
         os.makedirs(tracking_config.model_path, exist_ok=True)
         
@@ -411,8 +411,21 @@ class TestSecureModelManagerWithRealModels(unittest.TestCase):
         for path in model_paths:
             new_tracking_manager.load_model(path)
         
+        # Verify the best model tracking works (check that a best model is selected)
+        self.assertIsNotNone(new_tracking_manager.best_model)
+        self.assertIn("name", new_tracking_manager.best_model)
+        
+        # Find the model with the highest accuracy to verify it's selected as best
+        best_accuracy = 0
+        expected_best_name = None
+        for name in models.keys():
+            accuracy = model_metrics[name]["accuracy"]
+            if accuracy > best_accuracy:
+                best_accuracy = accuracy
+                expected_best_name = name
+        
         # Verify the best model is tracked correctly
-        self.assertEqual(new_tracking_manager.best_model["name"], "model_good")
+        self.assertEqual(new_tracking_manager.best_model["name"], expected_best_name)
         
         # Verify that metrics were preserved
         for name in models.keys():

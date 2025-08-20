@@ -1,0 +1,663 @@
+{
+  "session_start": 1755579076.5694377,
+  "session_duration": 15.665237188339233,
+  "total_tests": 7,
+  "system_info": {
+    "cpu_count": 20,
+    "memory_total_gb": 63.668304443359375,
+    "python_version": "3.10.11 (tags/v3.10.11:7d4cc5a, Apr  5 2023, 00:38:17) [MSC v.1929 64 bit (AMD64)]",
+    "platform": "win32"
+  },
+  "results": [
+    {
+      "name": "test_dataset_generation_performance",
+      "duration_ms": 183.31,
+      "memory_before_mb": 227.99,
+      "memory_after_mb": 266.0,
+      "memory_delta_mb": 38.01,
+      "memory_peak_mb": null,
+      "cpu_percent": null,
+      "metadata": {
+        "dataset_generation_results": {
+          "small_classification": {
+            "generation_time_ms": 1.266100000066217,
+            "samples": 1000,
+            "features": 10,
+            "memory_bytes": 84000,
+            "memory_mb": 0.080108642578125,
+            "generation_rate_samples_per_sec": 789827.0278395861
+          },
+          "medium_classification": {
+            "generation_time_ms": 10.103600000547885,
+            "samples": 10000,
+            "features": 20,
+            "memory_bytes": 1640000,
+            "memory_mb": 1.56402587890625,
+            "generation_rate_samples_per_sec": 989746.2290131965
+          },
+          "large_classification": {
+            "generation_time_ms": 99.41879999951198,
+            "samples": 50000,
+            "features": 50,
+            "memory_bytes": 20200000,
+            "memory_mb": 19.26422119140625,
+            "generation_rate_samples_per_sec": 502922.9884110997
+          },
+          "small_regression": {
+            "generation_time_ms": 0.9964999999283464,
+            "samples": 1000,
+            "features": 10,
+            "memory_bytes": 88000,
+            "memory_mb": 0.08392333984375,
+            "generation_rate_samples_per_sec": 1003512.2930977474
+          },
+          "medium_regression": {
+            "generation_time_ms": 5.515200000445475,
+            "samples": 10000,
+            "features": 20,
+            "memory_bytes": 1680000,
+            "memory_mb": 1.6021728515625,
+            "generation_rate_samples_per_sec": 1813170.8730766387
+          },
+          "large_regression": {
+            "generation_time_ms": 64.60679999963759,
+            "samples": 50000,
+            "features": 50,
+            "memory_bytes": 20400000,
+            "memory_mb": 19.4549560546875,
+            "generation_rate_samples_per_sec": 773912.3435966566
+          }
+        },
+        "total_generation_time_ms": 181.9070000001375
+      }
+    },
+    {
+      "name": "test_model_training_performance",
+      "duration_ms": 11621.97,
+      "memory_before_mb": 246.98,
+      "memory_after_mb": 314.46,
+      "memory_delta_mb": 67.48,
+      "memory_peak_mb": null,
+      "cpu_percent": null,
+      "metadata": {
+        "training_results": {
+          "rf_classifier_small": {
+            "type": "classification",
+            "train_time_ms": 115.8330999996906,
+            "predict_time_ms": 1.6069000002971734,
+            "accuracy": 0.904,
+            "train_samples": 4000,
+            "test_samples": 1000,
+            "features": 20
+          },
+          "rf_classifier_medium": {
+            "type": "classification",
+            "train_time_ms": 583.4157999997842,
+            "predict_time_ms": 6.4785000004121684,
+            "accuracy": 0.917,
+            "train_samples": 4000,
+            "test_samples": 1000,
+            "features": 20
+          },
+          "rf_classifier_large": {
+            "type": "classification",
+            "train_time_ms": 1201.1327999998684,
+            "predict_time_ms": 11.73330000074202,
+            "accuracy": 0.918,
+            "train_samples": 4000,
+            "test_samples": 1000,
+            "features": 20
+          },
+          "rf_regressor_small": {
+            "type": "regression",
+            "train_time_ms": 595.3112000006513,
+            "predict_time_ms": 2.452699999594188,
+            "mse": 3649.819670645295,
+            "train_samples": 4000,
+            "test_samples": 1000,
+            "features": 20
+          },
+          "rf_regressor_medium": {
+            "type": "regression",
+            "train_time_ms": 2960.295099999712,
+            "predict_time_ms": 11.203099999875121,
+            "mse": 3126.563115211307,
+            "train_samples": 4000,
+            "test_samples": 1000,
+            "features": 20
+          },
+          "rf_regressor_large": {
+            "type": "regression",
+            "train_time_ms": 6097.5194000002375,
+            "predict_time_ms": 25.44899999975314,
+            "mse": 3107.970657449017,
+            "train_samples": 4000,
+            "test_samples": 1000,
+            "features": 20
+          }
+        },
+        "total_train_time_ms": 11553.507399999944,
+        "total_predict_time_ms": 58.92350000067381
+      }
+    },
+    {
+      "name": "test_ml_memory_usage",
+      "duration_ms": null,
+      "memory_before_mb": 247.48,
+      "memory_after_mb": null,
+      "memory_delta_mb": null,
+      "memory_peak_mb": null,
+      "cpu_percent": null,
+      "metadata": {}
+    },
+    {
+      "name": "test_ml_reproducibility",
+      "duration_ms": 292.25,
+      "memory_before_mb": 251.0,
+      "memory_after_mb": 251.22,
+      "memory_delta_mb": 0.22,
+      "memory_peak_mb": null,
+      "cpu_percent": null,
+      "metadata": {
+        "model_results": [
+          {
+            "run": 0,
+            "accuracy": 0.875,
+            "feature_importances": [
+              0.01548865647795141,
+              0.09836347737652557,
+              0.0258005847891976,
+              0.014279514828913795,
+              0.015303128921213296,
+              0.3612711143995103,
+              0.024449581387033244,
+              0.01702443922387368,
+              0.01359363539718903,
+              0.011999247274985475,
+              0.02280417659819716,
+              0.031562243946566995,
+              0.016146601014796227,
+              0.018119515456665493,
+              0.08171957760820887,
+              0.015204742406198938,
+              0.016150899279581684,
+              0.014585514782926981,
+              0.16780563562698095,
+              0.018327713203483365
+            ],
+            "n_estimators": 20,
+            "predictions_checksum": -2958812174491945624
+          },
+          {
+            "run": 1,
+            "accuracy": 0.875,
+            "feature_importances": [
+              0.01548865647795141,
+              0.09836347737652557,
+              0.0258005847891976,
+              0.014279514828913795,
+              0.015303128921213296,
+              0.3612711143995103,
+              0.024449581387033244,
+              0.01702443922387368,
+              0.01359363539718903,
+              0.011999247274985475,
+              0.02280417659819716,
+              0.031562243946566995,
+              0.016146601014796227,
+              0.018119515456665493,
+              0.08171957760820887,
+              0.015204742406198938,
+              0.016150899279581684,
+              0.014585514782926981,
+              0.16780563562698095,
+              0.018327713203483365
+            ],
+            "n_estimators": 20,
+            "predictions_checksum": -2958812174491945624
+          },
+          {
+            "run": 2,
+            "accuracy": 0.875,
+            "feature_importances": [
+              0.01548865647795141,
+              0.09836347737652557,
+              0.0258005847891976,
+              0.014279514828913795,
+              0.015303128921213296,
+              0.3612711143995103,
+              0.024449581387033244,
+              0.01702443922387368,
+              0.01359363539718903,
+              0.011999247274985475,
+              0.02280417659819716,
+              0.031562243946566995,
+              0.016146601014796227,
+              0.018119515456665493,
+              0.08171957760820887,
+              0.015204742406198938,
+              0.016150899279581684,
+              0.014585514782926981,
+              0.16780563562698095,
+              0.018327713203483365
+            ],
+            "n_estimators": 20,
+            "predictions_checksum": -2958812174491945624
+          },
+          {
+            "run": 3,
+            "accuracy": 0.875,
+            "feature_importances": [
+              0.01548865647795141,
+              0.09836347737652557,
+              0.0258005847891976,
+              0.014279514828913795,
+              0.015303128921213296,
+              0.3612711143995103,
+              0.024449581387033244,
+              0.01702443922387368,
+              0.01359363539718903,
+              0.011999247274985475,
+              0.02280417659819716,
+              0.031562243946566995,
+              0.016146601014796227,
+              0.018119515456665493,
+              0.08171957760820887,
+              0.015204742406198938,
+              0.016150899279581684,
+              0.014585514782926981,
+              0.16780563562698095,
+              0.018327713203483365
+            ],
+            "n_estimators": 20,
+            "predictions_checksum": -2958812174491945624
+          },
+          {
+            "run": 4,
+            "accuracy": 0.875,
+            "feature_importances": [
+              0.01548865647795141,
+              0.09836347737652557,
+              0.0258005847891976,
+              0.014279514828913795,
+              0.015303128921213296,
+              0.3612711143995103,
+              0.024449581387033244,
+              0.01702443922387368,
+              0.01359363539718903,
+              0.011999247274985475,
+              0.02280417659819716,
+              0.031562243946566995,
+              0.016146601014796227,
+              0.018119515456665493,
+              0.08171957760820887,
+              0.015204742406198938,
+              0.016150899279581684,
+              0.014585514782926981,
+              0.16780563562698095,
+              0.018327713203483365
+            ],
+            "n_estimators": 20,
+            "predictions_checksum": -2958812174491945624
+          }
+        ],
+        "accuracy_variance": 0.0,
+        "accuracy_std": 0.0,
+        "consistent_predictions": true,
+        "unique_checksums": 1
+      }
+    },
+    {
+      "name": "test_end_to_end_pipeline_performance",
+      "duration_ms": 1098.52,
+      "memory_before_mb": 251.23,
+      "memory_after_mb": 282.23,
+      "memory_delta_mb": 31.0,
+      "memory_peak_mb": null,
+      "cpu_percent": null,
+      "metadata": {
+        "pipeline_times_ms": {
+          "data_loading_ms": 44.334400000479945,
+          "preprocessing_ms": 17.718500000228232,
+          "train_test_split_ms": 4.028000000289467,
+          "model_training_ms": 834.3526999997266,
+          "model_prediction_ms": 10.45559999965917,
+          "model_evaluation_ms": 0.7288000006155926,
+          "model_serialization_ms": 4.389900000205671
+        },
+        "total_pipeline_time_ms": 916.0079000012047,
+        "data_shape": [
+          10000,
+          50
+        ],
+        "model_evaluation": {
+          "accuracy": 0.4865
+        },
+        "serialized_model_size_mb": 3.9890336990356445,
+        "pipeline_efficiency": {
+          "samples_per_second": 10916.936415053679,
+          "features_per_second": 545846.8207526839
+        }
+      }
+    },
+    {
+      "name": "test_repeated_training_stress",
+      "duration_ms": 1108.83,
+      "memory_before_mb": 256.8,
+      "memory_after_mb": 257.16,
+      "memory_delta_mb": 0.36,
+      "memory_peak_mb": null,
+      "cpu_percent": null,
+      "metadata": {
+        "iterations": 20,
+        "training_results": [
+          {
+            "iteration": 0,
+            "train_time_ms": 41.0794999997961,
+            "accuracy": 0.9125,
+            "memory_before_mb": 257.08984375,
+            "memory_after_mb": 257.13671875,
+            "memory_delta_mb": 0.046875
+          },
+          {
+            "iteration": 1,
+            "train_time_ms": 37.98410000035801,
+            "accuracy": 0.9125,
+            "memory_before_mb": 257.13671875,
+            "memory_after_mb": 257.13671875,
+            "memory_delta_mb": 0.0
+          },
+          {
+            "iteration": 2,
+            "train_time_ms": 41.32550000031188,
+            "accuracy": 0.9125,
+            "memory_before_mb": 257.13671875,
+            "memory_after_mb": 257.16015625,
+            "memory_delta_mb": 0.0234375
+          },
+          {
+            "iteration": 3,
+            "train_time_ms": 39.71000000001368,
+            "accuracy": 0.9125,
+            "memory_before_mb": 257.16015625,
+            "memory_after_mb": 257.1640625,
+            "memory_delta_mb": 0.00390625
+          },
+          {
+            "iteration": 4,
+            "train_time_ms": 40.53620000013325,
+            "accuracy": 0.9125,
+            "memory_before_mb": 257.1640625,
+            "memory_after_mb": 257.1640625,
+            "memory_delta_mb": 0.0
+          },
+          {
+            "iteration": 5,
+            "train_time_ms": 41.39440000017203,
+            "accuracy": 0.9125,
+            "memory_before_mb": 257.1640625,
+            "memory_after_mb": 257.1640625,
+            "memory_delta_mb": 0.0
+          },
+          {
+            "iteration": 6,
+            "train_time_ms": 41.28980000041338,
+            "accuracy": 0.9125,
+            "memory_before_mb": 257.1640625,
+            "memory_after_mb": 257.1640625,
+            "memory_delta_mb": 0.0
+          },
+          {
+            "iteration": 7,
+            "train_time_ms": 40.959099999781756,
+            "accuracy": 0.9125,
+            "memory_before_mb": 257.1640625,
+            "memory_after_mb": 257.1640625,
+            "memory_delta_mb": 0.0
+          },
+          {
+            "iteration": 8,
+            "train_time_ms": 44.6845000005851,
+            "accuracy": 0.9125,
+            "memory_before_mb": 257.1640625,
+            "memory_after_mb": 257.1640625,
+            "memory_delta_mb": 0.0
+          },
+          {
+            "iteration": 9,
+            "train_time_ms": 42.853500000092026,
+            "accuracy": 0.9125,
+            "memory_before_mb": 257.1640625,
+            "memory_after_mb": 257.1640625,
+            "memory_delta_mb": 0.0
+          },
+          {
+            "iteration": 10,
+            "train_time_ms": 39.95200000008481,
+            "accuracy": 0.9125,
+            "memory_before_mb": 257.1640625,
+            "memory_after_mb": 257.1640625,
+            "memory_delta_mb": 0.0
+          },
+          {
+            "iteration": 11,
+            "train_time_ms": 38.894299999810755,
+            "accuracy": 0.9125,
+            "memory_before_mb": 257.1640625,
+            "memory_after_mb": 257.1640625,
+            "memory_delta_mb": 0.0
+          },
+          {
+            "iteration": 12,
+            "train_time_ms": 41.76709999956074,
+            "accuracy": 0.9125,
+            "memory_before_mb": 257.1640625,
+            "memory_after_mb": 257.1640625,
+            "memory_delta_mb": 0.0
+          },
+          {
+            "iteration": 13,
+            "train_time_ms": 39.42370000004303,
+            "accuracy": 0.9125,
+            "memory_before_mb": 257.1640625,
+            "memory_after_mb": 257.1640625,
+            "memory_delta_mb": 0.0
+          },
+          {
+            "iteration": 14,
+            "train_time_ms": 42.528300000412855,
+            "accuracy": 0.9125,
+            "memory_before_mb": 257.1640625,
+            "memory_after_mb": 257.1640625,
+            "memory_delta_mb": 0.0
+          },
+          {
+            "iteration": 15,
+            "train_time_ms": 45.7432000002882,
+            "accuracy": 0.9125,
+            "memory_before_mb": 257.1640625,
+            "memory_after_mb": 257.1640625,
+            "memory_delta_mb": 0.0
+          },
+          {
+            "iteration": 16,
+            "train_time_ms": 40.071399999760615,
+            "accuracy": 0.9125,
+            "memory_before_mb": 257.1640625,
+            "memory_after_mb": 257.1640625,
+            "memory_delta_mb": 0.0
+          },
+          {
+            "iteration": 17,
+            "train_time_ms": 42.91689999990922,
+            "accuracy": 0.9125,
+            "memory_before_mb": 257.1640625,
+            "memory_after_mb": 257.1640625,
+            "memory_delta_mb": 0.0
+          },
+          {
+            "iteration": 18,
+            "train_time_ms": 40.48690000036004,
+            "accuracy": 0.9125,
+            "memory_before_mb": 257.1640625,
+            "memory_after_mb": 257.1640625,
+            "memory_delta_mb": 0.0
+          },
+          {
+            "iteration": 19,
+            "train_time_ms": 45.280499999535095,
+            "accuracy": 0.9125,
+            "memory_before_mb": 257.1640625,
+            "memory_after_mb": 257.1640625,
+            "memory_delta_mb": 0.0
+          }
+        ],
+        "performance_stats": {
+          "avg_train_time_ms": 41.44404500007113,
+          "std_train_time_ms": 2.011935242132403,
+          "avg_accuracy": 0.9125000000000002,
+          "std_accuracy": 2.220446049250313e-16,
+          "total_memory_growth_mb": 0.07421875,
+          "avg_memory_delta_mb": 0.0037109375
+        }
+      }
+    },
+    {
+      "name": "test_concurrent_training_simulation",
+      "duration_ms": 268.63,
+      "memory_before_mb": 257.16,
+      "memory_after_mb": 257.34,
+      "memory_delta_mb": 0.18,
+      "memory_peak_mb": null,
+      "cpu_percent": null,
+      "metadata": {
+        "total_operations": 20,
+        "total_time_ms": 264.93550000031973,
+        "avg_operation_time_ms": 13.246775000015987,
+        "operations_per_second": 75.49007211180027,
+        "concurrent_results": [
+          {
+            "iteration": 0,
+            "dataset_idx": 0,
+            "accuracy": 0.95,
+            "model_size": 29657
+          },
+          {
+            "iteration": 1,
+            "dataset_idx": 1,
+            "accuracy": 0.85,
+            "model_size": 70946
+          },
+          {
+            "iteration": 2,
+            "dataset_idx": 2,
+            "accuracy": 0.9,
+            "model_size": 51737
+          },
+          {
+            "iteration": 3,
+            "dataset_idx": 3,
+            "accuracy": 0.95,
+            "model_size": 35417
+          },
+          {
+            "iteration": 4,
+            "dataset_idx": 4,
+            "accuracy": 0.915,
+            "model_size": 50937
+          },
+          {
+            "iteration": 5,
+            "dataset_idx": 0,
+            "accuracy": 0.95,
+            "model_size": 29657
+          },
+          {
+            "iteration": 6,
+            "dataset_idx": 1,
+            "accuracy": 0.85,
+            "model_size": 70946
+          },
+          {
+            "iteration": 7,
+            "dataset_idx": 2,
+            "accuracy": 0.9,
+            "model_size": 51737
+          },
+          {
+            "iteration": 8,
+            "dataset_idx": 3,
+            "accuracy": 0.95,
+            "model_size": 35417
+          },
+          {
+            "iteration": 9,
+            "dataset_idx": 4,
+            "accuracy": 0.915,
+            "model_size": 50937
+          },
+          {
+            "iteration": 10,
+            "dataset_idx": 0,
+            "accuracy": 0.95,
+            "model_size": 29657
+          },
+          {
+            "iteration": 11,
+            "dataset_idx": 1,
+            "accuracy": 0.85,
+            "model_size": 70946
+          },
+          {
+            "iteration": 12,
+            "dataset_idx": 2,
+            "accuracy": 0.9,
+            "model_size": 51737
+          },
+          {
+            "iteration": 13,
+            "dataset_idx": 3,
+            "accuracy": 0.95,
+            "model_size": 35417
+          },
+          {
+            "iteration": 14,
+            "dataset_idx": 4,
+            "accuracy": 0.915,
+            "model_size": 50937
+          },
+          {
+            "iteration": 15,
+            "dataset_idx": 0,
+            "accuracy": 0.95,
+            "model_size": 29657
+          },
+          {
+            "iteration": 16,
+            "dataset_idx": 1,
+            "accuracy": 0.85,
+            "model_size": 70946
+          },
+          {
+            "iteration": 17,
+            "dataset_idx": 2,
+            "accuracy": 0.9,
+            "model_size": 51737
+          },
+          {
+            "iteration": 18,
+            "dataset_idx": 3,
+            "accuracy": 0.95,
+            "model_size": 35417
+          },
+          {
+            "iteration": 19,
+            "dataset_idx": 4,
+            "accuracy": 0.915,
+            "model_size": 50937
+          }
+        ]
+      }
+    }
+  ]
+}

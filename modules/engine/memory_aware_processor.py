@@ -161,6 +161,70 @@ class MemoryMonitor:
         
         return freed_gb
 
+    # Additional methods expected by tests
+    @property
+    def initial_memory_mb(self) -> float:
+        """Get initial memory usage in MB"""
+        return self._initial_memory * 1024
+
+    @property
+    def current_memory_mb(self) -> float:
+        """Get current memory usage in MB"""
+        return self._get_current_memory() * 1024
+
+    @property
+    def memory_history(self) -> List[float]:
+        """Get memory usage history"""
+        return self._memory_history.copy()
+
+    def get_current_memory(self) -> float:
+        """Get current memory usage in MB"""
+        return self.current_memory_mb
+
+    def update_memory(self) -> float:
+        """Update memory tracking and return current usage in MB"""
+        current = self._get_current_memory()
+        with self._lock:
+            self._memory_history.append(current)
+            if len(self._memory_history) > 100:
+                self._memory_history = self._memory_history[-50:]
+        return current * 1024
+
+    def get_memory_pressure(self) -> float:
+        """Get current memory pressure as percentage"""
+        stats = self.get_memory_stats()
+        return stats.usage_percentage
+
+    def is_memory_pressure_high(self, threshold: float = None) -> bool:
+        """Check if memory pressure is high"""
+        threshold = threshold or self.warning_threshold
+        return self.get_memory_pressure() > threshold
+
+    def is_memory_pressure_critical(self, threshold: float = None) -> bool:
+        """Check if memory pressure is critical"""
+        threshold = threshold or self.critical_threshold
+        return self.get_memory_pressure() > threshold
+
+    def get_available_memory(self) -> float:
+        """Get available memory in MB"""
+        stats = self.get_memory_stats()
+        return stats.available_mb
+
+    def get_memory_delta(self) -> float:
+        """Get memory delta since last measurement in MB"""
+        if len(self._memory_history) < 2:
+            return 0.0
+        return (self._memory_history[-1] - self._memory_history[-2]) * 1024
+
+    def clear_history(self):
+        """Clear memory history"""
+        with self._lock:
+            self._memory_history.clear()
+
+    def get_memory_history(self) -> List[float]:
+        """Get memory history in MB"""
+        return [m * 1024 for m in self._memory_history]
+
 
 class AdaptiveChunkProcessor:
     """Adaptive chunk processor that adjusts chunk size based on memory pressure"""
@@ -269,17 +333,91 @@ class AdaptiveChunkProcessor:
     def get_performance_stats(self) -> Dict[str, Any]:
         """Get performance statistics"""
         if not self._performance_history:
-            return {}
+            return {
+                'total_time_seconds': 0.0,
+                'avg_chunk_size': 0.0,
+                'avg_processing_time': 0.0,
+                'avg_memory_used': 0.0,
+                'avg_rows_per_second': 0.0,
+                'total_chunks_processed': 0
+            }
         
         recent_perf = self._performance_history[-10:]
+        total_time = sum(p['processing_time'] for p in recent_perf)
         
         return {
+            'total_time_seconds': total_time,
             'avg_chunk_size': np.mean([p['chunk_size'] for p in recent_perf]),
             'avg_processing_time': np.mean([p['processing_time'] for p in recent_perf]),
             'avg_memory_used': np.mean([p['memory_used'] for p in recent_perf]),
             'avg_rows_per_second': np.mean([p['rows_per_second'] for p in recent_perf]),
             'total_chunks_processed': len(self._performance_history)
         }
+
+    def select_chunking_strategy(self, data):
+        """Select appropriate chunking strategy based on data characteristics"""
+        if len(data) < 1000:
+            return ChunkingStrategy.FIXED
+        elif len(data) < 100000:
+            return ChunkingStrategy.ADAPTIVE
+        else:
+            return ChunkingStrategy.MEMORY_BASED
+
+    def calculate_adaptive_chunk_size(self, data):
+        """Calculate adaptive chunk size based on data and memory"""
+        stats = self.memory_monitor.get_memory_stats()
+        
+        # Base chunk size based on available memory
+        available_memory_mb = stats.available_gb * 1024
+        target_memory_mb = min(available_memory_mb * 0.1, 100)  # Use 10% of available memory or 100MB max
+        
+        # Estimate memory per row
+        if len(data) > 0:
+            sample_size = min(100, len(data))
+            sample_memory_mb = data.head(sample_size).memory_usage(deep=True).sum() / 1024 / 1024
+            memory_per_row = sample_memory_mb / sample_size if sample_size > 0 else 0.001
+            
+            chunk_size = int(target_memory_mb / memory_per_row) if memory_per_row > 0 else 1000
+        else:
+            chunk_size = 1000
+        
+        # Ensure reasonable bounds
+        return max(self.min_chunk_size, min(self.max_chunk_size, chunk_size))
+
+    def calculate_memory_based_chunk_size(self, data, target_memory_mb=None):
+        """Calculate chunk size based on memory constraints"""
+        if target_memory_mb is None:
+            target_memory_mb = 100  # Default 100MB limit
+        
+        if len(data) == 0:
+            return self.min_chunk_size
+        
+        # Estimate memory per row
+        sample_size = min(100, len(data))
+        sample_memory_mb = data.head(sample_size).memory_usage(deep=True).sum() / 1024 / 1024
+        memory_per_row = sample_memory_mb / sample_size if sample_size > 0 else 0.001
+        
+        chunk_size = int(target_memory_mb / memory_per_row) if memory_per_row > 0 else self.min_chunk_size
+        
+        # Ensure reasonable bounds and don't exceed data length
+        return max(self.min_chunk_size, min(len(data), min(self.max_chunk_size, chunk_size)))
+
+    def process_with_adaptive_chunking(self, data, process_func=None):
+        """Process data with adaptive chunking strategy"""
+        if process_func is None:
+            process_func = lambda x: x  # Default identity operation
+        
+        chunk_size = self.calculate_adaptive_chunk_size(data)
+        self.current_chunk_size = chunk_size
+        
+        results = []
+        for chunk in self.process_chunks(data, process_func):
+            results.append(chunk)
+        
+        if results:
+            return pd.concat(results, ignore_index=True)
+        else:
+            return data.iloc[0:0] if hasattr(data, 'iloc') else data
 
 
 class MemoryAwareDataProcessor:
@@ -398,6 +536,32 @@ class MemoryAwareDataProcessor:
             
             return final_df
     
+    def process_data(self, X: pd.DataFrame, y: pd.Series) -> Dict[str, Any]:
+        """
+        Process features and target data with memory optimization and categorical encoding
+        
+        Args:
+            X: Feature DataFrame
+            y: Target Series
+            
+        Returns:
+            Dict containing processed X and y
+        """
+        with self.memory_context("data_preprocessing"):
+            # Make a copy to avoid modifying the original data
+            X_processed = X.copy()
+            
+            # Handle categorical features first (before memory optimization)
+            categorical_columns = X_processed.select_dtypes(include=['object']).columns
+            if len(categorical_columns) > 0:
+                for col in categorical_columns:
+                    X_processed[col] = pd.Categorical(X_processed[col]).codes
+            
+            # Then optimize memory usage
+            X_processed = self.optimize_dataframe_memory(X_processed)
+            
+            return {'X': X_processed, 'y': y}
+    
     def optimize_dataframe_memory(self, df: pd.DataFrame) -> pd.DataFrame:
         """Optimize DataFrame memory usage through dtype optimization"""
         with self.memory_context("memory_optimization"):
@@ -438,7 +602,154 @@ class MemoryAwareDataProcessor:
         )
         
         return self._processing_stats
-    
+
+    def select_chunking_strategy(self, data):
+        """Select appropriate chunking strategy based on data characteristics"""
+        return self.chunk_processor.select_chunking_strategy(data)
+
+    def calculate_adaptive_chunk_size(self, data):
+        """Calculate adaptive chunk size based on data and memory"""
+        return self.chunk_processor.calculate_adaptive_chunk_size(data)
+
+    def calculate_memory_based_chunk_size(self, data, target_memory_mb=None):
+        """Calculate chunk size based on memory constraints"""
+        return self.chunk_processor.calculate_memory_based_chunk_size(data, target_memory_mb)
+
+    def process_with_adaptive_chunking(self, data, process_func=None):
+        """Process data with adaptive chunking strategy"""
+        return self.chunk_processor.process_with_adaptive_chunking(data, process_func)
+
+    def get_performance_stats(self):
+        """Get performance statistics"""
+        processing_stats = self.get_processing_stats()
+        chunk_stats = self.chunk_processor.get_performance_stats()
+        memory_stats = self.memory_monitor.get_memory_stats()
+        
+        return {
+            'processing_stats': {
+                'total_processing_time': processing_stats.total_processing_time,
+                'total_data_processed_mb': processing_stats.total_data_processed_mb,
+                'memory_peak_mb': processing_stats.memory_peak_mb,
+                'gc_count': processing_stats.gc_count
+            },
+            'chunk_stats': chunk_stats,
+            'memory_stats': {
+                'current_usage_gb': memory_stats.used_gb,
+                'usage_percentage': memory_stats.usage_percentage,
+                'pressure_level': memory_stats.pressure_level.value
+            }
+        }
+
+    # Additional methods expected by tests
+    @property
+    def monitor(self):
+        """Get the memory monitor instance"""
+        return self.memory_monitor
+
+    @property 
+    def warning_threshold(self):
+        """Get the warning threshold"""
+        return self.memory_monitor.warning_threshold
+
+    @property
+    def enable_numa(self):
+        """Check if NUMA is enabled"""
+        return self.memory_pool is not None and getattr(self.memory_pool, 'numa_aware', False)
+
+    @property
+    def critical_threshold(self):
+        """Get the critical threshold"""
+        return self.memory_monitor.critical_threshold
+
+    def process_in_chunks(self, df: pd.DataFrame, process_func: Callable, chunk_size: int = None) -> pd.DataFrame:
+        """Process DataFrame in chunks"""
+        start_time = time.time()
+        
+        if chunk_size is None:
+            chunk_size = self.calculate_optimal_chunk_size(df)
+        
+        chunks = []
+        for i in range(0, len(df), chunk_size):
+            chunk = df.iloc[i:i+chunk_size]
+            processed_chunk = process_func(chunk)
+            chunks.append(processed_chunk)
+        
+        result = pd.concat(chunks, ignore_index=True)
+        
+        # Update processing stats
+        processing_time = time.time() - start_time
+        self._processing_stats.total_processing_time += processing_time
+        self._processing_stats.chunks_processed += len(chunks)
+        
+        return result
+
+    def should_use_chunking(self, df: pd.DataFrame) -> bool:
+        """Determine if chunking should be used based on data size and memory pressure"""
+        # If data is large (>=50000 rows), use chunking
+        if len(df) >= 50000:
+            return True
+            
+        # If data is small (<10000 rows), don't use chunking
+        if len(df) < 10000:
+            return False
+        
+        # For medium data, check memory pressure
+        stats = self.memory_monitor.get_memory_stats()
+        return stats.pressure_level in [MemoryPressureLevel.HIGH, MemoryPressureLevel.CRITICAL]
+
+    def calculate_optimal_chunk_size(self, df: pd.DataFrame, target_memory_mb: float = 100) -> int:
+        """Calculate optimal chunk size based on memory constraints"""
+        if len(df) == 0:
+            return 1000
+        
+        # Estimate memory per row
+        sample_size = min(1000, len(df))
+        sample_memory_mb = df.head(sample_size).memory_usage(deep=True).sum() / 1024 / 1024
+        memory_per_row = sample_memory_mb / sample_size
+        
+        # Calculate chunk size to fit in target memory
+        chunk_size = int(target_memory_mb / memory_per_row) if memory_per_row > 0 else 1000
+        
+        # Ensure reasonable bounds and don't exceed DataFrame length
+        chunk_size = max(100, min(len(df), chunk_size))
+        
+        return chunk_size
+
+    def check_memory_pressure(self) -> Dict[str, Any]:
+        """Check current memory pressure"""
+        stats = self.memory_monitor.get_memory_stats()
+        return {
+            "pressure_level": stats.pressure_level.value,
+            "usage_percentage": stats.usage_percentage,
+            "available_gb": stats.available_gb
+        }
+
+    def cleanup_memory(self):
+        """Cleanup memory and trigger garbage collection"""
+        freed = self.memory_monitor.trigger_gc(aggressive=True)
+        return freed
+
+    def get_detailed_memory_usage(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """Get detailed memory usage information for a DataFrame"""
+        memory_usage = df.memory_usage(deep=True)
+        total_memory = memory_usage.sum()
+        
+        # Create column_memory dict for backward compatibility
+        column_memory = {col: mem / 1024 / 1024 for col, mem in memory_usage.items()}
+        
+        # Create dtype distribution
+        dtype_counts = df.dtypes.value_counts()
+        dtype_distribution = {str(dtype): count for dtype, count in dtype_counts.items()}
+        
+        return {
+            "total_memory_mb": total_memory / 1024 / 1024,
+            "memory_per_column": column_memory,
+            "column_memory": column_memory,  # For test compatibility
+            "dtype_distribution": dtype_distribution,
+            "shape": df.shape,
+            "dtypes": df.dtypes.to_dict()
+        }
+
     def cleanup(self):
         """Cleanup resources and trigger final garbage collection"""
         self.logger.info("Cleaning up memory-aware data processor")
@@ -450,18 +761,6 @@ class MemoryAwareDataProcessor:
         # Final garbage collection
         freed = self.memory_monitor.trigger_gc(aggressive=True)
         self.logger.info(f"Final cleanup freed {freed:.2f} GB")
-
-
-# Integration functions
-def create_memory_aware_processor(warning_threshold: float = 70.0,
-                                critical_threshold: float = 85.0,
-                                enable_numa: bool = True) -> MemoryAwareDataProcessor:
-    """Create a memory-aware data processor with optimized settings"""
-    return MemoryAwareDataProcessor(
-        warning_threshold=warning_threshold,
-        critical_threshold=critical_threshold,
-        enable_numa=enable_numa
-    )
 
 
 # Integration functions

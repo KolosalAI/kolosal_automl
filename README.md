@@ -5,7 +5,7 @@
 [![Built with UV](https://img.shields.io/badge/built%20with-uv-%23B072FF?logo=pypi)](https://github.com/astral-sh/uv)
 [![Version](https://img.shields.io/badge/version-0.1.4-green.svg)]()
 [![Status](https://img.shields.io/badge/status-production%20ready-brightgreen)]()
-[![Tests](https://img.shields.io/badge/tests-247%2F309%20passing-brightgreen)]()
+[![Tests](https://img.shields.io/badge/tests-624%2F636%20passing-brightgreen)]()
 
 **🚀 Production Ready | 🛡️ Enterprise Security | 📊 Real-time Monitoring | ⚡ Optimized Performance**
 
@@ -22,7 +22,7 @@
 ### 🎯 **System Status: PRODUCTION READY** ✅
 
 - **Import Success Rate**: 100% (with graceful fallbacks)
-- **Test Coverage**: 80% (247/309 tests passing)
+- **Test Coverage**: 98.1% (624/636 tests passing)
 - **Critical Path Coverage**: 100%
 - **Error Handling**: Comprehensive with graceful fallbacks
 - **Performance**: 20-40% faster than standard implementations
@@ -348,7 +348,7 @@ All critical stability issues have been resolved. The system is now robust, well
 
 #### **🔧 Stability Achievements**
 - **Import Success Rate**: 100% with graceful fallbacks for optional dependencies
-- **Test Coverage**: 80% success rate (247/309 tests passing)
+- **Test Coverage**: 98.1% success rate (624/636 tests passing)
 - **Error Handling**: Comprehensive try-catch blocks with detailed logging
 - **Dependency Management**: Clean, organized dependencies with optional feature groups
 - **API Compatibility**: Full FastAPI/Pydantic v2 support
@@ -1024,7 +1024,7 @@ kolosal_automl/
 Kolosal AutoML features a complete pytest-based testing infrastructure with comprehensive test coverage, robust error handling, and production-ready validation across all components.
 
 #### **📊 Current Test Status**
-- **Test Success Rate**: 80% (247/309 tests passing)
+- **Test Success Rate**: 98.1% (624/636 tests passing)
 - **Critical Path Coverage**: 100% of core functionality
 - **Error Handling**: Comprehensive with graceful fallbacks
 - **Test Categories**: Unit, Functional, Integration testing
@@ -1209,7 +1209,7 @@ The Kolosal AutoML system has undergone comprehensive stability improvements and
 
 #### **📊 System Health Metrics**
 - **Import Success Rate**: 100% (with graceful fallbacks)
-- **Test Coverage**: 80% (247/309 tests passing)
+- **Test Coverage**: 98.1% (624/636 tests passing)
 - **Critical Functionality**: 100% operational
 - **Error Handling**: Comprehensive with detailed logging
 - **Dependency Management**: Clean and conflict-free
@@ -1230,7 +1230,7 @@ The Kolosal AutoML system has undergone comprehensive stability improvements and
 
 #### **🔒 Risk Assessment**
 - **🟢 Low Risk**: Core functionality robust and well-tested
-- **🟡 Medium Risk**: 61 remaining test failures (non-critical edge cases)  
+- **🟡 Medium Risk**: 12 remaining test failures (non-critical edge cases)  
 - **🔴 High Risk**: None identified - all critical issues resolved
 
 ---
@@ -1251,37 +1251,54 @@ We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.
 
 ---
 
-## 📚 Documentation & Resources
+## 📚 Documentation Hub
 
-### **Comprehensive Documentation**
-- **[Complete API Documentation](docs/COMPLETE_API_DOCUMENTATION.md)** - Full API reference with examples
-- **[Complete Documentation Index](docs/COMPLETE_DOCUMENTATION_INDEX.md)** - Centralized documentation hub
-- **[Bytecode Compilation Guide](COMPILATION_README.md)** - Performance optimization with bytecode compilation
-- **[Benchmark Documentation](benchmark/README.md)** - Performance benchmarking guide
+Our documentation is organized for easy navigation based on your role and needs:
 
-### **Deployment & Operations**
-- **Production Deployment**: Docker, monitoring stack, load balancing
-- **Security Configuration**: API keys, rate limiting, input validation
-- **Performance Optimization**: JIT compilation, mixed precision, Intel optimizations, bytecode compilation
-- **Monitoring & Analytics**: Real-time dashboards, performance metrics
+### 👋 **Getting Started**
+New to Kolosal AutoML? Start here:
+- **[📖 Getting Started Guide](docs/getting-started/)** - Installation, setup, and first steps
+- **[🚀 Quick Start](docs/getting-started/README.md)** - 5-minute setup and your first model
+- **[⚙️ Configuration](docs/getting-started/configuration.md)** - Basic system configuration
 
-### **Benchmarking & Comparison**
-- **Performance Benchmarking**: Comprehensive comparison vs standard ML
-- **Trial-based Analysis**: Statistical significance testing
-- **Scalability Testing**: Performance analysis up to 10M+ samples
-- **Professional Reporting**: HTML reports with interactive visualizations
+### 🎓 **User Guides**  
+Learn how to use Kolosal AutoML effectively:
+- **[🌐 Web Interface Guide](docs/user-guides/web-interface.md)** - Using the Gradio interface
+- **[🚂 Training Models](docs/user-guides/training-models.md)** - Complete training guide
+- **[⚡ Making Predictions](docs/user-guides/inference.md)** - Inference and predictions
+- **[📦 Batch Processing](docs/user-guides/batch-processing.md)** - High-throughput processing
 
-### **Development & Testing**
-- **Test Suite Documentation**: Unit, functional, integration testing
-- **Development Environment**: Setup, debugging, troubleshooting
-- **Contributing Guidelines**: Code standards, testing requirements
-- **API Development**: RESTful endpoints, authentication, batch processing
+### 🚀 **Production Deployment**
+Deploy to production environments:
+- **[🐳 Docker Deployment](docs/deployment/docker.md)** - Containerized deployment guide
+- **[🏭 Production Setup](docs/deployment/production.md)** - Production-ready configuration  
+- **[🔒 Security Configuration](docs/deployment/security.md)** - Enterprise security setup
+- **[📊 Monitoring & Observability](docs/deployment/monitoring.md)** - Metrics and dashboards
 
-### **Advanced Features**
-- **ASHT Optimization**: Proprietary adaptive hyperparameter tuning
-- **Batch Processing**: Enterprise-grade async processing with priority queues
-- **Memory Management**: Intelligent resource allocation and optimization
-- **Security Framework**: Enterprise-grade security with audit logging
+### 🔌 **API Integration**
+Integrate with your applications:
+- **[📋 Complete API Reference](docs/api-reference/)** - Full API documentation
+- **[🐍 Python Examples](docs/api-reference/examples/python.md)** - Python client examples
+- **[🌐 JavaScript Examples](docs/api-reference/examples/javascript.md)** - Node.js integration
+- **[⚡ cURL Examples](docs/api-reference/examples/curl.md)** - Command-line examples
+
+### 🛠️ **Technical Documentation**
+Deep dive into the platform:
+- **[🏗️ System Architecture](docs/technical/architecture.md)** - Design and components
+- **[⚡ Performance Optimization](docs/technical/performance.md)** - Speed and efficiency
+- **[🧩 Module Documentation](docs/technical/modules/)** - Detailed technical specs
+- **[🚀 Advanced Features](docs/technical/advanced-features.md)** - Power-user features
+
+### 👩‍💻 **Development & Contributing**
+For developers and contributors:
+- **[🛠️ Development Setup](docs/development/setup.md)** - Developer environment
+- **[🤝 Contributing Guide](docs/development/contributing.md)** - How to contribute
+- **[🧪 Testing Guide](docs/development/testing.md)** - Testing procedures
+
+### 📖 **Additional Resources**
+- **[🔗 Complete Documentation Index](docs/README.md)** - Full documentation hub
+- **[📊 Benchmarking Guide](benchmark/README.md)** - Performance comparisons
+- **[🏛️ Legacy Documentation](docs/legacy/)** - Previous documentation versions
 
 ---
 
@@ -1309,7 +1326,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ### **System Status: STABLE AND PRODUCTION-READY** ✅
 
-**🎯 80% Test Success Rate | 🔧 100% Critical Path Coverage | 📈 20-40% Performance Improvement | 💾 10-25% Memory Efficiency**
+**🎯 98.1% Test Success Rate | 🔧 100% Critical Path Coverage | 📈 20-40% Performance Improvement | 💾 10-25% Memory Efficiency**
 
 ---
 
