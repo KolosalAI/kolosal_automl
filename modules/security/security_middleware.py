@@ -197,10 +197,19 @@ class AuthenticationMiddleware:
             
             # Check if token is expired
             if 'exp' in payload:
-                if datetime.utcnow().timestamp() > payload['exp']:
+                exp_value = payload['exp']
+                current_time = datetime.utcnow().timestamp()
+                
+                # Handle both datetime objects and timestamp values
+                if isinstance(exp_value, datetime):
+                    exp_timestamp = exp_value.timestamp()
+                else:
+                    exp_timestamp = float(exp_value)
+                
+                if current_time > exp_timestamp:
                     return create_error_response(401, "Token expired")
             
-            # Check admin endpoints
+            # Check admin endpoints BEFORE calling next
             admin_endpoints = self.config.get('admin_endpoints', [])
             if any(request.url.path.startswith(endpoint) for endpoint in admin_endpoints):
                 if payload.get('role') != 'admin':

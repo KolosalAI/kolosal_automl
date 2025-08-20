@@ -6,7 +6,6 @@ This test suite covers:
 - Loading strategy selection
 - Memory optimization features
 - Different data format handling
-- Performance monitoring
 """
 
 import os
@@ -224,24 +223,29 @@ class TestOptimizedDataLoader(unittest.TestCase):
     
     def test_loading_strategy_selection(self):
         """Test loading strategy selection logic"""
-        # Test tiny dataset - should use DIRECT
-        strategy = self.loader.select_loading_strategy(
-            DatasetSize.TINY, estimated_memory_mb=10.0
-        )
-        self.assertEqual(strategy, LoadingStrategy.DIRECT)
-        
-        # Test large dataset with high memory - should not use DIRECT
-        strategy = self.loader.select_loading_strategy(
-            DatasetSize.LARGE, estimated_memory_mb=10000.0
-        )
-        self.assertNotEqual(strategy, LoadingStrategy.DIRECT)
-        
-        # Test huge dataset - should use advanced strategy
-        strategy = self.loader.select_loading_strategy(
-            DatasetSize.HUGE, estimated_memory_mb=50000.0
-        )
-        self.assertIn(strategy, [LoadingStrategy.STREAMING, LoadingStrategy.DISTRIBUTED, 
-                                LoadingStrategy.MEMORY_MAPPED])
+        # Mock the memory monitor to return a predictable amount
+        with patch.object(self.loader.memory_monitor, 'get_available_memory', return_value=8000):  # 8GB available
+            # Test tiny dataset - should use DIRECT
+            strategy = self.loader.select_loading_strategy(
+                DatasetSize.TINY, estimated_memory_mb=10.0
+            )
+            self.assertEqual(strategy, LoadingStrategy.DIRECT)
+            
+            # Test large dataset with high memory - should not use DIRECT  
+            # With 8GB available and 70% usage = 5.6GB threshold
+            # For LARGE datasets, threshold is halved to 2.8GB
+            # 10GB > 2.8GB, so should use STREAMING
+            strategy = self.loader.select_loading_strategy(
+                DatasetSize.LARGE, estimated_memory_mb=10000.0
+            )
+            self.assertNotEqual(strategy, LoadingStrategy.DIRECT)
+            
+            # Test huge dataset - should use advanced strategy
+            strategy = self.loader.select_loading_strategy(
+                DatasetSize.HUGE, estimated_memory_mb=50000.0
+            )
+            self.assertIn(strategy, [LoadingStrategy.STREAMING, LoadingStrategy.DISTRIBUTED, 
+                                    LoadingStrategy.MEMORY_MAPPED])
     
     def test_dtype_optimization(self):
         """Test data type optimization"""

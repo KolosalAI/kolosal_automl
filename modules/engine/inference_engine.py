@@ -1728,7 +1728,8 @@ class InferenceEngine:
                 "feature_count": None,
                 "can_predict": False,
                 "errors": [],
-                "warnings": []
+                "warnings": [],
+                "valid": False  # Add backwards compatibility from the start
             }
             
             if self.model is None:
@@ -1768,7 +1769,7 @@ class InferenceEngine:
             if len(validation_result["errors"]) == 0:
                 validation_result["is_valid"] = True
             
-            # Add backwards compatibility
+            # Set backwards compatibility
             validation_result["valid"] = validation_result["is_valid"]
             
             return validation_result
@@ -1778,10 +1779,9 @@ class InferenceEngine:
             result = {
                 "is_valid": False,
                 "model_loaded": False,
-                "errors": [f"Validation error: {str(e)}"]
+                "errors": [f"Validation error: {str(e)}"],
+                "valid": False  # Ensure this is always present
             }
-            # Add backwards compatibility
-            result["valid"] = result["is_valid"]
             return result
 
 

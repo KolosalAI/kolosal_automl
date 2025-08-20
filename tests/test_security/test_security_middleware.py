@@ -501,6 +501,8 @@ class TestAuthenticationMiddleware(unittest.TestCase):
         request = MockRequest(url="http://localhost:8000/api/protected")
         
         call_next = AsyncMock()
+        mock_response = MockResponse(status_code=200)
+        call_next.return_value = mock_response
         
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
@@ -565,6 +567,8 @@ class TestAuthenticationMiddleware(unittest.TestCase):
         )
         
         call_next = AsyncMock()
+        mock_response = MockResponse(status_code=200)
+        call_next.return_value = mock_response
         
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
