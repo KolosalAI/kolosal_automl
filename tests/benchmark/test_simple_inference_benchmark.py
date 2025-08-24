@@ -35,7 +35,8 @@ except ImportError:
 
 pytestmark = [
     pytest.mark.benchmark,
-    pytest.mark.inference
+    pytest.mark.inference,
+    pytest.mark.latency
 ]
 
 class TestSimpleInferenceBenchmark:

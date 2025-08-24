@@ -9,8 +9,10 @@ import subprocess
 import sys
 import os
 import time
+import json
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
+import glob
 
 # Try to import device optimizer for optimal configuration
 try:
@@ -86,6 +88,153 @@ def create_output_dir(output_path: str) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
     return output_dir
 
+def run_benchmark_suite(test_categories: List[str], output_dir: str, verbose: bool = False) -> Dict[str, Any]:
+    """Run comprehensive benchmark suite with multiple categories."""
+    
+    results = {
+        'benchmark_suite': {
+            'categories_run': test_categories,
+            'start_time': time.time(),
+            'results': []
+        }
+    }
+    
+    for category in test_categories:
+        print(f"\n🏃 Running {category} benchmarks...")
+        
+        # Build pytest command
+        cmd = ["python", "-m", "pytest"]
+        cmd.extend(["-ra", "--strict-markers", "--disable-warnings", "--tb=short"])
+        
+        if verbose:
+            cmd.extend(["-v", "-s"])
+        else:
+            cmd.append("-q")
+        
+        cmd.extend(["--durations=10", "-m", f"benchmark and {category}"])
+        cmd.append("tests/benchmark/")
+        
+        print(f"   Command: {' '.join(cmd)}")
+        
+        # Run tests
+        start_time = time.time()
+        try:
+            result = subprocess.run(cmd, cwd=Path.cwd(), capture_output=True, text=True)
+            duration = time.time() - start_time
+            
+            category_result = {
+                'category': category,
+                'duration_seconds': duration,
+                'exit_code': result.returncode,
+                'tests_passed': result.returncode == 0,
+                'stdout': result.stdout if verbose else None,
+                'stderr': result.stderr if result.stderr else None
+            }
+            
+            results['benchmark_suite']['results'].append(category_result)
+            
+            if result.returncode == 0:
+                print(f"   ✅ {category} benchmarks completed successfully in {duration:.2f}s")
+            else:
+                print(f"   ❌ {category} benchmarks failed (exit code: {result.returncode})")
+                if result.stderr:
+                    print(f"   Error: {result.stderr[:200]}...")
+                    
+        except Exception as e:
+            print(f"   ❌ Failed to run {category} benchmarks: {e}")
+            results['benchmark_suite']['results'].append({
+                'category': category,
+                'duration_seconds': time.time() - start_time,
+                'exit_code': -1,
+                'tests_passed': False,
+                'error': str(e)
+            })
+    
+    results['benchmark_suite']['end_time'] = time.time()
+    results['benchmark_suite']['total_duration'] = results['benchmark_suite']['end_time'] - results['benchmark_suite']['start_time']
+    
+    return results
+
+def consolidate_results(output_dir: str) -> Optional[Path]:
+    """Find the most recent benchmark results and return path."""
+    results_dir = Path(output_dir)
+    if not results_dir.exists():
+        return None
+    
+    # Find the most recent results file
+    pattern = results_dir / "benchmark_results_*.json"
+    result_files = list(results_dir.glob("benchmark_results_*.json"))
+    
+    if not result_files:
+        return None
+    
+    # Get the most recent file
+    most_recent = max(result_files, key=lambda x: x.stat().st_mtime)
+    return most_recent
+
+def print_comprehensive_summary(results_file: Path):
+    """Print a comprehensive summary of benchmark results."""
+    try:
+        with open(results_file, 'r') as f:
+            data = json.load(f)
+        
+        print(f"\n📊 COMPREHENSIVE BENCHMARK RESULTS SUMMARY")
+        print("=" * 60)
+        
+        # Session info
+        session = data.get('benchmark_session', {})
+        print(f"🕒 Session Duration: {session.get('session_duration_minutes', 0):.2f} minutes")
+        print(f"📅 Timestamp: {session.get('timestamp', 'Unknown')}")
+        
+        # System info
+        system = data.get('system_info', {})
+        print(f"💻 System: {system.get('cpu_count_logical', 'Unknown')} cores, {system.get('memory_total_gb', 0):.1f} GB RAM")
+        
+        # Summary stats
+        summary = session.get('summary', {})
+        print(f"🧪 Total Tests: {summary.get('total_tests_run', 0)}")
+        
+        # Tests by category
+        print(f"\n📈 Tests by Category:")
+        categories = summary.get('tests_by_category', {})
+        for category, count in categories.items():
+            if count > 0:
+                category_name = category.replace('_', ' ').title()
+                print(f"   • {category_name}: {count} tests")
+        
+        # Performance summary
+        perf = summary.get('performance_summary', {})
+        if perf:
+            print(f"\n⚡ Performance Summary:")
+            if 'fastest_test_ms' in perf:
+                print(f"   • Fastest test: {perf['fastest_test_ms']:.2f}ms")
+            if 'slowest_test_ms' in perf:
+                print(f"   • Slowest test: {perf['slowest_test_ms']:.2f}ms")
+            if 'avg_memory_usage_mb' in perf:
+                print(f"   • Avg memory usage: {perf['avg_memory_usage_mb']:.2f}MB")
+        
+        # Category breakdown
+        categories = data.get('test_results_by_category', {})
+        print(f"\n📋 Detailed Results by Category:")
+        
+        for category, tests in categories.items():
+            if tests:
+                category_name = category.replace('_', ' ').title()
+                print(f"\n   {category_name} ({len(tests)} tests):")
+                
+                for test in tests[:3]:  # Show first 3 tests per category
+                    test_name = test.get('name', 'Unknown')
+                    duration = test.get('duration_ms', 0)
+                    print(f"     • {test_name}: {duration:.2f}ms")
+                
+                if len(tests) > 3:
+                    print(f"     ... and {len(tests) - 3} more tests")
+        
+        print(f"\n✅ Complete results saved to: {results_file}")
+        
+    except Exception as e:
+        print(f"❌ Failed to read results summary: {e}")
+
 def build_pytest_command(args) -> List[str]:
     """Build pytest command based on arguments."""
     cmd = ["python", "-m", "pytest"]
@@ -113,8 +262,20 @@ def build_pytest_command(args) -> List[str]:
     elif args.memory:
         markers.append("benchmark and memory")
         print("🧠 Running memory tests")
-    else:
+    elif args.large:
+        markers.append("benchmark and large")
+        print("📊 Running large-scale benchmarks")
+    elif args.extreme:
+        markers.append("benchmark and extreme")
+        print("🚀 Running extreme load benchmarks")
+    elif args.full:
+        # Run all benchmark tests including throughput, latency, and inference
         markers.append("benchmark")
+        print("🚀 Running FULL benchmark suite (all throughput, latency, and performance tests)")
+    else:
+        # Default behavior: run all benchmark tests
+        markers.append("benchmark")
+        print("🔥 Running ALL benchmark tests (throughput, latency, inference, concurrency, memory, etc.)")
     
     # Add category filter
     if args.category != "all":
@@ -124,8 +285,12 @@ def build_pytest_command(args) -> List[str]:
             "imports": "imports",
             "ml": "ml",
             "throughput": "throughput",
+            "latency": "latency",
             "memory": "memory", 
-            "inference": "inference"
+            "inference": "inference",
+            "concurrency": "concurrency",
+            "large": "large",
+            "extreme": "extreme"
         }
         
         if args.category.lower() in category_map:
@@ -133,8 +298,11 @@ def build_pytest_command(args) -> List[str]:
             print(f"🎯 Running category: {args.category}")
         else:
             print(f"❌ Unknown category: {args.category}")
-            print("   Valid categories: all, data_loading, ui, imports, ml, throughput, memory, inference")
+            print("   Valid categories: all, data_loading, ui, imports, ml, throughput, latency, memory, inference, concurrency, large, extreme")
             sys.exit(1)
+    else:
+        # When running "all", ensure we include all benchmark types
+        print("🔥 Running ALL benchmark categories: throughput, latency, inference, concurrency, memory, and more")
     
     # Add marker filter
     if markers:
@@ -210,29 +378,55 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python run_benchmarks.py                          # Run all normal benchmarks
-  python run_benchmarks.py --category data_loading  # Run data loading benchmarks
+  python run_benchmarks.py                          # Run all normal benchmarks (all categories)
+  python run_benchmarks.py --full                   # Run complete benchmark suite (recommended)
+  python run_benchmarks.py --comprehensive          # Run comprehensive multi-category suite with detailed reporting
+  python run_benchmarks.py --categories throughput latency  # Run specific categories with comprehensive reporting
+  python run_benchmarks.py --category throughput    # Run throughput benchmarks only
+  python run_benchmarks.py --category latency       # Run latency benchmarks only
+  python run_benchmarks.py --category large         # Run large-scale benchmarks
+  python run_benchmarks.py --category extreme       # Run extreme load benchmarks
   python run_benchmarks.py --quick                  # Run quick benchmarks only
   python run_benchmarks.py --stress                 # Run stress tests
+  python run_benchmarks.py --large                  # Run large-scale benchmarks
+  python run_benchmarks.py --extreme                # Run extreme load benchmarks
   python run_benchmarks.py --memory --verbose       # Run memory tests with verbose output
 
 Categories:
-  all          - All benchmark tests
+  all          - All benchmark tests (throughput, latency, inference, etc.)
   data_loading - Data I/O and processing benchmarks
   ui           - User interface performance benchmarks
   imports      - Import and startup benchmarks
   ml           - Machine learning operation benchmarks
   throughput   - Throughput and concurrent processing benchmarks
+  latency      - Latency and response time benchmarks
   memory       - Memory usage and leak detection benchmarks
   inference    - Inference engine performance benchmarks
+  concurrency  - Concurrency and parallel processing benchmarks
+  large        - Large scale data processing and high volume benchmarks
+  extreme      - Extreme load, massive concurrency, and system limit benchmarks
+  stress       - Stress testing for system stability
+
+Comprehensive Mode:
+  The --comprehensive flag or specifying multiple --categories will run a comprehensive
+  benchmark suite that executes multiple categories sequentially and provides detailed
+  consolidated reporting with performance summaries and category breakdowns.
         """
+    )
+    
+    parser.add_argument(
+        "--categories",
+        nargs="*",
+        default=["all"],
+        choices=["all", "throughput", "latency", "inference", "concurrency", "memory", "stress", "data_loading", "ui", "imports", "ml", "large", "extreme"],
+        help="Benchmark categories to run (default: all). Can specify multiple categories."
     )
     
     parser.add_argument(
         "--category", 
         default="all",
-        choices=["all", "data_loading", "ui", "imports", "ml", "throughput", "memory", "inference"],
-        help="Run specific benchmark category"
+        choices=["all", "data_loading", "ui", "imports", "ml", "throughput", "latency", "memory", "inference", "concurrency", "large", "extreme"],
+        help="Run specific benchmark category (legacy - use --categories instead)"
     )
     
     parser.add_argument(
@@ -267,6 +461,30 @@ Categories:
     )
     
     parser.add_argument(
+        "--full",
+        action="store_true",
+        help="Run complete benchmark suite (all throughput, latency, inference, and performance tests)"
+    )
+    
+    parser.add_argument(
+        "--large",
+        action="store_true",
+        help="Run large-scale benchmarks (high volume data processing)"
+    )
+    
+    parser.add_argument(
+        "--extreme",
+        action="store_true",
+        help="Run extreme load benchmarks (massive concurrency and system limits)"
+    )
+    
+    parser.add_argument(
+        "--comprehensive",
+        action="store_true",
+        help="Run comprehensive benchmark suite with detailed reporting and multi-category execution"
+    )
+    
+    parser.add_argument(
         "--verbose",
         action="store_true",
         help="Verbose output"
@@ -283,36 +501,84 @@ Categories:
     output_dir = create_output_dir(args.output)
     print(f"📁 Output directory: {output_dir}")
     
-    # Build command
-    cmd = build_pytest_command(args)
+    # Determine if running in comprehensive mode
+    if args.comprehensive or (hasattr(args, 'categories') and args.categories != ["all"] and len(args.categories) > 1):
+        # Run comprehensive benchmark suite
+        print("🚀 Running COMPREHENSIVE benchmark suite")
+        
+        # Determine categories to run
+        if hasattr(args, 'categories') and args.categories != ["all"]:
+            categories = args.categories
+        elif "all" in getattr(args, 'categories', []):
+            if args.quick:
+                categories = ["throughput", "latency", "inference", "concurrency"]
+            else:
+                categories = ["throughput", "latency", "inference", "concurrency", "memory", "stress"]
+        else:
+            # Default comprehensive categories
+            categories = ["throughput", "latency", "inference", "concurrency", "memory", "stress"]
+        
+        print(f"📊 Running benchmark categories: {', '.join(categories)}")
+        
+        # Run benchmark suite
+        start_time = time.time()
+        suite_results = run_benchmark_suite(categories, args.output, args.verbose)
+        
+        # Find and display results
+        print(f"\n🔍 Looking for consolidated results...")
+        results_file = consolidate_results(args.output)
+        
+        if results_file:
+            print_comprehensive_summary(results_file)
+        else:
+            print("❌ No benchmark results file found")
+        
+        # Check if all categories passed
+        all_passed = all(result.get('tests_passed', False) for result in suite_results['benchmark_suite']['results'])
+        
+        # Final summary
+        total_duration = time.time() - start_time
+        print(f"\n⏱️  Total execution time: {total_duration / 60:.2f} minutes")
+        
+        if all_passed:
+            print("🎉 All benchmark categories completed successfully!")
+            sys.exit(0)
+        else:
+            print("⚠️  Some benchmark categories had failures")
+            sys.exit(1)
     
-    print()
-    print("📊 Test configuration:")
-    print(f"   Category: {args.category}")
-    print(f"   Size: {args.size}")
-    print(f"   Output: {args.output}")
-    print()
-    
-    print("🔄 Starting benchmark tests...")
-    print(f"Command: {' '.join(cmd)}")
-    print()
-    
-    # Run tests
-    start_time = time.time()
-    
-    try:
-        result = subprocess.run(cmd, cwd=Path.cwd())
-        exit_code = result.returncode
-    except KeyboardInterrupt:
-        print("\n⚠️ Tests interrupted by user")
-        exit_code = 130
-    except Exception as e:
-        print(f"❌ Error running pytest: {e}")
-        exit_code = 1
-    
-    print_summary(start_time, exit_code, output_dir, config_info)
-    
-    sys.exit(exit_code)
+    else:
+        # Run single category mode (original behavior)
+        # Build command
+        cmd = build_pytest_command(args)
+        
+        print()
+        print("📊 Test configuration:")
+        print(f"   Category: {args.category}")
+        print(f"   Size: {args.size}")
+        print(f"   Output: {args.output}")
+        print()
+        
+        print("🔄 Starting benchmark tests...")
+        print(f"Command: {' '.join(cmd)}")
+        print()
+        
+        # Run tests
+        start_time = time.time()
+        
+        try:
+            result = subprocess.run(cmd, cwd=Path.cwd())
+            exit_code = result.returncode
+        except KeyboardInterrupt:
+            print("\n⚠️ Tests interrupted by user")
+            exit_code = 130
+        except Exception as e:
+            print(f"❌ Error running pytest: {e}")
+            exit_code = 1
+        
+        print_summary(start_time, exit_code, output_dir, config_info)
+        
+        sys.exit(exit_code)
 
 if __name__ == "__main__":
     main()

@@ -1,0 +1,900 @@
+{
+  "session_start": 1756029336.3359108,
+  "session_duration": 54.962029457092285,
+  "total_tests": 15,
+  "system_info": {
+    "cpu_count": 20,
+    "memory_total_gb": 63.668304443359375,
+    "python_version": "3.10.11 (tags/v3.10.11:7d4cc5a, Apr  5 2023, 00:38:17) [MSC v.1929 64 bit (AMD64)]",
+    "platform": "win32"
+  },
+  "results": [
+    {
+      "name": "test_cpu_bound_concurrency",
+      "duration_ms": 1328.81,
+      "memory_before_mb": 692.36,
+      "memory_after_mb": 692.51,
+      "memory_delta_mb": 0.14,
+      "memory_peak_mb": 692.6,
+      "cpu_percent": null,
+      "metadata": {
+        "test_type": "cpu_bound_concurrency",
+        "task_count": 20,
+        "concurrency_results": {
+          "1": {
+            "throughput_ops_per_sec": 2217.5161601656814,
+            "latency_stats": {
+              "min_ms": 0.046999999995023245,
+              "max_ms": 1.5189000000646047,
+              "avg_ms": 0.3526999999621694,
+              "median_ms": 0.3076499999679072,
+              "p95_ms": 0.6937299999663089,
+              "p99_ms": 1.3538660000449443,
+              "std_ms": 0.3164838534319676
+            },
+            "success_rate": 1.0,
+            "cpu_usage_percent": 74.8,
+            "memory_usage_mb": 0.01953125,
+            "duration_seconds": 0.009019099999932223
+          },
+          "2": {
+            "throughput_ops_per_sec": 2359.4922373162326,
+            "latency_stats": {
+              "min_ms": 0.052999999752501026,
+              "max_ms": 0.5842000000484404,
+              "avg_ms": 0.2948150000293026,
+              "median_ms": 0.2905500000451866,
+              "p95_ms": 0.565009999945687,
+              "p99_ms": 0.5803620000278897,
+              "std_ms": 0.16377815634297124
+            },
+            "success_rate": 1.0,
+            "cpu_usage_percent": 57.9,
+            "memory_usage_mb": 0.046875,
+            "duration_seconds": 0.008476399999835849
+          },
+          "4": {
+            "throughput_ops_per_sec": 1996.9646137874417,
+            "latency_stats": {
+              "min_ms": 0.050099999953090446,
+              "max_ms": 1.2993000000278698,
+              "avg_ms": 0.32446499999423395,
+              "median_ms": 0.2963000001727778,
+              "p95_ms": 0.5339799998864697,
+              "p99_ms": 1.1462359999995886,
+              "std_ms": 0.2670149498427172
+            },
+            "success_rate": 1.0,
+            "cpu_usage_percent": 83.6,
+            "memory_usage_mb": 0.11328125,
+            "duration_seconds": 0.010015199999998003
+          },
+          "8": {
+            "throughput_ops_per_sec": 1886.31197710887,
+            "latency_stats": {
+              "min_ms": 0.05199999986871262,
+              "max_ms": 2.0275000001674925,
+              "avg_ms": 0.3705449999870325,
+              "median_ms": 0.26120000006812916,
+              "p95_ms": 0.8168200001136947,
+              "p99_ms": 1.7853640001567312,
+              "std_ms": 0.4282535507243974
+            },
+            "success_rate": 1.0,
+            "cpu_usage_percent": 70.5,
+            "memory_usage_mb": 0.12109375,
+            "duration_seconds": 0.010602700000163168
+          }
+        }
+      }
+    },
+    {
+      "name": "test_io_bound_concurrency",
+      "duration_ms": 2899.71,
+      "memory_before_mb": 692.55,
+      "memory_after_mb": 693.18,
+      "memory_delta_mb": 0.62,
+      "memory_peak_mb": 700.38,
+      "cpu_percent": null,
+      "metadata": {
+        "test_type": "io_bound_concurrency",
+        "file_count": 15,
+        "concurrency_results": {
+          "1": {
+            "throughput_ops_per_sec": 31.835028336360608,
+            "latency_stats": {
+              "min_ms": 29.418799999803014,
+              "max_ms": 34.66500000013184,
+              "avg_ms": 31.287693333312443,
+              "median_ms": 31.26879999990706,
+              "p95_ms": 33.03967000015291,
+              "p99_ms": 34.339934000136054,
+              "std_ms": 1.288958746188702
+            },
+            "success_rate": 1.0,
+            "cpu_usage_percent": 34.9,
+            "memory_usage_mb": 1.6328125
+          },
+          "2": {
+            "throughput_ops_per_sec": 49.348078977981814,
+            "latency_stats": {
+              "min_ms": 30.418400000144175,
+              "max_ms": 62.0534000004227,
+              "avg_ms": 40.1773599999918,
+              "median_ms": 32.21969999958674,
+              "p95_ms": 62.0510200001263,
+              "p99_ms": 62.05292400036342,
+              "std_ms": 11.354519632453485
+            },
+            "success_rate": 1.0,
+            "cpu_usage_percent": 37.5,
+            "memory_usage_mb": 3.46875
+          },
+          "5": {
+            "throughput_ops_per_sec": 56.31184448327649,
+            "latency_stats": {
+              "min_ms": 60.57060000011916,
+              "max_ms": 108.19139999966865,
+              "avg_ms": 77.47186666662553,
+              "median_ms": 77.02679999965767,
+              "p95_ms": 97.42189999988112,
+              "p99_ms": 106.03749999971113,
+              "std_ms": 12.858805239648065
+            },
+            "success_rate": 1.0,
+            "cpu_usage_percent": 73.3,
+            "memory_usage_mb": 3.65234375
+          },
+          "10": {
+            "throughput_ops_per_sec": 53.27932467391748,
+            "latency_stats": {
+              "min_ms": 94.81559999994715,
+              "max_ms": 208.3185000001322,
+              "avg_ms": 146.2647066666856,
+              "median_ms": 138.39290000032634,
+              "p95_ms": 197.18423000017535,
+              "p99_ms": 206.09164600014083,
+              "std_ms": 37.33854661799129
+            },
+            "success_rate": 1.0,
+            "cpu_usage_percent": 58.9,
+            "memory_usage_mb": -1.2109375
+          }
+        }
+      }
+    },
+    {
+      "name": "test_ml_inference_concurrency",
+      "duration_ms": 2168.65,
+      "memory_before_mb": 693.2,
+      "memory_after_mb": 694.48,
+      "memory_delta_mb": 1.28,
+      "memory_peak_mb": 694.76,
+      "cpu_percent": null,
+      "metadata": {
+        "test_type": "ml_inference_concurrency",
+        "model_type": "RandomForestClassifier",
+        "inference_samples": 50,
+        "model_params": {
+          "n_estimators": 20,
+          "max_depth": 5,
+          "features": 10
+        },
+        "concurrency_results": {
+          "1": {
+            "throughput_ops_per_sec": 299.05576133848075,
+            "latency_stats": {
+              "min_ms": 2.337500000066939,
+              "max_ms": 4.714900000180933,
+              "avg_ms": 3.2858779999969556,
+              "median_ms": 3.3371499998793297,
+              "p95_ms": 3.9891400000442436,
+              "p99_ms": 4.417274000052202,
+              "std_ms": 0.47212045903596167
+            },
+            "success_rate": 1.0,
+            "error_count": 0
+          },
+          "2": {
+            "throughput_ops_per_sec": 231.09909806681227,
+            "latency_stats": {
+              "min_ms": 2.6182000001426786,
+              "max_ms": 24.82830000008107,
+              "avg_ms": 8.125423999990744,
+              "median_ms": 6.194250000135071,
+              "p95_ms": 17.1196000000009,
+              "p99_ms": 23.86437199992997,
+              "std_ms": 5.119530244878762
+            },
+            "success_rate": 1.0,
+            "error_count": 0
+          },
+          "4": {
+            "throughput_ops_per_sec": 190.58059233981055,
+            "latency_stats": {
+              "min_ms": 2.3521999996773957,
+              "max_ms": 52.591600000141625,
+              "avg_ms": 18.50918200002525,
+              "median_ms": 17.223350000222126,
+              "p95_ms": 41.56650000015813,
+              "p99_ms": 50.15208600016194,
+              "std_ms": 10.758507355813927
+            },
+            "success_rate": 1.0,
+            "error_count": 0
+          },
+          "8": {
+            "throughput_ops_per_sec": 276.32278480311174,
+            "latency_stats": {
+              "min_ms": 1.297599999816157,
+              "max_ms": 70.69909999972879,
+              "avg_ms": 22.28124199996273,
+              "median_ms": 19.0090500000224,
+              "p95_ms": 50.28617000002667,
+              "p99_ms": 62.250078999763865,
+              "std_ms": 13.558849335599694
+            },
+            "success_rate": 1.0,
+            "error_count": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "test_data_processing_throughput",
+      "duration_ms": 3369.06,
+      "memory_before_mb": 694.48,
+      "memory_after_mb": 713.02,
+      "memory_delta_mb": 18.53,
+      "memory_peak_mb": 713.09,
+      "cpu_percent": null,
+      "metadata": {
+        "test_type": "data_processing_throughput",
+        "batch_configurations": [
+          [
+            "small",
+            100
+          ],
+          [
+            "small",
+            500
+          ],
+          [
+            "small",
+            1000
+          ],
+          [
+            "medium",
+            100
+          ],
+          [
+            "medium",
+            500
+          ],
+          [
+            "medium",
+            1000
+          ]
+        ],
+        "dataset_sizes": {
+          "small": 1000,
+          "medium": 10000
+        },
+        "throughput_results": {
+          "1": {
+            "throughput_ops_per_sec": 11.61747826369616,
+            "avg_latency_ms": 85.5616999999711,
+            "success_rate": 1.0,
+            "total_processed": 6
+          },
+          "2": {
+            "throughput_ops_per_sec": 9.515048127901588,
+            "avg_latency_ms": 169.02266666670585,
+            "success_rate": 1.0,
+            "total_processed": 6
+          },
+          "4": {
+            "throughput_ops_per_sec": 7.848999893515503,
+            "avg_latency_ms": 240.84086666653093,
+            "success_rate": 1.0,
+            "total_processed": 6
+          }
+        }
+      }
+    },
+    {
+      "name": "test_memory_efficient_throughput",
+      "duration_ms": 15852.85,
+      "memory_before_mb": 708.02,
+      "memory_after_mb": 708.21,
+      "memory_delta_mb": 0.19,
+      "memory_peak_mb": 708.32,
+      "cpu_percent": 12.4,
+      "metadata": {
+        "test_type": "memory_efficient_throughput",
+        "data_sizes_tested": [
+          1000,
+          5000,
+          10000,
+          20000
+        ],
+        "initial_memory_mb": 708.015625,
+        "throughput_results": {
+          "1": {
+            "throughput_ops_per_sec": 3.809720100816746,
+            "avg_latency_ms": 0.00424499996825034,
+            "success_rate": 1.0,
+            "duration_seconds": 5.24972949999983
+          },
+          "2": {
+            "throughput_ops_per_sec": 3.9442211401732816,
+            "avg_latency_ms": 0.014810000038778526,
+            "success_rate": 1.0,
+            "duration_seconds": 5.0707096000001
+          },
+          "4": {
+            "throughput_ops_per_sec": 3.869216085406856,
+            "avg_latency_ms": 0.0029900000527049997,
+            "success_rate": 1.0,
+            "duration_seconds": 5.169005700000071
+          }
+        },
+        "memory_usage_results": {
+          "1": {
+            "peak_memory_mb": 708.22265625,
+            "avg_memory_mb": 708.171484375,
+            "memory_growth_mb": 0.20703125
+          },
+          "2": {
+            "peak_memory_mb": 711.31640625,
+            "avg_memory_mb": 708.54140625,
+            "memory_growth_mb": 3.30078125
+          },
+          "4": {
+            "peak_memory_mb": 711.375,
+            "avg_memory_mb": 709.16640625,
+            "memory_growth_mb": 3.359375
+          }
+        }
+      }
+    },
+    {
+      "name": "test_baseline_latency",
+      "duration_ms": 336.22,
+      "memory_before_mb": 708.21,
+      "memory_after_mb": 708.21,
+      "memory_delta_mb": null,
+      "memory_peak_mb": 708.21,
+      "cpu_percent": null,
+      "metadata": {
+        "test_type": "baseline_latency",
+        "operation_latencies": {
+          "simple_calculation": {
+            "min_ms": 0.014100000043981709,
+            "max_ms": 0.02499999982319423,
+            "avg_ms": 0.014636999972026388,
+            "median_ms": 0.014500000133921276,
+            "p95_ms": 0.014700000065204222,
+            "p99_ms": 0.0177730001678356,
+            "std_ms": 0.0011062407819036786,
+            "samples": 100
+          },
+          "data_creation": {
+            "min_ms": 0.037400000110210385,
+            "max_ms": 1.360000000204309,
+            "avg_ms": 0.07008700001279067,
+            "median_ms": 0.03990000004705507,
+            "p95_ms": 0.09634000005007691,
+            "p99_ms": 0.6265090002216349,
+            "std_ms": 0.14410718351691196,
+            "samples": 100
+          },
+          "file_system_check": {
+            "min_ms": 0.01739999970595818,
+            "max_ms": 0.029199999971751822,
+            "avg_ms": 0.018518000051699346,
+            "median_ms": 0.017899999875226058,
+            "p95_ms": 0.021415000151137065,
+            "p99_ms": 0.026823999887710684,
+            "std_ms": 0.0018598566181955271,
+            "samples": 100
+          },
+          "memory_allocation": {
+            "min_ms": 0.012900000001536682,
+            "max_ms": 0.3092000001743145,
+            "avg_ms": 0.017201000027853297,
+            "median_ms": 0.013150000086170621,
+            "p95_ms": 0.014895000344949944,
+            "p99_ms": 0.08773699984431119,
+            "std_ms": 0.030382120266807432,
+            "samples": 100
+          }
+        }
+      }
+    },
+    {
+      "name": "test_latency_under_load",
+      "duration_ms": 8429.91,
+      "memory_before_mb": 708.21,
+      "memory_after_mb": 708.21,
+      "memory_delta_mb": 0.0,
+      "memory_peak_mb": 708.21,
+      "cpu_percent": null,
+      "metadata": {
+        "test_type": "latency_under_load",
+        "latency_comparison": {
+          "no_load": {
+            "avg_ms": 0.3240879999975732,
+            "p95_ms": 1.252210000029663,
+            "p99_ms": 3.0138010000564455
+          },
+          "under_load": {
+            "min_ms": 0.17729999990478973,
+            "max_ms": 2.9312000001482375,
+            "avg_ms": 0.43424729730415146,
+            "median_ms": 0.28444999998100684,
+            "p95_ms": 1.1583100002326265,
+            "p99_ms": 2.891487999850142
+          }
+        },
+        "load_duration_seconds": 8
+      }
+    },
+    {
+      "name": "test_ml_inference_latency",
+      "duration_ms": 1876.05,
+      "memory_before_mb": 708.21,
+      "memory_after_mb": 708.26,
+      "memory_delta_mb": 0.05,
+      "memory_peak_mb": 708.26,
+      "cpu_percent": null,
+      "metadata": {
+        "test_type": "ml_inference_latency",
+        "model_latencies": {
+          "simple": {
+            "min_ms": 0.8569999999963329,
+            "max_ms": 6.214600000021164,
+            "avg_ms": 1.4858920000051512,
+            "median_ms": 1.061800000115909,
+            "p95_ms": 3.276200000050266,
+            "p99_ms": 5.990563000350449,
+            "model_params": {
+              "n_estimators": 5,
+              "max_depth": 3
+            }
+          },
+          "medium": {
+            "min_ms": 2.2100000001046283,
+            "max_ms": 12.23389999995561,
+            "avg_ms": 4.370489999996607,
+            "median_ms": 3.584049999972194,
+            "p95_ms": 8.732025000267639,
+            "p99_ms": 11.40536900021289,
+            "model_params": {
+              "n_estimators": 20,
+              "max_depth": 8
+            }
+          },
+          "complex": {
+            "min_ms": 2.043599999979051,
+            "max_ms": 21.43290000003617,
+            "avg_ms": 6.790539000026001,
+            "median_ms": 6.351450000011027,
+            "p95_ms": 13.218035000022606,
+            "p99_ms": 20.361917999971418,
+            "model_params": {
+              "n_estimators": 50,
+              "max_depth": 15
+            }
+          }
+        },
+        "test_features": 20,
+        "inference_samples": 100
+      }
+    },
+    {
+      "name": "test_csv_loading_throughput",
+      "duration_ms": 2043.21,
+      "memory_before_mb": 708.26,
+      "memory_after_mb": 725.89,
+      "memory_delta_mb": 17.63,
+      "memory_peak_mb": 725.89,
+      "cpu_percent": null,
+      "metadata": {
+        "throughput_metrics": {
+          "duration_seconds": 0.3824327999996058,
+          "total_operations": 10,
+          "successful_operations": 10,
+          "errors": 0,
+          "throughput_ops_per_sec": 26.148384762003438,
+          "success_rate_percent": 100.0,
+          "avg_response_time_ms": 38.237270000036006,
+          "p50_response_time_ms": 31.45295000012993,
+          "p95_response_time_ms": 89.77378500023858,
+          "p99_response_time_ms": 100.4674770002066,
+          "max_response_time_ms": 103.1409000001986
+        },
+        "files_processed": 10,
+        "file_sizes_tested": [
+          "small",
+          "medium"
+        ]
+      }
+    },
+    {
+      "name": "test_concurrent_data_loading_throughput",
+      "duration_ms": 541.61,
+      "memory_before_mb": 719.11,
+      "memory_after_mb": 712.68,
+      "memory_delta_mb": -6.43,
+      "memory_peak_mb": 719.11,
+      "cpu_percent": null,
+      "metadata": {
+        "concurrency_results": {
+          "1_workers": {
+            "duration_seconds": 0.03614670000024489,
+            "total_operations": 10,
+            "successful_operations": 10,
+            "errors": 0,
+            "throughput_ops_per_sec": 276.65042728471064,
+            "success_rate_percent": 100.0,
+            "avg_response_time_ms": 3.4243900000092253,
+            "p50_response_time_ms": 3.419999999778156,
+            "p95_response_time_ms": 3.726980000305957,
+            "p99_response_time_ms": 3.792356000271866,
+            "max_response_time_ms": 3.808700000263343
+          },
+          "2_workers": {
+            "duration_seconds": 0.03880730000037147,
+            "total_operations": 10,
+            "successful_operations": 10,
+            "errors": 0,
+            "throughput_ops_per_sec": 257.6834770752997,
+            "success_rate_percent": 100.0,
+            "avg_response_time_ms": 7.337310000002617,
+            "p50_response_time_ms": 6.811249999827851,
+            "p95_response_time_ms": 11.31352000013521,
+            "p99_response_time_ms": 12.781024000146317,
+            "max_response_time_ms": 13.147900000149093
+          },
+          "4_workers": {
+            "duration_seconds": 0.057570400000258815,
+            "total_operations": 10,
+            "successful_operations": 10,
+            "errors": 0,
+            "throughput_ops_per_sec": 173.70037380242354,
+            "success_rate_percent": 100.0,
+            "avg_response_time_ms": 16.228980000050797,
+            "p50_response_time_ms": 15.690449999965494,
+            "p95_response_time_ms": 25.54035500008922,
+            "p99_response_time_ms": 26.099111000098674,
+            "max_response_time_ms": 26.238800000101037
+          },
+          "8_workers": {
+            "duration_seconds": 0.05459310000014739,
+            "total_operations": 10,
+            "successful_operations": 10,
+            "errors": 0,
+            "throughput_ops_per_sec": 183.17333142783616,
+            "success_rate_percent": 100.0,
+            "avg_response_time_ms": 13.57439000003069,
+            "p50_response_time_ms": 13.269150000041918,
+            "p95_response_time_ms": 17.12547499978427,
+            "p99_response_time_ms": 18.610294999862163,
+            "max_response_time_ms": 18.981499999881635
+          }
+        },
+        "files_per_test": 10
+      }
+    },
+    {
+      "name": "test_batch_data_processing_throughput",
+      "duration_ms": 703.17,
+      "memory_before_mb": 711.76,
+      "memory_after_mb": 712.0,
+      "memory_delta_mb": 0.23,
+      "memory_peak_mb": 712.0,
+      "cpu_percent": null,
+      "metadata": {
+        "batch_processing_results": {
+          "batch_size_1": {
+            "duration_seconds": 0.007580699999834906,
+            "total_operations": 1,
+            "successful_operations": 1,
+            "errors": 0,
+            "throughput_ops_per_sec": 131.91393934884354,
+            "success_rate_percent": 100.0,
+            "avg_response_time_ms": 7.573599999886937,
+            "p50_response_time_ms": 7.573599999886937,
+            "p95_response_time_ms": 7.573599999886937,
+            "p99_response_time_ms": 7.573599999886937,
+            "max_response_time_ms": 7.573599999886937
+          },
+          "batch_size_5": {
+            "duration_seconds": 0.033000199999605684,
+            "total_operations": 5,
+            "successful_operations": 5,
+            "errors": 0,
+            "throughput_ops_per_sec": 151.51423324888165,
+            "success_rate_percent": 100.0,
+            "avg_response_time_ms": 6.586179999885644,
+            "p50_response_time_ms": 6.563899999946443,
+            "p95_response_time_ms": 6.899819999762258,
+            "p99_response_time_ms": 6.911803999773838,
+            "max_response_time_ms": 6.914799999776733
+          },
+          "batch_size_10": {
+            "duration_seconds": 0.06824479999977484,
+            "total_operations": 10,
+            "successful_operations": 10,
+            "errors": 0,
+            "throughput_ops_per_sec": 146.53131081097743,
+            "success_rate_percent": 100.0,
+            "avg_response_time_ms": 6.814620000113791,
+            "p50_response_time_ms": 6.8944499998906394,
+            "p95_response_time_ms": 7.295000000158325,
+            "p99_response_time_ms": 7.336040000300272,
+            "max_response_time_ms": 7.346300000335759
+          },
+          "batch_size_20": {
+            "duration_seconds": 0.12705189999996946,
+            "total_operations": 20,
+            "successful_operations": 20,
+            "errors": 0,
+            "throughput_ops_per_sec": 157.41598512107893,
+            "success_rate_percent": 100.0,
+            "avg_response_time_ms": 6.3445150000688955,
+            "p50_response_time_ms": 6.3964500000111,
+            "p95_response_time_ms": 6.602914999939458,
+            "p99_response_time_ms": 6.677622999932282,
+            "max_response_time_ms": 6.696299999930488
+          }
+        },
+        "batch_sizes_tested": [
+          1,
+          5,
+          10,
+          20
+        ]
+      }
+    },
+    {
+      "name": "test_inference_engine_throughput",
+      "duration_ms": 2024.7,
+      "memory_before_mb": 712.0,
+      "memory_after_mb": 724.77,
+      "memory_delta_mb": 12.77,
+      "memory_peak_mb": 724.77,
+      "cpu_percent": null,
+      "metadata": {
+        "single_prediction_metrics": {
+          "duration_seconds": 1.542304200000217,
+          "total_operations": 100,
+          "successful_operations": 100,
+          "errors": 0,
+          "throughput_ops_per_sec": 64.83805205223842,
+          "success_rate_percent": 100.0,
+          "avg_response_time_ms": 15.416958999990129,
+          "p50_response_time_ms": 15.526299999919502,
+          "p95_response_time_ms": 16.121410000232572,
+          "p99_response_time_ms": 16.212852999997267,
+          "max_response_time_ms": 16.297300000132964
+        },
+        "batch_prediction_metrics": null,
+        "test_samples_count": 0
+      }
+    },
+    {
+      "name": "test_ml_model_inference_throughput",
+      "duration_ms": 750.15,
+      "memory_before_mb": 724.79,
+      "memory_after_mb": 725.26,
+      "memory_delta_mb": 0.47,
+      "memory_peak_mb": 725.26,
+      "cpu_percent": null,
+      "metadata": {
+        "single_prediction_metrics": {
+          "duration_seconds": 0.22059259999969072,
+          "total_operations": 500,
+          "successful_operations": 500,
+          "errors": 0,
+          "throughput_ops_per_sec": 2266.6218177794767,
+          "success_rate_percent": 100.0,
+          "avg_response_time_ms": 0.439422000000377,
+          "p50_response_time_ms": 0.401699999883931,
+          "p95_response_time_ms": 0.660415000015746,
+          "p99_response_time_ms": 0.8385039996483101,
+          "max_response_time_ms": 0.9211999999934051
+        },
+        "batch_prediction_results": {
+          "batch_size_1": {
+            "duration_seconds": 0.21535499999981766,
+            "total_operations": 500,
+            "successful_operations": 500,
+            "errors": 0,
+            "throughput_ops_per_sec": 2321.7478117546534,
+            "success_rate_percent": 100.0,
+            "avg_response_time_ms": 0.4290542000062487,
+            "p50_response_time_ms": 0.401800000190633,
+            "p95_response_time_ms": 0.6188299999166701,
+            "p99_response_time_ms": 0.7955890000903308,
+            "max_response_time_ms": 1.2549999996736005
+          },
+          "batch_size_5": {
+            "duration_seconds": 0.04186189999973067,
+            "total_operations": 100,
+            "successful_operations": 100,
+            "errors": 0,
+            "throughput_ops_per_sec": 2388.807005908556,
+            "success_rate_percent": 100.0,
+            "avg_response_time_ms": 0.41707199999109434,
+            "p50_response_time_ms": 0.3752499999336578,
+            "p95_response_time_ms": 0.581495000005816,
+            "p99_response_time_ms": 0.9076390003701825,
+            "max_response_time_ms": 1.0501000001568173
+          },
+          "batch_size_10": {
+            "duration_seconds": 0.022152399999868067,
+            "total_operations": 50,
+            "successful_operations": 50,
+            "errors": 0,
+            "throughput_ops_per_sec": 2257.091782393681,
+            "success_rate_percent": 100.0,
+            "avg_response_time_ms": 0.4414620000170544,
+            "p50_response_time_ms": 0.386099999786893,
+            "p95_response_time_ms": 0.6687550000833652,
+            "p99_response_time_ms": 0.9648399999969114,
+            "max_response_time_ms": 0.9961999999177351
+          },
+          "batch_size_25": {
+            "duration_seconds": 0.00799749999987398,
+            "total_operations": 20,
+            "successful_operations": 20,
+            "errors": 0,
+            "throughput_ops_per_sec": 2500.7814942563487,
+            "success_rate_percent": 100.0,
+            "avg_response_time_ms": 0.3984049999871786,
+            "p50_response_time_ms": 0.3677999998217274,
+            "p95_response_time_ms": 0.5578900001410149,
+            "p99_response_time_ms": 0.6443780003201026,
+            "max_response_time_ms": 0.6660000003648747
+          },
+          "batch_size_50": {
+            "duration_seconds": 0.004421999999976833,
+            "total_operations": 10,
+            "successful_operations": 10,
+            "errors": 0,
+            "throughput_ops_per_sec": 2261.4201718797804,
+            "success_rate_percent": 100.0,
+            "avg_response_time_ms": 0.44054000004507543,
+            "p50_response_time_ms": 0.40484999976797553,
+            "p95_response_time_ms": 0.5502550002574934,
+            "p99_response_time_ms": 0.5733310003097358,
+            "max_response_time_ms": 0.5791000003227964
+          }
+        },
+        "model_type": "RandomForestClassifier",
+        "test_samples": 500
+      }
+    },
+    {
+      "name": "test_api_endpoint_throughput",
+      "duration_ms": 886.79,
+      "memory_before_mb": 725.27,
+      "memory_after_mb": 725.41,
+      "memory_delta_mb": 0.14,
+      "memory_peak_mb": 725.41,
+      "cpu_percent": null,
+      "metadata": {
+        "endpoint_results": {
+          "GET__health": {
+            "duration_seconds": 0.21739019999995435,
+            "total_operations": 50,
+            "successful_operations": 50,
+            "errors": 0,
+            "throughput_ops_per_sec": 230.0011684059838,
+            "success_rate_percent": 100.0,
+            "avg_response_time_ms": 4.345357999982298,
+            "p50_response_time_ms": 4.142000000001644,
+            "p95_response_time_ms": 4.8952149999422545,
+            "p99_response_time_ms": 8.583821000192975,
+            "max_response_time_ms": 10.728600000220467
+          },
+          "GET__api_v1_status": {
+            "duration_seconds": 0.21377609999990455,
+            "total_operations": 50,
+            "successful_operations": 50,
+            "errors": 0,
+            "throughput_ops_per_sec": 233.8895695076406,
+            "success_rate_percent": 100.0,
+            "avg_response_time_ms": 4.27137000001494,
+            "p50_response_time_ms": 4.19545000022481,
+            "p95_response_time_ms": 4.945545000100537,
+            "p99_response_time_ms": 5.3528450001022065,
+            "max_response_time_ms": 5.4310000000441505
+          },
+          "POST__api_v1_predict": {
+            "duration_seconds": 0.24495930000011867,
+            "total_operations": 50,
+            "successful_operations": 50,
+            "errors": 0,
+            "throughput_ops_per_sec": 204.11554082647925,
+            "success_rate_percent": 100.0,
+            "avg_response_time_ms": 4.896696000023439,
+            "p50_response_time_ms": 4.870299999993222,
+            "p95_response_time_ms": 5.504280000286599,
+            "p99_response_time_ms": 5.770122999938394,
+            "max_response_time_ms": 5.842300000040268
+          }
+        },
+        "requests_per_endpoint": 50
+      }
+    },
+    {
+      "name": "test_concurrent_api_requests",
+      "duration_ms": 1928.48,
+      "memory_before_mb": 725.41,
+      "memory_after_mb": 736.98,
+      "memory_delta_mb": 11.57,
+      "memory_peak_mb": 737.61,
+      "cpu_percent": null,
+      "metadata": {
+        "concurrency_results": {
+          "1_workers": {
+            "duration_seconds": 0.48251650000020163,
+            "total_operations": 100,
+            "successful_operations": 100,
+            "errors": 0,
+            "throughput_ops_per_sec": 207.24679881404722,
+            "success_rate_percent": 100.0,
+            "avg_response_time_ms": 4.789628999988054,
+            "p50_response_time_ms": 4.545000000007349,
+            "p95_response_time_ms": 7.053545000007943,
+            "p99_response_time_ms": 8.689190999798495,
+            "max_response_time_ms": 10.777200000120501
+          },
+          "5_workers": {
+            "duration_seconds": 0.3504037000002427,
+            "total_operations": 100,
+            "successful_operations": 100,
+            "errors": 0,
+            "throughput_ops_per_sec": 285.38511436931384,
+            "success_rate_percent": 100.0,
+            "avg_response_time_ms": 17.207698000020173,
+            "p50_response_time_ms": 16.943450000098892,
+            "p95_response_time_ms": 21.748619999834773,
+            "p99_response_time_ms": 22.69118800000344,
+            "max_response_time_ms": 26.442100000167557
+          },
+          "10_workers": {
+            "duration_seconds": 0.36293469999964145,
+            "total_operations": 100,
+            "successful_operations": 100,
+            "errors": 0,
+            "throughput_ops_per_sec": 275.53165900118887,
+            "success_rate_percent": 100.0,
+            "avg_response_time_ms": 35.2539450000404,
+            "p50_response_time_ms": 34.9297000000206,
+            "p95_response_time_ms": 45.172020000109114,
+            "p99_response_time_ms": 55.34414700030993,
+            "max_response_time_ms": 55.41810000022451
+          },
+          "20_workers": {
+            "duration_seconds": 0.5199388999999428,
+            "total_operations": 100,
+            "successful_operations": 100,
+            "errors": 0,
+            "throughput_ops_per_sec": 192.3302911169197,
+            "success_rate_percent": 100.0,
+            "avg_response_time_ms": 96.2335880000137,
+            "p50_response_time_ms": 98.32179999966684,
+            "p95_response_time_ms": 123.22935499985306,
+            "p99_response_time_ms": 130.21041600023185,
+            "max_response_time_ms": 133.7165999998433
+          }
+        },
+        "requests_per_test": 100
+      }
+    }
+  ]
+}
