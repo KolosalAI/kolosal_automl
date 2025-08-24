@@ -19,6 +19,19 @@ from typing import Dict, Any, Generator, Tuple
 import json
 import logging
 
+class NumpyJSONEncoder(json.JSONEncoder):
+    """JSON encoder that handles numpy types."""
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, np.bool_):
+            return bool(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return super().default(obj)
+
 # Add project root to path
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 if str(PROJECT_ROOT) not in sys.path:
@@ -109,6 +122,31 @@ class BenchmarkResult:
         
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
+        def clean_for_json(obj):
+            """Recursively clean object for JSON serialization."""
+            if isinstance(obj, (np.integer, int)):
+                return int(obj)
+            elif isinstance(obj, (np.floating, float)):
+                return float(obj)
+            elif isinstance(obj, np.bool_):
+                return bool(obj)
+            elif isinstance(obj, np.ndarray):
+                return obj.tolist()
+            elif isinstance(obj, dict):
+                return {k: clean_for_json(v) for k, v in obj.items()}
+            elif isinstance(obj, (list, tuple)):
+                return [clean_for_json(item) for item in obj]
+            elif obj is None:
+                return None
+            elif isinstance(obj, (str, bool)):
+                return obj
+            else:
+                # Try to convert to string for other types
+                try:
+                    return str(obj)
+                except:
+                    return repr(obj)
+        
         return {
             'name': self.name,
             'duration_ms': round(self.duration_ms, 2) if self.duration_ms else None,
@@ -117,7 +155,7 @@ class BenchmarkResult:
             'memory_delta_mb': round(self.memory_delta_mb, 2) if self.memory_delta_mb else None,
             'memory_peak_mb': round(self.memory_peak_mb, 2) if self.memory_peak_mb else None,
             'cpu_percent': round(self.cpu_percent, 2) if self.cpu_percent else None,
-            'metadata': self.metadata
+            'metadata': clean_for_json(self.metadata)
         }
 
 class BenchmarkCollector:
@@ -132,31 +170,150 @@ class BenchmarkCollector:
         self.results.append(result)
         
     def save_results(self, output_dir: Path):
-        """Save all results to JSON file."""
+        """Save all results to JSON file with comprehensive structure."""
         output_dir.mkdir(exist_ok=True)
         
-        # Create session summary
+        # Categorize results by test type
+        results_by_category = {
+            'throughput_tests': [],
+            'latency_tests': [],
+            'inference_tests': [],
+            'memory_tests': [],
+            'concurrency_tests': [],
+            'data_loading_tests': [],
+            'api_tests': [],
+            'ml_tests': [],
+            'stress_tests': [],
+            'other_tests': []
+        }
+        
+        # Categorize each test result
+        for r in self.results:
+            result_dict = r.to_dict()
+            test_name = result_dict['name'].lower()
+            
+            # Determine category based on test name and metadata
+            if 'throughput' in test_name:
+                results_by_category['throughput_tests'].append(result_dict)
+            elif 'latency' in test_name:
+                results_by_category['latency_tests'].append(result_dict)
+            elif 'inference' in test_name:
+                results_by_category['inference_tests'].append(result_dict)
+            elif 'memory' in test_name:
+                results_by_category['memory_tests'].append(result_dict)
+            elif 'concurrent' in test_name or 'concurrency' in test_name:
+                results_by_category['concurrency_tests'].append(result_dict)
+            elif 'csv' in test_name or 'data' in test_name or 'loading' in test_name:
+                results_by_category['data_loading_tests'].append(result_dict)
+            elif 'api' in test_name:
+                results_by_category['api_tests'].append(result_dict)
+            elif 'ml' in test_name:
+                results_by_category['ml_tests'].append(result_dict)
+            elif 'stress' in test_name:
+                results_by_category['stress_tests'].append(result_dict)
+            else:
+                results_by_category['other_tests'].append(result_dict)
+        
+        # Calculate summary statistics
+        summary_stats = {
+            'total_tests_run': len(self.results),
+            'tests_by_category': {k: len(v) for k, v in results_by_category.items() if v},
+            'session_duration_minutes': (time.time() - self.session_start) / 60,
+            'avg_test_duration_ms': None,
+            'total_memory_usage_mb': None,
+            'performance_summary': {}
+        }
+        
+        # Calculate averages
+        if self.results:
+            durations = [r.duration_ms for r in self.results if r.duration_ms]
+            memory_deltas = [r.memory_delta_mb for r in self.results if r.memory_delta_mb is not None]
+            
+            if durations:
+                summary_stats['avg_test_duration_ms'] = sum(durations) / len(durations)
+                summary_stats['performance_summary']['fastest_test_ms'] = min(durations)
+                summary_stats['performance_summary']['slowest_test_ms'] = max(durations)
+            
+            if memory_deltas:
+                summary_stats['total_memory_usage_mb'] = sum(memory_deltas)
+                summary_stats['performance_summary']['max_memory_usage_mb'] = max(memory_deltas)
+                summary_stats['performance_summary']['avg_memory_usage_mb'] = sum(memory_deltas) / len(memory_deltas)
+        
+        # Create comprehensive session data
         session_data = {
-            'session_start': self.session_start,
-            'session_duration': time.time() - self.session_start,
-            'total_tests': len(self.results),
+            'benchmark_session': {
+                'session_start': self.session_start,
+                'session_end': time.time(),
+                'session_duration_seconds': time.time() - self.session_start,
+                'session_duration_minutes': (time.time() - self.session_start) / 60,
+                'timestamp': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()),
+                'summary': summary_stats
+            },
             'system_info': {
-                'cpu_count': psutil.cpu_count(),
+                'cpu_count_logical': psutil.cpu_count(),
+                'cpu_count_physical': psutil.cpu_count(logical=False),
                 'memory_total_gb': psutil.virtual_memory().total / 1024**3,
+                'memory_available_gb': psutil.virtual_memory().available / 1024**3,
                 'python_version': sys.version,
                 'platform': sys.platform
             },
-            'results': [r.to_dict() for r in self.results]
+            'test_results_by_category': results_by_category,
+            'all_test_results': []  # Flat list for compatibility
         }
+        
+        # Add all results for backward compatibility and detailed analysis
+        for r in self.results:
+            try:
+                session_data['all_test_results'].append(r.to_dict())
+            except Exception as e:
+                logger.warning(f"Failed to serialize result {r.name}: {e}")
+                # Add a minimal entry
+                session_data['all_test_results'].append({
+                    'name': r.name,
+                    'duration_ms': None,
+                    'error': str(e),
+                    'metadata': {'serialization_failed': True}
+                })
         
         # Save with timestamp
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         output_file = output_dir / f"benchmark_results_{timestamp}.json"
         
-        with open(output_file, 'w') as f:
-            json.dump(session_data, f, indent=2)
+        try:
+            with open(output_file, 'w') as f:
+                json.dump(session_data, f, indent=2, cls=NumpyJSONEncoder)
+        except Exception as e:
+            logger.error(f"Failed to save benchmark results: {e}")
+            # Try to save a minimal version
+            try:
+                minimal_data = {
+                    'benchmark_session': {
+                        'session_start': self.session_start,
+                        'error': str(e),
+                        'timestamp': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+                    },
+                    'summary': {
+                        'total_tests': len(self.results),
+                        'error': 'Failed to save full results'
+                    },
+                    'all_test_results': [{'name': r.name, 'error': 'serialization_failed'} for r in self.results]
+                }
+                with open(output_file, 'w') as f:
+                    json.dump(minimal_data, f, indent=2)
+            except Exception as e2:
+                logger.error(f"Failed to save even minimal results: {e2}")
+                return None
             
         logger.info(f"Benchmark results saved to: {output_file}")
+        print(f"\n✅ Complete benchmark results saved to: {output_file}")
+        print(f"📊 Summary: {summary_stats['total_tests_run']} tests completed in {summary_stats['session_duration_minutes']:.2f} minutes")
+        
+        # Print category breakdown
+        print("📈 Tests by category:")
+        for category, count in summary_stats['tests_by_category'].items():
+            if count > 0:
+                print(f"   • {category.replace('_', ' ').title()}: {count} tests")
+        
         return output_file
 
 @pytest.fixture(scope="session")

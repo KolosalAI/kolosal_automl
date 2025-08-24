@@ -46,6 +46,8 @@ except ImportError:
 pytestmark = [
     pytest.mark.benchmark,
     pytest.mark.throughput,
+    pytest.mark.concurrency,
+    pytest.mark.latency,
     pytest.mark.inference
 ]
 

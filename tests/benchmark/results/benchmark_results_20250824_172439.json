@@ -1,0 +1,141 @@
+{
+  "benchmark_session": {
+    "session_start": 1756031033.0975547,
+    "session_end": 1756031079.873014,
+    "session_duration_seconds": 46.77545928955078,
+    "session_duration_minutes": 0.7795909881591797,
+    "timestamp": "2025-08-24 17:24:39",
+    "summary": {
+      "total_tests_run": 1,
+      "tests_by_category": {
+        "data_loading_tests": 1
+      },
+      "session_duration_minutes": 0.7795909881591797,
+      "avg_test_duration_ms": 46234.98720000043,
+      "total_memory_usage_mb": 28.11328125,
+      "performance_summary": {
+        "fastest_test_ms": 46234.98720000043,
+        "slowest_test_ms": 46234.98720000043,
+        "max_memory_usage_mb": 28.11328125,
+        "avg_memory_usage_mb": 28.11328125
+      }
+    }
+  },
+  "system_info": {
+    "cpu_count_logical": 20,
+    "cpu_count_physical": 14,
+    "memory_total_gb": 63.668304443359375,
+    "memory_available_gb": 35.304927825927734,
+    "python_version": "3.10.11 (tags/v3.10.11:7d4cc5a, Apr  5 2023, 00:38:17) [MSC v.1929 64 bit (AMD64)]",
+    "platform": "win32"
+  },
+  "test_results_by_category": {
+    "throughput_tests": [],
+    "latency_tests": [],
+    "inference_tests": [],
+    "memory_tests": [],
+    "concurrency_tests": [],
+    "data_loading_tests": [
+      {
+        "name": "test_very_large_csv_processing",
+        "duration_ms": 46234.99,
+        "memory_before_mb": 235.43,
+        "memory_after_mb": 263.55,
+        "memory_delta_mb": 28.11,
+        "memory_peak_mb": 263.59,
+        "cpu_percent": null,
+        "metadata": {
+          "test_type": "very_large_csv_processing",
+          "file_configurations": [
+            [
+              50000,
+              20
+            ],
+            [
+              100000,
+              15
+            ],
+            [
+              200000,
+              10
+            ],
+            [
+              300000,
+              8
+            ]
+          ],
+          "files_processed": 4,
+          "performance_metrics": {
+            "operations_per_second": 1.656604176796185,
+            "total_operations": 4,
+            "successful_operations": 4,
+            "failed_operations": 0,
+            "average_latency_ms": 2029.645249999703,
+            "p95_latency_ms": 2388.140930000145,
+            "p99_latency_ms": 2406.946106000205,
+            "max_latency_ms": 2411.64740000022,
+            "memory_peak_mb": 334.046875,
+            "memory_average_mb": 286.0765625,
+            "cpu_utilization_percent": 129.8,
+            "duration_seconds": 2.414577999999892,
+            "error_rate_percent": 0.0,
+            "throughput_mb_per_second": 139.55798347670373
+          }
+        }
+      }
+    ],
+    "api_tests": [],
+    "ml_tests": [],
+    "stress_tests": [],
+    "other_tests": []
+  },
+  "all_test_results": [
+    {
+      "name": "test_very_large_csv_processing",
+      "duration_ms": 46234.99,
+      "memory_before_mb": 235.43,
+      "memory_after_mb": 263.55,
+      "memory_delta_mb": 28.11,
+      "memory_peak_mb": 263.59,
+      "cpu_percent": null,
+      "metadata": {
+        "test_type": "very_large_csv_processing",
+        "file_configurations": [
+          [
+            50000,
+            20
+          ],
+          [
+            100000,
+            15
+          ],
+          [
+            200000,
+            10
+          ],
+          [
+            300000,
+            8
+          ]
+        ],
+        "files_processed": 4,
+        "performance_metrics": {
+          "operations_per_second": 1.656604176796185,
+          "total_operations": 4,
+          "successful_operations": 4,
+          "failed_operations": 0,
+          "average_latency_ms": 2029.645249999703,
+          "p95_latency_ms": 2388.140930000145,
+          "p99_latency_ms": 2406.946106000205,
+          "max_latency_ms": 2411.64740000022,
+          "memory_peak_mb": 334.046875,
+          "memory_average_mb": 286.0765625,
+          "cpu_utilization_percent": 129.8,
+          "duration_seconds": 2.414577999999892,
+          "error_rate_percent": 0.0,
+          "throughput_mb_per_second": 139.55798347670373
+        }
+      }
+    }
+  ]
+}
