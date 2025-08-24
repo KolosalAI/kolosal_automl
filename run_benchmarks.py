@@ -2,7 +2,7 @@
 # run_benchmarks.py - Python script to run benchmark tests (cross-platform)
 # ---------------------------------------------------------------------
 """
-Cross-platform benchmark test runner for Kolosal AutoML.
+Cross-platform benchmark test runner for Kolosal AutoML with optimal device configuration.
 """
 import argparse
 import subprocess
@@ -11,6 +11,74 @@ import os
 import time
 from pathlib import Path
 from typing import List, Optional
+
+# Try to import device optimizer for optimal configuration
+try:
+    sys.path.insert(0, str(Path(__file__).parent))
+    from modules.device_optimizer import DeviceOptimizer, OptimizationMode
+    DEVICE_OPTIMIZER_AVAILABLE = True
+except ImportError:
+    DEVICE_OPTIMIZER_AVAILABLE = False
+
+def setup_optimal_environment():
+    """Setup optimal environment for benchmark execution."""
+    if not DEVICE_OPTIMIZER_AVAILABLE:
+        print("⚠️  Device optimizer not available, using default configuration")
+        return {}
+    
+    try:
+        print("🔧 Configuring optimal device settings for benchmarks...")
+        
+        # Create device optimizer for performance mode
+        optimizer = DeviceOptimizer(
+            optimization_mode=OptimizationMode.PERFORMANCE,
+            workload_type="inference",  # Benchmarks are primarily inference-like
+            environment="auto",
+            enable_specialized_accelerators=True,
+            memory_reservation_percent=5.0,  # Use more memory for benchmarks
+            power_efficiency=False,  # Prioritize performance over power
+            auto_tune=True,
+            debug_mode=False
+        )
+        
+        # Apply environment variables for optimal performance
+        system_info = optimizer.get_system_info()
+        cpu_cores = system_info.get('cpu_count_logical', os.cpu_count() or 1)
+        physical_cores = system_info.get('cpu_count_physical', cpu_cores)
+        
+        # Set threading environment variables
+        os.environ['OMP_NUM_THREADS'] = str(physical_cores)
+        os.environ['MKL_NUM_THREADS'] = str(physical_cores)
+        os.environ['OPENBLAS_NUM_THREADS'] = str(physical_cores)
+        os.environ['NUMEXPR_NUM_THREADS'] = str(physical_cores)
+        
+        # Set process priority on Windows
+        if os.name == 'nt':
+            try:
+                import psutil
+                p = psutil.Process()
+                p.nice(psutil.HIGH_PRIORITY_CLASS)
+            except (ImportError, AttributeError, PermissionError):
+                pass
+        
+        config_info = {
+            'cpu_cores': cpu_cores,
+            'physical_cores': physical_cores,
+            'memory_gb': system_info.get('total_memory_gb', 0),
+            'accelerators': system_info.get('accelerators', []),
+            'optimization_mode': 'PERFORMANCE'
+        }
+        
+        print(f"✅ Optimal configuration applied:")
+        print(f"   CPU cores: {cpu_cores} (physical: {physical_cores})")
+        print(f"   Memory: {config_info['memory_gb']:.1f} GB")
+        print(f"   Accelerators: {config_info['accelerators']}")
+        
+        return config_info
+        
+    except Exception as e:
+        print(f"⚠️  Failed to setup optimal environment: {e}")
+        return {}
 
 def create_output_dir(output_path: str) -> Path:
     """Create output directory if it doesn't exist."""
@@ -90,10 +158,10 @@ def build_pytest_command(args) -> List[str]:
 
 def print_header():
     """Print script header."""
-    print("🚀 Kolosal AutoML Benchmark Runner")
-    print("=" * 35)
+    print("🚀 Kolosal AutoML Benchmark Runner (Optimized)")
+    print("=" * 45)
 
-def print_summary(start_time: float, exit_code: int, output_dir: Path):
+def print_summary(start_time: float, exit_code: int, output_dir: Path, config_info: dict = None):
     """Print execution summary."""
     duration = time.time() - start_time
     
@@ -102,6 +170,13 @@ def print_summary(start_time: float, exit_code: int, output_dir: Path):
     print("=" * 20)
     print(f"Duration: {duration/60:.2f} minutes")
     print(f"Exit Code: {exit_code}")
+    
+    if config_info:
+        print()
+        print("🔧 Device Configuration:")
+        print(f"   CPU cores used: {config_info.get('cpu_cores', 'N/A')}")
+        print(f"   Memory available: {config_info.get('memory_gb', 'N/A'):.1f} GB")
+        print(f"   Optimization mode: {config_info.get('optimization_mode', 'N/A')}")
     
     if exit_code == 0:
         print("Status: ✅ All tests passed")
@@ -201,6 +276,9 @@ Categories:
     
     print_header()
     
+    # Setup optimal device configuration
+    config_info = setup_optimal_environment()
+    
     # Create output directory
     output_dir = create_output_dir(args.output)
     print(f"📁 Output directory: {output_dir}")
@@ -232,7 +310,7 @@ Categories:
         print(f"❌ Error running pytest: {e}")
         exit_code = 1
     
-    print_summary(start_time, exit_code, output_dir)
+    print_summary(start_time, exit_code, output_dir, config_info)
     
     sys.exit(exit_code)
 

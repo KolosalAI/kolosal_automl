@@ -24,6 +24,14 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+# Import device optimizer for optimal configurations
+try:
+    from modules.device_optimizer import DeviceOptimizer, OptimizationMode
+    from modules.configs import OptimizationMode as ConfigOptimizationMode
+    DEVICE_OPTIMIZER_AVAILABLE = True
+except ImportError:
+    DEVICE_OPTIMIZER_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 class BenchmarkResult:
@@ -40,20 +48,64 @@ class BenchmarkResult:
         self.memory_delta_mb = None
         self.cpu_percent = None
         self.metadata = {}
+        self._process = psutil.Process()
+        self._cpu_samples = []
+        self._memory_samples = []
         
     def start(self):
         """Start timing and memory measurement."""
         gc.collect()  # Clean up before measurement
         self.start_time = time.perf_counter()
-        self.memory_before_mb = psutil.Process().memory_info().rss / 1024**2
+        self.memory_before_mb = self._process.memory_info().rss / 1024**2
+        self.memory_peak_mb = self.memory_before_mb  # Initialize peak with starting value
+        
+        # Initialize CPU monitoring (first call establishes baseline)
+        self._process.cpu_percent()
+        self._cpu_samples = []
+        self._memory_samples = [self.memory_before_mb]
         
     def stop(self):
         """Stop timing and finalize measurements."""
         self.end_time = time.perf_counter()
-        self.memory_after_mb = psutil.Process().memory_info().rss / 1024**2
-        self.duration_ms = (self.end_time - self.start_time) * 1000
+        
+        # Final memory measurement
+        self.memory_after_mb = self._process.memory_info().rss / 1024**2
+        self._memory_samples.append(self.memory_after_mb)
+        
+        # Calculate memory metrics
         self.memory_delta_mb = self.memory_after_mb - self.memory_before_mb
-        self.cpu_percent = psutil.Process().cpu_percent()
+        self.memory_peak_mb = max(self._memory_samples) if self._memory_samples else self.memory_after_mb
+        
+        # Final CPU measurement with interval to get meaningful reading
+        try:
+            final_cpu = self._process.cpu_percent(interval=0.1)
+            if final_cpu is not None and final_cpu >= 0:
+                self._cpu_samples.append(final_cpu)
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+        
+        # Calculate average CPU usage, ensuring we have valid samples
+        valid_cpu_samples = [cpu for cpu in self._cpu_samples if cpu is not None and cpu >= 0]
+        self.cpu_percent = sum(valid_cpu_samples) / len(valid_cpu_samples) if valid_cpu_samples else None
+        
+        # Calculate duration
+        self.duration_ms = (self.end_time - self.start_time) * 1000
+    
+    def sample_metrics(self):
+        """Take a sample of current memory and CPU usage during benchmark execution."""
+        try:
+            # Sample memory
+            current_memory = self._process.memory_info().rss / 1024**2
+            self._memory_samples.append(current_memory)
+            self.memory_peak_mb = max(self.memory_peak_mb or 0, current_memory)
+            
+            # Sample CPU (with short interval to get meaningful reading)
+            current_cpu = self._process.cpu_percent(interval=0.05)
+            if current_cpu is not None and current_cpu >= 0:
+                self._cpu_samples.append(current_cpu)
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            # Process might have changed, ignore sampling errors
+            pass
         
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -120,11 +172,87 @@ def benchmark_collector():
     except Exception as e:
         logger.warning(f"Failed to save benchmark results: {e}")
 
+@pytest.fixture(scope="session")
+def optimal_device_config():
+    """Create optimal device configuration for benchmarks."""
+    if not DEVICE_OPTIMIZER_AVAILABLE:
+        logger.warning("Device optimizer not available, using default configuration")
+        return {}
+    
+    try:
+        # Create device optimizer for performance mode
+        optimizer = DeviceOptimizer(
+            optimization_mode=OptimizationMode.PERFORMANCE,
+            workload_type="inference",  # Benchmarks are primarily inference-like
+            environment="auto",
+            enable_specialized_accelerators=True,
+            memory_reservation_percent=5.0,  # Use more memory for benchmarks
+            power_efficiency=False,  # Prioritize performance over power
+            auto_tune=True,
+            debug_mode=False
+        )
+        
+        # Get optimal configurations
+        config = {
+            'system_info': optimizer.get_system_info(),
+            'quantization_config': optimizer.get_optimal_quantization_config(),
+            'batch_processor_config': optimizer.get_optimal_batch_processor_config(),
+            'preprocessor_config': optimizer.get_optimal_preprocessor_config(),
+            'inference_engine_config': optimizer.get_optimal_inference_engine_config(),
+            'training_engine_config': optimizer.get_optimal_training_engine_config()
+        }
+        
+        logger.info("Optimal device configuration created for benchmarks")
+        logger.info(f"CPU cores: {optimizer.cpu_count_logical}, Memory: {optimizer.total_memory_gb:.1f}GB")
+        logger.info(f"Accelerators: {[acc.name for acc in optimizer.accelerators]}")
+        
+        return config
+        
+    except Exception as e:
+        logger.error(f"Failed to create optimal device configuration: {e}")
+        return {}
+
 @pytest.fixture
-def benchmark_result(request, benchmark_collector):
-    """Create a benchmark result for the current test."""
+def benchmark_result(request, benchmark_collector, optimal_device_config, memory_monitor):
+    """Create a benchmark result for the current test with optimal device configuration."""
     test_name = request.node.name
     result = BenchmarkResult(test_name)
+    
+    # Add device configuration metadata
+    if optimal_device_config:
+        result.metadata['device_config'] = {
+            'cpu_cores': optimal_device_config.get('system_info', {}).get('cpu_count_logical', 0),
+            'memory_gb': optimal_device_config.get('system_info', {}).get('total_memory_gb', 0),
+            'accelerators': optimal_device_config.get('system_info', {}).get('accelerators', []),
+            'optimization_mode': 'PERFORMANCE',
+            'workload_type': 'inference'
+        }
+    
+    # Enhanced monitoring: start benchmark with integrated memory monitoring
+    original_start = result.start
+    original_stop = result.stop
+    
+    def enhanced_start():
+        original_start()
+        # Additional monitoring setup
+        memory_monitor.start_monitoring()
+    
+    def enhanced_stop():
+        # Integrate memory monitor results
+        monitor_stats = memory_monitor.get_stats()
+        if monitor_stats.get('peak_mb'):
+            result.memory_peak_mb = monitor_stats['peak_mb']
+        
+        # Take final samples for accuracy
+        result.sample_metrics()
+        original_stop()
+        
+        # Add monitoring metadata
+        result.metadata['memory_monitoring'] = monitor_stats
+    
+    # Replace methods with enhanced versions
+    result.start = enhanced_start
+    result.stop = enhanced_stop
     
     yield result
     
@@ -138,13 +266,24 @@ def memory_monitor():
             self.process = psutil.Process()
             self.peak_memory = 0
             self.samples = []
+            self.baseline_memory = None
+            
+        def start_monitoring(self):
+            """Start memory monitoring with baseline."""
+            gc.collect()
+            self.baseline_memory = self.process.memory_info().rss / 1024**2
+            self.peak_memory = self.baseline_memory
+            self.samples = [self.baseline_memory]
             
         def sample(self):
             """Take a memory sample."""
-            current = self.process.memory_info().rss / 1024**2
-            self.samples.append(current)
-            self.peak_memory = max(self.peak_memory, current)
-            return current
+            try:
+                current = self.process.memory_info().rss / 1024**2
+                self.samples.append(current)
+                self.peak_memory = max(self.peak_memory, current)
+                return current
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                return self.peak_memory
             
         def get_stats(self):
             """Get memory statistics."""
@@ -155,10 +294,14 @@ def memory_monitor():
                 'avg_mb': sum(self.samples) / len(self.samples),
                 'min_mb': min(self.samples),
                 'max_mb': max(self.samples),
+                'baseline_mb': self.baseline_memory,
+                'delta_from_baseline_mb': self.peak_memory - (self.baseline_memory or 0),
                 'samples': len(self.samples)
             }
     
-    return MemoryMonitor()
+    monitor = MemoryMonitor()
+    monitor.start_monitoring()
+    return monitor
 
 def generate_test_csv(path: Path, rows: int, cols: int, seed: int = 42) -> Path:
     """Generate a test CSV file with specified dimensions."""
@@ -264,9 +407,9 @@ def ui_test_environment():
         os.environ['FORCE_FALLBACK_IMPLEMENTATIONS'] = original_env
 
 @pytest.fixture
-def benchmark_config():
-    """Configuration for benchmark tests."""
-    return {
+def benchmark_config(optimal_device_config):
+    """Configuration for benchmark tests with optimal device settings."""
+    base_config = {
         'timeout_seconds': 300,
         'memory_limit_mb': 2048,
         'max_file_size_mb': 100,
@@ -274,6 +417,34 @@ def benchmark_config():
         'stress_iterations': 50,
         'concurrency_levels': [1, 5, 10]
     }
+    
+    # Apply device-specific optimizations
+    if optimal_device_config:
+        system_info = optimal_device_config.get('system_info', {})
+        batch_config = optimal_device_config.get('batch_processor_config')
+        
+        # Adjust based on available resources
+        cpu_cores = system_info.get('cpu_count_logical', 1)
+        memory_gb = system_info.get('total_memory_gb', 4)
+        
+        # Optimize concurrency levels based on CPU cores
+        base_config['concurrency_levels'] = [1, min(cpu_cores // 2, 5), min(cpu_cores, 10)]
+        
+        # Adjust memory limits based on available memory
+        base_config['memory_limit_mb'] = int(memory_gb * 1024 * 0.8)  # Use 80% of available memory
+        
+        # Use optimal batch sizes from device config
+        if batch_config and hasattr(batch_config, 'max_batch_size'):
+            base_config['optimal_batch_size'] = batch_config.max_batch_size
+            base_config['optimal_workers'] = getattr(batch_config, 'num_workers', cpu_cores)
+        
+        # Adjust stress iterations based on performance capabilities
+        if memory_gb > 16 and cpu_cores >= 8:
+            base_config['stress_iterations'] = 100  # More iterations for powerful systems
+        elif memory_gb < 8 or cpu_cores < 4:
+            base_config['stress_iterations'] = 25   # Fewer iterations for limited systems
+    
+    return base_config
 
 @pytest.fixture(scope="session")
 def benchmark_output_dir():
@@ -311,6 +482,50 @@ def measure_memory_usage(func, *args, **kwargs) -> Tuple[Any, Dict[str, float]]:
         'delta_mb': delta
     }
 
+def monitor_benchmark_execution(benchmark_result, func, *args, sample_interval=0.2, **kwargs):
+    """Execute a function while continuously monitoring memory and CPU usage."""
+    import threading
+    import time
+    
+    monitoring_active = threading.Event()
+    monitoring_active.set()
+    
+    def monitoring_thread():
+        """Background thread to sample metrics during execution."""
+        sample_count = 0
+        while monitoring_active.is_set():
+            if hasattr(benchmark_result, 'sample_metrics'):
+                try:
+                    benchmark_result.sample_metrics()
+                    sample_count += 1
+                except Exception:
+                    pass  # Ignore sampling errors
+            time.sleep(sample_interval)
+        
+        # Log how many samples we collected
+        if hasattr(benchmark_result, 'metadata'):
+            benchmark_result.metadata['monitoring_samples'] = sample_count
+    
+    try:
+        # Start monitoring thread
+        monitor_thread = threading.Thread(target=monitoring_thread)
+        monitor_thread.daemon = True
+        monitor_thread.start()
+        
+        # Small delay to ensure initial CPU baseline is established
+        time.sleep(0.1)
+        
+        # Execute the actual function
+        result = func(*args, **kwargs)
+        
+        return result
+        
+    finally:
+        # Stop monitoring
+        monitoring_active.clear()
+        if monitor_thread.is_alive():
+            monitor_thread.join(timeout=1.0)  # Wait up to 1 second for thread to finish
+
 def profile_cpu_usage(func, *args, duration_seconds=5, **kwargs):
     """Profile CPU usage during function execution."""
     process = psutil.Process()
@@ -324,10 +539,83 @@ def profile_cpu_usage(func, *args, duration_seconds=5, **kwargs):
     # Sample CPU usage
     cpu_samples = []
     while time.time() - start_time < duration_seconds:
-        cpu_samples.append(process.cpu_percent(interval=0.1))
+        cpu_sample = process.cpu_percent(interval=0.1)
+        if cpu_sample is not None:
+            cpu_samples.append(cpu_sample)
     
     return result, {
         'avg_cpu_percent': sum(cpu_samples) / len(cpu_samples) if cpu_samples else 0,
         'max_cpu_percent': max(cpu_samples) if cpu_samples else 0,
         'samples': len(cpu_samples)
     }
+
+def optimize_cpu_performance():
+    """Apply CPU performance optimizations for benchmarks."""
+    if not DEVICE_OPTIMIZER_AVAILABLE:
+        return
+    
+    try:
+        import os
+        import threading
+        
+        # Set CPU affinity to use all available cores
+        if hasattr(os, 'sched_setaffinity'):
+            # Linux
+            available_cpus = os.sched_getaffinity(0)
+            os.sched_setaffinity(0, available_cpus)
+        
+        # Set thread count for NumPy operations
+        try:
+            import numpy as np
+            if hasattr(np, '__config__'):
+                # Try to set optimal thread count
+                cpu_count = psutil.cpu_count(logical=True)
+                os.environ['OMP_NUM_THREADS'] = str(cpu_count)
+                os.environ['MKL_NUM_THREADS'] = str(cpu_count)
+                os.environ['NUMEXPR_NUM_THREADS'] = str(cpu_count)
+        except ImportError:
+            pass
+        
+        # Set high process priority on Windows
+        if os.name == 'nt':
+            try:
+                import psutil
+                p = psutil.Process()
+                p.nice(psutil.HIGH_PRIORITY_CLASS)
+            except (ImportError, AttributeError, PermissionError):
+                pass
+                
+    except Exception as e:
+        logger.debug(f"Failed to apply CPU optimizations: {e}")
+
+def configure_threading_for_ml():
+    """Configure optimal threading for ML operations."""
+    try:
+        import os
+        
+        # Get CPU info
+        cpu_count = psutil.cpu_count(logical=True)
+        physical_cores = psutil.cpu_count(logical=False) or cpu_count
+        
+        # Set environment variables for various threading libraries
+        # Use physical cores for compute-intensive operations
+        os.environ['OMP_NUM_THREADS'] = str(physical_cores)
+        os.environ['MKL_NUM_THREADS'] = str(physical_cores)
+        os.environ['OPENBLAS_NUM_THREADS'] = str(physical_cores)
+        os.environ['VECLIB_MAXIMUM_THREADS'] = str(physical_cores)
+        os.environ['NUMEXPR_NUM_THREADS'] = str(physical_cores)
+        
+        # Configure scikit-learn threading
+        try:
+            from sklearn.utils import parallel_backend
+            return parallel_backend('threading', n_jobs=physical_cores)
+        except ImportError:
+            pass
+            
+    except Exception as e:
+        logger.debug(f"Failed to configure ML threading: {e}")
+        
+    return None
+
+# Apply optimizations at module import
+optimize_cpu_performance()

@@ -18,7 +18,10 @@ import os
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from tests.benchmark.conftest import time_function, measure_memory_usage
+from tests.benchmark.conftest import time_function, measure_memory_usage, configure_threading_for_ml
+
+# Configure optimal threading for ML operations
+_threading_backend = configure_threading_for_ml()
 
 # Test if ML modules are available
 try:
@@ -40,9 +43,16 @@ class TestSimpleInferenceBenchmark:
     
     @pytest.mark.benchmark
     @pytest.mark.skipif(not HAS_SKLEARN, reason="scikit-learn not available")
-    def test_inference_with_different_model_sizes(self, benchmark_result):
-        """Test inference performance with different model complexities."""
+    def test_inference_with_different_model_sizes(self, benchmark_result, optimal_device_config):
+        """Test inference performance with different model complexities using optimal device configuration."""
         benchmark_result.start()
+        
+        # Apply optimal configuration
+        optimal_n_jobs = -1  # Use all cores by default
+        if optimal_device_config:
+            batch_config = optimal_device_config.get('batch_processor_config')
+            if batch_config and hasattr(batch_config, 'num_workers'):
+                optimal_n_jobs = batch_config.num_workers
         
         # Generate test dataset
         X, y = make_classification(n_samples=2000, n_features=20, n_classes=2, random_state=42)
@@ -50,9 +60,9 @@ class TestSimpleInferenceBenchmark:
         
         # Define model configurations with different complexities
         model_configs = {
-            'small': {'n_estimators': 10, 'max_depth': 5},
-            'medium': {'n_estimators': 50, 'max_depth': 10},
-            'large': {'n_estimators': 100, 'max_depth': 15}
+            'small': {'n_estimators': 10, 'max_depth': 5, 'n_jobs': optimal_n_jobs},
+            'medium': {'n_estimators': 50, 'max_depth': 10, 'n_jobs': optimal_n_jobs},
+            'large': {'n_estimators': 100, 'max_depth': 15, 'n_jobs': optimal_n_jobs}
         }
         
         results = {}
@@ -123,6 +133,10 @@ class TestSimpleInferenceBenchmark:
                 'features': X.shape[1],
                 'train_size': len(X_train),
                 'test_size': len(X_test)
+            },
+            'optimization_config': {
+                'n_jobs_used': optimal_n_jobs,
+                'device_config_available': optimal_device_config is not None
             }
         }
         
@@ -149,16 +163,23 @@ class TestSimpleInferenceBenchmark:
     
     @pytest.mark.benchmark
     @pytest.mark.skipif(not HAS_SKLEARN, reason="scikit-learn not available")
-    def test_batch_vs_single_prediction_efficiency(self, benchmark_result):
-        """Test that batch predictions are more efficient than single predictions."""
+    def test_batch_vs_single_prediction_efficiency(self, benchmark_result, optimal_device_config):
+        """Test that batch predictions are more efficient than single predictions using optimal configuration."""
         benchmark_result.start()
+        
+        # Apply optimal configuration
+        optimal_n_jobs = -1
+        if optimal_device_config:
+            batch_config = optimal_device_config.get('batch_processor_config')
+            if batch_config and hasattr(batch_config, 'num_workers'):
+                optimal_n_jobs = batch_config.num_workers
         
         # Generate test dataset
         X, y = make_classification(n_samples=1000, n_features=10, random_state=42)
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
         
-        # Train a medium-complexity model
-        model = RandomForestClassifier(n_estimators=30, max_depth=8, random_state=42)
+        # Train a medium-complexity model with optimal configuration
+        model = RandomForestClassifier(n_estimators=30, max_depth=8, random_state=42, n_jobs=optimal_n_jobs)
         model.fit(X_train, y_train)
         
         # Test single predictions
@@ -206,6 +227,10 @@ class TestSimpleInferenceBenchmark:
             'efficiency_comparison': {
                 'batch_vs_single_speedup': batch_throughput / single_throughput,
                 'batch_faster': batch_throughput > single_throughput
+            },
+            'optimization_config': {
+                'n_jobs_used': optimal_n_jobs,
+                'device_config_available': optimal_device_config is not None
             }
         }
         
@@ -219,13 +244,20 @@ class TestSimpleInferenceBenchmark:
     
     @pytest.mark.benchmark
     @pytest.mark.skipif(not HAS_SKLEARN, reason="scikit-learn not available")
-    def test_data_size_impact_on_inference(self, benchmark_result):
-        """Test how different input data sizes affect inference performance."""
+    def test_data_size_impact_on_inference(self, benchmark_result, optimal_device_config):
+        """Test how different input data sizes affect inference performance with optimal configuration."""
         benchmark_result.start()
         
-        # Train a single model
+        # Apply optimal configuration
+        optimal_n_jobs = -1
+        if optimal_device_config:
+            batch_config = optimal_device_config.get('batch_processor_config')
+            if batch_config and hasattr(batch_config, 'num_workers'):
+                optimal_n_jobs = batch_config.num_workers
+        
+        # Train a single model with optimal configuration
         X_train, y_train = make_classification(n_samples=1000, n_features=15, random_state=42)
-        model = RandomForestClassifier(n_estimators=20, max_depth=8, random_state=42)
+        model = RandomForestClassifier(n_estimators=20, max_depth=8, random_state=42, n_jobs=optimal_n_jobs)
         model.fit(X_train, y_train)
         
         # Test with different input data sizes (different number of samples, same features)
@@ -284,7 +316,12 @@ class TestSimpleInferenceBenchmark:
             'model_info': {
                 'n_estimators': 20,
                 'max_depth': 8,
-                'features_trained_on': 15
+                'features_trained_on': 15,
+                'n_jobs': optimal_n_jobs
+            },
+            'optimization_config': {
+                'n_jobs_used': optimal_n_jobs,
+                'device_config_available': optimal_device_config is not None
             }
         }
         
