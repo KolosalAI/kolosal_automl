@@ -1,0 +1,34 @@
+# Rust build artifacts
+target/
+Cargo.lock
+
+# Python artifacts from maturin
+*.so
+*.pyd
+*.egg-info/
+dist/
+build/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Benchmark outputs
+criterion/
+flamegraph.svg
+perf.data
+perf.data.old
+
+# Documentation build
+target/doc/
+
+# Profiling data
+*.profdata
+*.profraw

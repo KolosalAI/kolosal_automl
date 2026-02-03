@@ -1,0 +1,86 @@
+[workspace]
+resolver = "2"
+members = [
+    "kolosal-core",
+    "kolosal-engine",
+    "kolosal-optimizer",
+    "kolosal-preprocessing",
+    "kolosal-models",
+    "kolosal-python",
+    "kolosal-api",
+    "kolosal-cli",
+]
+
+[workspace.package]
+version = "0.3.0"
+edition = "2021"
+license = "MIT"
+authors = ["Genta Technology <contact@genta.tech>"]
+repository = "https://github.com/Genta-Technology/kolosal-automl"
+
+[workspace.dependencies]
+# Core dependencies
+ndarray = { version = "0.15", features = ["rayon", "serde"] }
+polars = { version = "0.36", features = ["lazy", "parquet", "dtype-full"] }
+rayon = "1.8"
+tokio = { version = "1.35", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Numerical computing
+num-traits = "0.2"
+approx = "0.5"
+blas-src = { version = "0.10", default-features = false, features = ["openblas"] }
+openblas-src = { version = "0.10", features = ["cblas", "static"] }
+
+# Python bindings
+pyo3 = { version = "0.20", features = ["extension-module", "abi3-py39"] }
+numpy = "0.20"
+
+# Web/API
+axum = "0.7"
+tower = "0.4"
+tower-http = { version = "0.5", features = ["full"] }
+
+# CLI
+clap = { version = "4.4", features = ["derive", "env", "wrap_help"] }
+
+# Utilities
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+chrono = "0.4"
+uuid = { version = "1.6", features = ["v4", "serde"] }
+
+# Testing
+proptest = "1.4"
+criterion = { version = "0.5", features = ["html_reports"] }
+
+# Internal workspace crates (placeholders for future use)
+kolosal-core = { path = "kolosal-core" }
+kolosal-engine = { path = "kolosal-engine" }
+kolosal-optimizer = { path = "kolosal-optimizer" }
+kolosal-preprocessing = { path = "kolosal-preprocessing" }
+kolosal-models = { path = "kolosal-models" }
+
+[profile.dev]
+opt-level = 0
+debug = true
+overflow-checks = true
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = true
+panic = "abort"
+overflow-checks = false
+
+[profile.bench]
+inherits = "release"
+debug = true
+
+[profile.test]
+opt-level = 1
+overflow-checks = true

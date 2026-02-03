@@ -174,3 +174,12 @@ certs/
 experiments/
 standard_ml_results/
 temp_data/
+
+# Rust artifacts
+rust/target/
+rust/Cargo.lock
+rust/**/target/
+*.pyd
+flamegraph.svg
+perf.data
+perf.data.old
