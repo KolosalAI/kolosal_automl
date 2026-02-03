@@ -174,3 +174,11 @@ certs/
 experiments/
 standard_ml_results/
 temp_data/
+
+# Rust
+/rust/target/
+**/*.rs.bk
+Cargo.lock
+
+# PyO3/Maturin
+*.pyd
