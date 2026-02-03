@@ -5,6 +5,53 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2024-02-03
+
+### Added
+
+#### Pure Rust Implementation
+
+This release completes the migration to pure Rust, removing all Python dependencies.
+
+- **Web Server (kolosal-server)**
+  - Axum 0.7 based HTTP server
+  - REST API for data, training, and inference
+  - Static file serving for web UI
+  - CORS and compression middleware
+  - Real-time system monitoring endpoints
+
+- **Web UI (kolosal-web)**
+  - htmx + Alpine.js reactive frontend
+  - TailwindCSS styling
+  - Tab-based navigation: Data, Config, Training, Monitor
+  - Sample dataset loading (iris, diabetes, boston, wine)
+  - Training progress visualization
+  - System status monitoring
+
+- **CLI Application (kolosal-cli)**
+  - `train` - Train models on data files
+  - `predict` - Make predictions using trained models
+  - `preprocess` - Data preprocessing pipeline
+  - `benchmark` - Compare multiple models
+  - `info` - Show dataset information
+  - `serve` - Start the web server
+
+### Changed
+
+- **Removed Python dependencies**
+  - Deleted `python/` directory
+  - Deleted `legacy/` directory
+  - Deleted `pyproject.toml`
+  - Updated README for pure Rust usage
+
+### Technical Details
+
+- Rust Edition 2021
+- Axum 0.7 for web server
+- Polars 0.46 for DataFrames
+- sysinfo 0.30 for system monitoring
+- tokio 1.x async runtime
+
 ## [0.2.0] - 2024-02-03
 
 ### Added
@@ -58,18 +105,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - NumPy array interop
 - Pandas DataFrame ↔ Polars conversion
 - Error handling with Python exceptions
-
-#### Unified Python Package
-
-- `kolosal` package with automatic backend selection
-- `KOLOSAL_USE_RUST` environment variable for backend control
-- Fallback to legacy Python code when Rust unavailable
-- `get_backend_info()` for runtime introspection
-
-### Changed
-
-- Moved original Python code to `legacy/` directory
-- Updated Polars API to 0.46 (Series → Column conversion)
 
 ### Technical Details
 

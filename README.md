@@ -1,72 +1,97 @@
 # Kolosal AutoML
 
 [![Rust](https://img.shields.io/badge/rust-1.75%2B-orange.svg)](https://www.rust-lang.org)
-[![Python](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-High-performance AutoML framework with Rust core and Python bindings.
+🚀 **Pure Rust** high-performance AutoML framework with web UI and CLI.
 
 ## Quick Start
 
-```bash
-# Install with Rust backend (recommended)
-pip install kolosal[rust]
+### Using the CLI
 
-# Or install with Python backend (fallback)
-pip install kolosal[python]
+```bash
+# Build the CLI
+cd rust
+cargo build --release
+
+# Train a model
+./target/release/kolosal train --data data.csv --target label --model random_forest
+
+# Benchmark multiple models
+./target/release/kolosal benchmark --data data.csv --target label
+
+# Show data info
+./target/release/kolosal info --data data.csv
 ```
 
-```python
-from kolosal import DataPreprocessor, TrainEngine, get_backend_info
+### Using the Web Server
 
-# Check which backend is active
-print(get_backend_info())  # {'backend': 'rust', ...}
+```bash
+# Start the server
+./target/release/kolosal-server --port 8080
 
-# Preprocessing (10x faster than sklearn)
-preprocessor = DataPreprocessor(scaling="standard")
-X_transformed = preprocessor.fit_transform(X_train)
+# Open http://localhost:8080 in your browser
+```
 
-# Training with cross-validation
-engine = TrainEngine(task_type="classification", cv_folds=5)
-result = engine.train(X_transformed, y_train, model_type="random_forest")
-print(f"CV Accuracy: {result['mean_score']:.4f}")
+The web UI provides:
+- 📊 Data upload and sample datasets (iris, diabetes, boston, wine)
+- ⚙️ Configuration for task type, model, and preprocessing
+- 🚀 One-click model training with progress tracking
+- 📡 Real-time system monitoring
 
-# Inference
-predictions = engine.predict(X_test)
+### API Examples
+
+```bash
+# Load sample dataset
+curl http://localhost:8080/api/data/sample/iris
+
+# Start training
+curl -X POST http://localhost:8080/api/train \
+  -H "Content-Type: application/json" \
+  -d '{"target_column":"species","task_type":"classification","model_type":"random_forest"}'
+
+# Check training status
+curl http://localhost:8080/api/train/status/{job_id}
+
+# Get system status
+curl http://localhost:8080/api/system/status
 ```
 
 ## Features
 
 | Feature | Description | Status |
 |---------|-------------|--------|
+| **Web Server** | Axum-based REST API | ✅ |
+| **Web UI** | htmx + Alpine.js frontend | ✅ |
+| **CLI** | Full-featured command line | ✅ |
 | **Data Preprocessing** | Scalers, Encoders, Imputers | ✅ |
 | **Training Engine** | Cross-validation, Metrics | ✅ |
 | **Models** | Linear, Logistic, Trees, Random Forest | ✅ |
 | **HyperOptX** | TPE, Random, Grid samplers | ✅ |
 | **Pruners** | Median, Percentile, Hyperband | ✅ |
 | **SIMD Operations** | Vectorized math operations | ✅ |
-| **Python Bindings** | PyO3 with NumPy/Pandas | ✅ |
 
 ## Performance
 
-| Operation | Python | Rust | Speedup |
-|-----------|--------|------|---------|
-| StandardScaler (1M×10) | 500ms | 45ms | **11x** |
-| Random Forest fit | 15s | 1.8s | **8x** |
-| Batch Inference (10K) | 50ms | 4ms | **12x** |
-| Memory Usage | 1GB | 400MB | **60% less** |
+| Operation | Typical Performance |
+|-----------|---------------------|
+| StandardScaler (1M×10) | ~45ms |
+| Random Forest fit (10K samples) | ~1.8s |
+| Batch Inference (10K) | ~4ms |
+| Server startup | <1s |
 
 ## Project Structure
 
 ```
 kolosal_automl/
-├── rust/                     # Rust implementation
-│   ├── kolosal-core/         # Core ML library (pure Rust)
-│   └── kolosal-python/       # PyO3 Python bindings
-├── python/                   # Unified Python package
-│   └── kolosal/              # Main package with backend switching
-├── legacy/                   # Original Python implementation
-└── docs/                     # Documentation
+├── rust/                       # Pure Rust implementation
+│   ├── kolosal-core/           # Core ML library
+│   ├── kolosal-server/         # Axum web server
+│   ├── kolosal-cli/            # CLI application
+│   ├── kolosal-web/            # Web frontend assets
+│   └── kolosal-python/         # PyO3 bindings (optional)
+├── docs/                       # Documentation
+└── tests/                      # Integration tests
 ```
 
 ## Building from Source
@@ -74,46 +99,70 @@ kolosal_automl/
 ### Prerequisites
 
 - Rust 1.75+ ([rustup](https://rustup.rs))
-- Python 3.9+
-- maturin (`pip install maturin`)
 
-### Build Rust Library
+### Build
 
 ```bash
 cd rust
+
+# Build all crates
 cargo build --release
+
+# Run tests
 cargo test --workspace
+
+# Run the server
+cargo run --package kolosal-server
+
+# Run the CLI
+cargo run --package kolosal-cli -- --help
 ```
 
-### Build Python Wheel
+### Build Binaries
 
 ```bash
-cd rust/kolosal-python
-maturin build --release
-# Or for development:
-maturin develop --release
+# Optimized release build
+cargo build --release
+
+# Binaries will be in:
+# - rust/target/release/kolosal-server
+# - rust/target/release/kolosal
 ```
 
-## Backend Selection
+## API Reference
 
-By default, the Rust backend is used. To use the Python fallback:
+### REST Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/data/upload` | Upload CSV/JSON/Parquet |
+| GET | `/api/data/sample/:name` | Load sample dataset |
+| GET | `/api/data/preview` | Preview loaded data |
+| GET | `/api/data/info` | Get dataset info |
+| POST | `/api/train` | Start training job |
+| GET | `/api/train/status/:id` | Get training status |
+| POST | `/api/predict` | Make predictions |
+| GET | `/api/system/status` | System metrics |
+
+## CLI Reference
 
 ```bash
-export KOLOSAL_USE_RUST=0
-```
+kolosal <COMMAND>
 
-Or in Python:
-```python
-import os
-os.environ["KOLOSAL_USE_RUST"] = "0"
-from kolosal import DataPreprocessor  # Uses Python backend
+Commands:
+  train       Train a model on data
+  predict     Make predictions using a trained model
+  preprocess  Preprocess data
+  benchmark   Benchmark multiple models
+  info        Show data information
+  serve       Start the web server
+  help        Print help
 ```
 
 ## Documentation
 
 - [Rust API Documentation](rust/README.md)
 - [Changelog](CHANGELOG.md)
-- [Migration Plan](docs/migration/RUST_MIGRATION_PLAN.md)
 
 ## Contributing
 

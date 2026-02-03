@@ -3,10 +3,12 @@ resolver = "2"
 members = [
     "kolosal-core",
     "kolosal-python",
+    "kolosal-server",
+    "kolosal-cli",
 ]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.3.0"
 edition = "2021"
 authors = ["KolosalAI Team"]
 license = "MIT"
@@ -40,6 +42,16 @@ anyhow = "1.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
+# Web server
+axum = { version = "0.7", features = ["multipart", "ws"] }
+tower = { version = "0.4", features = ["util", "timeout"] }
+tower-http = { version = "0.5", features = ["cors", "compression-gzip", "fs", "trace"] }
+
+# CLI
+clap = { version = "4.4", features = ["derive"] }
+indicatif = "0.17"
+colored = "2.1"
+
 # Python bindings
 pyo3 = { version = "0.23", features = ["extension-module", "abi3-py39"] }
 numpy = "0.23"
@@ -58,6 +70,9 @@ num-traits = "0.2"
 parking_lot = "0.12"
 dashmap = "6.1"
 crossbeam = "0.8"
+uuid = { version = "1.7", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+sysinfo = "0.30"
 
 [profile.release]
 lto = "fat"
