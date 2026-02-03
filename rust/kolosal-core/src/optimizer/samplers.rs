@@ -24,6 +24,23 @@ pub enum SamplerType {
     CmaEs,
 }
 
+/// Sampler configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum SamplerConfig {
+    /// Random sampling
+    Random,
+    /// TPE with parameters
+    TPE { n_startup_trials: usize },
+    /// Grid search
+    Grid,
+}
+
+impl Default for SamplerConfig {
+    fn default() -> Self {
+        SamplerConfig::TPE { n_startup_trials: 10 }
+    }
+}
+
 /// Trait for hyperparameter samplers
 pub trait Sampler: Send + Sync {
     /// Sample the next set of hyperparameters
@@ -196,6 +213,17 @@ pub fn create_sampler(sampler_type: SamplerType, seed: Option<u64>) -> Box<dyn S
         SamplerType::TPE => Box::new(TPESampler::new(seed)),
         // Other samplers would be implemented similarly
         _ => Box::new(TPESampler::new(seed)), // Default to TPE
+    }
+}
+
+/// Create a sampler from config
+pub fn create_sampler_from_config(config: SamplerConfig, seed: Option<u64>) -> Box<dyn Sampler> {
+    match config {
+        SamplerConfig::Random => Box::new(RandomSampler::new(seed)),
+        SamplerConfig::TPE { n_startup_trials } => {
+            Box::new(TPESampler::new(seed).with_n_startup(n_startup_trials))
+        }
+        SamplerConfig::Grid => Box::new(RandomSampler::new(seed)), // Fallback for now
     }
 }
 

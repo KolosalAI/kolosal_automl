@@ -103,7 +103,7 @@ impl TrainEngine {
             None => df
                 .get_column_names()
                 .into_iter()
-                .filter(|name| *name != self.config.target_column)
+                .filter(|name| name.as_str() != self.config.target_column)
                 .map(|s| s.to_string())
                 .collect(),
         };
@@ -261,9 +261,9 @@ mod tests {
 
     fn create_test_data() -> DataFrame {
         DataFrame::new(vec![
-            Series::new("feature1".into(), &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]),
-            Series::new("feature2".into(), &[2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0]),
-            Series::new("target".into(), &[3.0, 6.0, 9.0, 12.0, 15.0, 18.0, 21.0, 24.0, 27.0, 30.0]),
+            Series::new("feature1".into(), &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]).into(),
+            Series::new("feature2".into(), &[2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0]).into(),
+            Series::new("target".into(), &[3.0, 6.0, 9.0, 12.0, 15.0, 18.0, 21.0, 24.0, 27.0, 30.0]).into(),
         ])
         .unwrap()
     }

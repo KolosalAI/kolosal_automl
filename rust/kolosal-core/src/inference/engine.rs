@@ -176,9 +176,9 @@ mod tests {
 
     fn create_test_data() -> DataFrame {
         DataFrame::new(vec![
-            Series::new("feature1".into(), &[1.0, 2.0, 3.0, 4.0, 5.0]),
-            Series::new("feature2".into(), &[2.0, 4.0, 6.0, 8.0, 10.0]),
-            Series::new("target".into(), &[3.0, 6.0, 9.0, 12.0, 15.0]),
+            Series::new("feature1".into(), &[1.0, 2.0, 3.0, 4.0, 5.0]).into(),
+            Series::new("feature2".into(), &[2.0, 4.0, 6.0, 8.0, 10.0]).into(),
+            Series::new("target".into(), &[3.0, 6.0, 9.0, 12.0, 15.0]).into(),
         ])
         .unwrap()
     }

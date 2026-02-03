@@ -2,6 +2,7 @@
 
 use pyo3::prelude::*;
 use pyo3::exceptions::PyValueError;
+use polars::prelude::NamedFrom;
 use kolosal_core::preprocessing::{
     DataPreprocessor, PreprocessingConfig, ScalerType, EncoderType, ImputeStrategy,
 };
@@ -178,16 +179,16 @@ fn python_df_to_polars(py: Python<'_>, df: &Bound<'_, PyAny>) -> PyResult<polars
     // Get column names
     let columns: Vec<String> = df.getattr("columns")?.extract()?;
     
-    let mut series_vec = Vec::new();
+    let mut col_vec = Vec::new();
     
     for col in &columns {
         let col_data = df.get_item(col)?;
         let values: Vec<f64> = col_data.call_method0("tolist")?.extract().unwrap_or_default();
         let series = polars::prelude::Series::new(col.clone().into(), values);
-        series_vec.push(series);
+        col_vec.push(series.into());
     }
     
-    polars::prelude::DataFrame::new(series_vec)
+    polars::prelude::DataFrame::new(col_vec)
         .map_err(|e| PyValueError::new_err(e.to_string()))
 }
 

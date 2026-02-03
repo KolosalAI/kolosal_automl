@@ -3,7 +3,6 @@
 use crate::error::{KolosalError, Result};
 use ndarray::{Array1, ArrayView1, Axis};
 use polars::prelude::*;
-use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -61,7 +60,7 @@ impl Imputer {
                 .column(col_name)
                 .map_err(|_| KolosalError::FeatureNotFound(col_name.to_string()))?;
 
-            let fill_value = self.compute_fill_value(series)?;
+            let fill_value = self.compute_fill_value(series.as_materialized_series())?;
             self.fill_values.insert(col_name.to_string(), fill_value);
         }
 
@@ -78,7 +77,8 @@ impl Imputer {
         let mut result = df.clone();
 
         for (col_name, fill_value) in &self.fill_values {
-            if let Ok(series) = df.column(col_name) {
+            if let Ok(col) = df.column(col_name) {
+                let series = col.as_materialized_series();
                 let filled = self.fill_series(series, fill_value)?;
                 result = result
                     .with_column(filled)
@@ -94,6 +94,72 @@ impl Imputer {
     pub fn fit_transform(&mut self, df: &DataFrame, columns: &[&str]) -> Result<DataFrame> {
         self.fit(df, columns)?;
         self.transform(df)
+    }
+
+    /// Check if dtype is numeric
+    fn is_numeric_dtype(dtype: &DataType) -> bool {
+        matches!(
+            dtype,
+            DataType::Int8
+                | DataType::Int16
+                | DataType::Int32
+                | DataType::Int64
+                | DataType::UInt8
+                | DataType::UInt16
+                | DataType::UInt32
+                | DataType::UInt64
+                | DataType::Float32
+                | DataType::Float64
+        )
+    }
+
+    /// Compute mode (most frequent value) for a series
+    fn compute_mode_numeric(series: &Series) -> Result<f64> {
+        let mut counts: HashMap<i64, usize> = HashMap::new();
+        
+        // Count occurrences by converting to integer bits for f64
+        if let Ok(ca) = series.f64() {
+            for val in ca.into_iter().flatten() {
+                let key = val.to_bits() as i64;
+                *counts.entry(key).or_insert(0) += 1;
+            }
+        } else if let Ok(ca) = series.i64() {
+            for val in ca.into_iter().flatten() {
+                *counts.entry(val).or_insert(0) += 1;
+            }
+        }
+        
+        let mode_key = counts
+            .into_iter()
+            .max_by_key(|(_, count)| *count)
+            .map(|(k, _)| k)
+            .unwrap_or(0);
+        
+        // Convert back
+        if series.dtype() == &DataType::Float64 {
+            Ok(f64::from_bits(mode_key as u64))
+        } else {
+            Ok(mode_key as f64)
+        }
+    }
+
+    /// Compute mode for string series
+    fn compute_mode_string(series: &Series) -> Result<String> {
+        let mut counts: HashMap<String, usize> = HashMap::new();
+        
+        if let Ok(ca) = series.str() {
+            for val in ca.into_iter().flatten() {
+                *counts.entry(val.to_string()).or_insert(0) += 1;
+            }
+        }
+        
+        let mode = counts
+            .into_iter()
+            .max_by_key(|(_, count)| *count)
+            .map(|(k, _)| k)
+            .unwrap_or_default();
+        
+        Ok(mode)
     }
 
     fn compute_fill_value(&self, series: &Series) -> Result<ImputeValue> {
@@ -116,27 +182,12 @@ impl Imputer {
             }
             ImputeStrategy::MostFrequent => {
                 // Get mode (most frequent value)
-                if series.dtype().is_numeric() {
-                    let mode = series
-                        .mode()
-                        .map_err(|e| KolosalError::DataError(e.to_string()))?;
-                    let val = mode
-                        .f64()
-                        .map_err(|e| KolosalError::DataError(e.to_string()))?
-                        .get(0)
-                        .unwrap_or(0.0);
-                    Ok(ImputeValue::Numeric(val))
+                if Self::is_numeric_dtype(series.dtype()) {
+                    let mode = Self::compute_mode_numeric(series)?;
+                    Ok(ImputeValue::Numeric(mode))
                 } else {
-                    let mode = series
-                        .mode()
-                        .map_err(|e| KolosalError::DataError(e.to_string()))?;
-                    let val = mode
-                        .str()
-                        .map_err(|e| KolosalError::DataError(e.to_string()))?
-                        .get(0)
-                        .unwrap_or("")
-                        .to_string();
-                    Ok(ImputeValue::String(val))
+                    let mode = Self::compute_mode_string(series)?;
+                    Ok(ImputeValue::String(mode))
                 }
             }
             ImputeStrategy::Constant(val) => Ok(ImputeValue::Numeric(*val)),
@@ -148,20 +199,30 @@ impl Imputer {
     fn fill_series(&self, series: &Series, fill_value: &ImputeValue) -> Result<Series> {
         match fill_value {
             ImputeValue::Numeric(val) => {
-                let filled = series
+                let ca = series
                     .f64()
-                    .map_err(|e| KolosalError::DataError(e.to_string()))?
-                    .fill_null_with_values(*val)
                     .map_err(|e| KolosalError::DataError(e.to_string()))?;
-                Ok(filled.into_series())
+                
+                // Manually fill nulls
+                let filled: Float64Chunked = ca
+                    .into_iter()
+                    .map(|opt| Some(opt.unwrap_or(*val)))
+                    .collect();
+                
+                Ok(filled.with_name(series.name().clone()).into_series())
             }
             ImputeValue::String(val) => {
-                let filled = series
+                let ca = series
                     .str()
-                    .map_err(|e| KolosalError::DataError(e.to_string()))?
-                    .fill_null_with_values(val)
                     .map_err(|e| KolosalError::DataError(e.to_string()))?;
-                Ok(filled.into_series())
+                
+                // Manually fill nulls for strings
+                let filled: StringChunked = ca
+                    .into_iter()
+                    .map(|opt| Some(opt.unwrap_or(val.as_str()).to_string()))
+                    .collect();
+                
+                Ok(filled.with_name(series.name().clone()).into_series())
             }
         }
     }
@@ -188,7 +249,7 @@ mod tests {
     #[test]
     fn test_mean_imputation() {
         let df = DataFrame::new(vec![
-            Series::new("a".into(), &[Some(1.0), None, Some(3.0), Some(4.0)]),
+            Column::new("a".into(), &[Some(1.0), None, Some(3.0), Some(4.0)]),
         ])
         .unwrap();
 

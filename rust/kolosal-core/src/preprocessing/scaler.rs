@@ -50,9 +50,10 @@ impl Scaler {
     /// Fit the scaler to the data
     pub fn fit(&mut self, df: &DataFrame, columns: &[&str]) -> Result<&mut Self> {
         for col_name in columns {
-            let series = df
+            let column = df
                 .column(col_name)
                 .map_err(|_| KolosalError::FeatureNotFound(col_name.to_string()))?;
+            let series = column.as_materialized_series();
 
             let params = self.compute_params(series)?;
             self.params.insert(col_name.to_string(), params);
@@ -71,7 +72,8 @@ impl Scaler {
         let mut result = df.clone();
 
         for (col_name, params) in &self.params {
-            if let Ok(series) = df.column(col_name) {
+            if let Ok(column) = df.column(col_name) {
+                let series = column.as_materialized_series();
                 let scaled = self.scale_series(series, params)?;
                 result = result
                     .with_column(scaled)
@@ -98,7 +100,8 @@ impl Scaler {
         let mut result = df.clone();
 
         for (col_name, params) in &self.params {
-            if let Ok(series) = df.column(col_name) {
+            if let Ok(column) = df.column(col_name) {
+                let series = column.as_materialized_series();
                 let unscaled = self.unscale_series(series, params)?;
                 result = result
                     .with_column(unscaled)
@@ -194,7 +197,7 @@ mod tests {
     #[test]
     fn test_standard_scaler() {
         let df = DataFrame::new(vec![
-            Series::new("a".into(), &[1.0, 2.0, 3.0, 4.0, 5.0]),
+            Series::new("a".into(), &[1.0, 2.0, 3.0, 4.0, 5.0]).into(),
         ])
         .unwrap();
 
@@ -209,7 +212,7 @@ mod tests {
     #[test]
     fn test_minmax_scaler() {
         let df = DataFrame::new(vec![
-            Series::new("a".into(), &[1.0, 2.0, 3.0, 4.0, 5.0]),
+            Series::new("a".into(), &[1.0, 2.0, 3.0, 4.0, 5.0]).into(),
         ])
         .unwrap();
 
@@ -224,7 +227,7 @@ mod tests {
     #[test]
     fn test_inverse_transform() {
         let df = DataFrame::new(vec![
-            Series::new("a".into(), &[1.0, 2.0, 3.0, 4.0, 5.0]),
+            Series::new("a".into(), &[1.0, 2.0, 3.0, 4.0, 5.0]).into(),
         ])
         .unwrap();
 

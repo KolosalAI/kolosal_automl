@@ -38,6 +38,7 @@ tracing-subscriber.workspace = true
 
 # Utilities
 rand.workspace = true
+rand_chacha.workspace = true
 rand_xoshiro.workspace = true
 num-traits.workspace = true
 parking_lot.workspace = true
@@ -48,6 +49,7 @@ crossbeam.workspace = true
 criterion.workspace = true
 proptest.workspace = true
 rstest.workspace = true
+tempfile.workspace = true
 
 [[bench]]
 name = "preprocessing"

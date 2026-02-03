@@ -56,6 +56,12 @@ pub enum KolosalError {
 
     #[error("Thread pool error: {0}")]
     ThreadPoolError(String),
+
+    #[error("Validation error: {0}")]
+    ValidationError(String),
+
+    #[error("Computation error: {0}")]
+    ComputationError(String),
 }
 
 impl From<polars::error::PolarsError> for KolosalError {

@@ -205,14 +205,16 @@ impl DataPreprocessor {
         self.feature_stats.clear();
 
         for col_name in &self.numeric_columns {
-            if let Ok(series) = df.column(col_name) {
+            if let Ok(column) = df.column(col_name) {
+                let series = column.as_materialized_series();
                 let stats = FeatureStats::from_numeric_series(col_name, series)?;
                 self.feature_stats.insert(col_name.clone(), stats);
             }
         }
 
         for col_name in &self.categorical_columns {
-            if let Ok(series) = df.column(col_name) {
+            if let Ok(column) = df.column(col_name) {
+                let series = column.as_materialized_series();
                 let stats = FeatureStats::from_categorical_series(col_name, series)?;
                 self.feature_stats.insert(col_name.clone(), stats);
             }
@@ -234,9 +236,9 @@ mod tests {
 
     fn create_test_dataframe() -> DataFrame {
         DataFrame::new(vec![
-            Series::new("age".into(), &[25.0, 30.0, 35.0, 40.0, 45.0]),
-            Series::new("income".into(), &[50000.0, 60000.0, 70000.0, 80000.0, 90000.0]),
-            Series::new("city".into(), &["NYC", "LA", "NYC", "SF", "LA"]),
+            Series::new("age".into(), &[25.0, 30.0, 35.0, 40.0, 45.0]).into(),
+            Series::new("income".into(), &[50000.0, 60000.0, 70000.0, 80000.0, 90000.0]).into(),
+            Series::new("city".into(), &["NYC", "LA", "NYC", "SF", "LA"]).into(),
         ])
         .unwrap()
     }

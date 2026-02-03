@@ -51,9 +51,10 @@ impl Encoder {
     /// Fit the encoder to the data
     pub fn fit(&mut self, df: &DataFrame, columns: &[&str]) -> Result<&mut Self> {
         for col_name in columns {
-            let series = df
+            let column = df
                 .column(col_name)
                 .map_err(|_| KolosalError::FeatureNotFound(col_name.to_string()))?;
+            let series = column.as_materialized_series();
 
             let mapping = self.build_mapping(series)?;
             self.mappings.insert(col_name.to_string(), mapping);
@@ -79,9 +80,10 @@ impl Encoder {
             .map_err(|e| KolosalError::DataError(e.to_string()))?;
 
         for col_name in columns {
-            let series = df
+            let column = df
                 .column(col_name)
                 .map_err(|_| KolosalError::FeatureNotFound(col_name.to_string()))?;
+            let series = column.as_materialized_series();
 
             // Build regular mapping
             let mapping = self.build_mapping(series)?;
@@ -302,7 +304,7 @@ mod tests {
         let df = DataFrame::new(vec![Series::new(
             "category".into(),
             &["a", "b", "c", "a", "b"],
-        )])
+        ).into()])
         .unwrap();
 
         let mut encoder = Encoder::new(EncoderType::Label);
@@ -318,7 +320,7 @@ mod tests {
         let df = DataFrame::new(vec![Series::new(
             "category".into(),
             &["a", "b", "c", "a", "b"],
-        )])
+        ).into()])
         .unwrap();
 
         let mut encoder = Encoder::new(EncoderType::OneHot);
