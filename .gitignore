@@ -176,9 +176,8 @@ standard_ml_results/
 temp_data/
 
 # Rust
-/rust/target/
+/target/
 **/*.rs.bk
-Cargo.lock
 
 # PyO3/Maturin
 *.pyd

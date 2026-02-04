@@ -20,6 +20,7 @@ pub mod feature_engineering;
 pub mod imputation;
 pub mod synthetic;
 pub mod export;
+pub mod nas;
 
 pub use error::{KolosalError, Result};
 

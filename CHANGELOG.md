@@ -5,6 +5,59 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2024-02-03
+
+### Added
+
+#### Training Engine Improvements
+
+- **Complete Model Integration**
+  - TrainEngine now uses real model implementations instead of placeholders
+  - Added `TrainedModel` enum to hold all model variants polymorphically
+  - Full dispatch for all model types in `train_model()` and `predict_internal()`
+  - Added `feature_importances()` method to TrainEngine
+
+- **New Models**
+  - Neural Network (MLP) for both classification and regression
+  - Naive Bayes classifier (Gaussian and Multinomial variants)
+  - Both models fully integrated into TrainEngine
+
+- **Outlier Detection Module** (preprocessing/outlier.rs)
+  - Detection methods: IQR, Z-Score, Percentile, Modified Z-Score
+  - Handling strategies: Clip, ToNaN, Remove, ReplaceWithMean/Median
+  - Scikit-learn compatible fit/transform interface
+
+- **Inference Engine Enhancement**
+  - Added `predict_array()` for direct ndarray input
+  - Automatic DataFrame conversion using model's feature names
+
+- **Examples**
+  - `basic_training.rs` - Simple model training example
+  - `preprocessing.rs` - Data preprocessing pipeline
+  - `model_comparison.rs` - Comparing multiple models
+  - `hyperopt.rs` - Hyperparameter optimization example
+
+### Changed
+
+- **Training Configuration Updates**
+  - `n_estimators` and `learning_rate` now `Option<>` for flexibility
+  - Added `max_iter`, `n_neighbors`, `random_seed` fields
+  - New builder methods for all parameters
+
+- **CLI Improvements**
+  - Benchmark command now tests all available models
+  - Added Gradient Boosting, KNN, Naive Bayes, Neural Network to benchmark
+
+- **Python Bindings**
+  - Added `NaiveBayes` to `PyModelType` enum
+  - All new model types accessible from Python
+
+### Fixed
+
+- Flattened project structure (moved rust/ contents to root)
+- Updated all documentation paths accordingly
+- Fixed .gitignore for new project structure
+
 ## [0.3.0] - 2024-02-03
 
 ### Added

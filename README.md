@@ -11,7 +11,6 @@
 
 ```bash
 # Build the CLI
-cd rust
 cargo build --release
 
 # Train a model
@@ -84,14 +83,15 @@ curl http://localhost:8080/api/system/status
 
 ```
 kolosal_automl/
-├── rust/                       # Pure Rust implementation
-│   ├── kolosal-core/           # Core ML library
-│   ├── kolosal-server/         # Axum web server
-│   ├── kolosal-cli/            # CLI application
-│   ├── kolosal-web/            # Web frontend assets
-│   └── kolosal-python/         # PyO3 bindings (optional)
-├── docs/                       # Documentation
-└── tests/                      # Integration tests
+├── kolosal-core/           # Core ML library
+├── kolosal-server/         # Axum web server
+├── kolosal-cli/            # CLI application
+├── kolosal-web/            # Web frontend assets
+├── kolosal-python/         # PyO3 bindings (optional)
+├── benches/                # Benchmarks
+├── examples/               # Example code
+├── docs/                   # Documentation
+└── tests/                  # Integration tests
 ```
 
 ## Building from Source
@@ -103,8 +103,6 @@ kolosal_automl/
 ### Build
 
 ```bash
-cd rust
-
 # Build all crates
 cargo build --release
 
@@ -125,8 +123,8 @@ cargo run --package kolosal-cli -- --help
 cargo build --release
 
 # Binaries will be in:
-# - rust/target/release/kolosal-server
-# - rust/target/release/kolosal
+# - target/release/kolosal-server
+# - target/release/kolosal
 ```
 
 ## API Reference
@@ -161,7 +159,6 @@ Commands:
 
 ## Documentation
 
-- [Rust API Documentation](rust/README.md)
 - [Changelog](CHANGELOG.md)
 
 ## Contributing

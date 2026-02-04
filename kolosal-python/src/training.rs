@@ -42,6 +42,7 @@ pub enum PyModelType {
     SVM,
     KNN,
     NeuralNetwork,
+    NaiveBayes,
     Auto,
 }
 
@@ -60,6 +61,7 @@ impl From<PyModelType> for ModelType {
             PyModelType::SVM => ModelType::SVM,
             PyModelType::KNN => ModelType::KNN,
             PyModelType::NeuralNetwork => ModelType::NeuralNetwork,
+            PyModelType::NaiveBayes => ModelType::NaiveBayes,
             PyModelType::Auto => ModelType::Auto,
         }
     }

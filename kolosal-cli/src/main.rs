@@ -338,11 +338,20 @@ fn cmd_benchmark(
             ("Logistic Regression", ModelType::LogisticRegression),
             ("Decision Tree", ModelType::DecisionTree),
             ("Random Forest", ModelType::RandomForest),
+            ("Gradient Boosting", ModelType::GradientBoosting),
+            ("KNN", ModelType::KNN),
+            ("Naive Bayes", ModelType::NaiveBayes),
+            ("Neural Network", ModelType::NeuralNetwork),
+            ("SVM", ModelType::SVM),
         ],
         TaskType::Regression | TaskType::TimeSeries => vec![
             ("Linear Regression", ModelType::LinearRegression),
             ("Decision Tree", ModelType::DecisionTree),
             ("Random Forest", ModelType::RandomForest),
+            ("Gradient Boosting", ModelType::GradientBoosting),
+            ("KNN", ModelType::KNN),
+            ("Neural Network", ModelType::NeuralNetwork),
+            ("SVM", ModelType::SVM),
         ],
     };
 
