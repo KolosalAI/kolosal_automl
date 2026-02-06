@@ -7,91 +7,340 @@
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <script defer src="https://unpkg.com/alpinejs@3.13.3/dist/cdn.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/css2?family=Geist+Mono:wght@100..900&family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/remixicon@4.7.0/fonts/remixicon.css" rel="stylesheet">
     <style>
+        /* === Reset === */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-variation-settings: "slnt" 0;
+            font-optical-sizing: auto;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            font-smooth: never;
+            scrollbar-width: none;
+            font-family: "Inter", sans-serif;
+        }
+        h1, h2, h3, h4, h5, h6, small, p, span, a { margin: 0; padding: 0; text-shadow: none; }
+        body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; scrollbar-width: none; }
+        body::-webkit-scrollbar { display: none; }
+        body img { display: block; }
+
+        /* === Color Variables === */
+        :root {
+            --color-text-900: #0D0E0F;
+            --color-text-800: #3C3E40;
+            --color-text-700: #6A6F73;
+            --color-text-600: #9C9FA1;
+            --color-text-500: #CECFD0;
+            --color-grey-900: #DDE1E3;
+            --color-grey-800: #E4E7E9;
+            --color-grey-700: #EBEDEE;
+            --color-grey-600: #F1F3F4;
+            --color-grey-500: #F8F9F9;
+            --color-information-900: #001431;
+            --color-information-800: #002962;
+            --color-information-700: #003D93;
+            --color-information-600: #0052C4;
+            --color-information-500: #0066F5;
+            --color-information-400: #3C8AF7;
+            --color-information-300: #78AEFA;
+            --color-information-200: #B4D2FC;
+            --color-information-100: #F0F6FE;
+            --color-success-900: #0C260D;
+            --color-success-800: #174B19;
+            --color-success-700: #237126;
+            --color-success-600: #2E9632;
+            --color-success-500: #3ABC3F;
+            --color-success-400: #68CC6C;
+            --color-success-300: #97DC99;
+            --color-success-200: #C5EBC6;
+            --color-success-100: #F3FBF4;
+            --color-danger-900: #330A0A;
+            --color-danger-800: #661414;
+            --color-danger-700: #991D1D;
+            --color-danger-600: #CC2727;
+            --color-danger-500: #FF3131;
+            --color-danger-400: #FF6161;
+            --color-danger-300: #FF9292;
+            --color-danger-200: #FFC2C2;
+            --color-danger-100: #FFF3F3;
+            --color-warning-900: #33220A;
+            --color-warning-800: #664414;
+            --color-warning-700: #99651D;
+            --color-warning-600: #CC8727;
+            --color-warning-500: #FFA931;
+            --color-warning-400: #FFBD61;
+            --color-warning-300: #FFD192;
+            --color-warning-200: #FFE6C2;
+            --color-warning-100: #FFFAF3;
+        }
+
+        /* === Typography === */
+        .text-12px { font-size: 12px; line-height: 16px; letter-spacing: -0.2px; font-family: "Inter", sans-serif; }
+        .text-14px { font-size: 14px; line-height: 20px; letter-spacing: -0.2px; font-family: "Inter", sans-serif; }
+        .text-16px { font-size: 16px; line-height: 24px; letter-spacing: -0.2px; font-family: "Inter", sans-serif; }
+        .text-18px { font-size: 18px; line-height: 28px; letter-spacing: -0.2px; font-family: "Inter", sans-serif; }
+        .text-20px { font-size: 20px; line-height: 32px; letter-spacing: -0.2px; font-family: "Inter", sans-serif; }
+        .text-24px { font-size: 24px; line-height: 36px; letter-spacing: 0px; font-family: "Inter", sans-serif; }
+        .text-32px { font-size: 32px; line-height: 44px; letter-spacing: -0.6px; font-family: "Inter", sans-serif; }
+        .mono-12px { font-size: 12px; line-height: 16px; letter-spacing: -0.4px; font-family: "Geist Mono", monospace; }
+        .mono-14px { font-size: 14px; line-height: 20px; letter-spacing: -0.4px; font-family: "Geist Mono", monospace; }
+        .mono-20px { font-size: 20px; line-height: 32px; letter-spacing: -0.4px; font-family: "Geist Mono", monospace; }
+        .mono-32px { font-size: 32px; line-height: 44px; letter-spacing: -0.8px; font-family: "Geist Mono", monospace; }
+        .reguler { font-weight: 400; font-style: normal; }
+        .medium { font-weight: 500; font-style: normal; }
+
+        /* === Layout === */
+        .container { max-width: 1080px; width: 100%; padding-left: 20px; padding-right: 20px; margin-left: auto; margin-right: auto; }
+        .container-fluid { max-width: 100%; width: 100%; margin-left: auto; margin-right: auto; }
+        .col-fill { flex: 1 0 0; }
+
+        /* === Buttons === */
+        .btn-xs { display: flex; flex-direction: row; justify-content: center; align-items: center; gap: 4px; height: 28px; font-size: 12px; font-weight: 500; line-height: 16px; letter-spacing: 0.3px; border-radius: 6px; outline: none; border: none; padding-left: 8px; padding-right: 8px; text-decoration: none; cursor: pointer; }
+        .btn-xs i { font-size: 14px; }
+        .btn-sm { display: flex; flex-direction: row; justify-content: center; align-items: center; gap: 4px; height: 32px; font-size: 14px; font-weight: 500; line-height: 20px; letter-spacing: 0.3px; border-radius: 8px; outline: none; border: none; padding-left: 10px; padding-right: 10px; text-decoration: none; cursor: pointer; }
+        .btn-sm i { font-size: 16px; }
+        .btn-md { display: flex; flex-direction: row; justify-content: center; align-items: center; gap: 6px; height: 36px; font-size: 14px; font-weight: 500; line-height: 20px; letter-spacing: 0.3px; border-radius: 10px; outline: none; border: none; padding-left: 14px; padding-right: 14px; text-decoration: none; cursor: pointer; }
+        .btn-md i { font-size: 20px; }
+        .btn-lg { display: flex; flex-direction: row; justify-content: center; align-items: center; gap: 8px; height: 40px; font-size: 14px; font-weight: 500; line-height: 20px; letter-spacing: 0.3px; border-radius: 12px; outline: none; border: none; padding-left: 16px; padding-right: 16px; text-decoration: none; cursor: pointer; }
+        .btn-lg i { font-size: 24px; }
+        .btn-sm-icon { display: flex; flex-direction: row; justify-content: center; align-items: center; height: 32px; width: 32px; border-radius: 8px; outline: none; border: none; text-decoration: none; cursor: pointer; }
+        .btn-sm-icon i { font-size: 16px; }
+        .btn-primary { background-color: var(--color-text-900); color: #FFFFFF; box-shadow: inset 0px 2px 0px 0px rgba(255,255,255,0.25); border: 1px solid var(--color-text-900); }
+        .btn-primary:hover { background: linear-gradient(90deg, #0D0E0F, #FF3131, #0066F5); background-size: 300% 300%; animation: gradientMove 3s ease infinite; }
+        @keyframes gradientMove { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
+        .btn-secondary { background-color: var(--color-information-500); color: #FFFFFF; box-shadow: inset 0px 2px 0px 0px rgba(255,255,255,0.25); border: 1px solid var(--color-information-500); }
+        .btn-secondary:hover { background-color: var(--color-information-600); border-color: var(--color-information-600); }
+        .btn-outline { background-color: #FFFFFF; border: 1px solid var(--color-grey-800); box-shadow: 0px 3px 4px -4px rgba(0,0,0,0.15); color: var(--color-text-900); }
+        .btn-outline:hover { background-color: var(--color-grey-500); border: 1px solid var(--color-grey-900); }
+        .btn-danger { background-color: var(--color-danger-500); border: 1px solid var(--color-danger-500); color: #FFFFFF; box-shadow: inset 0px 2px 0px 0px rgba(255,255,255,0.25); }
+        .btn-danger:hover { background-color: var(--color-danger-600); border-color: var(--color-danger-600); }
+        .btn-ghost { background-color: transparent; color: var(--color-text-900); border: none; }
+        .btn-ghost:hover { background-color: var(--color-grey-600); }
+        .btn-primary:disabled, .btn-secondary:disabled, .btn-outline:disabled, .btn-danger:disabled, .btn-ghost:disabled { pointer-events: none; opacity: 0.65; cursor: not-allowed; }
+
+        /* === Inputs === */
+        .input-text-sm { font-size: 14px; line-height: 20px; font-weight: 400; height: 32px; padding-left: 10px; padding-right: 10px; border: 1px solid var(--color-grey-900); border-radius: 8px; width: 100%; box-shadow: 0px 3px 4px -4px rgba(0,0,0,0.15); }
+        .input-text-md { font-size: 14px; line-height: 20px; font-weight: 400; height: 36px; padding-left: 14px; padding-right: 14px; border: 1px solid var(--color-grey-900); border-radius: 10px; width: 100%; box-shadow: 0px 3px 4px -4px rgba(0,0,0,0.15); }
+        .input-text-lg { font-size: 14px; line-height: 20px; font-weight: 400; height: 40px; padding-left: 16px; padding-right: 16px; border: 1px solid var(--color-grey-900); border-radius: 12px; width: 100%; box-shadow: 0px 3px 4px -4px rgba(0,0,0,0.15); }
+        .input-text-sm:hover, .input-text-md:hover, .input-text-lg:hover { border-color: var(--color-text-500); box-shadow: none; }
+        .input-text-sm::placeholder, .input-text-md::placeholder, .input-text-lg::placeholder { color: var(--color-text-600); }
+        .input-text-sm:focus-visible, .input-text-md:focus-visible, .input-text-lg:focus-visible { border: 1px solid var(--color-text-600); outline: none; box-shadow: 0px 0px 0px 2px var(--color-grey-800); }
+        select.input-text-sm, select.input-text-md, select.input-text-lg { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%236A6F73' viewBox='0 0 24 24'%3E%3Cpath d='M12 16l-6-6h12z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; padding-right: 36px; }
+        .input-textarea { font-size: 14px; line-height: 24px; font-weight: 400; padding: 8px 12px; width: 100%; min-height: 156px; border: 1px solid var(--color-grey-900); box-shadow: 0px 3px 4px -4px rgba(0,0,0,0.15); border-radius: 12px; resize: none; font-family: "Inter", sans-serif; }
+        .input-textarea:hover { border-color: var(--color-text-500); box-shadow: none; }
+        .input-textarea::placeholder { color: var(--color-text-600); }
+        .input-textarea:focus-visible { border: 1px solid var(--color-text-600); outline: none; box-shadow: 0px 0px 0px 2px var(--color-grey-800); }
+
+        /* === Badge === */
+        .badge-sm { display: flex; flex-direction: row; justify-content: center; align-items: center; height: 24px; border-radius: 6px; width: fit-content; padding: 0px 8px; font-size: 12px; font-weight: 500; line-height: 16px; }
+        .badge-information { color: var(--color-information-600); background-color: var(--color-information-100); }
+        .badge-success { color: var(--color-success-600); background-color: var(--color-success-100); }
+        .badge-danger { color: var(--color-danger-600); background-color: var(--color-danger-100); }
+        .badge-warning { color: var(--color-warning-600); background-color: var(--color-warning-100); }
+
+        /* === Switch === */
+        .switch-sm { position: relative; display: flex; align-items: center; justify-content: center; width: 28px; height: 16px; border-radius: 24px; overflow: hidden; }
+        .switch-sm input { opacity: 0; width: 0; height: 0; }
+        .switch-sm .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; padding: 1px; background-color: var(--color-grey-700); border: 1px solid var(--color-grey-900); border-radius: 999px; transition: all 0.25s ease; }
+        .switch-sm .slider::before { content: ""; position: absolute; height: 12px; width: 12px; background-color: #FFFFFF; border-radius: 999px; box-shadow: 0 1px 2px rgba(0,0,0,0.2); transition: transform 0.4s ease, background-color 0.4s ease; }
+        .switch-sm input:checked + .slider { background-color: var(--color-text-700); border-color: var(--color-text-800); }
+        .switch-sm input:checked + .slider::before { background-color: var(--color-text-900); transform: translateX(12px); }
+
+        /* === Ornament === */
+        .ornament-icon-grey { display: flex; flex-direction: row; justify-content: center; align-items: center; height: 40px; width: 40px; background-color: var(--color-grey-500); border: 1px solid var(--color-grey-700); border-radius: 12px; }
+        .ornament-icon-grey i { font-size: 20px; color: var(--color-text-600); }
+
+        /* === App Layout === */
         [x-cloak] { display: none !important; }
-        .tab-active { border-bottom: 2px solid #3B82F6; color: #3B82F6; }
-        .dropzone { border: 2px dashed #CBD5E1; }
-        .dropzone.drag-over { border-color: #3B82F6; background: #EFF6FF; }
-        .loading { opacity: 0.5; pointer-events: none; }
-        .htmx-request .loading-indicator { display: block; }
-        .htmx-request.htmx-indicator { display: inline; }
+        body { background-color: var(--color-grey-500); color: var(--color-text-900); min-height: 100vh; }
+
+        /* Header */
+        .app-header { position: sticky; top: 0; z-index: 15; background-color: #FFFFFF; border-bottom: 1px solid var(--color-grey-900); }
+        .app-header-inner { display: flex; flex-direction: row; justify-content: space-between; align-items: center; padding-top: 16px; padding-bottom: 16px; }
+        .app-header-logo { display: flex; flex-direction: row; align-items: center; gap: 10px; }
+        .app-header-logo .divider { height: 16px; border-right: 1px solid var(--color-grey-900); margin-left: 4px; margin-right: 4px; }
+        .app-header-status { display: flex; flex-direction: row; align-items: center; gap: 8px; }
+        .status-dot { width: 8px; height: 8px; border-radius: 999px; }
+        .status-dot.healthy { background-color: var(--color-success-500); }
+        .status-dot.error { background-color: var(--color-danger-500); }
+
+        /* Navigation */
+        .app-nav { background-color: #FFFFFF; border-bottom: 1px solid var(--color-grey-800); }
+        .app-nav-inner { display: flex; flex-direction: row; align-items: center; gap: 4px; }
+        .nav-tab { display: flex; flex-direction: row; justify-content: center; align-items: center; gap: 6px; height: 40px; padding: 0 12px; font-size: 14px; font-weight: 500; line-height: 20px; color: var(--color-text-700); background: none; border: none; border-bottom: 2px solid transparent; cursor: pointer; transition: all 0.15s ease; border-radius: 0; }
+        .nav-tab:hover { color: var(--color-text-900); background-color: var(--color-grey-600); }
+        .nav-tab.active { color: var(--color-text-900); border-bottom-color: var(--color-text-900); }
+        .nav-tab i { font-size: 16px; }
+
+        /* Cards */
+        .card { background-color: #FFFFFF; border: 1px solid var(--color-grey-800); border-radius: 12px; padding: 24px; }
+        .card-header { display: flex; flex-direction: row; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+
+        /* Grid */
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+        .grid-1-2 { display: grid; grid-template-columns: 1fr 2fr; gap: 16px; }
+        @media (max-width: 768px) {
+            .grid-2, .grid-3, .grid-1-2 { grid-template-columns: 1fr; }
+        }
+
+        /* Content area */
+        .app-content { padding-top: 24px; padding-bottom: 24px; }
+        .section-gap { display: flex; flex-direction: column; gap: 16px; }
+
+        /* Dropzone */
+        .dropzone { border: 2px dashed var(--color-grey-900); border-radius: 12px; padding: 40px 24px; text-align: center; cursor: pointer; transition: all 0.15s ease; }
+        .dropzone:hover { border-color: var(--color-text-500); background-color: var(--color-grey-600); }
+        .dropzone.drag-over { border-color: var(--color-information-500); background-color: var(--color-information-100); }
+        .dropzone i { font-size: 40px; color: var(--color-text-600); margin-bottom: 12px; }
+
+        /* Table */
+        .data-table { width: 100%; border-collapse: collapse; }
+        .data-table th { padding: 8px 12px; text-align: left; font-size: 12px; font-weight: 500; line-height: 16px; color: var(--color-text-700); background-color: var(--color-grey-500); border-bottom: 1px solid var(--color-grey-800); text-transform: uppercase; letter-spacing: 0.3px; }
+        .data-table td { padding: 8px 12px; font-size: 14px; line-height: 20px; color: var(--color-text-800); border-bottom: 1px solid var(--color-grey-700); }
+        .data-table tr:hover td { background-color: var(--color-grey-500); }
+        .table-wrap { overflow-x: auto; border: 1px solid var(--color-grey-800); border-radius: 10px; }
+
+        /* Progress bar */
+        .progress-bar { width: 100%; height: 6px; background-color: var(--color-grey-800); border-radius: 999px; overflow: hidden; }
+        .progress-bar-fill { height: 100%; background-color: var(--color-information-500); border-radius: 999px; transition: width 0.3s ease; }
+
+        /* Form */
+        .form-group { display: flex; flex-direction: column; gap: 6px; }
+        .form-label { font-size: 14px; font-weight: 500; line-height: 20px; color: var(--color-text-800); }
+        .form-hint { font-size: 12px; line-height: 16px; color: var(--color-text-600); }
+        .form-stack { display: flex; flex-direction: column; gap: 20px; }
+
+        /* Range input */
+        input[type="range"] { width: 100%; height: 6px; appearance: none; background: var(--color-grey-800); border-radius: 999px; outline: none; }
+        input[type="range"]::-webkit-slider-thumb { appearance: none; width: 16px; height: 16px; border-radius: 999px; background: var(--color-text-900); cursor: pointer; border: 2px solid #FFFFFF; box-shadow: 0 1px 3px rgba(0,0,0,0.2); }
+
+        /* Checkbox */
+        .checkbox-row { display: flex; flex-direction: row; align-items: center; gap: 10px; cursor: pointer; padding: 6px 0; }
+        .checkbox-row input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--color-text-900); cursor: pointer; }
+
+        /* Stat card */
+        .stat-value { font-size: 32px; line-height: 44px; letter-spacing: -0.6px; font-family: "Geist Mono", monospace; font-weight: 500; }
+        .stat-value.info { color: var(--color-information-500); }
+        .stat-value.success { color: var(--color-success-500); }
+
+        /* Job card */
+        .job-card { border: 1px solid var(--color-grey-800); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+
+        /* Pre/Code */
+        .code-block { background-color: var(--color-grey-500); border: 1px solid var(--color-grey-800); border-radius: 10px; padding: 16px; font-size: 13px; line-height: 20px; font-family: "Geist Mono", monospace; overflow: auto; color: var(--color-text-800); }
+
+        /* Toast notifications */
+        .toast-container { position: fixed; bottom: 20px; right: 20px; display: flex; flex-direction: column; gap: 8px; z-index: 100; }
+        .toast { padding: 10px 16px; border-radius: 10px; font-size: 14px; font-weight: 500; line-height: 20px; box-shadow: 0px 4px 12px rgba(0,0,0,0.15); }
+        .toast-success { background-color: var(--color-success-500); color: #FFFFFF; }
+        .toast-error { background-color: var(--color-danger-500); color: #FFFFFF; }
+        .toast-info { background-color: var(--color-text-900); color: #FFFFFF; }
+
+        /* Sample dataset pills */
+        .pill { display: inline-flex; align-items: center; height: 28px; padding: 0 10px; font-size: 12px; font-weight: 500; border-radius: 999px; border: none; cursor: pointer; transition: all 0.15s ease; background-color: var(--color-information-100); color: var(--color-information-600); }
+        .pill:hover { background-color: var(--color-information-200); }
+
+        /* Separator */
+        .separator { border: none; border-top: 1px solid var(--color-grey-800); margin: 4px 0; }
+
+        /* Empty state */
+        .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px 20px; color: var(--color-text-600); gap: 8px; }
+        .empty-state i { font-size: 32px; color: var(--color-text-500); }
+
+        /* Utility */
+        .w-full { width: 100%; }
+        .hidden { display: none; }
+        .flex-row { display: flex; flex-direction: row; }
+        .flex-col { display: flex; flex-direction: column; }
+        .items-center { align-items: center; }
+        .justify-between { justify-content: space-between; }
+        .gap-4 { gap: 4px; }
+        .gap-6 { gap: 6px; }
+        .gap-8 { gap: 8px; }
+        .gap-12 { gap: 12px; }
+        .gap-16 { gap: 16px; }
+        .gap-24 { gap: 24px; }
+        .flex-wrap { flex-wrap: wrap; }
+        .text-center { text-align: center; }
     </style>
 </head>
-<body class="bg-gray-100 min-h-screen" x-data="kolosalApp()">
+<body x-data="kolosalApp()">
     <!-- Header -->
-    <header class="bg-white shadow">
-        <div class="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
-            <div class="flex items-center space-x-3">
-                <svg class="w-10 h-10 text-blue-600" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-                </svg>
-                <h1 class="text-2xl font-bold text-gray-900">Kolosal AutoML</h1>
+    <header class="app-header">
+        <div class="container app-header-inner">
+            <div class="app-header-logo">
+                <i class="ri-brain-line" style="font-size: 24px; color: var(--color-text-900);"></i>
+                <span class="mono-20px medium">Kolosal AutoML</span>
+                <div class="divider"></div>
+                <span class="text-14px reguler" style="color: var(--color-text-700);">Rust-Powered</span>
             </div>
-            <div class="flex items-center space-x-4">
-                <span class="text-sm text-gray-500">Rust-Powered</span>
-                <div class="w-2 h-2 rounded-full" :class="systemStatus === 'healthy' ? 'bg-green-500' : 'bg-red-500'"></div>
+            <div class="app-header-status">
+                <div class="badge-sm" :class="systemStatus === 'healthy' ? 'badge-success' : 'badge-danger'" x-text="systemStatus"></div>
+                <div class="status-dot" :class="systemStatus === 'healthy' ? 'healthy' : 'error'"></div>
             </div>
         </div>
     </header>
 
     <!-- Navigation Tabs -->
-    <nav class="bg-white border-b">
-        <div class="max-w-7xl mx-auto px-4">
-            <div class="flex space-x-8">
-                <button @click="activeTab = 'data'" :class="activeTab === 'data' ? 'tab-active' : ''" class="py-4 px-1 font-medium text-gray-700 hover:text-blue-600">
-                    📁 Data Upload
-                </button>
-                <button @click="activeTab = 'config'" :class="activeTab === 'config' ? 'tab-active' : ''" class="py-4 px-1 font-medium text-gray-700 hover:text-blue-600">
-                    ⚙️ Configuration
-                </button>
-                <button @click="activeTab = 'training'" :class="activeTab === 'training' ? 'tab-active' : ''" class="py-4 px-1 font-medium text-gray-700 hover:text-blue-600">
-                    🚀 Training
-                </button>
-                <button @click="activeTab = 'compare'" :class="activeTab === 'compare' ? 'tab-active' : ''" class="py-4 px-1 font-medium text-gray-700 hover:text-blue-600">
-                    🏆 Compare
-                </button>
-                <button @click="activeTab = 'predict'" :class="activeTab === 'predict' ? 'tab-active' : ''" class="py-4 px-1 font-medium text-gray-700 hover:text-blue-600">
-                    🔮 Predict
-                </button>
-                <button @click="activeTab = 'monitor'" :class="activeTab === 'monitor' ? 'tab-active' : ''" class="py-4 px-1 font-medium text-gray-700 hover:text-blue-600">
-                    📊 Monitor
-                </button>
-            </div>
+    <nav class="app-nav">
+        <div class="container app-nav-inner">
+            <button @click="activeTab = 'data'" :class="activeTab === 'data' ? 'active' : ''" class="nav-tab">
+                <i class="ri-folder-upload-line"></i> Data
+            </button>
+            <button @click="activeTab = 'config'" :class="activeTab === 'config' ? 'active' : ''" class="nav-tab">
+                <i class="ri-settings-3-line"></i> Config
+            </button>
+            <button @click="activeTab = 'training'" :class="activeTab === 'training' ? 'active' : ''" class="nav-tab">
+                <i class="ri-rocket-line"></i> Training
+            </button>
+            <button @click="activeTab = 'compare'" :class="activeTab === 'compare' ? 'active' : ''" class="nav-tab">
+                <i class="ri-bar-chart-grouped-line"></i> Compare
+            </button>
+            <button @click="activeTab = 'predict'" :class="activeTab === 'predict' ? 'active' : ''" class="nav-tab">
+                <i class="ri-magic-line"></i> Predict
+            </button>
+            <button @click="activeTab = 'monitor'" :class="activeTab === 'monitor' ? 'active' : ''" class="nav-tab">
+                <i class="ri-dashboard-3-line"></i> Monitor
+            </button>
         </div>
     </nav>
 
     <!-- Main Content -->
-    <main class="max-w-7xl mx-auto px-4 py-6">
+    <main class="container app-content">
         <!-- Data Upload Tab -->
         <div x-show="activeTab === 'data'" x-cloak>
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div class="grid-2">
                 <!-- File Upload -->
-                <div class="bg-white rounded-lg shadow p-6">
-                    <h2 class="text-lg font-semibold mb-4">Upload Data</h2>
-                    <div 
-                        class="dropzone rounded-lg p-8 text-center cursor-pointer transition-colors"
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="text-16px medium">Upload Data</h2>
+                    </div>
+                    <div
+                        class="dropzone"
                         @dragover.prevent="$el.classList.add('drag-over')"
                         @dragleave="$el.classList.remove('drag-over')"
                         @drop.prevent="handleFileDrop($event)"
                         @click="$refs.fileInput.click()"
                     >
                         <input type="file" x-ref="fileInput" @change="uploadFile($event)" accept=".csv,.json,.parquet" class="hidden">
-                        <svg class="w-12 h-12 mx-auto text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
-                        </svg>
-                        <p class="text-gray-600">Drop your CSV, JSON, or Parquet file here</p>
-                        <p class="text-sm text-gray-400 mt-2">or click to browse</p>
+                        <i class="ri-upload-cloud-2-line"></i>
+                        <p class="text-14px reguler" style="color: var(--color-text-800);">Drop your CSV, JSON, or Parquet file here</p>
+                        <p class="text-12px reguler" style="color: var(--color-text-600); margin-top: 4px;">or click to browse</p>
                     </div>
-                    
+
                     <!-- Sample Datasets -->
-                    <div class="mt-6">
-                        <h3 class="text-sm font-medium text-gray-700 mb-3">Or load a sample dataset:</h3>
-                        <div class="flex flex-wrap gap-2">
+                    <div style="margin-top: 20px;">
+                        <p class="text-12px medium" style="color: var(--color-text-700); margin-bottom: 8px;">Or load a sample dataset:</p>
+                        <div class="flex-row flex-wrap gap-8">
                             <template x-for="sample in sampleDatasets" :key="sample.id">
-                                <button 
+                                <button
                                     @click="loadSampleData(sample.id)"
-                                    class="px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-sm hover:bg-blue-100 transition"
+                                    class="pill"
                                     x-text="sample.name"
                                 ></button>
                             </template>
@@ -100,40 +349,45 @@
                 </div>
 
                 <!-- Data Preview -->
-                <div class="bg-white rounded-lg shadow p-6">
-                    <h2 class="text-lg font-semibold mb-4">Data Preview</h2>
-                    <template x-if="dataInfo">
-                        <div>
-                            <div class="mb-4 flex items-center justify-between">
-                                <span class="text-sm text-gray-600">
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="text-16px medium">Data Preview</h2>
+                        <template x-if="dataInfo">
+                            <div class="flex-row items-center gap-12">
+                                <span class="text-12px reguler" style="color: var(--color-text-700);">
                                     <span x-text="dataInfo.rows"></span> rows × <span x-text="dataInfo.columns"></span> columns
                                 </span>
-                                <button @click="refreshPreview()" class="text-blue-600 text-sm hover:underline">Refresh</button>
+                                <button @click="refreshPreview()" class="btn-xs btn-ghost"><i class="ri-refresh-line"></i> Refresh</button>
                             </div>
-                            <div class="overflow-x-auto">
-                                <table class="min-w-full divide-y divide-gray-200 text-sm">
-                                    <thead class="bg-gray-50">
+                        </template>
+                    </div>
+                    <template x-if="dataInfo">
+                        <div class="table-wrap">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <template x-for="col in dataPreview.columns" :key="col.name">
+                                            <th x-text="col.name"></th>
+                                        </template>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <template x-for="(_, rowIdx) in Array(dataPreview.rows || 0)" :key="rowIdx">
                                         <tr>
-                                            <template x-for="col in dataPreview.columns" :key="col.name">
-                                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase" x-text="col.name"></th>
+                                            <template x-for="col in dataPreview.columns" :key="col.name + rowIdx">
+                                                <td x-text="col.values[rowIdx] ?? ''"></td>
                                             </template>
                                         </tr>
-                                    </thead>
-                                    <tbody class="divide-y divide-gray-200">
-                                        <template x-for="(_, rowIdx) in Array(dataPreview.rows || 0)" :key="rowIdx">
-                                            <tr>
-                                                <template x-for="col in dataPreview.columns" :key="col.name + rowIdx">
-                                                    <td class="px-3 py-2 text-gray-700" x-text="col.values[rowIdx] ?? ''"></td>
-                                                </template>
-                                            </tr>
-                                        </template>
-                                    </tbody>
-                                </table>
-                            </div>
+                                    </template>
+                                </tbody>
+                            </table>
                         </div>
                     </template>
                     <template x-if="!dataInfo">
-                        <p class="text-gray-400 text-center py-8">No data loaded</p>
+                        <div class="empty-state">
+                            <i class="ri-database-2-line"></i>
+                            <p class="text-14px reguler">No data loaded</p>
+                        </div>
                     </template>
                 </div>
             </div>
@@ -141,23 +395,25 @@
 
         <!-- Configuration Tab -->
         <div x-show="activeTab === 'config'" x-cloak>
-            <div class="bg-white rounded-lg shadow p-6 max-w-2xl">
-                <h2 class="text-lg font-semibold mb-6">Training Configuration</h2>
-                
-                <div class="space-y-6">
+            <div class="card" style="max-width: 600px;">
+                <div class="card-header">
+                    <h2 class="text-16px medium">Training Configuration</h2>
+                </div>
+
+                <div class="form-stack">
                     <!-- Task Type -->
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-2">Task Type</label>
-                        <select x-model="config.taskType" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                    <div class="form-group">
+                        <label class="form-label">Task Type</label>
+                        <select x-model="config.taskType" class="input-text-md">
                             <option value="classification">Classification</option>
                             <option value="regression">Regression</option>
                         </select>
                     </div>
 
                     <!-- Target Column -->
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-2">Target Column</label>
-                        <select x-model="config.targetColumn" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                    <div class="form-group">
+                        <label class="form-label">Target Column</label>
+                        <select x-model="config.targetColumn" class="input-text-md">
                             <option value="">Select target...</option>
                             <template x-for="col in dataInfo?.column_names || []" :key="col">
                                 <option :value="col" x-text="col"></option>
@@ -165,22 +421,24 @@
                         </select>
                     </div>
 
+                    <hr class="separator">
+
                     <!-- Preprocessing -->
-                    <div class="border-t pt-4">
-                        <h3 class="font-medium mb-3">Preprocessing</h3>
-                        <div class="grid grid-cols-2 gap-4">
-                            <div>
-                                <label class="block text-sm text-gray-600 mb-1">Scaler</label>
-                                <select x-model="config.scaler" class="w-full px-3 py-2 border rounded-lg">
+                    <div class="form-group">
+                        <label class="form-label">Preprocessing</label>
+                        <div class="grid-2">
+                            <div class="form-group">
+                                <label class="form-hint">Scaler</label>
+                                <select x-model="config.scaler" class="input-text-sm">
                                     <option value="none">None</option>
                                     <option value="standard">Standard</option>
                                     <option value="minmax">MinMax</option>
                                     <option value="robust">Robust</option>
                                 </select>
                             </div>
-                            <div>
-                                <label class="block text-sm text-gray-600 mb-1">Missing Values</label>
-                                <select x-model="config.imputation" class="w-full px-3 py-2 border rounded-lg">
+                            <div class="form-group">
+                                <label class="form-hint">Missing Values</label>
+                                <select x-model="config.imputation" class="input-text-sm">
                                     <option value="drop">Drop</option>
                                     <option value="mean">Mean</option>
                                     <option value="median">Median</option>
@@ -191,20 +449,20 @@
                     </div>
 
                     <!-- Cross-Validation -->
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-2">
-                            Cross-Validation Folds: <span x-text="config.cvFolds"></span>
+                    <div class="form-group">
+                        <label class="form-label">
+                            Cross-Validation Folds: <span class="mono-14px" x-text="config.cvFolds"></span>
                         </label>
-                        <input type="range" x-model="config.cvFolds" min="2" max="10" class="w-full">
+                        <input type="range" x-model="config.cvFolds" min="2" max="10">
                     </div>
 
                     <!-- Apply Button -->
-                    <button 
+                    <button
                         @click="applyPreprocessing()"
-                        class="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+                        class="btn-md btn-primary w-full"
                         :disabled="!dataInfo"
                     >
-                        Apply Preprocessing
+                        <i class="ri-check-line"></i> Apply Preprocessing
                     </button>
                 </div>
             </div>
@@ -212,72 +470,80 @@
 
         <!-- Training Tab -->
         <div x-show="activeTab === 'training'" x-cloak>
-            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div class="grid-1-2">
                 <!-- Model Selection -->
-                <div class="bg-white rounded-lg shadow p-6">
-                    <h2 class="text-lg font-semibold mb-4">Select Models</h2>
-                    <div class="space-y-3">
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="text-16px medium">Select Models</h2>
+                    </div>
+                    <div class="flex-col gap-4">
                         <template x-for="model in availableModels" :key="model.id">
-                            <label class="flex items-center space-x-3 cursor-pointer">
-                                <input type="checkbox" :value="model.id" x-model="selectedModels" class="rounded text-blue-600">
-                                <span x-text="model.name"></span>
+                            <label class="checkbox-row">
+                                <input type="checkbox" :value="model.id" x-model="selectedModels">
+                                <span class="text-14px reguler" x-text="model.name"></span>
                             </label>
                         </template>
                     </div>
-                    
-                    <button 
+
+                    <button
                         @click="startTraining()"
-                        class="w-full mt-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition"
+                        class="btn-md btn-primary w-full"
+                        style="margin-top: 20px;"
                         :disabled="selectedModels.length === 0 || !config.targetColumn"
                     >
-                        🚀 Start Training
+                        <i class="ri-rocket-line"></i> Start Training
                     </button>
                 </div>
 
                 <!-- Training Progress -->
-                <div class="lg:col-span-2 bg-white rounded-lg shadow p-6">
-                    <h2 class="text-lg font-semibold mb-4">Training Progress</h2>
-                    
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="text-16px medium">Training Progress</h2>
+                    </div>
+
                     <template x-if="trainingJobs.length > 0">
-                        <div class="space-y-4">
+                        <div class="flex-col gap-12">
                             <template x-for="job in trainingJobs" :key="job.id">
-                                <div class="border rounded-lg p-4">
-                                    <div class="flex justify-between items-center mb-2">
-                                        <span class="font-medium" x-text="job.config?.model_type || 'Training'"></span>
-                                        <span 
-                                            class="px-2 py-1 text-xs rounded-full"
+                                <div class="job-card">
+                                    <div class="flex-row justify-between items-center">
+                                        <span class="text-14px medium" x-text="job.config?.model_type || 'Training'"></span>
+                                        <span
+                                            class="badge-sm"
                                             :class="{
-                                                'bg-yellow-100 text-yellow-800': job.status.Running,
-                                                'bg-green-100 text-green-800': job.status.Completed,
-                                                'bg-red-100 text-red-800': job.status.Failed
+                                                'badge-warning': job.status.Running,
+                                                'badge-success': job.status.Completed,
+                                                'badge-danger': job.status.Failed
                                             }"
                                             x-text="Object.keys(job.status)[0]"
                                         ></span>
                                     </div>
                                     <template x-if="job.status.Running">
-                                        <div>
-                                            <div class="w-full bg-gray-200 rounded-full h-2">
-                                                <div class="bg-blue-600 h-2 rounded-full transition-all" :style="`width: ${job.status.Running.progress * 100}%`"></div>
+                                        <div class="flex-col gap-6">
+                                            <div class="progress-bar">
+                                                <div class="progress-bar-fill" :style="`width: ${job.status.Running.progress * 100}%`"></div>
                                             </div>
-                                            <p class="text-sm text-gray-600 mt-1" x-text="job.status.Running.message"></p>
+                                            <p class="text-12px reguler" style="color: var(--color-text-700);" x-text="job.status.Running.message"></p>
                                         </div>
                                     </template>
                                     <template x-if="job.status.Completed">
-                                        <div class="text-sm text-gray-600">
+                                        <div class="flex-col gap-4">
                                             <template x-for="(value, key) in job.status.Completed.metrics" :key="key">
-                                                <p><strong x-text="key + ':'"></strong> <span x-text="typeof value === 'number' ? value.toFixed(4) : JSON.stringify(value)"></span></p>
+                                                <p class="text-12px reguler" style="color: var(--color-text-700);"><strong x-text="key + ':'"></strong> <span class="mono-12px" x-text="typeof value === 'number' ? value.toFixed(4) : JSON.stringify(value)"></span></p>
                                             </template>
                                         </div>
                                     </template>
                                     <template x-if="job.status.Failed">
-                                        <p class="text-sm text-red-600" x-text="job.status.Failed.error"></p>
+                                        <p class="text-12px reguler" style="color: var(--color-danger-500);" x-text="job.status.Failed.error"></p>
                                     </template>
                                 </div>
                             </template>
                         </div>
                     </template>
                     <template x-if="trainingJobs.length === 0">
-                        <p class="text-gray-400 text-center py-8">No training jobs yet</p>
+                        <div class="empty-state">
+                            <i class="ri-flask-line"></i>
+                            <p class="text-14px reguler">No training jobs yet</p>
+                        </div>
                     </template>
                 </div>
             </div>
@@ -285,44 +551,50 @@
 
         <!-- Compare Tab -->
         <div x-show="activeTab === 'compare'" x-cloak>
-            <div class="bg-white rounded-lg shadow p-6">
-                <h2 class="text-lg font-semibold mb-4">Model Comparison</h2>
-                
-                <div class="mb-4 flex items-center space-x-4">
-                    <button 
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="text-16px medium">Model Comparison</h2>
+                    <button
                         @click="compareAllModels()"
-                        class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition"
+                        class="btn-sm btn-primary"
                         :disabled="!config.targetColumn"
                     >
-                        Compare All Models
+                        <i class="ri-bar-chart-grouped-line"></i> Compare All Models
                     </button>
                 </div>
 
                 <template x-if="comparisonResults.length > 0">
-                    <div>
-                        <table class="min-w-full divide-y divide-gray-200">
-                            <thead class="bg-gray-50">
-                                <tr>
-                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Model</th>
-                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Score</th>
-                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Std Dev</th>
-                                </tr>
-                            </thead>
-                            <tbody class="divide-y divide-gray-200">
-                                <template x-for="result in comparisonResults" :key="result.model">
+                    <div class="flex-col gap-24">
+                        <div class="table-wrap">
+                            <table class="data-table">
+                                <thead>
                                     <tr>
-                                        <td class="px-4 py-3 font-medium" x-text="result.model"></td>
-                                        <td class="px-4 py-3" x-text="(result.metrics.accuracy || result.metrics.r2 || 0).toFixed(4)"></td>
-                                        <td class="px-4 py-3" x-text="(result.metrics.std || 0).toFixed(4)"></td>
+                                        <th>Model</th>
+                                        <th>Score</th>
+                                        <th>Std Dev</th>
                                     </tr>
-                                </template>
-                            </tbody>
-                        </table>
-                        
-                        <!-- Chart -->
-                        <div class="mt-6">
+                                </thead>
+                                <tbody>
+                                    <template x-for="result in comparisonResults" :key="result.model">
+                                        <tr>
+                                            <td><span class="text-14px medium" x-text="result.model"></span></td>
+                                            <td><span class="mono-14px" x-text="(result.metrics.accuracy || result.metrics.r2 || 0).toFixed(4)"></span></td>
+                                            <td><span class="mono-14px" x-text="(result.metrics.std || 0).toFixed(4)"></span></td>
+                                        </tr>
+                                    </template>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div style="max-height: 300px;">
                             <canvas id="comparisonChart" width="400" height="200"></canvas>
                         </div>
+                    </div>
+                </template>
+                <template x-if="comparisonResults.length === 0">
+                    <div class="empty-state">
+                        <i class="ri-bar-chart-grouped-line"></i>
+                        <p class="text-14px reguler">Run a comparison to see results</p>
                     </div>
                 </template>
             </div>
@@ -330,29 +602,38 @@
 
         <!-- Predict Tab -->
         <div x-show="activeTab === 'predict'" x-cloak>
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div class="bg-white rounded-lg shadow p-6">
-                    <h2 class="text-lg font-semibold mb-4">Input Data</h2>
-                    <textarea 
-                        x-model="predictionInput"
-                        class="w-full h-48 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                        placeholder="Enter values as JSON or comma-separated..."
-                    ></textarea>
-                    <button 
-                        @click="makePrediction()"
-                        class="w-full mt-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
-                    >
-                        🔮 Predict
-                    </button>
+            <div class="grid-2">
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="text-16px medium">Input Data</h2>
+                    </div>
+                    <div class="form-stack">
+                        <textarea
+                            x-model="predictionInput"
+                            class="input-textarea"
+                            placeholder="Enter values as JSON or comma-separated..."
+                        ></textarea>
+                        <button
+                            @click="makePrediction()"
+                            class="btn-md btn-primary w-full"
+                        >
+                            <i class="ri-magic-line"></i> Predict
+                        </button>
+                    </div>
                 </div>
-                
-                <div class="bg-white rounded-lg shadow p-6">
-                    <h2 class="text-lg font-semibold mb-4">Predictions</h2>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="text-16px medium">Predictions</h2>
+                    </div>
                     <template x-if="predictions">
-                        <pre class="bg-gray-50 p-4 rounded-lg text-sm overflow-auto" x-text="JSON.stringify(predictions, null, 2)"></pre>
+                        <pre class="code-block" x-text="JSON.stringify(predictions, null, 2)"></pre>
                     </template>
                     <template x-if="!predictions">
-                        <p class="text-gray-400 text-center py-8">No predictions yet</p>
+                        <div class="empty-state">
+                            <i class="ri-magic-line"></i>
+                            <p class="text-14px reguler">No predictions yet</p>
+                        </div>
                     </template>
                 </div>
             </div>
@@ -360,39 +641,41 @@
 
         <!-- Monitor Tab -->
         <div x-show="activeTab === 'monitor'" x-cloak>
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div class="bg-white rounded-lg shadow p-6">
-                    <h3 class="text-sm font-medium text-gray-500 mb-2">CPU Usage</h3>
-                    <p class="text-3xl font-bold text-blue-600" x-text="(systemInfo.cpu_usage || 0).toFixed(1) + '%'"></p>
+            <div class="section-gap">
+                <div class="grid-3">
+                    <div class="card">
+                        <p class="text-12px medium" style="color: var(--color-text-700); margin-bottom: 8px;">CPU Usage</p>
+                        <p class="stat-value info" x-text="(systemInfo.cpu_usage || 0).toFixed(1) + '%'"></p>
+                    </div>
+                    <div class="card">
+                        <p class="text-12px medium" style="color: var(--color-text-700); margin-bottom: 8px;">Memory Usage</p>
+                        <p class="stat-value success" x-text="(systemInfo.memory_usage_percent || 0).toFixed(1) + '%'"></p>
+                        <p class="text-12px reguler" style="color: var(--color-text-600); margin-top: 4px;" x-text="`${(systemInfo.used_memory_gb || 0).toFixed(1)} / ${(systemInfo.total_memory_gb || 0).toFixed(1)} GB`"></p>
+                    </div>
+                    <div class="card">
+                        <p class="text-12px medium" style="color: var(--color-text-700); margin-bottom: 8px;">Status</p>
+                        <p class="stat-value success" x-text="systemStatus"></p>
+                    </div>
                 </div>
-                <div class="bg-white rounded-lg shadow p-6">
-                    <h3 class="text-sm font-medium text-gray-500 mb-2">Memory Usage</h3>
-                    <p class="text-3xl font-bold text-green-600" x-text="(systemInfo.memory_usage_percent || 0).toFixed(1) + '%'"></p>
-                    <p class="text-sm text-gray-400" x-text="`${(systemInfo.used_memory_gb || 0).toFixed(1)} / ${(systemInfo.total_memory_gb || 0).toFixed(1)} GB`"></p>
-                </div>
-                <div class="bg-white rounded-lg shadow p-6">
-                    <h3 class="text-sm font-medium text-gray-500 mb-2">Status</h3>
-                    <p class="text-3xl font-bold text-green-600" x-text="systemStatus"></p>
-                </div>
-            </div>
 
-            <div class="mt-6 bg-white rounded-lg shadow p-6">
-                <div class="flex justify-between items-center mb-4">
-                    <h2 class="text-lg font-semibold">System Status</h2>
-                    <button @click="refreshSystemStatus()" class="text-blue-600 text-sm hover:underline">Refresh</button>
-                </div>
-                <div class="grid grid-cols-3 gap-4 text-center">
-                    <div>
-                        <p class="text-2xl font-bold" x-text="systemInfo.datasets_count || 0"></p>
-                        <p class="text-sm text-gray-500">Datasets</p>
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="text-16px medium">System Overview</h2>
+                        <button @click="refreshSystemStatus()" class="btn-xs btn-ghost"><i class="ri-refresh-line"></i> Refresh</button>
                     </div>
-                    <div>
-                        <p class="text-2xl font-bold" x-text="systemInfo.jobs_count || 0"></p>
-                        <p class="text-sm text-gray-500">Jobs</p>
-                    </div>
-                    <div>
-                        <p class="text-2xl font-bold" x-text="systemInfo.models_count || 0"></p>
-                        <p class="text-sm text-gray-500">Models</p>
+                    <div class="grid-3" style="text-align: center;">
+                        <div>
+                            <p class="mono-32px medium" x-text="systemInfo.datasets_count || 0"></p>
+                            <p class="text-12px reguler" style="color: var(--color-text-700);">Datasets</p>
+                        </div>
+                        <div>
+                            <p class="mono-32px medium" x-text="systemInfo.jobs_count || 0"></p>
+                            <p class="text-12px reguler" style="color: var(--color-text-700);">Jobs</p>
+                        </div>
+                        <div>
+                            <p class="mono-32px medium" x-text="systemInfo.models_count || 0"></p>
+                            <p class="text-12px reguler" style="color: var(--color-text-700);">Models</p>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -400,14 +683,14 @@
     </main>
 
     <!-- Toast Notifications -->
-    <div class="fixed bottom-4 right-4 space-y-2" x-show="notifications.length > 0">
+    <div class="toast-container" x-show="notifications.length > 0">
         <template x-for="(notif, idx) in notifications" :key="idx">
-            <div 
-                class="px-4 py-3 rounded-lg shadow-lg"
+            <div
+                class="toast"
                 :class="{
-                    'bg-green-500 text-white': notif.type === 'success',
-                    'bg-red-500 text-white': notif.type === 'error',
-                    'bg-blue-500 text-white': notif.type === 'info'
+                    'toast-success': notif.type === 'success',
+                    'toast-error': notif.type === 'error',
+                    'toast-info': notif.type === 'info'
                 }"
                 x-text="notif.message"
                 x-transition
@@ -420,20 +703,20 @@
             return {
                 activeTab: 'data',
                 systemStatus: 'healthy',
-                
+
                 // Data state
                 dataInfo: null,
                 dataPreview: { rows: 0, columns: [] },
-                
+
                 // Sample datasets
                 sampleDatasets: [
-                    { id: 'iris', name: '🌸 Iris' },
-                    { id: 'diabetes', name: '💉 Diabetes' },
-                    { id: 'boston', name: '🏠 Boston' },
-                    { id: 'wine', name: '🍷 Wine' },
-                    { id: 'breast_cancer', name: '🎗️ Breast Cancer' },
+                    { id: 'iris', name: 'Iris' },
+                    { id: 'diabetes', name: 'Diabetes' },
+                    { id: 'boston', name: 'Boston' },
+                    { id: 'wine', name: 'Wine' },
+                    { id: 'breast_cancer', name: 'Breast Cancer' },
                 ],
-                
+
                 // Configuration
                 config: {
                     taskType: 'classification',
@@ -442,7 +725,7 @@
                     imputation: 'mean',
                     cvFolds: 5,
                 },
-                
+
                 // Models
                 availableModels: [
                     { id: 'logistic_regression', name: 'Logistic Regression' },
@@ -452,38 +735,38 @@
                 ],
                 selectedModels: [],
                 trainingJobs: [],
-                
+
                 // Comparison
                 comparisonResults: [],
-                
+
                 // Prediction
                 predictionInput: '',
                 predictions: null,
-                
+
                 // System
                 systemInfo: {},
-                
+
                 // Notifications
                 notifications: [],
-                
+
                 // Methods
                 async init() {
                     await this.refreshSystemStatus();
                     setInterval(() => this.pollJobs(), 2000);
                 },
-                
+
                 notify(message, type = 'info') {
                     this.notifications.push({ message, type });
                     setTimeout(() => this.notifications.shift(), 3000);
                 },
-                
+
                 async uploadFile(event) {
                     const file = event.target.files[0];
                     if (!file) return;
-                    
+
                     const formData = new FormData();
                     formData.append('file', file);
-                    
+
                     try {
                         const resp = await fetch('/api/data/upload', { method: 'POST', body: formData });
                         const data = await resp.json();
@@ -498,7 +781,7 @@
                         this.notify('Upload failed: ' + e.message, 'error');
                     }
                 },
-                
+
                 handleFileDrop(event) {
                     const file = event.dataTransfer.files[0];
                     if (file) {
@@ -508,7 +791,7 @@
                         this.uploadFile({ target: { files: [file] } });
                     }
                 },
-                
+
                 async loadSampleData(name) {
                     try {
                         const resp = await fetch(`/api/data/sample/${name}`);
@@ -522,7 +805,7 @@
                         this.notify('Failed to load sample: ' + e.message, 'error');
                     }
                 },
-                
+
                 async refreshPreview() {
                     try {
                         const resp = await fetch('/api/data/preview?rows=10');
@@ -531,7 +814,7 @@
                         console.error('Preview failed:', e);
                     }
                 },
-                
+
                 async applyPreprocessing() {
                     try {
                         const resp = await fetch('/api/preprocess', {
@@ -551,7 +834,7 @@
                         this.notify('Preprocessing failed: ' + e.message, 'error');
                     }
                 },
-                
+
                 async startTraining() {
                     for (const modelId of this.selectedModels) {
                         try {
@@ -579,7 +862,7 @@
                         }
                     }
                 },
-                
+
                 async pollJobs() {
                     for (const job of this.trainingJobs) {
                         if (job.status.Completed || job.status.Failed) continue;
@@ -592,13 +875,13 @@
                         }
                     }
                 },
-                
+
                 async compareAllModels() {
                     try {
-                        const models = this.config.taskType === 'classification' 
+                        const models = this.config.taskType === 'classification'
                             ? ['logistic_regression', 'decision_tree', 'random_forest']
                             : ['linear_regression', 'decision_tree', 'random_forest'];
-                        
+
                         const resp = await fetch('/api/train/compare', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
@@ -619,11 +902,11 @@
                         this.notify('Comparison failed: ' + e.message, 'error');
                     }
                 },
-                
+
                 renderComparisonChart() {
                     const ctx = document.getElementById('comparisonChart');
                     if (!ctx) return;
-                    
+
                     new Chart(ctx, {
                         type: 'bar',
                         data: {
@@ -631,17 +914,24 @@
                             datasets: [{
                                 label: this.config.taskType === 'classification' ? 'Accuracy' : 'R²',
                                 data: this.comparisonResults.map(r => r.metrics.accuracy || r.metrics.r2 || 0),
-                                backgroundColor: 'rgba(59, 130, 246, 0.5)',
-                                borderColor: 'rgb(59, 130, 246)',
-                                borderWidth: 1
+                                backgroundColor: 'rgba(0, 102, 245, 0.15)',
+                                borderColor: '#0066F5',
+                                borderWidth: 1,
+                                borderRadius: 6
                             }]
                         },
                         options: {
-                            scales: { y: { beginAtZero: true, max: 1 } }
+                            scales: {
+                                y: { beginAtZero: true, max: 1 },
+                                x: { grid: { display: false } }
+                            },
+                            plugins: {
+                                legend: { labels: { font: { family: '"Inter", sans-serif' } } }
+                            }
                         }
                     });
                 },
-                
+
                 async makePrediction() {
                     try {
                         const resp = await fetch('/api/predict', {
@@ -654,7 +944,7 @@
                         this.notify('Prediction failed: ' + e.message, 'error');
                     }
                 },
-                
+
                 async refreshSystemStatus() {
                     try {
                         const resp = await fetch('/api/system/status');

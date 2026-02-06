@@ -5,6 +5,45 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2025-02-06
+
+### Added
+
+#### Single-Crate Architecture Migration
+- Consolidated workspace (kolosal-core, kolosal-cli, kolosal-python, kolosal-server) into a unified single crate
+- All modules now under `src/` with `kolosal-automl` as the single package name
+
+#### Performance & Infrastructure Modules
+- **Batch Processing** (`src/batch/`) — Priority-based async batch processing with adaptive sizing
+- **Multi-Level Cache** (`src/cache/`) — L1/L2/L3 cache with LRU+TTL eviction
+- **Memory Management** (`src/memory/`) — Memory pooling, system memory monitoring, pressure detection
+- **Streaming** (`src/streaming/`) — Streaming pipelines with backpressure control
+- **Quantization** (`src/quantization/`) — INT8/UINT8/INT16/FP16 quantization with calibration
+- **Monitoring** (`src/monitoring/`) — Performance metrics, latency histograms (p50/p95/p99), alert system
+- **Experiment Tracking** (`src/tracking/`) — MLflow-like local experiment tracking with metrics history
+
+#### Device & Adaptive Optimization
+- **Device Optimizer** (`src/device/`) — CPU SIMD feature detection (AVX2, AVX512, NEON, FMA), NUMA topology, environment detection (Docker/VM/cloud), auto-tuned configs
+- **Adaptive Preprocessing** (`src/adaptive/`) — Dataset profiling, automatic strategy selection based on data characteristics
+- **Adaptive Hyperopt** (`src/adaptive/`) — Search space narrowing over time, convergence detection, promising region identification
+
+#### Mixed Precision & Security
+- **Mixed Precision** (`src/precision/`) — FP16/BF16 support detection, dynamic loss scaling, precision auto-selection
+- **Security** (`src/security/`) — API key/JWT authentication, rate limiting, TLS management, secrets manager, security middleware
+
+#### API Improvements
+- Expanded prelude with all major types (device, adaptive, precision, security, NAS, architectures)
+- Comprehensive doc comments on all modules
+
+### Changed
+- Renamed crate from `kolosal_core` to `kolosal_automl`
+- Updated all examples to use new crate name and correct APIs
+- Fixed test data to avoid singular matrix issues in training/inference tests
+
+### Removed
+- Workspace structure (kolosal-core, kolosal-cli, kolosal-python, kolosal-server crates)
+- Python bindings (PyO3) — pure Rust only
+
 ## [0.4.0] - 2024-02-03
 
 ### Added

@@ -87,7 +87,7 @@ kolosal_automl/
 ├── kolosal-server/         # Axum web server
 ├── kolosal-cli/            # CLI application
 ├── kolosal-web/            # Web frontend assets
-├── kolosal-python/         # PyO3 bindings (optional)
+├── legacy/                 # Legacy code (Python bindings, etc.)
 ├── benches/                # Benchmarks
 ├── examples/               # Example code
 ├── docs/                   # Documentation

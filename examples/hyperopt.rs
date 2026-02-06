@@ -3,8 +3,8 @@
 //! Demonstrates using HyperOptX for automatic hyperparameter tuning.
 
 use polars::prelude::*;
-use kolosal_core::optimizer::{HyperOptX, HyperOptConfig};
-use kolosal_core::training::{TrainEngine, TrainingConfig, TaskType, ModelType};
+use kolosal_automl::optimizer::{HyperOptX, OptimizationConfig, SearchSpace, OptimizeDirection};
+use kolosal_automl::training::{TrainEngine, TrainingConfig, TaskType, ModelType};
 
 fn main() -> anyhow::Result<()> {
     // Create sample classification data
@@ -24,36 +24,54 @@ fn main() -> anyhow::Result<()> {
     println!("Dataset: {} samples for classification\n", df.height());
 
     // Configure hyperparameter optimization
-    let opt_config = HyperOptConfig::default()
-        .with_n_trials(20)
-        .with_timeout_secs(60)
-        .with_random_seed(42);
+    let opt_config = OptimizationConfig {
+        n_trials: 20,
+        timeout_secs: Some(60.0),
+        direction: OptimizeDirection::Maximize,
+        random_state: Some(42),
+        ..Default::default()
+    };
 
-    // Create optimizer for Random Forest
-    let mut optimizer = HyperOptX::new(opt_config);
+    // Define search space
+    let search_space = SearchSpace::new()
+        .int("n_estimators", 5, 50)
+        .int("max_depth", 2, 10);
+
+    // Create optimizer
+    let mut optimizer = HyperOptX::new(opt_config, search_space);
 
     println!("Running hyperparameter optimization (20 trials)...\n");
 
     // Define the objective function
-    let best_result = optimizer.optimize(|params| {
+    let study = optimizer.optimize(|params| {
+        let n_est = params.get("n_estimators")
+            .and_then(|v| v.as_int())
+            .unwrap_or(10) as usize;
+        let depth = params.get("max_depth")
+            .and_then(|v| v.as_int())
+            .unwrap_or(6) as usize;
+
         let config = TrainingConfig::new(TaskType::BinaryClassification, "target")
             .with_model(ModelType::RandomForest)
-            .with_n_estimators(params.get("n_estimators").unwrap_or(&100.0) as usize)
-            .with_max_depth(params.get("max_depth").unwrap_or(&6.0) as usize);
+            .with_n_estimators(n_est)
+            .with_max_depth(depth);
 
         let mut engine = TrainEngine::new(config);
-        if let Err(_) = engine.fit(&df) {
-            return 0.0;  // Return worst score on error
+        if engine.fit(&df).is_err() {
+            return Ok(0.0);
         }
 
         let metrics = engine.metrics().cloned().unwrap_or_default();
-        metrics.accuracy.unwrap_or(0.0)
-    });
+        Ok(metrics.accuracy.unwrap_or(0.0))
+    })?;
 
     println!("Optimization complete!");
-    println!("Best score: {:.4}", best_result.best_score);
-    println!("Best parameters: {:?}", best_result.best_params);
-    println!("Trials completed: {}", best_result.n_trials);
+    println!("Trials completed: {}", study.trials.len());
+    if let Some(best_idx) = study.best_trial_idx {
+        let best = &study.trials[best_idx];
+        println!("Best score: {:.4}", best.value);
+        println!("Best parameters: {:?}", best.params);
+    }
 
     Ok(())
 }

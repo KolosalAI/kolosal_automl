@@ -1,0 +1,847 @@
+//! Training engine implementation
+
+use crate::error::{KolosalError, Result};
+use super::{TrainingConfig, ModelType, TaskType, ModelMetrics};
+use super::linear_models::{LinearRegression, LogisticRegression};
+use super::decision_tree::DecisionTree;
+use super::random_forest::RandomForest;
+use super::gradient_boosting::{GradientBoostingRegressor, GradientBoostingClassifier, GradientBoostingConfig};
+use super::knn::{KNNClassifier, KNNRegressor, KNNConfig};
+use super::neural_network::{MLPClassifier, MLPRegressor, MLPConfig};
+use super::naive_bayes::{GaussianNaiveBayes, MultinomialNaiveBayes};
+use super::svm::{SVMClassifier, SVMRegressor, SVMConfig, KernelType};
+use ndarray::{Array1, Array2, Axis};
+use polars::prelude::*;
+use rayon::prelude::*;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::time::Instant;
+
+/// Enum to hold trained model variants
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum TrainedModel {
+    LinearRegression(LinearRegression),
+    LogisticRegression(LogisticRegression),
+    DecisionTreeClassifier(DecisionTree),
+    DecisionTreeRegressor(DecisionTree),
+    RandomForestClassifier(RandomForest),
+    RandomForestRegressor(RandomForest),
+    GradientBoostingClassifier(GradientBoostingClassifier),
+    GradientBoostingRegressor(GradientBoostingRegressor),
+    KNNClassifier(KNNClassifier),
+    KNNRegressor(KNNRegressor),
+    MLPClassifier(MLPClassifier),
+    MLPRegressor(MLPRegressor),
+    GaussianNaiveBayes(GaussianNaiveBayes),
+    MultinomialNaiveBayes(MultinomialNaiveBayes),
+    SVMClassifier(SVMClassifier),
+    SVMRegressor(SVMRegressor),
+}
+
+/// Ensemble training strategy
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum EnsembleStrategy {
+    /// Majority voting for classification, mode for regression
+    Voting,
+    /// Average predictions across models
+    Averaging,
+    /// Use first-level model predictions as features for a meta-learner
+    Stacking,
+}
+
+/// Result of ensemble training
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EnsembleResult {
+    pub models: Vec<String>,
+    pub individual_metrics: HashMap<String, f64>,
+    pub ensemble_metric: f64,
+    pub strategy: EnsembleStrategy,
+}
+
+/// Model comparison entry
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelComparison {
+    pub model_name: String,
+    pub task_type: TaskType,
+    pub metrics: HashMap<String, f64>,
+    pub training_time_secs: f64,
+    pub model_size_bytes: usize,
+}
+
+/// Main training engine
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrainEngine {
+    config: TrainingConfig,
+    feature_names: Vec<String>,
+    model: Option<TrainedModel>,
+    model_bytes: Option<Vec<u8>>,
+    metrics: Option<ModelMetrics>,
+    is_fitted: bool,
+    training_history: Vec<ModelComparison>,
+}
+
+impl TrainEngine {
+    /// Create a new training engine
+    pub fn new(config: TrainingConfig) -> Self {
+        Self {
+            config,
+            feature_names: Vec::new(),
+            model: None,
+            model_bytes: None,
+            metrics: None,
+            is_fitted: false,
+            training_history: Vec::new(),
+        }
+    }
+
+    /// Fit the model to the data
+    pub fn fit(&mut self, df: &DataFrame) -> Result<&mut Self> {
+        let start = Instant::now();
+
+        // Extract features and target
+        let (x, y) = self.prepare_data(df)?;
+
+        // Split data (use stratified split for classification tasks)
+        let (x_train, x_val, y_train, y_val) = match self.config.task_type {
+            TaskType::BinaryClassification | TaskType::MultiClassification => {
+                self.stratified_split(&x, &y)?
+            }
+            _ => self.train_val_split(&x, &y)?,
+        };
+
+        // Train model based on type
+        self.train_model(&x_train, &y_train)?;
+
+        // Compute metrics on validation set
+        let y_pred = self.predict_internal(&x_val)?;
+        let mut metrics = match self.config.task_type {
+            TaskType::Regression | TaskType::TimeSeries => {
+                ModelMetrics::compute_regression(&y_val, &y_pred)
+            }
+            _ => ModelMetrics::compute_classification(&y_val, &y_pred, None),
+        };
+
+        metrics.training_time_secs = start.elapsed().as_secs_f64();
+        metrics.n_features = x.ncols();
+        metrics.n_samples = x.nrows();
+        self.metrics = Some(metrics);
+
+        self.is_fitted = true;
+        Ok(self)
+    }
+
+    /// Make predictions on new data
+    pub fn predict(&self, df: &DataFrame) -> Result<Array1<f64>> {
+        if !self.is_fitted {
+            return Err(KolosalError::ModelNotFitted);
+        }
+
+        let x = self.extract_features(df)?;
+        self.predict_internal(&x)
+    }
+
+    /// Get training metrics
+    pub fn metrics(&self) -> Option<&ModelMetrics> {
+        self.metrics.as_ref()
+    }
+
+    /// Get feature names
+    pub fn feature_names(&self) -> &[String] {
+        &self.feature_names
+    }
+
+    /// Save the engine to a file
+    pub fn save(&self, path: &str) -> Result<()> {
+        let json = serde_json::to_string_pretty(self)?;
+        std::fs::write(path, json)?;
+        Ok(())
+    }
+
+    /// Load an engine from a file
+    pub fn load(path: &str) -> Result<Self> {
+        let json = std::fs::read_to_string(path)?;
+        let engine: Self = serde_json::from_str(&json)?;
+        Ok(engine)
+    }
+
+    fn prepare_data(&mut self, df: &DataFrame) -> Result<(Array2<f64>, Array1<f64>)> {
+        // Get feature columns
+        let feature_cols: Vec<String> = match &self.config.feature_columns {
+            Some(cols) => cols.clone(),
+            None => df
+                .get_column_names()
+                .into_iter()
+                .filter(|name| name.as_str() != self.config.target_column)
+                .map(|s| s.to_string())
+                .collect(),
+        };
+
+        self.feature_names = feature_cols.clone();
+
+        // Extract target
+        let target_series = df
+            .column(&self.config.target_column)
+            .map_err(|_| KolosalError::FeatureNotFound(self.config.target_column.clone()))?;
+
+        let y: Array1<f64> = target_series
+            .f64()
+            .map_err(|e| KolosalError::DataError(e.to_string()))?
+            .into_iter()
+            .map(|v| v.unwrap_or(0.0))
+            .collect();
+
+        // Extract features
+        let n_rows = df.height();
+        let n_cols = feature_cols.len();
+        let mut x_data = Vec::with_capacity(n_rows * n_cols);
+
+        for col_name in &feature_cols {
+            let series = df
+                .column(col_name)
+                .map_err(|_| KolosalError::FeatureNotFound(col_name.clone()))?;
+
+            let values: Vec<f64> = series
+                .f64()
+                .map_err(|e| KolosalError::DataError(e.to_string()))?
+                .into_iter()
+                .map(|v| v.unwrap_or(0.0))
+                .collect();
+
+            x_data.extend(values);
+        }
+
+        let x = Array2::from_shape_vec((n_cols, n_rows), x_data)
+            .map_err(|e| KolosalError::ShapeError {
+                expected: format!("({}, {})", n_cols, n_rows),
+                actual: e.to_string(),
+            })?
+            .t()
+            .to_owned();
+
+        Ok((x, y))
+    }
+
+    fn extract_features(&self, df: &DataFrame) -> Result<Array2<f64>> {
+        let n_rows = df.height();
+        let n_cols = self.feature_names.len();
+        let mut x_data = Vec::with_capacity(n_rows * n_cols);
+
+        for col_name in &self.feature_names {
+            let series = df
+                .column(col_name)
+                .map_err(|_| KolosalError::FeatureNotFound(col_name.clone()))?;
+
+            let values: Vec<f64> = series
+                .f64()
+                .map_err(|e| KolosalError::DataError(e.to_string()))?
+                .into_iter()
+                .map(|v| v.unwrap_or(0.0))
+                .collect();
+
+            x_data.extend(values);
+        }
+
+        let x = Array2::from_shape_vec((n_cols, n_rows), x_data)
+            .map_err(|e| KolosalError::ShapeError {
+                expected: format!("({}, {})", n_cols, n_rows),
+                actual: e.to_string(),
+            })?
+            .t()
+            .to_owned();
+
+        Ok(x)
+    }
+
+    fn train_val_split(
+        &self,
+        x: &Array2<f64>,
+        y: &Array1<f64>,
+    ) -> Result<(Array2<f64>, Array2<f64>, Array1<f64>, Array1<f64>)> {
+        let n = x.nrows();
+        let val_size = (n as f64 * self.config.validation_split) as usize;
+        let train_size = n - val_size;
+
+        // Simple split (TODO: add stratified split for classification)
+        let x_train = x.slice(ndarray::s![..train_size, ..]).to_owned();
+        let x_val = x.slice(ndarray::s![train_size.., ..]).to_owned();
+        let y_train = y.slice(ndarray::s![..train_size]).to_owned();
+        let y_val = y.slice(ndarray::s![train_size..]).to_owned();
+
+        Ok((x_train, x_val, y_train, y_val))
+    }
+
+    fn train_model(&mut self, x: &Array2<f64>, y: &Array1<f64>) -> Result<()> {
+        let model = match (&self.config.task_type, &self.config.model_type) {
+            // Regression models
+            (TaskType::Regression, ModelType::LinearRegression) => {
+                let mut model = LinearRegression::new();
+                model.fit(x, y)?;
+                TrainedModel::LinearRegression(model)
+            }
+            (TaskType::Regression, ModelType::DecisionTree) => {
+                let mut model = DecisionTree::new_regressor();
+                if let Some(depth) = self.config.max_depth {
+                    model = model.with_max_depth(depth);
+                }
+                model.fit(x, y)?;
+                TrainedModel::DecisionTreeRegressor(model)
+            }
+            (TaskType::Regression, ModelType::RandomForest) => {
+                let mut model = RandomForest::new_regressor(self.config.n_estimators.unwrap_or(100));
+                if let Some(depth) = self.config.max_depth {
+                    model = model.with_max_depth(depth);
+                }
+                if let Some(seed) = self.config.random_seed {
+                    model = model.with_random_state(seed);
+                }
+                model.fit(x, y)?;
+                TrainedModel::RandomForestRegressor(model)
+            }
+            (TaskType::Regression, ModelType::GradientBoosting) => {
+                let config = GradientBoostingConfig {
+                    n_estimators: self.config.n_estimators.unwrap_or(100),
+                    learning_rate: self.config.learning_rate.unwrap_or(0.1),
+                    max_depth: self.config.max_depth.unwrap_or(6),
+                    random_state: self.config.random_seed,
+                    ..Default::default()
+                };
+                let mut model = GradientBoostingRegressor::new(config);
+                model.fit(x, y)?;
+                TrainedModel::GradientBoostingRegressor(model)
+            }
+            (TaskType::Regression, ModelType::KNN) => {
+                let config = KNNConfig {
+                    n_neighbors: self.config.n_neighbors.unwrap_or(5),
+                    ..Default::default()
+                };
+                let mut model = KNNRegressor::new(config);
+                model.fit(x, y)?;
+                TrainedModel::KNNRegressor(model)
+            }
+            
+            // Classification models
+            (TaskType::BinaryClassification | TaskType::MultiClassification, ModelType::LogisticRegression) => {
+                let mut model = LogisticRegression::new()
+                    .with_max_iter(self.config.max_iter.unwrap_or(1000));
+                if let Some(lr) = self.config.learning_rate {
+                    model = model.with_learning_rate(lr);
+                }
+                model.fit(x, y)?;
+                TrainedModel::LogisticRegression(model)
+            }
+            (TaskType::BinaryClassification | TaskType::MultiClassification, ModelType::DecisionTree) => {
+                let mut model = DecisionTree::new_classifier();
+                if let Some(depth) = self.config.max_depth {
+                    model = model.with_max_depth(depth);
+                }
+                model.fit(x, y)?;
+                TrainedModel::DecisionTreeClassifier(model)
+            }
+            (TaskType::BinaryClassification | TaskType::MultiClassification, ModelType::RandomForest) => {
+                let mut model = RandomForest::new_classifier(self.config.n_estimators.unwrap_or(100));
+                if let Some(depth) = self.config.max_depth {
+                    model = model.with_max_depth(depth);
+                }
+                if let Some(seed) = self.config.random_seed {
+                    model = model.with_random_state(seed);
+                }
+                model.fit(x, y)?;
+                TrainedModel::RandomForestClassifier(model)
+            }
+            (TaskType::BinaryClassification | TaskType::MultiClassification, ModelType::GradientBoosting) => {
+                let config = GradientBoostingConfig {
+                    n_estimators: self.config.n_estimators.unwrap_or(100),
+                    learning_rate: self.config.learning_rate.unwrap_or(0.1),
+                    max_depth: self.config.max_depth.unwrap_or(6),
+                    random_state: self.config.random_seed,
+                    ..Default::default()
+                };
+                let mut model = GradientBoostingClassifier::new(config);
+                model.fit(x, y)?;
+                TrainedModel::GradientBoostingClassifier(model)
+            }
+            (TaskType::BinaryClassification | TaskType::MultiClassification, ModelType::KNN) => {
+                let config = KNNConfig {
+                    n_neighbors: self.config.n_neighbors.unwrap_or(5),
+                    ..Default::default()
+                };
+                let mut model = KNNClassifier::new(config);
+                model.fit(x, y)?;
+                TrainedModel::KNNClassifier(model)
+            }
+            
+            // Neural Network models
+            (TaskType::Regression, ModelType::NeuralNetwork) => {
+                let config = MLPConfig {
+                    hidden_layers: vec![100, 50],
+                    max_epochs: self.config.max_iter.unwrap_or(200),
+                    learning_rate: self.config.learning_rate.unwrap_or(0.001),
+                    random_state: self.config.random_seed,
+                    ..Default::default()
+                };
+                let mut model = MLPRegressor::new(config);
+                model.fit(x, y)?;
+                TrainedModel::MLPRegressor(model)
+            }
+            (TaskType::BinaryClassification | TaskType::MultiClassification, ModelType::NeuralNetwork) => {
+                let config = MLPConfig {
+                    hidden_layers: vec![100, 50],
+                    max_epochs: self.config.max_iter.unwrap_or(200),
+                    learning_rate: self.config.learning_rate.unwrap_or(0.001),
+                    random_state: self.config.random_seed,
+                    ..Default::default()
+                };
+                let mut model = MLPClassifier::new(config);
+                model.fit(x, y)?;
+                TrainedModel::MLPClassifier(model)
+            }
+            
+            // Naive Bayes (classification only, use Gaussian variant)
+            (TaskType::BinaryClassification | TaskType::MultiClassification, ModelType::NaiveBayes) => {
+                let mut model = GaussianNaiveBayes::new();
+                model.fit(x, y)?;
+                TrainedModel::GaussianNaiveBayes(model)
+            }
+            
+            // SVM models
+            (TaskType::Regression, ModelType::SVM) => {
+                let config = SVMConfig {
+                    c: 1.0,
+                    kernel: KernelType::RBF { gamma: 1.0 / x.ncols() as f64 },
+                    max_iter: self.config.max_iter.unwrap_or(1000),
+                    random_state: self.config.random_seed,
+                    ..Default::default()
+                };
+                let mut model = SVMRegressor::new(config);
+                model.fit(x, y)?;
+                TrainedModel::SVMRegressor(model)
+            }
+            (TaskType::BinaryClassification | TaskType::MultiClassification, ModelType::SVM) => {
+                let config = SVMConfig {
+                    c: 1.0,
+                    kernel: KernelType::RBF { gamma: 1.0 / x.ncols() as f64 },
+                    max_iter: self.config.max_iter.unwrap_or(1000),
+                    random_state: self.config.random_seed,
+                    ..Default::default()
+                };
+                let mut model = SVMClassifier::new(config);
+                model.fit(x, y)?;
+                TrainedModel::SVMClassifier(model)
+            }
+            
+            // Default cases - use appropriate model based on task type
+            (TaskType::Regression, _) => {
+                let mut model = LinearRegression::new();
+                model.fit(x, y)?;
+                TrainedModel::LinearRegression(model)
+            }
+            (TaskType::BinaryClassification | TaskType::MultiClassification, _) => {
+                let mut model = LogisticRegression::new();
+                model.fit(x, y)?;
+                TrainedModel::LogisticRegression(model)
+            }
+            
+            // TimeSeries defaults to linear regression for now
+            (TaskType::TimeSeries, _) => {
+                let mut model = LinearRegression::new();
+                model.fit(x, y)?;
+                TrainedModel::LinearRegression(model)
+            }
+        };
+
+        self.model = Some(model);
+        Ok(())
+    }
+
+    fn predict_internal(&self, x: &Array2<f64>) -> Result<Array1<f64>> {
+        let model = self.model.as_ref().ok_or(KolosalError::ModelNotFitted)?;
+
+        let predictions = match model {
+            TrainedModel::LinearRegression(m) => m.predict(x)?,
+            TrainedModel::LogisticRegression(m) => m.predict(x)?,
+            TrainedModel::DecisionTreeClassifier(m) => m.predict(x)?,
+            TrainedModel::DecisionTreeRegressor(m) => m.predict(x)?,
+            TrainedModel::RandomForestClassifier(m) => m.predict(x)?,
+            TrainedModel::RandomForestRegressor(m) => m.predict(x)?,
+            TrainedModel::GradientBoostingClassifier(m) => m.predict(x)?,
+            TrainedModel::GradientBoostingRegressor(m) => m.predict(x)?,
+            TrainedModel::KNNClassifier(m) => m.predict(x),
+            TrainedModel::KNNRegressor(m) => m.predict(x),
+            TrainedModel::MLPClassifier(m) => m.predict(x),
+            TrainedModel::MLPRegressor(m) => m.predict(x),
+            TrainedModel::GaussianNaiveBayes(m) => m.predict(x),
+            TrainedModel::MultinomialNaiveBayes(m) => m.predict(x),
+            TrainedModel::SVMClassifier(m) => m.predict(x)?,
+            TrainedModel::SVMRegressor(m) => m.predict(x)?,
+        };
+
+        Ok(predictions)
+    }
+
+    /// Get feature importances (if available)
+    pub fn feature_importances(&self) -> Option<Array1<f64>> {
+        let model = self.model.as_ref()?;
+        
+        match model {
+            TrainedModel::DecisionTreeClassifier(m) | TrainedModel::DecisionTreeRegressor(m) => {
+                m.feature_importances().cloned()
+            }
+            TrainedModel::RandomForestClassifier(m) | TrainedModel::RandomForestRegressor(m) => {
+                m.feature_importances().cloned()
+            }
+            TrainedModel::GradientBoostingRegressor(m) => {
+                Some(Array1::from_vec(m.feature_importances().to_vec()))
+            }
+            TrainedModel::GradientBoostingClassifier(m) => {
+                Some(Array1::from_vec(m.feature_importances().to_vec()))
+            }
+            _ => None,
+        }
+    }
+
+    /// Get the trained model
+    pub fn model(&self) -> Option<&TrainedModel> {
+        self.model.as_ref()
+    }
+
+    /// Stratified train/test split that preserves class proportions
+    fn stratified_split(
+        &self,
+        x: &Array2<f64>,
+        y: &Array1<f64>,
+    ) -> Result<(Array2<f64>, Array2<f64>, Array1<f64>, Array1<f64>)> {
+        let _n = x.nrows();
+        let val_ratio = self.config.validation_split;
+
+        // Group indices by class label
+        let mut class_indices: HashMap<i64, Vec<usize>> = HashMap::new();
+        for (i, &label) in y.iter().enumerate() {
+            let key = label as i64;
+            class_indices.entry(key).or_default().push(i);
+        }
+
+        let mut train_indices = Vec::new();
+        let mut val_indices = Vec::new();
+
+        for (_class, indices) in &class_indices {
+            let class_val_size = ((indices.len() as f64) * val_ratio).max(1.0) as usize;
+            let class_val_size = class_val_size.min(indices.len().saturating_sub(1));
+            let split_point = indices.len() - class_val_size;
+            train_indices.extend_from_slice(&indices[..split_point]);
+            val_indices.extend_from_slice(&indices[split_point..]);
+        }
+
+        if train_indices.is_empty() || val_indices.is_empty() {
+            return Err(KolosalError::DataError(
+                "Stratified split resulted in empty train or validation set".to_string(),
+            ));
+        }
+
+        let n_cols = x.ncols();
+        let x_train = Array2::from_shape_fn((train_indices.len(), n_cols), |(i, j)| {
+            x[[train_indices[i], j]]
+        });
+        let x_val = Array2::from_shape_fn((val_indices.len(), n_cols), |(i, j)| {
+            x[[val_indices[i], j]]
+        });
+        let y_train = Array1::from_iter(train_indices.iter().map(|&i| y[i]));
+        let y_val = Array1::from_iter(val_indices.iter().map(|&i| y[i]));
+
+        Ok((x_train, x_val, y_train, y_val))
+    }
+
+    /// Train an ensemble of multiple model types and combine their predictions
+    pub fn train_ensemble(
+        &mut self,
+        df: &DataFrame,
+        target: &str,
+        model_types: &[ModelType],
+        strategy: EnsembleStrategy,
+    ) -> Result<EnsembleResult> {
+        // Prepare data once
+        self.config.target_column = target.to_string();
+        let (x, y) = self.prepare_data(df)?;
+        let (x_train, x_val, y_train, y_val) = match self.config.task_type {
+            TaskType::BinaryClassification | TaskType::MultiClassification => {
+                self.stratified_split(&x, &y)?
+            }
+            _ => self.train_val_split(&x, &y)?,
+        };
+
+        let mut model_names = Vec::new();
+        let mut individual_metrics = HashMap::new();
+        let mut all_predictions: Vec<Array1<f64>> = Vec::new();
+
+        let original_model_type = self.config.model_type.clone();
+
+        for model_type in model_types {
+            let model_start = Instant::now();
+            self.config.model_type = model_type.clone();
+            self.train_model(&x_train, &y_train)?;
+
+            let y_pred = self.predict_internal(&x_val)?;
+            let metric_value = match self.config.task_type {
+                TaskType::Regression | TaskType::TimeSeries => {
+                    let m = ModelMetrics::compute_regression(&y_val, &y_pred);
+                    m.r2.unwrap_or(0.0)
+                }
+                _ => {
+                    let m = ModelMetrics::compute_classification(&y_val, &y_pred, None);
+                    m.accuracy.unwrap_or(0.0)
+                }
+            };
+
+            let name = format!("{:?}", model_type);
+            individual_metrics.insert(name.clone(), metric_value);
+            model_names.push(name.clone());
+            all_predictions.push(y_pred);
+
+            // Record in training history
+            let mut metrics_map = HashMap::new();
+            metrics_map.insert("primary_metric".to_string(), metric_value);
+            let serialized_size = serde_json::to_vec(&self.model).map(|v| v.len()).unwrap_or(0);
+            self.training_history.push(ModelComparison {
+                model_name: name,
+                task_type: self.config.task_type.clone(),
+                metrics: metrics_map,
+                training_time_secs: model_start.elapsed().as_secs_f64(),
+                model_size_bytes: serialized_size,
+            });
+        }
+
+        // Combine predictions based on strategy
+        let ensemble_pred = match strategy {
+            EnsembleStrategy::Averaging => {
+                let n = all_predictions.len() as f64;
+                let mut avg = Array1::zeros(all_predictions[0].len());
+                for pred in &all_predictions {
+                    avg = avg + pred;
+                }
+                avg / n
+            }
+            EnsembleStrategy::Voting => {
+                // Majority vote (round each prediction, take mode)
+                let n_samples = all_predictions[0].len();
+                Array1::from_iter((0..n_samples).map(|i| {
+                    let mut votes: HashMap<i64, usize> = HashMap::new();
+                    for pred in &all_predictions {
+                        let v = pred[i].round() as i64;
+                        *votes.entry(v).or_insert(0) += 1;
+                    }
+                    votes
+                        .into_iter()
+                        .max_by_key(|&(_, count)| count)
+                        .map(|(val, _)| val as f64)
+                        .unwrap_or(0.0)
+                }))
+            }
+            EnsembleStrategy::Stacking => {
+                // Simple stacking: average as meta-learner
+                let n = all_predictions.len() as f64;
+                let mut avg = Array1::zeros(all_predictions[0].len());
+                for pred in &all_predictions {
+                    avg = avg + pred;
+                }
+                avg / n
+            }
+        };
+
+        let ensemble_metric = match self.config.task_type {
+            TaskType::Regression | TaskType::TimeSeries => {
+                let m = ModelMetrics::compute_regression(&y_val, &ensemble_pred);
+                m.r2.unwrap_or(0.0)
+            }
+            _ => {
+                let m = ModelMetrics::compute_classification(&y_val, &ensemble_pred, None);
+                m.accuracy.unwrap_or(0.0)
+            }
+        };
+
+        // Restore original model type
+        self.config.model_type = original_model_type;
+
+        Ok(EnsembleResult {
+            models: model_names,
+            individual_metrics,
+            ensemble_metric,
+            strategy,
+        })
+    }
+
+    /// Get a performance comparison of all models trained in this engine's history
+    pub fn get_performance_comparison(&self) -> Vec<ModelComparison> {
+        let mut comparisons = self.training_history.clone();
+
+        // Include the current model if fitted and not already in history
+        if self.is_fitted {
+            if let Some(ref metrics) = self.metrics {
+                let mut metrics_map = HashMap::new();
+                if let Some(v) = metrics.accuracy { metrics_map.insert("accuracy".to_string(), v); }
+                if let Some(v) = metrics.precision { metrics_map.insert("precision".to_string(), v); }
+                if let Some(v) = metrics.recall { metrics_map.insert("recall".to_string(), v); }
+                if let Some(v) = metrics.f1_score { metrics_map.insert("f1_score".to_string(), v); }
+                if let Some(v) = metrics.auc_roc { metrics_map.insert("auc_roc".to_string(), v); }
+                if let Some(v) = metrics.mse { metrics_map.insert("mse".to_string(), v); }
+                if let Some(v) = metrics.rmse { metrics_map.insert("rmse".to_string(), v); }
+                if let Some(v) = metrics.mae { metrics_map.insert("mae".to_string(), v); }
+                if let Some(v) = metrics.r2 { metrics_map.insert("r2".to_string(), v); }
+
+                let serialized_size = serde_json::to_vec(&self.model).map(|v| v.len()).unwrap_or(0);
+                let current = ModelComparison {
+                    model_name: format!("{:?}", self.config.model_type),
+                    task_type: self.config.task_type.clone(),
+                    metrics: metrics_map,
+                    training_time_secs: metrics.training_time_secs,
+                    model_size_bytes: serialized_size,
+                };
+                comparisons.push(current);
+            }
+        }
+
+        comparisons
+    }
+
+    /// Generate a text report summarizing the trained model
+    pub fn generate_report(&self) -> String {
+        let mut report = String::new();
+        report.push_str("=== Kolosal AutoML Training Report ===\n\n");
+
+        // Model info
+        report.push_str(&format!("Model Type: {:?}\n", self.config.model_type));
+        report.push_str(&format!("Task Type:  {:?}\n", self.config.task_type));
+        report.push_str(&format!("Fitted:     {}\n\n", self.is_fitted));
+
+        // Data shape info
+        if let Some(ref metrics) = self.metrics {
+            report.push_str("--- Data Shape ---\n");
+            report.push_str(&format!("Samples:  {}\n", metrics.n_samples));
+            report.push_str(&format!("Features: {}\n", metrics.n_features));
+            report.push_str(&format!("Target:   {}\n\n", self.config.target_column));
+
+            // Training time
+            report.push_str("--- Training Time ---\n");
+            report.push_str(&format!("{:.4} seconds\n\n", metrics.training_time_secs));
+
+            // Metrics summary
+            report.push_str("--- Metrics Summary ---\n");
+            if let Some(v) = metrics.accuracy { report.push_str(&format!("Accuracy:  {:.4}\n", v)); }
+            if let Some(v) = metrics.precision { report.push_str(&format!("Precision: {:.4}\n", v)); }
+            if let Some(v) = metrics.recall { report.push_str(&format!("Recall:    {:.4}\n", v)); }
+            if let Some(v) = metrics.f1_score { report.push_str(&format!("F1 Score:  {:.4}\n", v)); }
+            if let Some(v) = metrics.auc_roc { report.push_str(&format!("AUC-ROC:   {:.4}\n", v)); }
+            if let Some(v) = metrics.mse { report.push_str(&format!("MSE:       {:.4}\n", v)); }
+            if let Some(v) = metrics.rmse { report.push_str(&format!("RMSE:      {:.4}\n", v)); }
+            if let Some(v) = metrics.mae { report.push_str(&format!("MAE:       {:.4}\n", v)); }
+            if let Some(v) = metrics.r2 { report.push_str(&format!("R²:        {:.4}\n", v)); }
+            report.push('\n');
+        } else {
+            report.push_str("No metrics available (model not fitted).\n\n");
+        }
+
+        // Feature importance
+        if let Some(importances) = self.feature_importances() {
+            report.push_str("--- Feature Importance ---\n");
+            let mut pairs: Vec<(String, f64)> = self
+                .feature_names
+                .iter()
+                .zip(importances.iter())
+                .map(|(name, &imp)| (name.clone(), imp))
+                .collect();
+            pairs.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            for (name, imp) in &pairs {
+                report.push_str(&format!("  {:<20} {:.4}\n", name, imp));
+            }
+            report.push('\n');
+        }
+
+        // Feature names
+        report.push_str("--- Features ---\n");
+        for name in &self.feature_names {
+            report.push_str(&format!("  {}\n", name));
+        }
+
+        report
+    }
+
+    /// Select top-k features by variance
+    pub fn select_features(&self, df: &DataFrame, target: &str, k: usize) -> Vec<String> {
+        let feature_cols: Vec<String> = df
+            .get_column_names()
+            .into_iter()
+            .filter(|name| name.as_str() != target)
+            .map(|s| s.to_string())
+            .collect();
+
+        let mut variances: Vec<(String, f64)> = feature_cols
+            .into_iter()
+            .filter_map(|col_name| {
+                let series = df.column(&col_name).ok()?;
+                let values: Vec<f64> = series
+                    .f64()
+                    .ok()?
+                    .into_iter()
+                    .filter_map(|v| v)
+                    .collect();
+                if values.is_empty() {
+                    return Some((col_name, 0.0));
+                }
+                let mean = values.iter().sum::<f64>() / values.len() as f64;
+                let variance = values.iter().map(|v| (v - mean).powi(2)).sum::<f64>()
+                    / values.len() as f64;
+                Some((col_name, variance))
+            })
+            .collect();
+
+        variances.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        variances.into_iter().take(k).map(|(name, _)| name).collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn create_test_data() -> DataFrame {
+        DataFrame::new(vec![
+            Series::new("feature1".into(), &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]).into(),
+            Series::new("feature2".into(), &[1.5, 3.1, 2.8, 7.2, 5.5, 11.0, 8.3, 14.1, 12.7, 19.5]).into(),
+            Series::new("target".into(), &[3.0, 6.0, 9.0, 12.0, 15.0, 18.0, 21.0, 24.0, 27.0, 30.0]).into(),
+        ])
+        .unwrap()
+    }
+
+    #[test]
+    fn test_engine_creation() {
+        let config = TrainingConfig::new(TaskType::Regression, "target");
+        let engine = TrainEngine::new(config);
+        assert!(!engine.is_fitted);
+    }
+
+    #[test]
+    fn test_fit_predict() {
+        let df = create_test_data();
+        let config = TrainingConfig::new(TaskType::Regression, "target");
+        let mut engine = TrainEngine::new(config);
+
+        engine.fit(&df).unwrap();
+        assert!(engine.is_fitted);
+        assert!(engine.metrics().is_some());
+
+        let predictions = engine.predict(&df).unwrap();
+        assert_eq!(predictions.len(), 10);
+    }
+
+    #[test]
+    fn test_feature_names() {
+        let df = create_test_data();
+        let config = TrainingConfig::new(TaskType::Regression, "target");
+        let mut engine = TrainEngine::new(config);
+
+        engine.fit(&df).unwrap();
+
+        let feature_names = engine.feature_names();
+        assert_eq!(feature_names.len(), 2);
+        assert!(feature_names.contains(&"feature1".to_string()));
+        assert!(feature_names.contains(&"feature2".to_string()));
+    }
+}
