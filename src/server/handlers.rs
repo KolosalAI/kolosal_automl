@@ -12,6 +12,8 @@ use serde::{Deserialize, Serialize};
 use std::io::Cursor;
 use tracing::{info, warn, error, debug};
 
+use calamine;
+
 use crate::preprocessing::{DataPreprocessor, PreprocessingConfig, ScalerType, ImputeStrategy};
 use crate::training::{TrainEngine, TrainingConfig, TaskType, ModelType};
 use crate::inference::{InferenceEngine, InferenceConfig};
@@ -76,9 +78,11 @@ pub async fn upload_data(
         } else if file_name.ends_with(".parquet") {
             ParquetReader::new(Cursor::new(&data))
                 .finish()?
+        } else if file_name.ends_with(".xlsx") || file_name.ends_with(".xls") {
+            read_excel_bytes(&data)?
         } else {
             return Err(ServerError::BadRequest(
-                "Unsupported file format. Use CSV, JSON, or Parquet.".to_string()
+                "Unsupported file format. Use CSV, JSON, Parquet, or Excel (.xlsx/.xls).".to_string()
             ));
         };
 
@@ -1092,6 +1096,257 @@ fn generate_breast_cancer_dataset() -> Result<DataFrame> {
         Series::new("smoothness_mean".into(), smoothness_mean).into(),
         Series::new("diagnosis".into(), diagnosis).into(),
     ])?)
+}
+
+// ============================================================================
+// Excel Reader Helper
+// ============================================================================
+
+/// Read Excel (.xlsx/.xls) bytes into a Polars DataFrame
+fn read_excel_bytes(data: &[u8]) -> Result<DataFrame> {
+    use calamine::{Reader, open_workbook_auto_from_rs};
+
+    let cursor = Cursor::new(data);
+    let mut workbook = open_workbook_auto_from_rs(cursor)
+        .map_err(|e| ServerError::BadRequest(format!("Failed to read Excel file: {}", e)))?;
+
+    let sheet_names = workbook.sheet_names().to_vec();
+    let first_sheet = sheet_names.first()
+        .ok_or_else(|| ServerError::BadRequest("Excel file has no sheets".to_string()))?;
+
+    let range = workbook.worksheet_range(first_sheet)
+        .map_err(|e| ServerError::BadRequest(format!("Failed to read sheet: {}", e)))?;
+
+    let (rows, cols) = range.get_size();
+    if rows < 2 || cols == 0 {
+        return Err(ServerError::BadRequest("Excel sheet is empty or has no data rows".to_string()));
+    }
+
+    // First row as headers
+    let headers: Vec<String> = (0..cols).map(|c| {
+        range.get((0, c))
+            .map(|v| format!("{}", v))
+            .unwrap_or_else(|| format!("col_{}", c))
+    }).collect();
+
+    // Build columns as f64 or string
+    let mut series_vec: Vec<Column> = Vec::new();
+    for col_idx in 0..cols {
+        let mut float_values: Vec<Option<f64>> = Vec::new();
+        let mut all_numeric = true;
+
+        for row_idx in 1..rows {
+            match range.get((row_idx, col_idx)) {
+                Some(calamine::Data::Float(v)) => float_values.push(Some(*v)),
+                Some(calamine::Data::Int(v)) => float_values.push(Some(*v as f64)),
+                Some(calamine::Data::Empty) => float_values.push(None),
+                _ => { all_numeric = false; break; }
+            }
+        }
+
+        if all_numeric {
+            let series = Series::new(headers[col_idx].clone().into(), &float_values);
+            series_vec.push(series.into());
+        } else {
+            let str_values: Vec<Option<String>> = (1..rows).map(|row_idx| {
+                range.get((row_idx, col_idx)).map(|v| format!("{}", v))
+            }).collect();
+            let series = Series::new(headers[col_idx].clone().into(), &str_values);
+            series_vec.push(series.into());
+        }
+    }
+
+    Ok(DataFrame::new(series_vec)?)
+}
+
+// ============================================================================
+// Data Auto-Clean Handler
+// ============================================================================
+
+#[derive(Deserialize)]
+pub struct CleanRequest {
+    /// Remove duplicate rows (default: true)
+    remove_duplicates: Option<bool>,
+    /// Drop columns with more than this % of nulls (default: 80.0)
+    null_threshold_percent: Option<f64>,
+    /// Fill numeric nulls with mean (default: true)
+    fill_numeric_nulls: Option<bool>,
+    /// Fill string nulls with mode (default: true)
+    fill_string_nulls: Option<bool>,
+    /// Trim whitespace from string columns (default: true)
+    trim_whitespace: Option<bool>,
+}
+
+/// Auto-clean the currently loaded dataset
+pub async fn auto_clean_data(
+    State(state): State<Arc<AppState>>,
+    Json(request): Json<CleanRequest>,
+) -> Result<Json<serde_json::Value>> {
+    let mut data = state.current_data.write().await;
+
+    let df = data.as_ref()
+        .ok_or_else(|| ServerError::NotFound("No data loaded".to_string()))?
+        .clone();
+
+    let original_rows = df.height();
+    let original_cols = df.width();
+    let mut cleaned = df.clone();
+    let mut actions: Vec<String> = Vec::new();
+
+    info!(rows = original_rows, cols = original_cols, "Starting auto-clean");
+
+    // 1. Drop columns with too many nulls
+    let null_threshold = request.null_threshold_percent.unwrap_or(80.0) / 100.0;
+    let mut drop_cols: Vec<String> = Vec::new();
+    for col in cleaned.get_columns() {
+        let null_ratio = col.null_count() as f64 / cleaned.height().max(1) as f64;
+        if null_ratio > null_threshold {
+            drop_cols.push(col.name().to_string());
+        }
+    }
+    if !drop_cols.is_empty() {
+        cleaned = cleaned.drop_many(drop_cols.iter().map(|s| s.as_str()));
+        actions.push(format!("Dropped {} columns with >{:.0}% nulls: {:?}", drop_cols.len(), null_threshold * 100.0, drop_cols));
+    }
+
+    // 2. Remove duplicate rows
+    if request.remove_duplicates.unwrap_or(true) {
+        let before = cleaned.height();
+        let no_subset: Option<&[String]> = None;
+        cleaned = cleaned.unique_stable(no_subset, polars::frame::UniqueKeepStrategy::First, None)
+            .map_err(|e| ServerError::Internal(format!("Dedup failed: {}", e)))?;
+        let removed = before - cleaned.height();
+        if removed > 0 {
+            actions.push(format!("Removed {} duplicate rows", removed));
+        }
+    }
+
+    // 3. Fill numeric nulls with column mean
+    if request.fill_numeric_nulls.unwrap_or(true) {
+        let mut filled_count = 0usize;
+        let col_names: Vec<String> = cleaned.get_column_names().iter().map(|s| s.to_string()).collect();
+        for col_name in &col_names {
+            let col = cleaned.column(col_name).unwrap();
+            if col.null_count() > 0 && col.dtype().is_float() {
+                let filled = col.fill_null(polars::prelude::FillNullStrategy::Mean)
+                    .map_err(|e| ServerError::Internal(format!("Fill null failed: {}", e)))?;
+                let _ = cleaned.with_column(filled)
+                    .map_err(|e| ServerError::Internal(format!("Replace column failed: {}", e)))?;
+                filled_count += 1;
+            }
+        }
+        if filled_count > 0 {
+            actions.push(format!("Filled nulls with mean in {} numeric columns", filled_count));
+        }
+    }
+
+    // 4. Fill string nulls with forward fill
+    if request.fill_string_nulls.unwrap_or(true) {
+        let mut filled_count = 0usize;
+        let col_names: Vec<String> = cleaned.get_column_names().iter().map(|s| s.to_string()).collect();
+        for col_name in &col_names {
+            let col = cleaned.column(col_name).unwrap();
+            if col.null_count() > 0 && col.dtype() == &DataType::String {
+                let filled = col.fill_null(polars::prelude::FillNullStrategy::Forward(None))
+                    .unwrap_or_else(|_| col.clone());
+                let _ = cleaned.with_column(filled)
+                    .map_err(|e| ServerError::Internal(format!("Replace column failed: {}", e)))?;
+                filled_count += 1;
+            }
+        }
+        if filled_count > 0 {
+            actions.push(format!("Forward-filled nulls in {} string columns", filled_count));
+        }
+    }
+
+    let final_rows = cleaned.height();
+    let final_cols = cleaned.width();
+
+    info!(
+        original_rows, original_cols, final_rows, final_cols,
+        actions_count = actions.len(),
+        "Auto-clean completed"
+    );
+
+    *data = Some(cleaned);
+
+    Ok(Json(serde_json::json!({
+        "success": true,
+        "original": { "rows": original_rows, "columns": original_cols },
+        "cleaned": { "rows": final_rows, "columns": final_cols },
+        "rows_removed": original_rows - final_rows,
+        "columns_removed": original_cols - final_cols,
+        "actions": actions,
+    })))
+}
+
+// ============================================================================
+// Kaggle Dataset Import Handler
+// ============================================================================
+
+#[derive(Deserialize)]
+pub struct KaggleImportRequest {
+    /// Kaggle dataset URL or slug (e.g., "username/dataset-name")
+    dataset: String,
+}
+
+/// Import a dataset from Kaggle.
+/// Returns a download link and instructions since direct download requires Kaggle API credentials.
+pub async fn import_kaggle(
+    Json(request): Json<KaggleImportRequest>,
+) -> Result<Json<serde_json::Value>> {
+    let dataset = request.dataset.trim().to_string();
+
+    if dataset.is_empty() {
+        return Err(ServerError::BadRequest("Dataset slug or URL is required".to_string()));
+    }
+
+    // Extract slug from full URL if provided
+    let slug = if dataset.starts_with("http") {
+        // Parse: https://www.kaggle.com/datasets/username/dataset-name
+        dataset
+            .split("/datasets/")
+            .nth(1)
+            .map(|s| s.trim_end_matches('/').to_string())
+            .unwrap_or(dataset.clone())
+    } else {
+        dataset.clone()
+    };
+
+    // Validate slug format: "owner/dataset-name"
+    let parts: Vec<&str> = slug.split('/').collect();
+    if parts.len() != 2 || parts[0].is_empty() || parts[1].is_empty() {
+        return Err(ServerError::BadRequest(format!(
+            "Invalid Kaggle dataset: '{}'. Expected format: 'username/dataset-name' or full Kaggle URL.",
+            slug
+        )));
+    }
+
+    let download_url = format!("https://www.kaggle.com/datasets/{}/download?datasetVersionNumber=1", slug);
+    let browse_url = format!("https://www.kaggle.com/datasets/{}", slug);
+    let api_command = format!("kaggle datasets download -d {}", slug);
+
+    info!(slug = %slug, "Kaggle dataset import requested");
+
+    Ok(Json(serde_json::json!({
+        "success": true,
+        "dataset": slug,
+        "owner": parts[0],
+        "name": parts[1],
+        "download_url": download_url,
+        "browse_url": browse_url,
+        "api_command": api_command,
+        "instructions": {
+            "step1": "Install the Kaggle CLI: pip install kaggle",
+            "step2": format!("Download: {}", api_command),
+            "step3": "Unzip the downloaded file",
+            "step4": "Upload the CSV/Excel file via /api/data/upload"
+        },
+        "message": format!(
+            "Kaggle dataset '{}' found. Download it using the link or CLI command, then upload via /api/data/upload. Direct download requires Kaggle API credentials.",
+            slug
+        )
+    })))
 }
 
 // ============================================================================

@@ -46,6 +46,8 @@ pub fn create_router(state: Arc<AppState>, config: &ServerConfig) -> Router {
         .route("/data/preview", get(handlers::get_data_preview))
         .route("/data/info", get(handlers::get_data_info))
         .route("/data/sample/:name", get(handlers::load_sample_data))
+        .route("/data/clean", post(handlers::auto_clean_data))
+        .route("/data/import/kaggle", post(handlers::import_kaggle))
         // Preprocessing
         .route("/preprocess", post(handlers::run_preprocessing))
         .route("/preprocess/config", get(handlers::get_preprocessing_config))

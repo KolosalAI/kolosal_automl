@@ -74,7 +74,13 @@ impl ServerConfig {
 
 /// Start the server with the given configuration
 pub async fn run_server(config: ServerConfig) -> anyhow::Result<()> {
-    info!(data_dir = %config.data_dir, models_dir = %config.models_dir, "Initializing server directories");
+    let start_time = chrono::Utc::now();
+    info!(
+        data_dir = %config.data_dir,
+        models_dir = %config.models_dir,
+        started_at = %start_time.to_rfc3339(),
+        "Initializing server directories"
+    );
 
     std::fs::create_dir_all(&config.data_dir)?;
     std::fs::create_dir_all(&config.models_dir)?;
@@ -94,6 +100,7 @@ pub async fn run_server(config: ServerConfig) -> anyhow::Result<()> {
         port = config.port,
         address = %addr,
         max_upload_size_mb = config.max_upload_size / 1024 / 1024,
+        started_at = %start_time.to_rfc3339(),
         "Kolosal AutoML Server starting"
     );
     info!(url = %format!("http://{}", addr), "Web UI available");
@@ -101,10 +108,29 @@ pub async fn run_server(config: ServerConfig) -> anyhow::Result<()> {
     info!(url = %format!("http://{}/api/health", addr), "Health endpoint available");
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    info!(address = %addr, "Server listening");
-    axum::serve(listener, app).await?;
+    info!(address = %addr, pid = std::process::id(), "Server listening and ready to accept connections");
 
-    info!("Server shut down");
+    // Graceful shutdown on ctrl+c
+    let start_time_for_shutdown = start_time;
+    let shutdown_signal = async move {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("Failed to install CTRL+C signal handler");
+        let stop_time = chrono::Utc::now();
+        let uptime = stop_time.signed_duration_since(start_time_for_shutdown);
+        info!(
+            stopped_at = %stop_time.to_rfc3339(),
+            uptime_secs = uptime.num_seconds(),
+            "Shutdown signal received, stopping server gracefully"
+        );
+    };
+
+    info!("Server started successfully (press ctrl+c to stop)");
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal)
+        .await?;
+
+    info!("Server shut down cleanly");
     Ok(())
 }
 
