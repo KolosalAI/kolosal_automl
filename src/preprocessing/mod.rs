@@ -81,7 +81,7 @@ impl FeatureStats {
         stats.count = series.len();
         stats.null_count = series.null_count();
 
-        if let Ok(ca) = series.f64() {
+        if let Ok(ca) = series.cast(&DataType::Float64).and_then(|s| Ok(s.f64().unwrap().clone())) {
             stats.mean = ca.mean();
             stats.std = ca.std(1);
             stats.min = ca.min();

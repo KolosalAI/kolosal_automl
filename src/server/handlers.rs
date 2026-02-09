@@ -10,7 +10,7 @@ use axum::{
 use polars::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::io::Cursor;
-use tracing::{info, error};
+use tracing::{info, warn, error, debug};
 
 use crate::preprocessing::{DataPreprocessor, PreprocessingConfig, ScalerType, ImputeStrategy};
 use crate::training::{TrainEngine, TrainingConfig, TaskType, ModelType};
@@ -18,6 +18,33 @@ use crate::inference::{InferenceEngine, InferenceConfig};
 
 use super::error::{Result, ServerError};
 use super::state::{AppState, JobStatus, ModelInfo, TrainingJob};
+
+fn parse_task_type(s: &str) -> std::result::Result<TaskType, ServerError> {
+    match s {
+        "classification" => Ok(TaskType::BinaryClassification),
+        "multiclass" => Ok(TaskType::MultiClassification),
+        "regression" => Ok(TaskType::Regression),
+        _ => Err(ServerError::BadRequest(format!("Invalid task type: '{}'. Expected: classification, multiclass, regression", s))),
+    }
+}
+
+fn parse_model_type(s: &str) -> std::result::Result<ModelType, ServerError> {
+    match s {
+        "linear" | "linear_regression" => Ok(ModelType::LinearRegression),
+        "logistic" | "logistic_regression" => Ok(ModelType::LogisticRegression),
+        "decision_tree" => Ok(ModelType::DecisionTree),
+        "random_forest" => Ok(ModelType::RandomForest),
+        "gradient_boosting" => Ok(ModelType::GradientBoosting),
+        "knn" => Ok(ModelType::KNN),
+        "naive_bayes" => Ok(ModelType::NaiveBayes),
+        "svm" => Ok(ModelType::SVM),
+        "neural_network" => Ok(ModelType::NeuralNetwork),
+        _ => Err(ServerError::BadRequest(format!(
+            "Invalid model type: '{}'. Expected: linear_regression, logistic_regression, decision_tree, random_forest, gradient_boosting, knn, naive_bayes, svm, neural_network",
+            s
+        ))),
+    }
+}
 
 // ============================================================================
 // Data Handlers
@@ -169,6 +196,8 @@ pub async fn load_sample_data(
     let dataset_id = state.store_dataset(name.clone(), df.clone(), std::env::temp_dir().join(&name)).await;
     let column_names: Vec<String> = df.get_column_names().iter().map(|s| s.to_string()).collect();
 
+    info!(dataset = %name, dataset_id = %dataset_id, rows = df.height(), columns = df.width(), "Sample dataset loaded");
+
     Ok(Json(serde_json::json!({
         "success": true,
         "dataset_id": dataset_id,
@@ -270,27 +299,21 @@ pub async fn start_training(
         .ok_or_else(|| ServerError::NotFound("No data loaded".to_string()))?
         .clone();
 
-    // Parse task type
-    let task_type = match request.task_type.as_str() {
-        "classification" => TaskType::BinaryClassification,
-        "multiclass" => TaskType::MultiClassification,
-        "regression" => TaskType::Regression,
-        _ => return Err(ServerError::BadRequest("Invalid task type".to_string())),
-    };
-
-    // Parse model type
-    let model_type = match request.model_type.as_str() {
-        "linear" | "linear_regression" => ModelType::LinearRegression,
-        "logistic" | "logistic_regression" => ModelType::LogisticRegression,
-        "decision_tree" => ModelType::DecisionTree,
-        "random_forest" => ModelType::RandomForest,
-        _ => return Err(ServerError::BadRequest(format!("Invalid model type: {}", request.model_type))),
-    };
+    let task_type = parse_task_type(&request.task_type)?;
+    let model_type = parse_model_type(&request.model_type)?;
 
     // Create job ID
     let job_id = AppState::generate_id();
     let job_id_for_response = job_id.clone();
     
+    info!(
+        job_id = %job_id,
+        model = %request.model_type,
+        task = %request.task_type,
+        target = %request.target_column,
+        "Training job created"
+    );
+
     // Store job
     let job = TrainingJob {
         id: job_id.clone(),
@@ -311,8 +334,12 @@ pub async fn start_training(
     // Run training in background
     let state_clone = state.clone();
     let target_col = request.target_column.clone();
+    let model_type_name = request.model_type.clone();
+    let task_type_name = request.task_type.clone();
+    let models_dir = state.config.models_dir.clone();
     
     tokio::spawn(async move {
+        let start = std::time::Instant::now();
         let result = run_training_job(
             &df, 
             &target_col, 
@@ -320,16 +347,49 @@ pub async fn start_training(
             model_type,
         ).await;
 
-        let mut jobs = state_clone.jobs.write().await;
-        if let Some(job) = jobs.get_mut(&job_id) {
-            match result {
-                Ok(metrics) => {
-                    job.status = JobStatus::Completed { metrics };
-                    info!("Training job {} completed successfully", job_id);
+        match result {
+            Ok((metrics, engine)) => {
+                let elapsed = start.elapsed();
+                info!(
+                    job_id = %job_id,
+                    model = %model_type_name,
+                    elapsed_secs = elapsed.as_secs_f64(),
+                    "Training job completed, saving model"
+                );
+
+                // Save model to disk
+                let model_path = format!("{}/model_{}_{}.json", models_dir, model_type_name, job_id);
+                let model_id = AppState::generate_id();
+
+                if let Err(e) = engine.save(&model_path) {
+                    error!(job_id = %job_id, error = %e, "Failed to save model to disk");
+                } else {
+                    info!(job_id = %job_id, model_id = %model_id, path = %model_path, "Model saved to disk");
                 }
-                Err(e) => {
+
+                // Register model in state
+                let model_info = ModelInfo {
+                    id: model_id.clone(),
+                    name: format!("{} (job {})", model_type_name, job_id),
+                    task_type: task_type_name,
+                    metrics: metrics.clone(),
+                    created_at: chrono::Utc::now().to_rfc3339(),
+                    path: std::path::PathBuf::from(&model_path),
+                };
+                state_clone.models.write().await.insert(model_id, model_info);
+
+                // Update job status
+                let mut jobs = state_clone.jobs.write().await;
+                if let Some(job) = jobs.get_mut(&job_id) {
+                    job.status = JobStatus::Completed { metrics };
+                    job.model_path = Some(std::path::PathBuf::from(model_path));
+                }
+            }
+            Err(e) => {
+                error!(job_id = %job_id, error = %e, "Training job failed");
+                let mut jobs = state_clone.jobs.write().await;
+                if let Some(job) = jobs.get_mut(&job_id) {
                     job.status = JobStatus::Failed { error: e.to_string() };
-                    error!("Training job {} failed: {}", job_id, e);
                 }
             }
         }
@@ -347,7 +407,7 @@ async fn run_training_job(
     target_column: &str,
     task_type: TaskType,
     model_type: ModelType,
-) -> anyhow::Result<serde_json::Value> {
+) -> anyhow::Result<(serde_json::Value, TrainEngine)> {
     let config = TrainingConfig::new(task_type.clone(), target_column)
         .with_model(model_type);
     
@@ -373,7 +433,7 @@ async fn run_training_job(
         }),
     };
 
-    Ok(result)
+    Ok((result, engine))
 }
 
 pub async fn get_training_status(
@@ -411,31 +471,45 @@ pub async fn compare_models(
         .ok_or_else(|| ServerError::NotFound("No data loaded".to_string()))?
         .clone();
 
-    let task_type = match request.task_type.as_str() {
-        "classification" => TaskType::BinaryClassification,
-        "multiclass" => TaskType::MultiClassification,
-        "regression" => TaskType::Regression,
-        _ => return Err(ServerError::BadRequest("Invalid task type".to_string())),
-    };
+    let task_type = parse_task_type(&request.task_type)?;
+
+    info!(
+        task = %request.task_type,
+        target = %request.target_column,
+        model_count = request.models.len(),
+        "Starting model comparison"
+    );
 
     let mut results = Vec::new();
 
     for model_name in &request.models {
-        let model_type = match model_name.as_str() {
-            "linear" | "linear_regression" => ModelType::LinearRegression,
-            "logistic" | "logistic_regression" => ModelType::LogisticRegression,
-            "decision_tree" => ModelType::DecisionTree,
-            "random_forest" => ModelType::RandomForest,
-            _ => continue,
+        let model_type = match parse_model_type(model_name) {
+            Ok(mt) => mt,
+            Err(_) => {
+                warn!(model = %model_name, "Skipping unknown model type in comparison");
+                continue;
+            }
         };
 
-        if let Ok(metrics) = run_training_job(&df, &request.target_column, task_type.clone(), model_type).await {
-            results.push(serde_json::json!({
-                "model": model_name,
-                "metrics": metrics,
-            }));
+        match run_training_job(&df, &request.target_column, task_type.clone(), model_type).await {
+            Ok((metrics, _engine)) => {
+                info!(model = %model_name, "Comparison model trained successfully");
+                results.push(serde_json::json!({
+                    "model": model_name,
+                    "metrics": metrics,
+                }));
+            }
+            Err(e) => {
+                error!(model = %model_name, error = %e, "Comparison model training failed");
+                results.push(serde_json::json!({
+                    "model": model_name,
+                    "error": e.to_string(),
+                }));
+            }
         }
     }
+
+    info!(total = results.len(), "Model comparison completed");
 
     Ok(Json(serde_json::json!({
         "success": true,
@@ -511,6 +585,9 @@ pub async fn predict(
 ) -> Result<Json<serde_json::Value>> {
     let models = state.models.read().await;
 
+    let model_count = models.len();
+    debug!(model_count = model_count, requested_id = ?request.model_id, "Predict request received");
+
     // Find the model: use provided model_id or most recently created
     let model_info = if let Some(ref id) = request.model_id {
         models.get(id)
@@ -521,6 +598,12 @@ pub async fn predict(
             .ok_or_else(|| ServerError::NotFound("No trained models available".to_string()))?
     };
 
+    let model_id = model_info.id.clone();
+    let model_path = model_info.path.to_str()
+        .ok_or_else(|| ServerError::Internal("Invalid model path".to_string()))?
+        .to_string();
+    drop(models);
+
     // Parse features from data field
     let features: Vec<Vec<f64>> = serde_json::from_value(request.data)
         .map_err(|e| ServerError::BadRequest(format!("Invalid features format, expected array of arrays of f64: {}", e)))?;
@@ -529,11 +612,9 @@ pub async fn predict(
         return Err(ServerError::BadRequest("Features array is empty".to_string()));
     }
 
-    // Load the trained model
-    let model_path = model_info.path.to_str()
-        .ok_or_else(|| ServerError::Internal("Invalid model path".to_string()))?;
-
-    let engine = InferenceEngine::load(InferenceConfig::new(), None, model_path)
+    // Get or load the model from registry (cached)
+    let engine = state.model_registry.get_or_load(&model_id, &model_path)
+        .await
         .map_err(|e| ServerError::Internal(format!("Failed to load model: {}", e)))?;
 
     // Convert Vec<Vec<f64>> to Array2
@@ -547,9 +628,12 @@ pub async fn predict(
     let predictions = engine.predict_array(&x)
         .map_err(|e| ServerError::Internal(format!("Prediction failed: {}", e)))?;
 
+    let stats = engine.stats();
+
     Ok(Json(serde_json::json!({
         "success": true,
         "predictions": predictions.to_vec(),
+        "latency_ms": stats.avg_latency_ms,
     })))
 }
 
@@ -575,15 +659,19 @@ pub async fn predict_batch(
             .ok_or_else(|| ServerError::NotFound("No trained models available".to_string()))?
     };
 
+    let model_id = model_info.id.clone();
+    let model_path = model_info.path.to_str()
+        .ok_or_else(|| ServerError::Internal("Invalid model path".to_string()))?
+        .to_string();
+    drop(models);
+
     if request.data.is_empty() {
         return Err(ServerError::BadRequest("Data array is empty".to_string()));
     }
 
-    // Load the trained model
-    let model_path = model_info.path.to_str()
-        .ok_or_else(|| ServerError::Internal("Invalid model path".to_string()))?;
-
-    let engine = InferenceEngine::load(InferenceConfig::new(), None, model_path)
+    // Get or load the model from registry (cached)
+    let engine = state.model_registry.get_or_load(&model_id, &model_path)
+        .await
         .map_err(|e| ServerError::Internal(format!("Failed to load model: {}", e)))?;
 
     // Convert Vec<Vec<f64>> to Array2
@@ -597,10 +685,102 @@ pub async fn predict_batch(
     let predictions = engine.predict_array(&x)
         .map_err(|e| ServerError::Internal(format!("Batch prediction failed: {}", e)))?;
 
+    let stats = engine.stats();
+
     Ok(Json(serde_json::json!({
         "success": true,
         "predictions": predictions.to_vec(),
         "count": predictions.len(),
+        "avg_latency_ms": stats.avg_latency_ms,
+    })))
+}
+
+/// Predict probabilities for classification models
+pub async fn predict_proba(
+    State(state): State<Arc<AppState>>,
+    Json(request): Json<PredictRequest>,
+) -> Result<Json<serde_json::Value>> {
+    let models = state.models.read().await;
+
+    let model_info = if let Some(ref id) = request.model_id {
+        models.get(id)
+            .ok_or_else(|| ServerError::NotFound(format!("Model not found: {}", id)))?
+    } else {
+        models.values()
+            .max_by_key(|m| &m.created_at)
+            .ok_or_else(|| ServerError::NotFound("No trained models available".to_string()))?
+    };
+
+    let model_id = model_info.id.clone();
+    let model_path = model_info.path.to_str()
+        .ok_or_else(|| ServerError::Internal("Invalid model path".to_string()))?
+        .to_string();
+    drop(models);
+
+    let features: Vec<Vec<f64>> = serde_json::from_value(request.data)
+        .map_err(|e| ServerError::BadRequest(format!("Invalid features format: {}", e)))?;
+
+    if features.is_empty() {
+        return Err(ServerError::BadRequest("Features array is empty".to_string()));
+    }
+
+    let engine = state.model_registry.get_or_load(&model_id, &model_path)
+        .await
+        .map_err(|e| ServerError::Internal(format!("Failed to load model: {}", e)))?;
+
+    let n_rows = features.len();
+    let n_cols = features[0].len();
+    let flat: Vec<f64> = features.into_iter().flatten().collect();
+    let x = ndarray::Array2::from_shape_vec((n_rows, n_cols), flat)
+        .map_err(|e| ServerError::BadRequest(format!("Invalid feature dimensions: {}", e)))?;
+
+    let proba = engine.predict_proba_array(&x)
+        .map_err(|e| ServerError::Internal(format!("Probability prediction failed: {}", e)))?;
+
+    // Convert Array2 to Vec<Vec<f64>> for JSON
+    let proba_vec: Vec<Vec<f64>> = proba.rows().into_iter()
+        .map(|row| row.to_vec())
+        .collect();
+
+    Ok(Json(serde_json::json!({
+        "success": true,
+        "probabilities": proba_vec,
+        "count": proba.nrows(),
+    })))
+}
+
+/// Get inference statistics for a model
+pub async fn get_inference_stats(
+    State(state): State<Arc<AppState>>,
+    Path(model_id): Path<String>,
+) -> Result<Json<serde_json::Value>> {
+    match state.model_registry.get_model_stats(&model_id).await {
+        Some(stats) => Ok(Json(serde_json::json!({
+            "success": true,
+            "model_id": model_id,
+            "stats": {
+                "total_predictions": stats.total_predictions,
+                "avg_latency_ms": stats.avg_latency_ms,
+                "p50_latency_ms": stats.p50_latency_ms,
+                "p95_latency_ms": stats.p95_latency_ms,
+                "p99_latency_ms": stats.p99_latency_ms,
+                "throughput_per_sec": stats.throughput_per_sec,
+                "error_count": stats.error_count,
+            }
+        }))),
+        None => Err(ServerError::NotFound(format!("Model {} not cached", model_id))),
+    }
+}
+
+/// Evict a model from the inference cache
+pub async fn evict_model_cache(
+    State(state): State<Arc<AppState>>,
+    Path(model_id): Path<String>,
+) -> Result<Json<serde_json::Value>> {
+    state.model_registry.evict(&model_id).await;
+    Ok(Json(serde_json::json!({
+        "success": true,
+        "message": format!("Model {} evicted from cache", model_id),
     })))
 }
 
@@ -636,9 +816,31 @@ pub async fn health_check() -> Json<serde_json::Value> {
 // UI Handler
 // ============================================================================
 
-pub async fn serve_index() -> Html<String> {
-    // Embedded HTML for portability
-    Html(EMBEDDED_INDEX_HTML.to_string())
+pub async fn serve_index() -> impl IntoResponse {
+    // Try multiple paths to find index.html
+    let mut paths = vec![
+        "kolosal-web/static/index.html".to_string(),
+        format!("{}/kolosal-web/static/index.html", env!("CARGO_MANIFEST_DIR")),
+    ];
+
+    // Also check STATIC_DIR env var
+    if let Ok(static_dir) = std::env::var("STATIC_DIR") {
+        paths.insert(0, format!("{}/index.html", static_dir));
+    }
+
+    let html = paths.iter()
+        .find_map(|path| std::fs::read_to_string(path).ok())
+        .unwrap_or_else(|| EMBEDDED_INDEX_HTML.to_string());
+
+    (
+        [
+            ("content-type", "text/html; charset=utf-8"),
+            ("cache-control", "no-cache, no-store, must-revalidate"),
+            ("pragma", "no-cache"),
+            ("expires", "0"),
+        ],
+        html,
+    )
 }
 
 const EMBEDDED_INDEX_HTML: &str = r#"<!DOCTYPE html>
@@ -647,78 +849,102 @@ const EMBEDDED_INDEX_HTML: &str = r#"<!DOCTYPE html>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Kolosal AutoML</title>
-    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
-    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <style>[x-cloak]{display:none!important}.tab-active{background-color:rgb(59 130 246);color:white}</style>
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box;font-family:system-ui,-apple-system,sans-serif}
+        body{background:#f8f9f9;color:#0d0e0f;min-height:100vh}
+        header{background:#fff;border-bottom:1px solid #dde1e3;padding:1rem 1.5rem;position:sticky;top:0;z-index:15}
+        .flex{display:flex}.items-center{align-items:center}.justify-between{justify-content:space-between}
+        nav{background:#fff;padding:0 1.5rem;border-bottom:1px solid #e4e7e9}
+        .nav-tab{display:inline-flex;align-items:center;gap:6px;height:40px;padding:0 12px;font-size:14px;font-weight:500;color:#6a6f73;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer}
+        .nav-tab:hover{color:#0d0e0f;background:#f1f3f4}.nav-tab.active{color:#0d0e0f;border-bottom-color:#0d0e0f}
+        main{max-width:1080px;margin:0 auto;padding:24px 20px}
+        .card{background:#fff;border:1px solid #e4e7e9;border-radius:12px;padding:24px;margin-bottom:16px}
+        .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+        .btn{display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 14px;font-size:14px;font-weight:500;border-radius:10px;border:none;cursor:pointer;background:#0d0e0f;color:#fff}
+        .btn:disabled{opacity:.5;cursor:not-allowed}
+        .badge{display:inline-flex;align-items:center;height:24px;padding:0 8px;font-size:12px;font-weight:500;border-radius:6px}
+        .badge-ok{color:#2e9632;background:#f3fbf4}.badge-err{color:#cc2727;background:#fff3f3}
+        .mono{font-family:"Geist Mono",monospace}
+        .tab-panel{display:none}.tab-panel.active{display:block}
+        .empty{text-align:center;padding:40px;color:#9c9fa1}
+        select{height:36px;padding:0 14px;border:1px solid #dde1e3;border-radius:10px;width:100%;font-size:14px;appearance:none;background:#fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%236A6F73' viewBox='0 0 24 24'%3E%3Cpath d='M12 16l-6-6h12z'/%3E%3C/svg%3E") no-repeat right 12px center;padding-right:36px}
+        .pill{display:inline-flex;align-items:center;height:28px;padding:0 10px;font-size:12px;font-weight:500;border-radius:999px;border:none;cursor:pointer;background:#f0f6fe;color:#0052c4;margin:0 4px 4px 0}
+        .pill:hover{background:#b4d2fc}
+        .toast-box{position:fixed;bottom:20px;right:20px;z-index:100}
+        .toast{padding:10px 16px;border-radius:10px;font-size:14px;font-weight:500;color:#fff;background:#0d0e0f;margin-top:8px;box-shadow:0 4px 12px rgba(0,0,0,.15)}
+        .toast-ok{background:#3abc3f}.toast-err{background:#ff3131}
+        .stat{font-size:32px;line-height:44px;font-family:"Geist Mono",monospace;font-weight:500}
+        .stat-info{color:#0066f5}.stat-ok{color:#3abc3f}
+        .progress{width:100%;height:6px;background:#e4e7e9;border-radius:999px;overflow:hidden}
+        .progress-fill{height:100%;background:#0066f5;border-radius:999px;transition:width .3s}
+        table{width:100%;border-collapse:collapse}th{padding:8px 12px;text-align:left;font-size:12px;font-weight:500;color:#6a6f73;background:#f8f9f9;border-bottom:1px solid #e4e7e9}
+        td{padding:8px 12px;font-size:14px;border-bottom:1px solid #ebedee}
+        textarea{width:100%;min-height:120px;padding:8px 12px;border:1px solid #dde1e3;border-radius:12px;font-size:14px;resize:none;font-family:inherit}
+        pre.code{background:#f8f9f9;border:1px solid #e4e7e9;border-radius:10px;padding:16px;font-size:13px;font-family:"Geist Mono",monospace;overflow:auto}
+        label.form{display:block;font-size:14px;font-weight:500;margin-bottom:6px}
+        .form-stack>*+*{margin-top:16px}
+    </style>
 </head>
-<body class="bg-gray-900 text-gray-100 min-h-screen" x-data="app()">
-    <header class="bg-gray-800 border-b border-gray-700 px-6 py-4">
+<body style="background:#f8f9f9;color:#0d0e0f;font-family:system-ui,-apple-system,sans-serif;margin:0;padding:0;min-height:100vh;display:block;visibility:visible;opacity:1">
+    <header>
         <div class="flex items-center justify-between">
-            <h1 class="text-xl font-bold">🚀 Kolosal AutoML</h1>
-            <span class="text-sm text-gray-400">v0.2.0 - Pure Rust</span>
+            <div class="flex items-center" style="gap:10px"><strong class="mono" style="font-size:20px">Kolosal AutoML</strong><span style="color:#6a6f73;font-size:14px">Rust-Powered</span></div>
+            <div class="flex items-center" style="gap:8px"><span id="e-badge" class="badge badge-ok">healthy</span><span id="e-dot" style="width:8px;height:8px;border-radius:50%;background:#3abc3f"></span></div>
         </div>
     </header>
-    <nav class="bg-gray-800 px-6 py-2 border-b border-gray-700">
-        <div class="flex space-x-1">
-            <button @click="tab='data'" :class="tab==='data'?'tab-active':'hover:bg-gray-700'" class="px-4 py-2 rounded-md text-sm">📊 Data</button>
-            <button @click="tab='config'" :class="tab==='config'?'tab-active':'hover:bg-gray-700'" class="px-4 py-2 rounded-md text-sm">⚙️ Config</button>
-            <button @click="tab='train'" :class="tab==='train'?'tab-active':'hover:bg-gray-700'" class="px-4 py-2 rounded-md text-sm">🚀 Train</button>
-            <button @click="tab='monitor'" :class="tab==='monitor'?'tab-active':'hover:bg-gray-700'" class="px-4 py-2 rounded-md text-sm">📡 Monitor</button>
-        </div>
+    <nav>
+        <button class="nav-tab active" data-tab="data" onclick="eTab('data')">Data</button>
+        <button class="nav-tab" data-tab="config" onclick="eTab('config')">Config</button>
+        <button class="nav-tab" data-tab="train" onclick="eTab('train')">Train</button>
+        <button class="nav-tab" data-tab="monitor" onclick="eTab('monitor')">Monitor</button>
     </nav>
-    <main class="p-6">
-        <div x-show="tab==='data'" x-cloak>
-            <div class="grid grid-cols-2 gap-6">
-                <div class="bg-gray-800 rounded-lg p-6">
-                    <h2 class="text-lg font-semibold mb-4">Sample Datasets</h2>
-                    <div class="grid grid-cols-2 gap-3">
-                        <button @click="loadSample('iris')" class="p-3 bg-gray-700 rounded hover:bg-gray-600">Iris</button>
-                        <button @click="loadSample('diabetes')" class="p-3 bg-gray-700 rounded hover:bg-gray-600">Diabetes</button>
-                        <button @click="loadSample('boston')" class="p-3 bg-gray-700 rounded hover:bg-gray-600">Boston</button>
-                        <button @click="loadSample('wine')" class="p-3 bg-gray-700 rounded hover:bg-gray-600">Wine</button>
-                    </div>
+    <main>
+        <div id="et-data" class="tab-panel active">
+            <div class="grid-2">
+                <div class="card">
+                    <h2 style="font-size:16px;font-weight:500;margin-bottom:16px">Sample Datasets</h2>
+                    <div id="e-pills"></div>
                 </div>
-                <div class="bg-gray-800 rounded-lg p-6" x-show="data">
-                    <h2 class="text-lg font-semibold mb-4">Data Info</h2>
-                    <div class="grid grid-cols-2 gap-4">
-                        <div class="bg-gray-700 p-3 rounded"><div class="text-xl font-bold" x-text="data?.rows"></div><div class="text-sm text-gray-400">Rows</div></div>
-                        <div class="bg-gray-700 p-3 rounded"><div class="text-xl font-bold" x-text="data?.columns"></div><div class="text-sm text-gray-400">Columns</div></div>
-                    </div>
+                <div class="card">
+                    <h2 style="font-size:16px;font-weight:500;margin-bottom:16px">Data Info</h2>
+                    <div id="e-info" class="empty">No data loaded</div>
                 </div>
             </div>
         </div>
-        <div x-show="tab==='config'" x-cloak class="bg-gray-800 rounded-lg p-6">
-            <h2 class="text-lg font-semibold mb-4">Configuration</h2>
-            <div class="grid grid-cols-2 gap-4">
-                <div><label class="block text-sm mb-1">Target Column</label><select x-model="cfg.target" class="w-full bg-gray-700 rounded p-2"><template x-for="c in data?.column_names||[]"><option :value="c" x-text="c"></option></template></select></div>
-                <div><label class="block text-sm mb-1">Task Type</label><select x-model="cfg.task" class="w-full bg-gray-700 rounded p-2"><option value="binary_classification">Classification</option><option value="regression">Regression</option></select></div>
-                <div><label class="block text-sm mb-1">Model</label><select x-model="cfg.model" class="w-full bg-gray-700 rounded p-2"><option value="random_forest">Random Forest</option><option value="decision_tree">Decision Tree</option><option value="logistic_regression">Logistic Regression</option></select></div>
+        <div id="et-config" class="tab-panel">
+            <div class="card form-stack" style="max-width:500px">
+                <div><label class="form">Target Column</label><select id="e-target"><option value="">Select...</option></select></div>
+                <div><label class="form">Task Type</label><select id="e-task"><option value="classification">Classification</option><option value="regression">Regression</option></select></div>
+                <div><label class="form">Model</label><select id="e-model"><option value="random_forest">Random Forest</option><option value="decision_tree">Decision Tree</option><option value="logistic_regression">Logistic Regression</option></select></div>
             </div>
         </div>
-        <div x-show="tab==='train'" x-cloak class="bg-gray-800 rounded-lg p-6">
-            <div class="flex justify-between mb-6"><h2 class="text-lg font-semibold">Training</h2><button @click="train()" :disabled="!data||training" class="px-6 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 rounded"><span x-show="!training">🚀 Train</span><span x-show="training">⏳ Training...</span></button></div>
-            <div x-show="result" class="grid grid-cols-4 gap-4">
-                <div class="bg-gray-700 p-4 rounded"><div class="text-2xl font-bold text-green-500" x-text="result?.accuracy?.toFixed(4)||'-'"></div><div class="text-sm text-gray-400">Accuracy</div></div>
-                <div class="bg-gray-700 p-4 rounded"><div class="text-2xl font-bold text-blue-500" x-text="result?.r2?.toFixed(4)||'-'"></div><div class="text-sm text-gray-400">R²</div></div>
-                <div class="bg-gray-700 p-4 rounded"><div class="text-2xl font-bold text-yellow-500" x-text="result?.mse?.toFixed(4)||'-'"></div><div class="text-sm text-gray-400">MSE</div></div>
-                <div class="bg-gray-700 p-4 rounded"><div class="text-2xl font-bold" x-text="result?.training_time_secs?.toFixed(2)+'s'||'-'"></div><div class="text-sm text-gray-400">Time</div></div>
+        <div id="et-train" class="tab-panel">
+            <div class="card">
+                <div class="flex items-center justify-between" style="margin-bottom:16px">
+                    <h2 style="font-size:16px;font-weight:500">Training</h2>
+                    <button id="e-train-btn" class="btn" onclick="eTrain()" disabled>Train</button>
+                </div>
+                <div id="e-result"></div>
             </div>
         </div>
-        <div x-show="tab==='monitor'" x-cloak class="bg-gray-800 rounded-lg p-6">
-            <h2 class="text-lg font-semibold mb-4">System Status</h2>
-            <div class="space-y-4">
-                <div><div class="flex justify-between mb-1"><span>CPU</span><span x-text="sys.cpu_percent+'%'"></span></div><div class="w-full bg-gray-700 rounded h-2"><div class="bg-blue-500 h-2 rounded" :style="'width:'+sys.cpu_percent+'%'"></div></div></div>
-                <div><div class="flex justify-between mb-1"><span>Memory</span><span x-text="sys.memory_percent+'%'"></span></div><div class="w-full bg-gray-700 rounded h-2"><div class="bg-green-500 h-2 rounded" :style="'width:'+sys.memory_percent+'%'"></div></div></div>
+        <div id="et-monitor" class="tab-panel">
+            <div class="grid-2">
+                <div class="card"><p style="font-size:12px;color:#6a6f73;margin-bottom:8px">CPU Usage</p><p id="e-cpu" class="stat stat-info">0.0%</p></div>
+                <div class="card"><p style="font-size:12px;color:#6a6f73;margin-bottom:8px">Memory</p><p id="e-mem" class="stat stat-ok">0.0%</p><p id="e-mem2" style="font-size:12px;color:#9c9fa1;margin-top:4px"></p></div>
             </div>
         </div>
     </main>
+    <div id="e-toasts" class="toast-box"></div>
     <script>
-    function app(){return{tab:'data',data:null,training:false,result:null,cfg:{target:'',task:'binary_classification',model:'random_forest'},sys:{cpu_percent:0,memory_percent:0},
-    init(){this.fetchSys();setInterval(()=>this.fetchSys(),5000)},
-    async loadSample(n){try{const r=await fetch('/api/data/sample/'+n,{method:'POST'});this.data=await r.json()}catch(e){console.error(e)}},
-    async train(){this.training=true;this.result=null;try{const r=await fetch('/api/train',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target_column:this.cfg.target,task_type:this.cfg.task,model_type:this.cfg.model})});const d=await r.json();this.result=d.metrics}catch(e){console.error(e)}finally{this.training=false}},
-    async fetchSys(){try{const r=await fetch('/api/system/status');this.sys=await r.json()}catch(e){}}}}
+    var eData=null,eTraining=false;
+    function $(i){return document.getElementById(i)}
+    function eNotify(m,t){var d=document.createElement('div');d.className='toast'+(t==='ok'?' toast-ok':t==='err'?' toast-err':'');d.textContent=m;$('e-toasts').appendChild(d);setTimeout(function(){d.remove()},3000)}
+    function eTab(n){document.querySelectorAll('.tab-panel').forEach(function(p){p.classList.remove('active')});document.querySelectorAll('.nav-tab').forEach(function(t){t.classList.remove('active')});$('et-'+n).classList.add('active');document.querySelector('[data-tab="'+n+'"]').classList.add('active')}
+    function eSys(){fetch('/api/system/status').then(function(r){return r.json()}).then(function(d){var s=d.system||{};$('e-badge').textContent=d.status||'error';$('e-badge').className='badge '+(d.status==='healthy'?'badge-ok':'badge-err');$('e-dot').style.background=d.status==='healthy'?'#3abc3f':'#ff3131';$('e-cpu').textContent=(s.cpu_usage||0).toFixed(1)+'%';$('e-mem').textContent=(s.memory_usage_percent||0).toFixed(1)+'%';$('e-mem2').textContent=(s.used_memory_gb||0).toFixed(1)+' / '+(s.total_memory_gb||0).toFixed(1)+' GB'}).catch(function(){})}
+    function eLoad(n){fetch('/api/data/sample/'+n).then(function(r){return r.json()}).then(function(d){if(d.success){eData=d;$('e-info').innerHTML='<div class="grid-2"><div><span class="stat stat-info">'+d.rows+'</span><p style="font-size:12px;color:#6a6f73">Rows</p></div><div><span class="stat stat-info">'+d.columns+'</span><p style="font-size:12px;color:#6a6f73">Columns</p></div></div>';var sel=$('e-target');sel.innerHTML='<option value="">Select...</option>';(d.column_names||[]).forEach(function(c){var o=document.createElement('option');o.value=c;o.textContent=c;sel.appendChild(o)});$('e-train-btn').disabled=false;eNotify('Loaded '+n+'!','ok')}}).catch(function(e){eNotify('Failed: '+e.message,'err')})}
+    function eTrain(){if(!eData||eTraining)return;eTraining=true;$('e-train-btn').disabled=true;$('e-result').innerHTML='<p>Training...</p>';var cfg={target_column:$('e-target').value,task_type:$('e-task').value,model_type:$('e-model').value};fetch('/api/train',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)}).then(function(r){return r.json()}).then(function(d){if(d.job_id){ePoll(d.job_id)}}).catch(function(e){$('e-result').innerHTML='<p style="color:#ff3131">'+e.message+'</p>';eTraining=false;$('e-train-btn').disabled=false})}
+    function ePoll(id){fetch('/api/train/status/'+id).then(function(r){return r.json()}).then(function(d){var s=d.status;if(s.Completed){var m=s.Completed.metrics||{};var h='<table><thead><tr><th>Metric</th><th>Value</th></tr></thead><tbody>';Object.keys(m).forEach(function(k){h+='<tr><td>'+k+'</td><td class="mono">'+(typeof m[k]==='number'?m[k].toFixed(4):m[k])+'</td></tr>'});h+='</tbody></table>';$('e-result').innerHTML=h;eTraining=false;$('e-train-btn').disabled=false;eNotify('Training complete!','ok')}else if(s.Failed){$('e-result').innerHTML='<p style="color:#ff3131">'+(s.Failed.error||'Failed')+'</p>';eTraining=false;$('e-train-btn').disabled=false}else{var p=s.Running?s.Running.progress||0:0;$('e-result').innerHTML='<div class="progress"><div class="progress-fill" style="width:'+(p*100)+'%"></div></div><p style="font-size:12px;color:#6a6f73;margin-top:8px">'+(s.Running?s.Running.message||'':'')+'</p>';setTimeout(function(){ePoll(id)},1000)}}).catch(function(){setTimeout(function(){ePoll(id)},2000)})}
+    document.addEventListener('DOMContentLoaded',function(){['iris','diabetes','boston','wine','breast_cancer'].forEach(function(n){var b=document.createElement('button');b.className='pill';b.textContent=n.charAt(0).toUpperCase()+n.slice(1).replace('_',' ');b.onclick=function(){eLoad(n)};$('e-pills').appendChild(b)});eSys();setInterval(eSys,5000)});
     </script>
 </body>
 </html>"#;

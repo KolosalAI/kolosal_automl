@@ -15,7 +15,7 @@ pub use state::AppState;
 
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tracing::info;
+use tracing::{info, warn};
 
 /// Server configuration
 #[derive(Debug, Clone)]
@@ -31,37 +31,80 @@ pub struct ServerConfig {
 impl Default for ServerConfig {
     fn default() -> Self {
         Self {
-            host: "0.0.0.0".to_string(),
-            port: 8080,
-            static_dir: Some("kolosal-web/static".to_string()),
-            data_dir: "./data".to_string(),
-            models_dir: "./models".to_string(),
-            max_upload_size: 100 * 1024 * 1024, // 100MB
+            host: std::env::var("API_HOST").unwrap_or_else(|_| "0.0.0.0".to_string()),
+            port: std::env::var("API_PORT")
+                .ok()
+                .and_then(|p| p.parse().ok())
+                .unwrap_or(8080),
+            static_dir: Some(Self::resolve_static_dir()),
+            data_dir: std::env::var("DATA_DIR").unwrap_or_else(|_| "./data".to_string()),
+            models_dir: std::env::var("MODELS_DIR").unwrap_or_else(|_| "./models".to_string()),
+            max_upload_size: std::env::var("MAX_UPLOAD_SIZE")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(100 * 1024 * 1024), // 100MB
         }
+    }
+}
+
+impl ServerConfig {
+    /// Resolve the static directory by checking multiple candidate paths.
+    fn resolve_static_dir() -> String {
+        if let Ok(dir) = std::env::var("STATIC_DIR") {
+            if std::path::Path::new(&dir).exists() {
+                return dir;
+            }
+        }
+
+        let candidates = [
+            "kolosal-web/static".to_string(),
+            format!("{}/kolosal-web/static", env!("CARGO_MANIFEST_DIR")),
+        ];
+
+        for candidate in &candidates {
+            if std::path::Path::new(candidate).exists() {
+                return candidate.clone();
+            }
+        }
+
+        // Return default relative path as last resort
+        "kolosal-web/static".to_string()
     }
 }
 
 /// Start the server with the given configuration
 pub async fn run_server(config: ServerConfig) -> anyhow::Result<()> {
-    // Create directories
+    info!(data_dir = %config.data_dir, models_dir = %config.models_dir, "Initializing server directories");
+
     std::fs::create_dir_all(&config.data_dir)?;
     std::fs::create_dir_all(&config.models_dir)?;
 
-    // Create app state
-    let state = Arc::new(AppState::new(config.clone()));
+    if let Some(ref static_dir) = config.static_dir {
+        if !std::path::Path::new(static_dir).exists() {
+            warn!(static_dir = %static_dir, "Static directory not found, web UI will be unavailable");
+        }
+    }
 
-    // Build router
+    let state = Arc::new(AppState::new(config.clone()));
     let app = create_router(state, &config);
 
-    // Start server
     let addr: SocketAddr = format!("{}:{}", config.host, config.port).parse()?;
-    info!("🚀 Kolosal AutoML Server starting on http://{}", addr);
-    info!("📊 Web UI available at http://{}/", addr);
-    info!("📡 API available at http://{}/api", addr);
+    info!(
+        host = %config.host,
+        port = config.port,
+        address = %addr,
+        max_upload_size_mb = config.max_upload_size / 1024 / 1024,
+        "Kolosal AutoML Server starting"
+    );
+    info!(url = %format!("http://{}", addr), "Web UI available");
+    info!(url = %format!("http://{}/api", addr), "REST API available");
+    info!(url = %format!("http://{}/api/health", addr), "Health endpoint available");
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
+    info!(address = %addr, "Server listening");
     axum::serve(listener, app).await?;
 
+    info!("Server shut down");
     Ok(())
 }
 

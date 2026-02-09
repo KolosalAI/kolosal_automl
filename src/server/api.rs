@@ -2,9 +2,12 @@
 
 use std::sync::Arc;
 use axum::{
+    http::StatusCode,
+    response::IntoResponse,
     routing::{get, post},
-    Router,
+    Json, Router,
 };
+use serde_json::json;
 use tower_http::{
     compression::CompressionLayer,
     cors::{Any, CorsLayer},
@@ -13,6 +16,26 @@ use tower_http::{
 };
 
 use super::{handlers, state::AppState, ServerConfig};
+
+async fn handle_404() -> impl IntoResponse {
+    (
+        StatusCode::NOT_FOUND,
+        Json(json!({
+            "error": true,
+            "message": "Not found. Visit / for the web UI or /api/health to check API status.",
+        })),
+    )
+}
+
+async fn handle_405() -> impl IntoResponse {
+    (
+        StatusCode::METHOD_NOT_ALLOWED,
+        Json(json!({
+            "error": true,
+            "message": "Method not allowed. Check the API documentation for supported methods.",
+        })),
+    )
+}
 
 /// Create the main application router
 pub fn create_router(state: Arc<AppState>, config: &ServerConfig) -> Router {
@@ -37,6 +60,9 @@ pub fn create_router(state: Arc<AppState>, config: &ServerConfig) -> Router {
         // Inference
         .route("/predict", post(handlers::predict))
         .route("/predict/batch", post(handlers::predict_batch))
+        .route("/predict/proba", post(handlers::predict_proba))
+        .route("/predict/stats/:model_id", get(handlers::get_inference_stats))
+        .route("/predict/cache/:model_id", axum::routing::delete(handlers::evict_model_cache))
         // System
         .route("/system/status", get(handlers::get_system_status))
         .route("/health", get(handlers::health_check))
@@ -55,12 +81,16 @@ pub fn create_router(state: Arc<AppState>, config: &ServerConfig) -> Router {
         // Monitoring
         .route("/monitoring/dashboard", get(handlers::get_monitoring_dashboard))
         .route("/monitoring/alerts", get(handlers::get_alerts))
-        .route("/monitoring/performance", get(handlers::get_performance_analysis));
+        .route("/monitoring/performance", get(handlers::get_performance_analysis))
+        .fallback(handle_404)
+        .method_not_allowed_fallback(handle_405);
 
     // Build main router
     let mut app = Router::new()
         .nest("/api", api_routes)
         .route("/", get(handlers::serve_index))
+        .fallback(handle_404)
+        .method_not_allowed_fallback(handle_405)
         .with_state(state);
 
     // Serve static files if directory exists
@@ -68,6 +98,13 @@ pub fn create_router(state: Arc<AppState>, config: &ServerConfig) -> Router {
         let static_path = std::path::Path::new(static_dir);
         if static_path.exists() {
             app = app.nest_service("/static", ServeDir::new(static_path));
+        } else {
+            // Fallback: try CARGO_MANIFEST_DIR-relative path
+            let manifest_path = format!("{}/kolosal-web/static", env!("CARGO_MANIFEST_DIR"));
+            let fallback_path = std::path::Path::new(&manifest_path);
+            if fallback_path.exists() {
+                app = app.nest_service("/static", ServeDir::new(fallback_path));
+            }
         }
     }
 

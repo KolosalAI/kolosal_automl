@@ -112,7 +112,7 @@ pub mod prelude {
     pub use crate::training::{TrainEngine, TrainingConfig, ModelType};
     
     // Inference
-    pub use crate::inference::{InferenceEngine, InferenceConfig};
+    pub use crate::inference::{InferenceEngine, InferenceConfig, InferenceStats};
     
     // Optimization
     pub use crate::optimizer::{HyperOptX, OptimizationConfig, SearchSpace, BayesianOptimizer, GaussianProcess};

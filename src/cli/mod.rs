@@ -7,6 +7,7 @@ use colored::*;
 use polars::prelude::*;
 use std::path::PathBuf;
 use std::time::Instant;
+use tracing::{info, warn, debug, error};
 
 use crate::preprocessing::{DataPreprocessor, PreprocessingConfig, ScalerType, ImputeStrategy};
 use crate::training::{TrainEngine, TrainingConfig, TaskType, ModelType};
@@ -198,6 +199,7 @@ pub enum Commands {
 
 pub fn load_data(path: &PathBuf) -> anyhow::Result<DataFrame> {
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+    debug!(path = %path.display(), extension = ext, "Loading data file");
 
     let df = match ext {
         "csv" => CsvReadOptions::default()
@@ -212,6 +214,7 @@ pub fn load_data(path: &PathBuf) -> anyhow::Result<DataFrame> {
         _ => anyhow::bail!("Unsupported file format: {}", ext),
     };
 
+    info!(rows = df.height(), columns = df.width(), path = %path.display(), "Data loaded successfully");
     Ok(df)
 }
 
@@ -254,7 +257,8 @@ pub fn cmd_train(
     let start = Instant::now();
     let mut engine = TrainEngine::new(config);
     engine.fit(&df)?;
-    step_done(&format!("{:?}", start.elapsed()));
+    let elapsed = start.elapsed();
+    step_done(&format!("{:?}", elapsed));
 
     let metrics = engine.metrics().cloned().unwrap_or_default();
     let (metric_name, score) = match task {
@@ -263,6 +267,15 @@ pub fn cmd_train(
         TaskType::Regression | TaskType::TimeSeries =>
             ("R²", metrics.r2.unwrap_or(0.0)),
     };
+
+    info!(
+        model = model_type,
+        task = task_type,
+        metric = metric_name,
+        score = score,
+        training_time_secs = elapsed.as_secs_f64(),
+        "Training completed"
+    );
 
     println!();
     println!("  {:<16} {}", muted(metric_name), format!("{:.4}", score).white().bold());
@@ -399,10 +412,12 @@ pub fn cmd_benchmark(
                 };
 
                 println!("  {:<24} {:>10.4} {:>10.2?}", name, score, elapsed);
+                info!(model = name, score = score, elapsed_secs = elapsed.as_secs_f64(), "Benchmark model completed");
                 results.push((name.to_string(), score, elapsed));
             }
             Err(e) => {
                 println!("  {:<24} {:>10}", name, format!("err: {}", e).red());
+                error!(model = name, error = %e, "Benchmark model failed");
             }
         }
     }
@@ -417,6 +432,7 @@ pub fn cmd_benchmark(
             muted(&format!("{}:", metric_name)),
             score
         );
+        info!(best_model = %name, metric = metric_name, score = score, "Benchmark completed");
     }
 
     println!();
@@ -456,6 +472,9 @@ pub fn cmd_info(data_path: &PathBuf) -> anyhow::Result<()> {
 pub async fn cmd_serve(host: &str, port: u16) -> anyhow::Result<()> {
     use crate::server::{run_server, ServerConfig};
 
+    // Use localhost for display URLs when binding to all interfaces
+    let display_host = if host == "0.0.0.0" || host == "::" { "localhost" } else { host };
+
     println!();
     line_box_top();
     line_box_empty();
@@ -464,9 +483,9 @@ pub async fn cmd_serve(host: &str, port: u16) -> anyhow::Result<()> {
     line_box_empty();
     line_box_sep();
     line_box_empty();
-    line_box(&kv("Web UI ", &format!("http://{}:{}", host, port)));
-    line_box(&kv("API    ", &format!("http://{}:{}/api", host, port)));
-    line_box(&kv("Health ", &format!("http://{}:{}/api/health", host, port)));
+    line_box(&kv("Web UI ", &format!("http://{}:{}", display_host, port)));
+    line_box(&kv("API    ", &format!("http://{}:{}/api", display_host, port)));
+    line_box(&kv("Health ", &format!("http://{}:{}/api/health", display_host, port)));
     line_box_empty();
     line_box_sep();
     line_box_empty();
@@ -480,6 +499,15 @@ pub async fn cmd_serve(host: &str, port: u16) -> anyhow::Result<()> {
         port,
         ..Default::default()
     };
+
+    // Auto-open browser
+    let url = format!("http://{}:{}", display_host, port);
+    #[cfg(target_os = "macos")]
+    { let _ = std::process::Command::new("open").arg(&url).spawn(); }
+    #[cfg(target_os = "linux")]
+    { let _ = std::process::Command::new("xdg-open").arg(&url).spawn(); }
+    #[cfg(target_os = "windows")]
+    { let _ = std::process::Command::new("cmd").args(["/c", "start", &url]).spawn(); }
 
     run_server(config).await
 }
@@ -516,6 +544,17 @@ fn show_system_info() {
     println!();
 }
 
+fn default_host() -> String {
+    std::env::var("API_HOST").unwrap_or_else(|_| "0.0.0.0".to_string())
+}
+
+fn default_port() -> u16 {
+    std::env::var("API_PORT")
+        .ok()
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(8080)
+}
+
 fn show_help() {
     section("Commands");
 
@@ -533,16 +572,20 @@ fn show_help() {
         println!("  {:<44} {}", cmd.white(), muted(desc));
     }
 
-    section("Endpoints");
+    section("Endpoints (default)");
+
+    let host = default_host();
+    let port = default_port();
 
     let endpoints: &[(&str, &str)] = &[
-        ("http://localhost:8080", "Web dashboard"),
-        ("http://localhost:8080/api", "REST API root"),
-        ("http://localhost:8080/api/health", "Health check"),
-        ("http://localhost:8080/api/system/status", "System status"),
+        ("", "Web dashboard"),
+        ("/api", "REST API root"),
+        ("/api/health", "Health check"),
+        ("/api/system/status", "System status"),
     ];
 
-    for (url, desc) in endpoints {
+    for (path, desc) in endpoints {
+        let url = format!("http://{}:{}{}", host, port, path);
         println!("  {:<44} {}", url.truecolor(120, 170, 255), muted(desc));
     }
 
@@ -551,6 +594,17 @@ fn show_help() {
 
 pub async fn cmd_interactive() -> anyhow::Result<()> {
     use dialoguer::{Select, theme::ColorfulTheme};
+
+    if !std::io::IsTerminal::is_terminal(&std::io::stdin())
+        || !std::io::IsTerminal::is_terminal(&std::io::stderr())
+    {
+        warn!("No interactive terminal detected, showing usage help");
+        use clap::CommandFactory;
+        let mut cmd = Cli::command();
+        cmd.print_help()?;
+        println!();
+        return Ok(());
+    }
 
     print_banner();
 
@@ -564,12 +618,15 @@ pub async fn cmd_interactive() -> anyhow::Result<()> {
         ..ColorfulTheme::default()
     };
 
+    let host = default_host();
+    let port = default_port();
+
     loop {
         let items = &[
-            "Start Server          web ui + rest api on :8080",
-            "System Info           hardware & runtime details",
-            "Help                  commands & endpoints",
-            "Exit",
+            format!("Start Server          web ui + rest api on {}:{}", host, port),
+            "System Info           hardware & runtime details".to_string(),
+            "Help                  commands & endpoints".to_string(),
+            "Exit".to_string(),
         ];
 
         println!();
@@ -581,7 +638,8 @@ pub async fn cmd_interactive() -> anyhow::Result<()> {
 
         match sel {
             Some(0) => {
-                cmd_serve("0.0.0.0", 8080).await?;
+                info!(host = %host, port = port, "Starting server from interactive mode");
+                cmd_serve(&host, port).await?;
                 break;
             }
             Some(1) => {
@@ -596,6 +654,7 @@ pub async fn cmd_interactive() -> anyhow::Result<()> {
                 println!();
                 println!("  {}", dim("goodbye"));
                 println!();
+                info!("User exited interactive mode");
                 break;
             }
             _ => {}

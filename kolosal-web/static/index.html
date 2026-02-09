@@ -3,12 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>Kolosal AutoML</title>
-    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
-    <script defer src="https://unpkg.com/alpinejs@3.13.3/dist/cdn.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <link href="https://cdn.jsdelivr.net/css2?family=Geist+Mono:wght@100..900&family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/remixicon@4.7.0/fonts/remixicon.css" rel="stylesheet">
+    <script src="/static/chart.min.js" defer></script>
+    <link rel="preload" href="/static/remixicon.woff2" as="font" type="font/woff2" crossorigin>
+    <link href="/static/remixicon.css" rel="stylesheet" media="print" onload="this.media='all'">
+    <noscript><link href="/static/remixicon.css" rel="stylesheet"></noscript>
     <style>
         /* === Reset === */
         * {
@@ -155,7 +157,6 @@
         .ornament-icon-grey i { font-size: 20px; color: var(--color-text-600); }
 
         /* === App Layout === */
-        [x-cloak] { display: none !important; }
         body { background-color: var(--color-grey-500); color: var(--color-text-900); min-height: 100vh; }
 
         /* Header */
@@ -267,9 +268,11 @@
         .gap-24 { gap: 24px; }
         .flex-wrap { flex-wrap: wrap; }
         .text-center { text-align: center; }
+        .tab-panel { display: none; }
+        .tab-panel.active { display: block; }
     </style>
 </head>
-<body x-data="kolosalApp()">
+<body style="background-color:#F8F9F9;color:#0D0E0F;font-family:Inter,system-ui,-apple-system,sans-serif;margin:0;padding:0;min-height:100vh;display:block;visibility:visible;opacity:1;">
     <!-- Header -->
     <header class="app-header">
         <div class="container app-header-inner">
@@ -280,8 +283,8 @@
                 <span class="text-14px reguler" style="color: var(--color-text-700);">Rust-Powered</span>
             </div>
             <div class="app-header-status">
-                <div class="badge-sm" :class="systemStatus === 'healthy' ? 'badge-success' : 'badge-danger'" x-text="systemStatus"></div>
-                <div class="status-dot" :class="systemStatus === 'healthy' ? 'healthy' : 'error'"></div>
+                <div id="status-badge" class="badge-sm badge-success">healthy</div>
+                <div id="status-dot" class="status-dot healthy"></div>
             </div>
         </div>
     </header>
@@ -289,22 +292,22 @@
     <!-- Navigation Tabs -->
     <nav class="app-nav">
         <div class="container app-nav-inner">
-            <button @click="activeTab = 'data'" :class="activeTab === 'data' ? 'active' : ''" class="nav-tab">
+            <button class="nav-tab active" onclick="switchTab('data')" data-tab="data">
                 <i class="ri-folder-upload-line"></i> Data
             </button>
-            <button @click="activeTab = 'config'" :class="activeTab === 'config' ? 'active' : ''" class="nav-tab">
+            <button class="nav-tab" onclick="switchTab('config')" data-tab="config">
                 <i class="ri-settings-3-line"></i> Config
             </button>
-            <button @click="activeTab = 'training'" :class="activeTab === 'training' ? 'active' : ''" class="nav-tab">
+            <button class="nav-tab" onclick="switchTab('training')" data-tab="training">
                 <i class="ri-rocket-line"></i> Training
             </button>
-            <button @click="activeTab = 'compare'" :class="activeTab === 'compare' ? 'active' : ''" class="nav-tab">
+            <button class="nav-tab" onclick="switchTab('compare')" data-tab="compare">
                 <i class="ri-bar-chart-grouped-line"></i> Compare
             </button>
-            <button @click="activeTab = 'predict'" :class="activeTab === 'predict' ? 'active' : ''" class="nav-tab">
+            <button class="nav-tab" onclick="switchTab('predict')" data-tab="predict">
                 <i class="ri-magic-line"></i> Predict
             </button>
-            <button @click="activeTab = 'monitor'" :class="activeTab === 'monitor' ? 'active' : ''" class="nav-tab">
+            <button class="nav-tab" onclick="switchTab('monitor')" data-tab="monitor">
                 <i class="ri-dashboard-3-line"></i> Monitor
             </button>
         </div>
@@ -312,156 +315,101 @@
 
     <!-- Main Content -->
     <main class="container app-content">
+        <noscript>
+            <div class="card" style="text-align: center; padding: 40px;">
+                <p class="text-16px medium" style="color: var(--color-text-800);">JavaScript is required to use Kolosal AutoML.</p>
+                <p class="text-14px reguler" style="color: var(--color-text-700); margin-top: 8px;">Please enable JavaScript in your browser settings.</p>
+            </div>
+        </noscript>
+
         <!-- Data Upload Tab -->
-        <div x-show="activeTab === 'data'" x-cloak>
+        <div id="tab-data" class="tab-panel active">
             <div class="grid-2">
-                <!-- File Upload -->
                 <div class="card">
                     <div class="card-header">
                         <h2 class="text-16px medium">Upload Data</h2>
                     </div>
-                    <div
-                        class="dropzone"
-                        @dragover.prevent="$el.classList.add('drag-over')"
-                        @dragleave="$el.classList.remove('drag-over')"
-                        @drop.prevent="handleFileDrop($event)"
-                        @click="$refs.fileInput.click()"
-                    >
-                        <input type="file" x-ref="fileInput" @change="uploadFile($event)" accept=".csv,.json,.parquet" class="hidden">
+                    <div id="dropzone" class="dropzone">
+                        <input type="file" id="fileInput" accept=".csv,.json,.parquet" class="hidden">
                         <i class="ri-upload-cloud-2-line"></i>
                         <p class="text-14px reguler" style="color: var(--color-text-800);">Drop your CSV, JSON, or Parquet file here</p>
                         <p class="text-12px reguler" style="color: var(--color-text-600); margin-top: 4px;">or click to browse</p>
                     </div>
-
-                    <!-- Sample Datasets -->
                     <div style="margin-top: 20px;">
                         <p class="text-12px medium" style="color: var(--color-text-700); margin-bottom: 8px;">Or load a sample dataset:</p>
-                        <div class="flex-row flex-wrap gap-8">
-                            <template x-for="sample in sampleDatasets" :key="sample.id">
-                                <button
-                                    @click="loadSampleData(sample.id)"
-                                    class="pill"
-                                    x-text="sample.name"
-                                ></button>
-                            </template>
-                        </div>
+                        <div id="sample-pills" class="flex-row flex-wrap gap-8"></div>
                     </div>
                 </div>
-
-                <!-- Data Preview -->
                 <div class="card">
                     <div class="card-header">
                         <h2 class="text-16px medium">Data Preview</h2>
-                        <template x-if="dataInfo">
-                            <div class="flex-row items-center gap-12">
-                                <span class="text-12px reguler" style="color: var(--color-text-700);">
-                                    <span x-text="dataInfo.rows"></span> rows × <span x-text="dataInfo.columns"></span> columns
-                                </span>
-                                <button @click="refreshPreview()" class="btn-xs btn-ghost"><i class="ri-refresh-line"></i> Refresh</button>
-                            </div>
-                        </template>
+                        <div id="data-meta" class="flex-row items-center gap-12" style="display:none;">
+                            <span class="text-12px reguler" style="color: var(--color-text-700);">
+                                <span id="data-rows">0</span> rows &times; <span id="data-cols">0</span> columns
+                            </span>
+                            <button onclick="refreshPreview()" class="btn-xs btn-ghost"><i class="ri-refresh-line"></i> Refresh</button>
+                        </div>
                     </div>
-                    <template x-if="dataInfo">
-                        <div class="table-wrap">
-                            <table class="data-table">
-                                <thead>
-                                    <tr>
-                                        <template x-for="col in dataPreview.columns" :key="col.name">
-                                            <th x-text="col.name"></th>
-                                        </template>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <template x-for="(_, rowIdx) in Array(dataPreview.rows || 0)" :key="rowIdx">
-                                        <tr>
-                                            <template x-for="col in dataPreview.columns" :key="col.name + rowIdx">
-                                                <td x-text="col.values[rowIdx] ?? ''"></td>
-                                            </template>
-                                        </tr>
-                                    </template>
-                                </tbody>
-                            </table>
-                        </div>
-                    </template>
-                    <template x-if="!dataInfo">
-                        <div class="empty-state">
-                            <i class="ri-database-2-line"></i>
-                            <p class="text-14px reguler">No data loaded</p>
-                        </div>
-                    </template>
+                    <div id="preview-table" style="display:none;"></div>
+                    <div id="preview-empty" class="empty-state">
+                        <i class="ri-database-2-line"></i>
+                        <p class="text-14px reguler">No data loaded</p>
+                    </div>
                 </div>
             </div>
         </div>
 
         <!-- Configuration Tab -->
-        <div x-show="activeTab === 'config'" x-cloak>
+        <div id="tab-config" class="tab-panel">
             <div class="card" style="max-width: 600px;">
                 <div class="card-header">
                     <h2 class="text-16px medium">Training Configuration</h2>
                 </div>
-
                 <div class="form-stack">
-                    <!-- Task Type -->
                     <div class="form-group">
                         <label class="form-label">Task Type</label>
-                        <select x-model="config.taskType" class="input-text-md">
+                        <select id="cfg-taskType" class="input-text-md">
                             <option value="classification">Classification</option>
                             <option value="regression">Regression</option>
                         </select>
                     </div>
-
-                    <!-- Target Column -->
                     <div class="form-group">
                         <label class="form-label">Target Column</label>
-                        <select x-model="config.targetColumn" class="input-text-md">
+                        <select id="cfg-targetColumn" class="input-text-md">
                             <option value="">Select target...</option>
-                            <template x-for="col in dataInfo?.column_names || []" :key="col">
-                                <option :value="col" x-text="col"></option>
-                            </template>
                         </select>
                     </div>
-
                     <hr class="separator">
-
-                    <!-- Preprocessing -->
                     <div class="form-group">
                         <label class="form-label">Preprocessing</label>
                         <div class="grid-2">
                             <div class="form-group">
                                 <label class="form-hint">Scaler</label>
-                                <select x-model="config.scaler" class="input-text-sm">
+                                <select id="cfg-scaler" class="input-text-sm">
                                     <option value="none">None</option>
-                                    <option value="standard">Standard</option>
+                                    <option value="standard" selected>Standard</option>
                                     <option value="minmax">MinMax</option>
                                     <option value="robust">Robust</option>
                                 </select>
                             </div>
                             <div class="form-group">
                                 <label class="form-hint">Missing Values</label>
-                                <select x-model="config.imputation" class="input-text-sm">
+                                <select id="cfg-imputation" class="input-text-sm">
                                     <option value="drop">Drop</option>
-                                    <option value="mean">Mean</option>
+                                    <option value="mean" selected>Mean</option>
                                     <option value="median">Median</option>
                                     <option value="mode">Mode</option>
                                 </select>
                             </div>
                         </div>
                     </div>
-
-                    <!-- Cross-Validation -->
                     <div class="form-group">
                         <label class="form-label">
-                            Cross-Validation Folds: <span class="mono-14px" x-text="config.cvFolds"></span>
+                            Cross-Validation Folds: <span id="cv-folds-display" class="mono-14px">5</span>
                         </label>
-                        <input type="range" x-model="config.cvFolds" min="2" max="10">
+                        <input type="range" id="cfg-cvFolds" min="2" max="10" value="5" oninput="document.getElementById('cv-folds-display').textContent=this.value">
                     </div>
-
-                    <!-- Apply Button -->
-                    <button
-                        @click="applyPreprocessing()"
-                        class="btn-md btn-primary w-full"
-                        :disabled="!dataInfo"
-                    >
+                    <button id="btn-preprocess" onclick="applyPreprocessing()" class="btn-md btn-primary w-full" disabled>
                         <i class="ri-check-line"></i> Apply Preprocessing
                     </button>
                 </div>
@@ -469,211 +417,115 @@
         </div>
 
         <!-- Training Tab -->
-        <div x-show="activeTab === 'training'" x-cloak>
+        <div id="tab-training" class="tab-panel">
             <div class="grid-1-2">
-                <!-- Model Selection -->
                 <div class="card">
                     <div class="card-header">
                         <h2 class="text-16px medium">Select Models</h2>
                     </div>
-                    <div class="flex-col gap-4">
-                        <template x-for="model in availableModels" :key="model.id">
-                            <label class="checkbox-row">
-                                <input type="checkbox" :value="model.id" x-model="selectedModels">
-                                <span class="text-14px reguler" x-text="model.name"></span>
-                            </label>
-                        </template>
-                    </div>
-
-                    <button
-                        @click="startTraining()"
-                        class="btn-md btn-primary w-full"
-                        style="margin-top: 20px;"
-                        :disabled="selectedModels.length === 0 || !config.targetColumn"
-                    >
+                    <div id="model-checkboxes" class="flex-col gap-4"></div>
+                    <button id="btn-train" onclick="startTraining()" class="btn-md btn-primary w-full" style="margin-top: 20px;" disabled>
                         <i class="ri-rocket-line"></i> Start Training
                     </button>
                 </div>
-
-                <!-- Training Progress -->
                 <div class="card">
                     <div class="card-header">
                         <h2 class="text-16px medium">Training Progress</h2>
                     </div>
-
-                    <template x-if="trainingJobs.length > 0">
-                        <div class="flex-col gap-12">
-                            <template x-for="job in trainingJobs" :key="job.id">
-                                <div class="job-card">
-                                    <div class="flex-row justify-between items-center">
-                                        <span class="text-14px medium" x-text="job.config?.model_type || 'Training'"></span>
-                                        <span
-                                            class="badge-sm"
-                                            :class="{
-                                                'badge-warning': job.status.Running,
-                                                'badge-success': job.status.Completed,
-                                                'badge-danger': job.status.Failed
-                                            }"
-                                            x-text="Object.keys(job.status)[0]"
-                                        ></span>
-                                    </div>
-                                    <template x-if="job.status.Running">
-                                        <div class="flex-col gap-6">
-                                            <div class="progress-bar">
-                                                <div class="progress-bar-fill" :style="`width: ${job.status.Running.progress * 100}%`"></div>
-                                            </div>
-                                            <p class="text-12px reguler" style="color: var(--color-text-700);" x-text="job.status.Running.message"></p>
-                                        </div>
-                                    </template>
-                                    <template x-if="job.status.Completed">
-                                        <div class="flex-col gap-4">
-                                            <template x-for="(value, key) in job.status.Completed.metrics" :key="key">
-                                                <p class="text-12px reguler" style="color: var(--color-text-700);"><strong x-text="key + ':'"></strong> <span class="mono-12px" x-text="typeof value === 'number' ? value.toFixed(4) : JSON.stringify(value)"></span></p>
-                                            </template>
-                                        </div>
-                                    </template>
-                                    <template x-if="job.status.Failed">
-                                        <p class="text-12px reguler" style="color: var(--color-danger-500);" x-text="job.status.Failed.error"></p>
-                                    </template>
-                                </div>
-                            </template>
-                        </div>
-                    </template>
-                    <template x-if="trainingJobs.length === 0">
-                        <div class="empty-state">
-                            <i class="ri-flask-line"></i>
-                            <p class="text-14px reguler">No training jobs yet</p>
-                        </div>
-                    </template>
+                    <div id="jobs-list"></div>
+                    <div id="jobs-empty" class="empty-state">
+                        <i class="ri-flask-line"></i>
+                        <p class="text-14px reguler">No training jobs yet</p>
+                    </div>
                 </div>
             </div>
         </div>
 
         <!-- Compare Tab -->
-        <div x-show="activeTab === 'compare'" x-cloak>
+        <div id="tab-compare" class="tab-panel">
             <div class="card">
                 <div class="card-header">
                     <h2 class="text-16px medium">Model Comparison</h2>
-                    <button
-                        @click="compareAllModels()"
-                        class="btn-sm btn-primary"
-                        :disabled="!config.targetColumn"
-                    >
+                    <button id="btn-compare" onclick="compareAllModels()" class="btn-sm btn-primary" disabled>
                         <i class="ri-bar-chart-grouped-line"></i> Compare All Models
                     </button>
                 </div>
-
-                <template x-if="comparisonResults.length > 0">
+                <div id="compare-results" style="display:none;">
                     <div class="flex-col gap-24">
-                        <div class="table-wrap">
-                            <table class="data-table">
-                                <thead>
-                                    <tr>
-                                        <th>Model</th>
-                                        <th>Score</th>
-                                        <th>Std Dev</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <template x-for="result in comparisonResults" :key="result.model">
-                                        <tr>
-                                            <td><span class="text-14px medium" x-text="result.model"></span></td>
-                                            <td><span class="mono-14px" x-text="(result.metrics.accuracy || result.metrics.r2 || 0).toFixed(4)"></span></td>
-                                            <td><span class="mono-14px" x-text="(result.metrics.std || 0).toFixed(4)"></span></td>
-                                        </tr>
-                                    </template>
-                                </tbody>
-                            </table>
-                        </div>
-
+                        <div id="compare-table-wrap" class="table-wrap"></div>
                         <div style="max-height: 300px;">
                             <canvas id="comparisonChart" width="400" height="200"></canvas>
                         </div>
                     </div>
-                </template>
-                <template x-if="comparisonResults.length === 0">
-                    <div class="empty-state">
-                        <i class="ri-bar-chart-grouped-line"></i>
-                        <p class="text-14px reguler">Run a comparison to see results</p>
-                    </div>
-                </template>
+                </div>
+                <div id="compare-empty" class="empty-state">
+                    <i class="ri-bar-chart-grouped-line"></i>
+                    <p class="text-14px reguler">Run a comparison to see results</p>
+                </div>
             </div>
         </div>
 
         <!-- Predict Tab -->
-        <div x-show="activeTab === 'predict'" x-cloak>
+        <div id="tab-predict" class="tab-panel">
             <div class="grid-2">
                 <div class="card">
                     <div class="card-header">
                         <h2 class="text-16px medium">Input Data</h2>
                     </div>
                     <div class="form-stack">
-                        <textarea
-                            x-model="predictionInput"
-                            class="input-textarea"
-                            placeholder="Enter values as JSON or comma-separated..."
-                        ></textarea>
-                        <button
-                            @click="makePrediction()"
-                            class="btn-md btn-primary w-full"
-                        >
+                        <textarea id="prediction-input" class="input-textarea" placeholder="Enter values as JSON or comma-separated..."></textarea>
+                        <button onclick="makePrediction()" class="btn-md btn-primary w-full">
                             <i class="ri-magic-line"></i> Predict
                         </button>
                     </div>
                 </div>
-
                 <div class="card">
                     <div class="card-header">
                         <h2 class="text-16px medium">Predictions</h2>
                     </div>
-                    <template x-if="predictions">
-                        <pre class="code-block" x-text="JSON.stringify(predictions, null, 2)"></pre>
-                    </template>
-                    <template x-if="!predictions">
-                        <div class="empty-state">
-                            <i class="ri-magic-line"></i>
-                            <p class="text-14px reguler">No predictions yet</p>
-                        </div>
-                    </template>
+                    <div id="prediction-output"></div>
+                    <div id="prediction-empty" class="empty-state">
+                        <i class="ri-magic-line"></i>
+                        <p class="text-14px reguler">No predictions yet</p>
+                    </div>
                 </div>
             </div>
         </div>
 
         <!-- Monitor Tab -->
-        <div x-show="activeTab === 'monitor'" x-cloak>
+        <div id="tab-monitor" class="tab-panel">
             <div class="section-gap">
                 <div class="grid-3">
                     <div class="card">
                         <p class="text-12px medium" style="color: var(--color-text-700); margin-bottom: 8px;">CPU Usage</p>
-                        <p class="stat-value info" x-text="(systemInfo.cpu_usage || 0).toFixed(1) + '%'"></p>
+                        <p id="mon-cpu" class="stat-value info">0.0%</p>
                     </div>
                     <div class="card">
                         <p class="text-12px medium" style="color: var(--color-text-700); margin-bottom: 8px;">Memory Usage</p>
-                        <p class="stat-value success" x-text="(systemInfo.memory_usage_percent || 0).toFixed(1) + '%'"></p>
-                        <p class="text-12px reguler" style="color: var(--color-text-600); margin-top: 4px;" x-text="`${(systemInfo.used_memory_gb || 0).toFixed(1)} / ${(systemInfo.total_memory_gb || 0).toFixed(1)} GB`"></p>
+                        <p id="mon-mem" class="stat-value success">0.0%</p>
+                        <p id="mon-mem-detail" class="text-12px reguler" style="color: var(--color-text-600); margin-top: 4px;">0.0 / 0.0 GB</p>
                     </div>
                     <div class="card">
                         <p class="text-12px medium" style="color: var(--color-text-700); margin-bottom: 8px;">Status</p>
-                        <p class="stat-value success" x-text="systemStatus"></p>
+                        <p id="mon-status" class="stat-value success">healthy</p>
                     </div>
                 </div>
-
                 <div class="card">
                     <div class="card-header">
                         <h2 class="text-16px medium">System Overview</h2>
-                        <button @click="refreshSystemStatus()" class="btn-xs btn-ghost"><i class="ri-refresh-line"></i> Refresh</button>
+                        <button onclick="refreshSystemStatus()" class="btn-xs btn-ghost"><i class="ri-refresh-line"></i> Refresh</button>
                     </div>
                     <div class="grid-3" style="text-align: center;">
                         <div>
-                            <p class="mono-32px medium" x-text="systemInfo.datasets_count || 0"></p>
+                            <p id="mon-datasets" class="mono-32px medium">0</p>
                             <p class="text-12px reguler" style="color: var(--color-text-700);">Datasets</p>
                         </div>
                         <div>
-                            <p class="mono-32px medium" x-text="systemInfo.jobs_count || 0"></p>
+                            <p id="mon-jobs" class="mono-32px medium">0</p>
                             <p class="text-12px reguler" style="color: var(--color-text-700);">Jobs</p>
                         </div>
                         <div>
-                            <p class="mono-32px medium" x-text="systemInfo.models_count || 0"></p>
+                            <p id="mon-models" class="mono-32px medium">0</p>
                             <p class="text-12px reguler" style="color: var(--color-text-700);">Models</p>
                         </div>
                     </div>
@@ -683,280 +535,462 @@
     </main>
 
     <!-- Toast Notifications -->
-    <div class="toast-container" x-show="notifications.length > 0">
-        <template x-for="(notif, idx) in notifications" :key="idx">
-            <div
-                class="toast"
-                :class="{
-                    'toast-success': notif.type === 'success',
-                    'toast-error': notif.type === 'error',
-                    'toast-info': notif.type === 'info'
-                }"
-                x-text="notif.message"
-                x-transition
-            ></div>
-        </template>
-    </div>
+    <div id="toast-container" class="toast-container"></div>
 
     <script>
-        function kolosalApp() {
+        // ── State ──
+        var dataInfo = null;
+        var dataPreview = { rows: 0, columns: [] };
+        var trainingJobs = [];
+        var comparisonResults = [];
+        var selectedModels = [];
+        var comparisonChartInstance = null;
+
+        var sampleDatasets = [
+            { id: 'iris', name: 'Iris' },
+            { id: 'diabetes', name: 'Diabetes' },
+            { id: 'boston', name: 'Boston' },
+            { id: 'wine', name: 'Wine' },
+            { id: 'breast_cancer', name: 'Breast Cancer' }
+        ];
+
+        var availableModels = [
+            { id: 'logistic_regression', name: 'Logistic Regression' },
+            { id: 'linear_regression', name: 'Linear Regression' },
+            { id: 'decision_tree', name: 'Decision Tree' },
+            { id: 'random_forest', name: 'Random Forest' }
+        ];
+
+        // ── Helpers ──
+        function $(id) { return document.getElementById(id); }
+
+        function notify(message, type) {
+            type = type || 'info';
+            var container = $('toast-container');
+            var toast = document.createElement('div');
+            toast.className = 'toast toast-' + type;
+            toast.textContent = message;
+            container.appendChild(toast);
+            setTimeout(function() { toast.remove(); }, 3000);
+        }
+
+        function escHtml(s) {
+            var d = document.createElement('div');
+            d.textContent = s;
+            return d.innerHTML;
+        }
+
+        // ── Tabs ──
+        function switchTab(name) {
+            var panels = document.querySelectorAll('.tab-panel');
+            for (var i = 0; i < panels.length; i++) panels[i].classList.remove('active');
+            var tabs = document.querySelectorAll('.nav-tab');
+            for (var i = 0; i < tabs.length; i++) tabs[i].classList.remove('active');
+            $('tab-' + name).classList.add('active');
+            document.querySelector('[data-tab="' + name + '"]').classList.add('active');
+        }
+
+        // ── File Upload ──
+        function setupDropzone() {
+            var dz = $('dropzone');
+            var fi = $('fileInput');
+            dz.addEventListener('click', function() { fi.click(); });
+            dz.addEventListener('dragover', function(e) { e.preventDefault(); dz.classList.add('drag-over'); });
+            dz.addEventListener('dragleave', function() { dz.classList.remove('drag-over'); });
+            dz.addEventListener('drop', function(e) {
+                e.preventDefault();
+                dz.classList.remove('drag-over');
+                var file = e.dataTransfer.files[0];
+                if (file) uploadFile(file);
+            });
+            fi.addEventListener('change', function(e) {
+                if (e.target.files[0]) uploadFile(e.target.files[0]);
+            });
+        }
+
+        function uploadFile(file) {
+            var formData = new FormData();
+            formData.append('file', file);
+            fetch('/api/data/upload', { method: 'POST', body: formData })
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    if (data.success) {
+                        dataInfo = data;
+                        updateDataUI();
+                        refreshPreview();
+                        notify('Data uploaded successfully!', 'success');
+                    } else {
+                        notify(data.message || 'Upload failed', 'error');
+                    }
+                })
+                .catch(function(e) { notify('Upload failed: ' + e.message, 'error'); });
+        }
+
+        // ── Sample Datasets ──
+        function setupSamplePills() {
+            var container = $('sample-pills');
+            sampleDatasets.forEach(function(s) {
+                var btn = document.createElement('button');
+                btn.className = 'pill';
+                btn.textContent = s.name;
+                btn.onclick = function() { loadSampleData(s.id); };
+                container.appendChild(btn);
+            });
+        }
+
+        function loadSampleData(name) {
+            fetch('/api/data/sample/' + name)
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    if (data.success) {
+                        dataInfo = data;
+                        updateDataUI();
+                        refreshPreview();
+                        notify('Loaded ' + name + ' dataset!', 'success');
+                    }
+                })
+                .catch(function(e) { notify('Failed to load sample: ' + e.message, 'error'); });
+        }
+
+        // ── Data UI Updates ──
+        function updateDataUI() {
+            if (dataInfo) {
+                $('data-meta').style.display = '';
+                $('data-rows').textContent = dataInfo.rows || 0;
+                $('data-cols').textContent = dataInfo.columns || 0;
+                $('preview-empty').style.display = 'none';
+                $('btn-preprocess').disabled = false;
+                updateTargetOptions();
+                updateTrainButton();
+                $('btn-compare').disabled = !getConfig().targetColumn;
+            }
+        }
+
+        function updateTargetOptions() {
+            var sel = $('cfg-targetColumn');
+            var names = (dataInfo && dataInfo.column_names) || [];
+            sel.innerHTML = '<option value="">Select target...</option>';
+            names.forEach(function(n) {
+                var opt = document.createElement('option');
+                opt.value = n;
+                opt.textContent = n;
+                sel.appendChild(opt);
+            });
+        }
+
+        function refreshPreview() {
+            fetch('/api/data/preview?rows=10')
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    dataPreview = data;
+                    renderPreviewTable();
+                })
+                .catch(function(e) { console.error('Preview failed:', e); });
+        }
+
+        function renderPreviewTable() {
+            var cols = dataPreview.columns || [];
+            var rows = dataPreview.rows || 0;
+            if (cols.length === 0) { $('preview-table').style.display = 'none'; return; }
+
+            var html = '<div class="table-wrap"><table class="data-table"><thead><tr>';
+            cols.forEach(function(c) { html += '<th>' + escHtml(c.name) + '</th>'; });
+            html += '</tr></thead><tbody>';
+            for (var r = 0; r < rows; r++) {
+                html += '<tr>';
+                cols.forEach(function(c) {
+                    var val = (c.values && c.values[r] != null) ? c.values[r] : '';
+                    html += '<td>' + escHtml(String(val)) + '</td>';
+                });
+                html += '</tr>';
+            }
+            html += '</tbody></table></div>';
+            $('preview-table').innerHTML = html;
+            $('preview-table').style.display = '';
+        }
+
+        // ── Config ──
+        function getConfig() {
             return {
-                activeTab: 'data',
-                systemStatus: 'healthy',
-
-                // Data state
-                dataInfo: null,
-                dataPreview: { rows: 0, columns: [] },
-
-                // Sample datasets
-                sampleDatasets: [
-                    { id: 'iris', name: 'Iris' },
-                    { id: 'diabetes', name: 'Diabetes' },
-                    { id: 'boston', name: 'Boston' },
-                    { id: 'wine', name: 'Wine' },
-                    { id: 'breast_cancer', name: 'Breast Cancer' },
-                ],
-
-                // Configuration
-                config: {
-                    taskType: 'classification',
-                    targetColumn: '',
-                    scaler: 'standard',
-                    imputation: 'mean',
-                    cvFolds: 5,
-                },
-
-                // Models
-                availableModels: [
-                    { id: 'logistic_regression', name: 'Logistic Regression' },
-                    { id: 'linear_regression', name: 'Linear Regression' },
-                    { id: 'decision_tree', name: 'Decision Tree' },
-                    { id: 'random_forest', name: 'Random Forest' },
-                ],
-                selectedModels: [],
-                trainingJobs: [],
-
-                // Comparison
-                comparisonResults: [],
-
-                // Prediction
-                predictionInput: '',
-                predictions: null,
-
-                // System
-                systemInfo: {},
-
-                // Notifications
-                notifications: [],
-
-                // Methods
-                async init() {
-                    await this.refreshSystemStatus();
-                    setInterval(() => this.pollJobs(), 2000);
-                },
-
-                notify(message, type = 'info') {
-                    this.notifications.push({ message, type });
-                    setTimeout(() => this.notifications.shift(), 3000);
-                },
-
-                async uploadFile(event) {
-                    const file = event.target.files[0];
-                    if (!file) return;
-
-                    const formData = new FormData();
-                    formData.append('file', file);
-
-                    try {
-                        const resp = await fetch('/api/data/upload', { method: 'POST', body: formData });
-                        const data = await resp.json();
-                        if (data.success) {
-                            this.dataInfo = data;
-                            await this.refreshPreview();
-                            this.notify('Data uploaded successfully!', 'success');
-                        } else {
-                            this.notify(data.message || 'Upload failed', 'error');
-                        }
-                    } catch (e) {
-                        this.notify('Upload failed: ' + e.message, 'error');
-                    }
-                },
-
-                handleFileDrop(event) {
-                    const file = event.dataTransfer.files[0];
-                    if (file) {
-                        const dt = new DataTransfer();
-                        dt.items.add(file);
-                        this.$refs.fileInput.files = dt.files;
-                        this.uploadFile({ target: { files: [file] } });
-                    }
-                },
-
-                async loadSampleData(name) {
-                    try {
-                        const resp = await fetch(`/api/data/sample/${name}`);
-                        const data = await resp.json();
-                        if (data.success) {
-                            this.dataInfo = data;
-                            await this.refreshPreview();
-                            this.notify(`Loaded ${name} dataset!`, 'success');
-                        }
-                    } catch (e) {
-                        this.notify('Failed to load sample: ' + e.message, 'error');
-                    }
-                },
-
-                async refreshPreview() {
-                    try {
-                        const resp = await fetch('/api/data/preview?rows=10');
-                        this.dataPreview = await resp.json();
-                    } catch (e) {
-                        console.error('Preview failed:', e);
-                    }
-                },
-
-                async applyPreprocessing() {
-                    try {
-                        const resp = await fetch('/api/preprocess', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                scaler: this.config.scaler,
-                                imputation: this.config.imputation,
-                            }),
-                        });
-                        const data = await resp.json();
-                        if (data.success) {
-                            await this.refreshPreview();
-                            this.notify('Preprocessing applied!', 'success');
-                        }
-                    } catch (e) {
-                        this.notify('Preprocessing failed: ' + e.message, 'error');
-                    }
-                },
-
-                async startTraining() {
-                    for (const modelId of this.selectedModels) {
-                        try {
-                            const resp = await fetch('/api/train', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({
-                                    target_column: this.config.targetColumn,
-                                    task_type: this.config.taskType,
-                                    model_type: modelId,
-                                    cv_folds: this.config.cvFolds,
-                                }),
-                            });
-                            const data = await resp.json();
-                            if (data.success) {
-                                this.trainingJobs.push({
-                                    id: data.job_id,
-                                    config: { model_type: modelId },
-                                    status: { Running: { progress: 0, message: 'Starting...' } },
-                                });
-                                this.notify(`Training started for ${modelId}`, 'info');
-                            }
-                        } catch (e) {
-                            this.notify('Training failed: ' + e.message, 'error');
-                        }
-                    }
-                },
-
-                async pollJobs() {
-                    for (const job of this.trainingJobs) {
-                        if (job.status.Completed || job.status.Failed) continue;
-                        try {
-                            const resp = await fetch(`/api/train/status/${job.id}`);
-                            const data = await resp.json();
-                            job.status = data.status;
-                        } catch (e) {
-                            console.error('Poll failed:', e);
-                        }
-                    }
-                },
-
-                async compareAllModels() {
-                    try {
-                        const models = this.config.taskType === 'classification'
-                            ? ['logistic_regression', 'decision_tree', 'random_forest']
-                            : ['linear_regression', 'decision_tree', 'random_forest'];
-
-                        const resp = await fetch('/api/train/compare', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                target_column: this.config.targetColumn,
-                                task_type: this.config.taskType,
-                                models: models,
-                                cv_folds: this.config.cvFolds,
-                            }),
-                        });
-                        const data = await resp.json();
-                        if (data.success) {
-                            this.comparisonResults = data.comparison;
-                            this.notify('Comparison complete!', 'success');
-                            this.renderComparisonChart();
-                        }
-                    } catch (e) {
-                        this.notify('Comparison failed: ' + e.message, 'error');
-                    }
-                },
-
-                renderComparisonChart() {
-                    const ctx = document.getElementById('comparisonChart');
-                    if (!ctx) return;
-
-                    new Chart(ctx, {
-                        type: 'bar',
-                        data: {
-                            labels: this.comparisonResults.map(r => r.model),
-                            datasets: [{
-                                label: this.config.taskType === 'classification' ? 'Accuracy' : 'R²',
-                                data: this.comparisonResults.map(r => r.metrics.accuracy || r.metrics.r2 || 0),
-                                backgroundColor: 'rgba(0, 102, 245, 0.15)',
-                                borderColor: '#0066F5',
-                                borderWidth: 1,
-                                borderRadius: 6
-                            }]
-                        },
-                        options: {
-                            scales: {
-                                y: { beginAtZero: true, max: 1 },
-                                x: { grid: { display: false } }
-                            },
-                            plugins: {
-                                legend: { labels: { font: { family: '"Inter", sans-serif' } } }
-                            }
-                        }
-                    });
-                },
-
-                async makePrediction() {
-                    try {
-                        const resp = await fetch('/api/predict', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ data: this.predictionInput }),
-                        });
-                        this.predictions = await resp.json();
-                    } catch (e) {
-                        this.notify('Prediction failed: ' + e.message, 'error');
-                    }
-                },
-
-                async refreshSystemStatus() {
-                    try {
-                        const resp = await fetch('/api/system/status');
-                        const data = await resp.json();
-                        this.systemInfo = { ...data.system, ...data };
-                        this.systemStatus = data.status;
-                    } catch (e) {
-                        this.systemStatus = 'error';
-                    }
-                },
+                taskType: $('cfg-taskType').value,
+                targetColumn: $('cfg-targetColumn').value,
+                scaler: $('cfg-scaler').value,
+                imputation: $('cfg-imputation').value,
+                cvFolds: parseInt($('cfg-cvFolds').value)
             };
         }
+
+        function applyPreprocessing() {
+            var cfg = getConfig();
+            fetch('/api/preprocess', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ scaler: cfg.scaler, imputation: cfg.imputation })
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.success) {
+                    refreshPreview();
+                    notify('Preprocessing applied!', 'success');
+                }
+            })
+            .catch(function(e) { notify('Preprocessing failed: ' + e.message, 'error'); });
+        }
+
+        // ── Model Selection ──
+        function setupModelCheckboxes() {
+            var container = $('model-checkboxes');
+            availableModels.forEach(function(m) {
+                var label = document.createElement('label');
+                label.className = 'checkbox-row';
+                var cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.value = m.id;
+                cb.onchange = function() {
+                    if (cb.checked) {
+                        if (selectedModels.indexOf(m.id) === -1) selectedModels.push(m.id);
+                    } else {
+                        selectedModels = selectedModels.filter(function(x) { return x !== m.id; });
+                    }
+                    updateTrainButton();
+                };
+                var span = document.createElement('span');
+                span.className = 'text-14px reguler';
+                span.textContent = m.name;
+                label.appendChild(cb);
+                label.appendChild(span);
+                container.appendChild(label);
+            });
+        }
+
+        function updateTrainButton() {
+            var cfg = getConfig();
+            $('btn-train').disabled = selectedModels.length === 0 || !cfg.targetColumn;
+        }
+
+        // ── Training ──
+        function startTraining() {
+            var cfg = getConfig();
+            selectedModels.forEach(function(modelId) {
+                fetch('/api/train', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        target_column: cfg.targetColumn,
+                        task_type: cfg.taskType,
+                        model_type: modelId,
+                        cv_folds: cfg.cvFolds
+                    })
+                })
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    if (data.success) {
+                        trainingJobs.push({
+                            id: data.job_id,
+                            model_type: modelId,
+                            status: { Running: { progress: 0, message: 'Starting...' } }
+                        });
+                        renderJobs();
+                        notify('Training started for ' + modelId, 'info');
+                    }
+                })
+                .catch(function(e) { notify('Training failed: ' + e.message, 'error'); });
+            });
+        }
+
+        function renderJobs() {
+            var container = $('jobs-list');
+            if (trainingJobs.length === 0) {
+                container.innerHTML = '';
+                $('jobs-empty').style.display = '';
+                return;
+            }
+            $('jobs-empty').style.display = 'none';
+            var html = '<div class="flex-col gap-12">';
+            trainingJobs.forEach(function(job) {
+                var statusKey = Object.keys(job.status)[0];
+                var badgeClass = statusKey === 'Running' ? 'badge-warning' : statusKey === 'Completed' ? 'badge-success' : 'badge-danger';
+                html += '<div class="job-card">';
+                html += '<div class="flex-row justify-between items-center">';
+                html += '<span class="text-14px medium">' + escHtml(job.model_type || 'Training') + '</span>';
+                html += '<span class="badge-sm ' + badgeClass + '">' + escHtml(statusKey) + '</span>';
+                html += '</div>';
+                if (job.status.Running) {
+                    var pct = (job.status.Running.progress * 100).toFixed(0);
+                    html += '<div class="flex-col gap-6">';
+                    html += '<div class="progress-bar"><div class="progress-bar-fill" style="width:' + pct + '%"></div></div>';
+                    html += '<p class="text-12px reguler" style="color:var(--color-text-700);">' + escHtml(job.status.Running.message || '') + '</p>';
+                    html += '</div>';
+                }
+                if (job.status.Completed) {
+                    html += '<div class="flex-col gap-4">';
+                    var metrics = job.status.Completed.metrics || {};
+                    Object.keys(metrics).forEach(function(k) {
+                        var v = metrics[k];
+                        var display = typeof v === 'number' ? v.toFixed(4) : JSON.stringify(v);
+                        html += '<p class="text-12px reguler" style="color:var(--color-text-700);"><strong>' + escHtml(k) + ':</strong> <span class="mono-12px">' + escHtml(display) + '</span></p>';
+                    });
+                    html += '</div>';
+                }
+                if (job.status.Failed) {
+                    html += '<p class="text-12px reguler" style="color:var(--color-danger-500);">' + escHtml(job.status.Failed.error || 'Unknown error') + '</p>';
+                }
+                html += '</div>';
+            });
+            html += '</div>';
+            container.innerHTML = html;
+        }
+
+        function pollJobs() {
+            trainingJobs.forEach(function(job) {
+                if (job.status.Completed || job.status.Failed) return;
+                fetch('/api/train/status/' + job.id)
+                    .then(function(r) { return r.json(); })
+                    .then(function(data) {
+                        job.status = data.status;
+                        renderJobs();
+                    })
+                    .catch(function() {});
+            });
+        }
+
+        // ── Compare ──
+        function compareAllModels() {
+            var cfg = getConfig();
+            var models = cfg.taskType === 'classification'
+                ? ['logistic_regression', 'decision_tree', 'random_forest']
+                : ['linear_regression', 'decision_tree', 'random_forest'];
+
+            fetch('/api/train/compare', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    target_column: cfg.targetColumn,
+                    task_type: cfg.taskType,
+                    models: models,
+                    cv_folds: cfg.cvFolds
+                })
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.success) {
+                    comparisonResults = data.comparison;
+                    renderComparison();
+                    notify('Comparison complete!', 'success');
+                }
+            })
+            .catch(function(e) { notify('Comparison failed: ' + e.message, 'error'); });
+        }
+
+        function renderComparison() {
+            if (comparisonResults.length === 0) {
+                $('compare-results').style.display = 'none';
+                $('compare-empty').style.display = '';
+                return;
+            }
+            $('compare-empty').style.display = 'none';
+            $('compare-results').style.display = '';
+
+            var cfg = getConfig();
+            var html = '<table class="data-table"><thead><tr><th>Model</th><th>Score</th><th>Std Dev</th></tr></thead><tbody>';
+            comparisonResults.forEach(function(r) {
+                var score = (r.metrics.accuracy || r.metrics.r2 || 0).toFixed(4);
+                var std = (r.metrics.std || 0).toFixed(4);
+                html += '<tr><td><span class="text-14px medium">' + escHtml(r.model) + '</span></td>';
+                html += '<td><span class="mono-14px">' + score + '</span></td>';
+                html += '<td><span class="mono-14px">' + std + '</span></td></tr>';
+            });
+            html += '</tbody></table>';
+            $('compare-table-wrap').innerHTML = html;
+
+            // Render chart
+            var ctx = $('comparisonChart');
+            if (!ctx || typeof Chart === 'undefined') return;
+            if (comparisonChartInstance) comparisonChartInstance.destroy();
+            comparisonChartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: comparisonResults.map(function(r) { return r.model; }),
+                    datasets: [{
+                        label: cfg.taskType === 'classification' ? 'Accuracy' : 'R²',
+                        data: comparisonResults.map(function(r) { return r.metrics.accuracy || r.metrics.r2 || 0; }),
+                        backgroundColor: 'rgba(0, 102, 245, 0.15)',
+                        borderColor: '#0066F5',
+                        borderWidth: 1,
+                        borderRadius: 6
+                    }]
+                },
+                options: {
+                    scales: {
+                        y: { beginAtZero: true, max: 1 },
+                        x: { grid: { display: false } }
+                    },
+                    plugins: {
+                        legend: { labels: { font: { family: '"Inter", sans-serif' } } }
+                    }
+                }
+            });
+        }
+
+        // ── Predict ──
+        function makePrediction() {
+            var input = $('prediction-input').value;
+            fetch('/api/predict', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ data: input })
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                $('prediction-empty').style.display = 'none';
+                $('prediction-output').innerHTML = '<pre class="code-block">' + escHtml(JSON.stringify(data, null, 2)) + '</pre>';
+            })
+            .catch(function(e) { notify('Prediction failed: ' + e.message, 'error'); });
+        }
+
+        // ── Monitor ──
+        function refreshSystemStatus() {
+            fetch('/api/system/status')
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    var sys = data.system || {};
+                    var status = data.status || 'error';
+                    $('status-badge').textContent = status;
+                    $('status-badge').className = 'badge-sm ' + (status === 'healthy' ? 'badge-success' : 'badge-danger');
+                    $('status-dot').className = 'status-dot ' + (status === 'healthy' ? 'healthy' : 'error');
+                    $('mon-cpu').textContent = (sys.cpu_usage || 0).toFixed(1) + '%';
+                    $('mon-mem').textContent = (sys.memory_usage_percent || 0).toFixed(1) + '%';
+                    $('mon-mem-detail').textContent = (sys.used_memory_gb || 0).toFixed(1) + ' / ' + (sys.total_memory_gb || 0).toFixed(1) + ' GB';
+                    $('mon-status').textContent = status;
+                    $('mon-datasets').textContent = data.datasets_count || 0;
+                    $('mon-jobs').textContent = data.jobs_count || 0;
+                    $('mon-models').textContent = data.models_count || 0;
+                })
+                .catch(function() {
+                    $('status-badge').textContent = 'error';
+                    $('status-badge').className = 'badge-sm badge-danger';
+                    $('status-dot').className = 'status-dot error';
+                    $('mon-status').textContent = 'error';
+                });
+        }
+
+        // ── Init ──
+        document.addEventListener('DOMContentLoaded', function() {
+            try {
+                setupDropzone();
+                setupSamplePills();
+                setupModelCheckboxes();
+                refreshSystemStatus();
+                setInterval(pollJobs, 2000);
+
+                $('cfg-targetColumn').addEventListener('change', function() {
+                    updateTrainButton();
+                    $('btn-compare').disabled = !this.value;
+                });
+            } catch (e) {
+                console.error('Init error:', e);
+            }
+        });
     </script>
 </body>
 </html>

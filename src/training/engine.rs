@@ -178,12 +178,15 @@ impl TrainEngine {
 
         self.feature_names = feature_cols.clone();
 
-        // Extract target
+        // Extract target (cast to Float64 if needed)
         let target_series = df
             .column(&self.config.target_column)
             .map_err(|_| KolosalError::FeatureNotFound(self.config.target_column.clone()))?;
 
-        let y: Array1<f64> = target_series
+        let target_f64 = target_series.cast(&DataType::Float64)
+            .map_err(|e| KolosalError::DataError(e.to_string()))?;
+
+        let y: Array1<f64> = target_f64
             .f64()
             .map_err(|e| KolosalError::DataError(e.to_string()))?
             .into_iter()
@@ -200,7 +203,10 @@ impl TrainEngine {
                 .column(col_name)
                 .map_err(|_| KolosalError::FeatureNotFound(col_name.clone()))?;
 
-            let values: Vec<f64> = series
+            let series_f64 = series.cast(&DataType::Float64)
+                .map_err(|e| KolosalError::DataError(e.to_string()))?;
+
+            let values: Vec<f64> = series_f64
                 .f64()
                 .map_err(|e| KolosalError::DataError(e.to_string()))?
                 .into_iter()
@@ -231,7 +237,10 @@ impl TrainEngine {
                 .column(col_name)
                 .map_err(|_| KolosalError::FeatureNotFound(col_name.clone()))?;
 
-            let values: Vec<f64> = series
+            let series_f64 = series.cast(&DataType::Float64)
+                .map_err(|e| KolosalError::DataError(e.to_string()))?;
+
+            let values: Vec<f64> = series_f64
                 .f64()
                 .map_err(|e| KolosalError::DataError(e.to_string()))?
                 .into_iter()
@@ -476,6 +485,92 @@ impl TrainEngine {
         };
 
         Ok(predictions)
+    }
+
+    fn predict_proba_internal(&self, x: &Array2<f64>) -> Result<Array2<f64>> {
+        let model = self.model.as_ref().ok_or(KolosalError::ModelNotFitted)?;
+
+        let proba = match model {
+            TrainedModel::LogisticRegression(m) => {
+                let p = m.predict_proba(x)?;
+                let n = p.len();
+                let mut out = Array2::zeros((n, 2));
+                for (i, &pi) in p.iter().enumerate() {
+                    out[[i, 0]] = 1.0 - pi;
+                    out[[i, 1]] = pi;
+                }
+                out
+            }
+            TrainedModel::GaussianNaiveBayes(m) => m.predict_proba(x),
+            TrainedModel::MultinomialNaiveBayes(m) => {
+                // MultinomialNaiveBayes has predict_log_proba; exponentiate for probabilities
+                let log_proba = m.predict_log_proba(x);
+                log_proba.mapv(|v| v.exp())
+            }
+            TrainedModel::RandomForestClassifier(m) => m.predict_proba(x)?,
+            TrainedModel::GradientBoostingClassifier(m) => {
+                let p = m.predict_proba(x)?;
+                let n = p.len();
+                let mut out = Array2::zeros((n, 2));
+                for (i, &pi) in p.iter().enumerate() {
+                    out[[i, 0]] = 1.0 - pi;
+                    out[[i, 1]] = pi;
+                }
+                out
+            }
+            TrainedModel::KNNClassifier(m) => m.predict_proba(x),
+            TrainedModel::MLPClassifier(m) => m.predict_proba(x),
+            TrainedModel::DecisionTreeClassifier(m) => {
+                let preds = m.predict(x)?;
+                let n = preds.len();
+                let mut out = Array2::zeros((n, 2));
+                for (i, &v) in preds.iter().enumerate() {
+                    let p = 1.0 / (1.0 + (-v).exp());
+                    out[[i, 0]] = 1.0 - p;
+                    out[[i, 1]] = p;
+                }
+                out
+            }
+            TrainedModel::SVMClassifier(m) => {
+                let preds = m.predict(x)?;
+                let n = preds.len();
+                let mut out = Array2::zeros((n, 2));
+                for (i, &v) in preds.iter().enumerate() {
+                    let p = 1.0 / (1.0 + (-v).exp());
+                    out[[i, 0]] = 1.0 - p;
+                    out[[i, 1]] = p;
+                }
+                out
+            }
+            TrainedModel::LinearRegression(_)
+            | TrainedModel::DecisionTreeRegressor(_)
+            | TrainedModel::RandomForestRegressor(_)
+            | TrainedModel::GradientBoostingRegressor(_)
+            | TrainedModel::KNNRegressor(_)
+            | TrainedModel::MLPRegressor(_)
+            | TrainedModel::SVMRegressor(_) => {
+                return Err(KolosalError::TrainingError(
+                    "predict_proba is only supported for classification models".to_string(),
+                ));
+            }
+        };
+
+        Ok(proba)
+    }
+
+    /// Predict class probabilities from a DataFrame
+    pub fn predict_proba(&self, df: &DataFrame) -> Result<Array2<f64>> {
+        if !self.is_fitted {
+            return Err(KolosalError::ModelNotFitted);
+        }
+
+        let x = self.extract_features(df)?;
+        self.predict_proba_internal(&x)
+    }
+
+    /// Predict class probabilities from a raw array (for InferenceEngine)
+    pub fn predict_proba_array(&self, x: &Array2<f64>) -> Result<Array2<f64>> {
+        self.predict_proba_internal(x)
     }
 
     /// Get feature importances (if available)
@@ -776,7 +871,8 @@ impl TrainEngine {
             .into_iter()
             .filter_map(|col_name| {
                 let series = df.column(&col_name).ok()?;
-                let values: Vec<f64> = series
+                let series_f64 = series.cast(&DataType::Float64).ok()?;
+                let values: Vec<f64> = series_f64
                     .f64()
                     .ok()?
                     .into_iter()

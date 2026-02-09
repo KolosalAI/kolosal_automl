@@ -100,6 +100,24 @@ impl InferenceConfig {
         self.quantization = quant;
         self
     }
+
+    /// Builder method to set maximum memory budget in bytes
+    pub fn with_max_memory(mut self, bytes: usize) -> Self {
+        self.max_memory_bytes = Some(bytes);
+        self
+    }
+
+    /// Builder method to set classification threshold
+    pub fn with_threshold(mut self, threshold: f64) -> Self {
+        self.classification_threshold = threshold;
+        self
+    }
+
+    /// Builder method to enable probability output
+    pub fn with_probabilities(mut self) -> Self {
+        self.output_probabilities = true;
+        self
+    }
 }
 
 #[cfg(test)]

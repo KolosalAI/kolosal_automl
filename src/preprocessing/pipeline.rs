@@ -103,8 +103,31 @@ impl DataPreprocessor {
     }
 
     /// Fit the preprocessor to the data
+    /// Cast all numeric (integer) columns to Float64 for consistent processing
+    fn cast_numeric_to_f64(df: &DataFrame) -> Result<DataFrame> {
+        let mut result = df.clone();
+        for col in df.get_columns() {
+            match col.dtype() {
+                DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 |
+                DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64 |
+                DataType::Float32 => {
+                    let casted = col.cast(&DataType::Float64)
+                        .map_err(|e| KolosalError::DataError(e.to_string()))?;
+                    result = result.with_column(casted)
+                        .map_err(|e| KolosalError::DataError(e.to_string()))?
+                        .clone();
+                }
+                _ => {}
+            }
+        }
+        Ok(result)
+    }
+
     pub fn fit(&mut self, df: &DataFrame) -> Result<&mut Self> {
         let start = Instant::now();
+
+        // Cast numeric columns to Float64
+        let df = &Self::cast_numeric_to_f64(df)?;
 
         // Detect column types
         self.detect_column_types(df)?;
@@ -173,7 +196,8 @@ impl DataPreprocessor {
             return Err(KolosalError::ModelNotFitted);
         }
 
-        let mut result = df.clone();
+        // Cast numeric columns to Float64
+        let mut result = Self::cast_numeric_to_f64(df)?;
 
         // Apply numeric imputation
         if let Some(ref imputer) = self.numeric_imputer {

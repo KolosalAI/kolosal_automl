@@ -6,6 +6,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 use polars::prelude::*;
+use crate::inference::{InferenceConfig, InferenceEngine};
 use crate::preprocessing::DataPreprocessor;
 use crate::training::TrainEngine;
 
@@ -53,6 +54,78 @@ pub struct DatasetInfo {
     pub dtypes: Vec<String>,
 }
 
+/// In-memory model registry for caching loaded inference engines
+pub struct ModelRegistry {
+    engines: RwLock<HashMap<String, Arc<InferenceEngine>>>,
+    max_cached: usize,
+}
+
+impl ModelRegistry {
+    pub fn new(max_cached: usize) -> Self {
+        Self {
+            engines: RwLock::new(HashMap::new()),
+            max_cached,
+        }
+    }
+
+    /// Get a cached inference engine, or load from disk and cache it
+    pub async fn get_or_load(
+        &self,
+        model_id: &str,
+        model_path: &str,
+    ) -> crate::error::Result<Arc<InferenceEngine>> {
+        // Fast path: check cache
+        {
+            let engines = self.engines.read().await;
+            if let Some(engine) = engines.get(model_id) {
+                return Ok(Arc::clone(engine));
+            }
+        }
+
+        // Slow path: load from disk
+        let mut engine = InferenceEngine::load(InferenceConfig::new(), None, model_path)?;
+        engine.warmup()?;
+        let engine = Arc::new(engine);
+
+        // Insert into cache, evict oldest if needed
+        {
+            let mut engines = self.engines.write().await;
+            if engines.len() >= self.max_cached {
+                // Evict first entry (simple LRU approximation)
+                if let Some(key) = engines.keys().next().cloned() {
+                    engines.remove(&key);
+                }
+            }
+            engines.insert(model_id.to_string(), Arc::clone(&engine));
+        }
+
+        Ok(engine)
+    }
+
+    /// Evict a model from the cache
+    pub async fn evict(&self, model_id: &str) {
+        let mut engines = self.engines.write().await;
+        engines.remove(model_id);
+    }
+
+    /// Clear all cached models
+    pub async fn clear(&self) {
+        let mut engines = self.engines.write().await;
+        engines.clear();
+    }
+
+    /// Number of currently cached models
+    pub async fn cached_count(&self) -> usize {
+        self.engines.read().await.len()
+    }
+
+    /// Get stats for a cached model
+    pub async fn get_model_stats(&self, model_id: &str) -> Option<crate::inference::InferenceStats> {
+        let engines = self.engines.read().await;
+        engines.get(model_id).map(|e| e.stats())
+    }
+}
+
 /// Application state shared across handlers
 pub struct AppState {
     pub config: ServerConfig,
@@ -61,6 +134,7 @@ pub struct AppState {
     pub models: RwLock<HashMap<String, ModelInfo>>,
     pub current_data: RwLock<Option<DataFrame>>,
     pub preprocessor: RwLock<Option<DataPreprocessor>>,
+    pub model_registry: ModelRegistry,
 }
 
 impl AppState {
@@ -72,6 +146,7 @@ impl AppState {
             models: RwLock::new(HashMap::new()),
             current_data: RwLock::new(None),
             preprocessor: RwLock::new(None),
+            model_registry: ModelRegistry::new(10), // Cache up to 10 models
         }
     }
 
