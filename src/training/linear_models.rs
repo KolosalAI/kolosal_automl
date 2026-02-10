@@ -4,7 +4,110 @@ use crate::error::{KolosalError, Result};
 use ndarray::{Array1, Array2, Axis};
 use serde::{Deserialize, Serialize};
 
-/// Simple matrix inversion for small matrices using Gauss-Jordan elimination
+/// Solve symmetric positive-definite system Ax = b using Cholesky decomposition.
+/// Falls back to regularized solve if matrix is near-singular.
+fn cholesky_solve(a: &Array2<f64>, b: &Array1<f64>) -> Option<Array1<f64>> {
+    let n = a.nrows();
+    if n != a.ncols() || n != b.len() {
+        return None;
+    }
+
+    // Cholesky decomposition: A = L * L^T
+    let mut l = Array2::zeros((n, n));
+
+    for i in 0..n {
+        for j in 0..=i {
+            let mut sum = 0.0;
+            for k in 0..j {
+                sum += l[[i, k]] * l[[j, k]];
+            }
+
+            if i == j {
+                let diag = a[[i, i]] - sum;
+                if diag <= 0.0 {
+                    // Not positive definite — add regularization and retry
+                    let mut a_reg = a.clone();
+                    let ridge = 1e-8 * a.diag().iter().map(|v| v.abs()).sum::<f64>() / n as f64;
+                    for k in 0..n {
+                        a_reg[[k, k]] += ridge;
+                    }
+                    return cholesky_solve_inner(&a_reg, b);
+                }
+                l[[i, j]] = diag.sqrt();
+            } else {
+                l[[i, j]] = (a[[i, j]] - sum) / l[[j, j]];
+            }
+        }
+    }
+
+    // Forward substitution: L * y = b
+    let mut y = Array1::zeros(n);
+    for i in 0..n {
+        let mut sum = 0.0;
+        for j in 0..i {
+            sum += l[[i, j]] * y[j];
+        }
+        y[i] = (b[i] - sum) / l[[i, i]];
+    }
+
+    // Backward substitution: L^T * x = y
+    let mut x = Array1::zeros(n);
+    for i in (0..n).rev() {
+        let mut sum = 0.0;
+        for j in (i + 1)..n {
+            sum += l[[j, i]] * x[j];
+        }
+        x[i] = (y[i] - sum) / l[[i, i]];
+    }
+
+    Some(x)
+}
+
+/// Inner Cholesky solve (no retry) for regularized matrix
+fn cholesky_solve_inner(a: &Array2<f64>, b: &Array1<f64>) -> Option<Array1<f64>> {
+    let n = a.nrows();
+    let mut l = Array2::zeros((n, n));
+
+    for i in 0..n {
+        for j in 0..=i {
+            let mut sum = 0.0;
+            for k in 0..j {
+                sum += l[[i, k]] * l[[j, k]];
+            }
+            if i == j {
+                let diag = a[[i, i]] - sum;
+                if diag <= 0.0 {
+                    return None; // Still not PD even with regularization — fall back to Gauss-Jordan
+                }
+                l[[i, j]] = diag.sqrt();
+            } else {
+                l[[i, j]] = (a[[i, j]] - sum) / l[[j, j]];
+            }
+        }
+    }
+
+    let mut y = Array1::zeros(n);
+    for i in 0..n {
+        let mut sum = 0.0;
+        for j in 0..i {
+            sum += l[[i, j]] * y[j];
+        }
+        y[i] = (b[i] - sum) / l[[i, i]];
+    }
+
+    let mut x = Array1::zeros(n);
+    for i in (0..n).rev() {
+        let mut sum = 0.0;
+        for j in (i + 1)..n {
+            sum += l[[j, i]] * x[j];
+        }
+        x[i] = (y[i] - sum) / l[[i, i]];
+    }
+
+    Some(x)
+}
+
+/// Simple matrix inversion for small matrices using Gauss-Jordan elimination (fallback)
 fn matrix_inverse(m: &Array2<f64>) -> Option<Array2<f64>> {
     let n = m.nrows();
     if n != m.ncols() {
@@ -72,11 +175,18 @@ fn matrix_inverse(m: &Array2<f64>) -> Option<Array2<f64>> {
     Some(inv)
 }
 
-/// Solve least squares via pseudo-inverse: (X^T X)^-1 X^T y
+/// Solve least squares via normal equations: (X^T X) w = X^T y
+/// Uses Cholesky decomposition (O(n³/3)) with fallback to Gauss-Jordan
 fn solve_least_squares(x: &Array2<f64>, y: &Array1<f64>) -> Option<Array1<f64>> {
     let xtx = x.t().dot(x);
     let xty = x.t().dot(y);
-    
+
+    // Try Cholesky first (faster, more stable for well-conditioned systems)
+    if let Some(result) = cholesky_solve(&xtx, &xty) {
+        return Some(result);
+    }
+
+    // Fallback to Gauss-Jordan via explicit inverse
     match matrix_inverse(&xtx) {
         Some(inv) => Some(inv.dot(&xty)),
         None => None,
@@ -371,6 +481,348 @@ impl LogisticRegression {
     }
 }
 
+/// Ridge Regression (L2-regularized linear regression)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RidgeRegression {
+    pub coefficients: Option<Array1<f64>>,
+    pub intercept: Option<f64>,
+    pub fit_intercept: bool,
+    /// L2 regularization strength
+    pub alpha: f64,
+    pub is_fitted: bool,
+}
+
+impl Default for RidgeRegression {
+    fn default() -> Self {
+        Self::new(1.0)
+    }
+}
+
+impl RidgeRegression {
+    pub fn new(alpha: f64) -> Self {
+        Self {
+            coefficients: None,
+            intercept: None,
+            fit_intercept: true,
+            alpha,
+            is_fitted: false,
+        }
+    }
+
+    pub fn with_alpha(mut self, alpha: f64) -> Self {
+        self.alpha = alpha;
+        self
+    }
+
+    pub fn fit(&mut self, x: &Array2<f64>, y: &Array1<f64>) -> Result<&mut Self> {
+        let n_samples = x.nrows();
+        let n_features = x.ncols();
+        if n_samples != y.len() {
+            return Err(KolosalError::ShapeError {
+                expected: format!("y length = {}", n_samples),
+                actual: format!("y length = {}", y.len()),
+            });
+        }
+
+        let (x_c, y_c, x_mean, y_mean) = if self.fit_intercept {
+            let xm = x.mean_axis(Axis(0)).unwrap();
+            let ym = y.mean().unwrap_or(0.0);
+            (x - &xm.clone().insert_axis(Axis(0)), y - ym, Some(xm), Some(ym))
+        } else {
+            (x.clone(), y.clone(), None, None)
+        };
+
+        let mut xtx = x_c.t().dot(&x_c);
+        for i in 0..n_features {
+            xtx[[i, i]] += self.alpha;
+        }
+        let xty = x_c.t().dot(&y_c);
+
+        let coefficients = if let Some(result) = cholesky_solve(&xtx, &xty) {
+            result
+        } else {
+            match matrix_inverse(&xtx) {
+                Some(inv) => inv.dot(&xty),
+                None => return Err(KolosalError::ComputationError("Singular matrix".to_string())),
+            }
+        };
+
+        self.intercept = if self.fit_intercept {
+            Some(y_mean.unwrap() - coefficients.dot(&x_mean.unwrap()))
+        } else {
+            Some(0.0)
+        };
+        self.coefficients = Some(coefficients);
+        self.is_fitted = true;
+        Ok(self)
+    }
+
+    pub fn predict(&self, x: &Array2<f64>) -> Result<Array1<f64>> {
+        if !self.is_fitted {
+            return Err(KolosalError::ModelNotFitted);
+        }
+        Ok(x.dot(self.coefficients.as_ref().unwrap()) + self.intercept.unwrap_or(0.0))
+    }
+
+    pub fn score(&self, x: &Array2<f64>, y: &Array1<f64>) -> Result<f64> {
+        let p = self.predict(x)?;
+        let ym = y.mean().unwrap_or(0.0);
+        let ss_res = (&p - y).mapv(|v| v * v).sum();
+        let ss_tot = y.mapv(|v| (v - ym).powi(2)).sum();
+        Ok(if ss_tot == 0.0 { 1.0 } else { 1.0 - ss_res / ss_tot })
+    }
+}
+
+/// Lasso Regression (L1-regularized via coordinate descent)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LassoRegression {
+    pub coefficients: Option<Array1<f64>>,
+    pub intercept: Option<f64>,
+    pub fit_intercept: bool,
+    /// L1 regularization strength
+    pub alpha: f64,
+    pub max_iter: usize,
+    pub tol: f64,
+    pub is_fitted: bool,
+}
+
+impl Default for LassoRegression {
+    fn default() -> Self {
+        Self::new(1.0)
+    }
+}
+
+impl LassoRegression {
+    pub fn new(alpha: f64) -> Self {
+        Self {
+            coefficients: None,
+            intercept: None,
+            fit_intercept: true,
+            alpha,
+            max_iter: 1000,
+            tol: 1e-6,
+            is_fitted: false,
+        }
+    }
+
+    pub fn with_alpha(mut self, alpha: f64) -> Self {
+        self.alpha = alpha;
+        self
+    }
+
+    pub fn with_max_iter(mut self, max_iter: usize) -> Self {
+        self.max_iter = max_iter;
+        self
+    }
+
+    /// Soft-threshold operator for L1 proximal step
+    fn soft_threshold(val: f64, threshold: f64) -> f64 {
+        if val > threshold {
+            val - threshold
+        } else if val < -threshold {
+            val + threshold
+        } else {
+            0.0
+        }
+    }
+
+    pub fn fit(&mut self, x: &Array2<f64>, y: &Array1<f64>) -> Result<&mut Self> {
+        let n_samples = x.nrows();
+        let n_features = x.ncols();
+        if n_samples != y.len() {
+            return Err(KolosalError::ShapeError {
+                expected: format!("y length = {}", n_samples),
+                actual: format!("y length = {}", y.len()),
+            });
+        }
+
+        let (x_c, y_c, x_mean, y_mean) = if self.fit_intercept {
+            let xm = x.mean_axis(Axis(0)).unwrap();
+            let ym = y.mean().unwrap_or(0.0);
+            (x - &xm.clone().insert_axis(Axis(0)), y - ym, Some(xm), Some(ym))
+        } else {
+            (x.clone(), y.clone(), None, None)
+        };
+
+        // Pre-compute column norms
+        let col_norms: Vec<f64> = (0..n_features)
+            .map(|j| x_c.column(j).mapv(|v| v * v).sum())
+            .collect();
+
+        let mut w = Array1::zeros(n_features);
+        let lambda = self.alpha * n_samples as f64;
+
+        for _iter in 0..self.max_iter {
+            let w_old = w.clone();
+
+            // Coordinate descent
+            for j in 0..n_features {
+                if col_norms[j] < 1e-15 {
+                    w[j] = 0.0;
+                    continue;
+                }
+                // Compute partial residual without feature j
+                let r = &y_c - &x_c.dot(&w) + &(&x_c.column(j) * w[j]);
+                let rho = x_c.column(j).dot(&r);
+                w[j] = Self::soft_threshold(rho, lambda) / col_norms[j];
+            }
+
+            // Check convergence
+            let diff = (&w - &w_old).mapv(|v| v.abs()).sum();
+            if diff < self.tol {
+                break;
+            }
+        }
+
+        self.intercept = if self.fit_intercept {
+            Some(y_mean.unwrap() - w.dot(&x_mean.unwrap()))
+        } else {
+            Some(0.0)
+        };
+        self.coefficients = Some(w);
+        self.is_fitted = true;
+        Ok(self)
+    }
+
+    pub fn predict(&self, x: &Array2<f64>) -> Result<Array1<f64>> {
+        if !self.is_fitted {
+            return Err(KolosalError::ModelNotFitted);
+        }
+        Ok(x.dot(self.coefficients.as_ref().unwrap()) + self.intercept.unwrap_or(0.0))
+    }
+
+    pub fn score(&self, x: &Array2<f64>, y: &Array1<f64>) -> Result<f64> {
+        let p = self.predict(x)?;
+        let ym = y.mean().unwrap_or(0.0);
+        let ss_res = (&p - y).mapv(|v| v * v).sum();
+        let ss_tot = y.mapv(|v| (v - ym).powi(2)).sum();
+        Ok(if ss_tot == 0.0 { 1.0 } else { 1.0 - ss_res / ss_tot })
+    }
+}
+
+/// Elastic Net Regression (L1 + L2 regularization via coordinate descent)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ElasticNetRegression {
+    pub coefficients: Option<Array1<f64>>,
+    pub intercept: Option<f64>,
+    pub fit_intercept: bool,
+    /// Overall regularization strength
+    pub alpha: f64,
+    /// L1 ratio (0.0 = pure L2/Ridge, 1.0 = pure L1/Lasso)
+    pub l1_ratio: f64,
+    pub max_iter: usize,
+    pub tol: f64,
+    pub is_fitted: bool,
+}
+
+impl Default for ElasticNetRegression {
+    fn default() -> Self {
+        Self::new(1.0, 0.5)
+    }
+}
+
+impl ElasticNetRegression {
+    pub fn new(alpha: f64, l1_ratio: f64) -> Self {
+        Self {
+            coefficients: None,
+            intercept: None,
+            fit_intercept: true,
+            alpha,
+            l1_ratio: l1_ratio.clamp(0.0, 1.0),
+            max_iter: 1000,
+            tol: 1e-6,
+            is_fitted: false,
+        }
+    }
+
+    pub fn with_alpha(mut self, alpha: f64) -> Self {
+        self.alpha = alpha;
+        self
+    }
+
+    pub fn with_l1_ratio(mut self, l1_ratio: f64) -> Self {
+        self.l1_ratio = l1_ratio.clamp(0.0, 1.0);
+        self
+    }
+
+    pub fn with_max_iter(mut self, max_iter: usize) -> Self {
+        self.max_iter = max_iter;
+        self
+    }
+
+    pub fn fit(&mut self, x: &Array2<f64>, y: &Array1<f64>) -> Result<&mut Self> {
+        let n_samples = x.nrows();
+        let n_features = x.ncols();
+        if n_samples != y.len() {
+            return Err(KolosalError::ShapeError {
+                expected: format!("y length = {}", n_samples),
+                actual: format!("y length = {}", y.len()),
+            });
+        }
+
+        let (x_c, y_c, x_mean, y_mean) = if self.fit_intercept {
+            let xm = x.mean_axis(Axis(0)).unwrap();
+            let ym = y.mean().unwrap_or(0.0);
+            (x - &xm.clone().insert_axis(Axis(0)), y - ym, Some(xm), Some(ym))
+        } else {
+            (x.clone(), y.clone(), None, None)
+        };
+
+        let col_norms: Vec<f64> = (0..n_features)
+            .map(|j| x_c.column(j).mapv(|v| v * v).sum())
+            .collect();
+
+        let mut w = Array1::zeros(n_features);
+        let n = n_samples as f64;
+        let l1_penalty = self.alpha * self.l1_ratio * n;
+        let l2_penalty = self.alpha * (1.0 - self.l1_ratio) * n;
+
+        for _iter in 0..self.max_iter {
+            let w_old = w.clone();
+
+            for j in 0..n_features {
+                let denom = col_norms[j] + l2_penalty;
+                if denom < 1e-15 {
+                    w[j] = 0.0;
+                    continue;
+                }
+                let r = &y_c - &x_c.dot(&w) + &(&x_c.column(j) * w[j]);
+                let rho = x_c.column(j).dot(&r);
+                w[j] = LassoRegression::soft_threshold(rho, l1_penalty) / denom;
+            }
+
+            let diff = (&w - &w_old).mapv(|v| v.abs()).sum();
+            if diff < self.tol {
+                break;
+            }
+        }
+
+        self.intercept = if self.fit_intercept {
+            Some(y_mean.unwrap() - w.dot(&x_mean.unwrap()))
+        } else {
+            Some(0.0)
+        };
+        self.coefficients = Some(w);
+        self.is_fitted = true;
+        Ok(self)
+    }
+
+    pub fn predict(&self, x: &Array2<f64>) -> Result<Array1<f64>> {
+        if !self.is_fitted {
+            return Err(KolosalError::ModelNotFitted);
+        }
+        Ok(x.dot(self.coefficients.as_ref().unwrap()) + self.intercept.unwrap_or(0.0))
+    }
+
+    pub fn score(&self, x: &Array2<f64>, y: &Array1<f64>) -> Result<f64> {
+        let p = self.predict(x)?;
+        let ym = y.mean().unwrap_or(0.0);
+        let ss_res = (&p - y).mapv(|v| v * v).sum();
+        let ss_tot = y.mapv(|v| (v - ym).powi(2)).sum();
+        Ok(if ss_tot == 0.0 { 1.0 } else { 1.0 - ss_res / ss_tot })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -455,5 +907,175 @@ mod tests {
         // First sample should have low probability, second should have high
         assert!(proba[0] < 0.5);
         assert!(proba[1] > 0.5);
+    }
+
+    #[test]
+    fn test_ridge_regression_dedicated() {
+        let x = array![[1.0, 1.0], [2.0, 2.0], [3.0, 3.0], [4.0, 4.0]];
+        let y = array![2.0, 4.0, 6.0, 8.0];
+        let mut model = RidgeRegression::new(0.1);
+        model.fit(&x, &y).unwrap();
+        assert!(model.is_fitted);
+        let r2 = model.score(&x, &y).unwrap();
+        assert!(r2 > 0.95, "Ridge R² = {}", r2);
+    }
+
+    #[test]
+    fn test_lasso_regression() {
+        let x = array![[1.0, 0.0], [2.0, 0.0], [3.0, 0.0], [4.0, 0.0]];
+        let y = array![2.0, 4.0, 6.0, 8.0];
+        let mut model = LassoRegression::new(0.01);
+        model.fit(&x, &y).unwrap();
+        assert!(model.is_fitted);
+        let preds = model.predict(&x).unwrap();
+        assert_eq!(preds.len(), 4);
+        // With small alpha, should fit well
+        let r2 = model.score(&x, &y).unwrap();
+        assert!(r2 > 0.9, "Lasso R² = {}", r2);
+    }
+
+    #[test]
+    fn test_elastic_net() {
+        let x = array![[1.0, 1.0], [2.0, 2.0], [3.0, 3.0], [4.0, 4.0]];
+        let y = array![3.0, 5.0, 7.0, 9.0];
+        let mut model = ElasticNetRegression::new(0.01, 0.5);
+        model.fit(&x, &y).unwrap();
+        assert!(model.is_fitted);
+        let r2 = model.score(&x, &y).unwrap();
+        assert!(r2 > 0.9, "ElasticNet R² = {}", r2);
+    }
+}
+
+// ============ Polynomial Regression ============
+
+/// Polynomial Regression — expands features to polynomial degree then fits with Ridge
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PolynomialRegression {
+    pub degree: usize,
+    pub alpha: f64,
+    inner: RidgeRegression,
+    pub is_fitted: bool,
+    n_original_features: usize,
+}
+
+impl PolynomialRegression {
+    pub fn new(degree: usize, alpha: f64) -> Self {
+        Self {
+            degree: degree.max(1),
+            alpha,
+            inner: RidgeRegression::new(alpha),
+            is_fitted: false,
+            n_original_features: 0,
+        }
+    }
+
+    /// Expand features to polynomial terms up to given degree
+    fn expand_features(x: &Array2<f64>, degree: usize) -> Array2<f64> {
+        let n = x.nrows();
+        let p = x.ncols();
+
+        if degree == 1 {
+            return x.clone();
+        }
+
+        // Count output features: for degree d, we include x_i^k for k=1..d
+        // plus interaction terms for degree 2+ (x_i * x_j for i <= j)
+        let mut cols: Vec<Array1<f64>> = Vec::new();
+
+        // Degree 1: original features
+        for j in 0..p {
+            cols.push(x.column(j).to_owned());
+        }
+
+        // Degree 2: x_i^2 and x_i * x_j
+        if degree >= 2 {
+            for i in 0..p {
+                for j in i..p {
+                    let col: Array1<f64> = Array1::from_vec(
+                        (0..n).map(|row| x[[row, i]] * x[[row, j]]).collect()
+                    );
+                    cols.push(col);
+                }
+            }
+        }
+
+        // Degree 3+: x_i^k for higher powers (skip interactions for efficiency)
+        for d in 3..=degree {
+            for j in 0..p {
+                let col: Array1<f64> = Array1::from_vec(
+                    (0..n).map(|row| x[[row, j]].powi(d as i32)).collect()
+                );
+                cols.push(col);
+            }
+        }
+
+        let n_cols = cols.len();
+        let mut result = Array2::zeros((n, n_cols));
+        for (j, col) in cols.into_iter().enumerate() {
+            for i in 0..n {
+                result[[i, j]] = col[i];
+            }
+        }
+        result
+    }
+
+    pub fn fit(&mut self, x: &Array2<f64>, y: &Array1<f64>) -> Result<()> {
+        self.n_original_features = x.ncols();
+        let x_poly = Self::expand_features(x, self.degree);
+        self.inner.fit(&x_poly, y)?;
+        self.is_fitted = true;
+        Ok(())
+    }
+
+    pub fn predict(&self, x: &Array2<f64>) -> Result<Array1<f64>> {
+        if !self.is_fitted {
+            return Err(KolosalError::TrainingError("Model not fitted".into()));
+        }
+        let x_poly = Self::expand_features(x, self.degree);
+        self.inner.predict(&x_poly)
+    }
+
+    pub fn score(&self, x: &Array2<f64>, y: &Array1<f64>) -> Result<f64> {
+        let preds = self.predict(x)?;
+        let mean_y = y.mean().unwrap_or(0.0);
+        let ss_res: f64 = y.iter().zip(preds.iter()).map(|(&yi, &pi)| (yi - pi).powi(2)).sum();
+        let ss_tot: f64 = y.iter().map(|&yi| (yi - mean_y).powi(2)).sum();
+        if ss_tot == 0.0 { return Ok(1.0); }
+        Ok(1.0 - ss_res / ss_tot)
+    }
+}
+
+#[cfg(test)]
+mod poly_tests {
+    use super::*;
+    use ndarray::array;
+
+    #[test]
+    fn test_polynomial_regression_quadratic() {
+        // y = x^2
+        let x = array![[1.0], [2.0], [3.0], [4.0], [5.0]];
+        let y = array![1.0, 4.0, 9.0, 16.0, 25.0];
+        let mut model = PolynomialRegression::new(2, 0.001);
+        model.fit(&x, &y).unwrap();
+        let r2 = model.score(&x, &y).unwrap();
+        assert!(r2 > 0.99, "Poly R² = {}", r2);
+    }
+
+    #[test]
+    fn test_polynomial_regression_multivariate() {
+        let x = array![[1.0, 2.0], [2.0, 3.0], [3.0, 4.0], [4.0, 5.0]];
+        let y = array![5.0, 13.0, 25.0, 41.0]; // ~ x1^2 + x2^2
+        let mut model = PolynomialRegression::new(2, 0.01);
+        model.fit(&x, &y).unwrap();
+        let preds = model.predict(&x).unwrap();
+        assert_eq!(preds.len(), 4);
+    }
+
+    #[test]
+    fn test_polynomial_feature_expansion() {
+        let x = array![[1.0, 2.0], [3.0, 4.0]];
+        let expanded = PolynomialRegression::expand_features(&x, 2);
+        // degree 1: x1, x2 (2) + degree 2: x1^2, x1*x2, x2^2 (3) = 5 total
+        assert_eq!(expanded.ncols(), 5);
     }
 }

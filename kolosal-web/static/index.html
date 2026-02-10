@@ -253,6 +253,27 @@
         .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px 20px; color: var(--color-text-600); gap: 8px; }
         .empty-state i { font-size: 32px; color: var(--color-text-500); }
 
+        /* Spinner */
+        .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid var(--color-grey-800); border-top-color: var(--color-text-900); border-radius: 50%; animation: spin 0.6s linear infinite; }
+        .spinner-lg { width: 32px; height: 32px; border-width: 3px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Loading overlay */
+        .loading-overlay { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px 20px; gap: 12px; color: var(--color-text-600); }
+
+        /* Skeleton loader */
+        .skeleton { background: linear-gradient(90deg, var(--color-grey-700) 25%, var(--color-grey-600) 50%, var(--color-grey-700) 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite; border-radius: 6px; }
+        @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+        /* Scrollable nav for many tabs */
+        .app-nav-inner { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+        .app-nav-inner::-webkit-scrollbar { display: none; }
+
+        /* Alert banner */
+        .alert-banner { padding: 10px 16px; border-radius: 10px; font-size: 13px; line-height: 18px; display: flex; align-items: center; gap: 8px; }
+        .alert-warning { background-color: var(--color-warning-100); color: var(--color-warning-700); border: 1px solid var(--color-warning-200); }
+        .alert-danger { background-color: var(--color-danger-100); color: var(--color-danger-700); border: 1px solid var(--color-danger-200); }
+
         /* Utility */
         .w-full { width: 100%; }
         .hidden { display: none; }
@@ -270,6 +291,12 @@
         .text-center { text-align: center; }
         .tab-panel { display: none; }
         .tab-panel.active { display: block; }
+        .sub-tabs { display: flex; flex-direction: row; gap: 4px; margin-bottom: 20px; border-bottom: 1px solid var(--color-grey-800); padding-bottom: 0; }
+        .sub-tab { display: flex; align-items: center; gap: 4px; height: 32px; padding: 0 10px; font-size: 13px; font-weight: 500; color: var(--color-text-700); background: none; border: none; border-bottom: 2px solid transparent; cursor: pointer; transition: all 0.15s ease; }
+        .sub-tab:hover { color: var(--color-text-900); background-color: var(--color-grey-600); }
+        .sub-tab.active { color: var(--color-text-900); border-bottom-color: var(--color-text-900); }
+        .sub-panel { display: none; }
+        .sub-panel.active { display: block; }
     </style>
 </head>
 <body style="background-color:#F8F9F9;color:#0D0E0F;font-family:Inter,system-ui,-apple-system,sans-serif;margin:0;padding:0;min-height:100vh;display:block;visibility:visible;opacity:1;">
@@ -295,20 +322,23 @@
             <button class="nav-tab active" onclick="switchTab('data')" data-tab="data">
                 <i class="ri-folder-upload-line"></i> Data
             </button>
-            <button class="nav-tab" onclick="switchTab('config')" data-tab="config">
-                <i class="ri-settings-3-line"></i> Config
+            <button class="nav-tab" onclick="switchTab('automl')" data-tab="automl">
+                <i class="ri-magic-line"></i> AutoML
             </button>
-            <button class="nav-tab" onclick="switchTab('training')" data-tab="training">
-                <i class="ri-rocket-line"></i> Training
-            </button>
-            <button class="nav-tab" onclick="switchTab('compare')" data-tab="compare">
-                <i class="ri-bar-chart-grouped-line"></i> Compare
+            <button class="nav-tab" onclick="switchTab('train')" data-tab="train">
+                <i class="ri-rocket-line"></i> Train
             </button>
             <button class="nav-tab" onclick="switchTab('predict')" data-tab="predict">
-                <i class="ri-magic-line"></i> Predict
+                <i class="ri-cursor-line"></i> Predict
             </button>
-            <button class="nav-tab" onclick="switchTab('monitor')" data-tab="monitor">
-                <i class="ri-dashboard-3-line"></i> Monitor
+            <button class="nav-tab" onclick="switchTab('analyze')" data-tab="analyze">
+                <i class="ri-search-eye-line"></i> Analyze
+            </button>
+            <button class="nav-tab" onclick="switchTab('serve')" data-tab="serve">
+                <i class="ri-server-line"></i> Serve
+            </button>
+            <button class="nav-tab" onclick="switchTab('system')" data-tab="system">
+                <i class="ri-dashboard-3-line"></i> System
             </button>
         </div>
     </nav>
@@ -339,6 +369,16 @@
                         <p class="text-12px medium" style="color: var(--color-text-700); margin-bottom: 8px;">Or load a sample dataset:</p>
                         <div id="sample-pills" class="flex-row flex-wrap gap-8"></div>
                     </div>
+                    <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--color-grey-800);">
+                        <p class="text-12px medium" style="color: var(--color-text-700); margin-bottom: 8px;">Or import from URL:</p>
+                        <div class="flex-row gap-8" style="align-items: stretch;">
+                            <input type="text" id="import-url" class="input-text-md" placeholder="Paste URL (Kaggle, GitHub, CSV, Google Sheets, HuggingFace...)" style="flex:1;">
+                            <button id="btn-import-url" onclick="importFromUrl()" class="btn-sm btn-primary" style="white-space:nowrap;">
+                                <i class="ri-download-2-line"></i> Import
+                            </button>
+                        </div>
+                        <div id="import-url-status" style="margin-top: 8px;"></div>
+                    </div>
                 </div>
                 <div class="card">
                     <div class="card-header">
@@ -357,115 +397,490 @@
                     </div>
                 </div>
             </div>
-        </div>
-
-        <!-- Configuration Tab -->
-        <div id="tab-config" class="tab-panel">
-            <div class="card" style="max-width: 600px;">
+            <div class="card" style="margin-top: 16px; grid-column: 1 / -1;">
                 <div class="card-header">
-                    <h2 class="text-16px medium">Training Configuration</h2>
+                    <h2 class="text-16px medium">Data Summary</h2>
                 </div>
-                <div class="form-stack">
-                    <div class="form-group">
-                        <label class="form-label">Task Type</label>
-                        <select id="cfg-taskType" class="input-text-md">
-                            <option value="classification">Classification</option>
-                            <option value="regression">Regression</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Target Column</label>
-                        <select id="cfg-targetColumn" class="input-text-md">
-                            <option value="">Select target...</option>
-                        </select>
-                    </div>
-                    <hr class="separator">
-                    <div class="form-group">
-                        <label class="form-label">Preprocessing</label>
-                        <div class="grid-2">
-                            <div class="form-group">
-                                <label class="form-hint">Scaler</label>
-                                <select id="cfg-scaler" class="input-text-sm">
-                                    <option value="none">None</option>
-                                    <option value="standard" selected>Standard</option>
-                                    <option value="minmax">MinMax</option>
-                                    <option value="robust">Robust</option>
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <label class="form-hint">Missing Values</label>
-                                <select id="cfg-imputation" class="input-text-sm">
-                                    <option value="drop">Drop</option>
-                                    <option value="mean" selected>Mean</option>
-                                    <option value="median">Median</option>
-                                    <option value="mode">Mode</option>
-                                </select>
-                            </div>
+                <div id="data-summary-chart-wrap" style="display:none;">
+                    <div class="grid-2">
+                        <div style="max-height: 280px;">
+                            <canvas id="columnTypesChart" width="300" height="200"></canvas>
                         </div>
+                        <div id="data-col-stats" class="flex-col gap-8"></div>
                     </div>
-                    <div class="form-group">
-                        <label class="form-label">
-                            Cross-Validation Folds: <span id="cv-folds-display" class="mono-14px">5</span>
-                        </label>
-                        <input type="range" id="cfg-cvFolds" min="2" max="10" value="5" oninput="document.getElementById('cv-folds-display').textContent=this.value">
-                    </div>
-                    <button id="btn-preprocess" onclick="applyPreprocessing()" class="btn-md btn-primary w-full" disabled>
-                        <i class="ri-check-line"></i> Apply Preprocessing
-                    </button>
+                </div>
+                <div id="data-summary-empty" class="empty-state" style="padding: 20px;">
+                    <i class="ri-pie-chart-line"></i>
+                    <p class="text-14px reguler">Load data to see summary</p>
                 </div>
             </div>
         </div>
 
-        <!-- Training Tab -->
-        <div id="tab-training" class="tab-panel">
-            <div class="grid-1-2">
-                <div class="card">
-                    <div class="card-header">
-                        <h2 class="text-16px medium">Select Models</h2>
-                    </div>
-                    <div id="model-checkboxes" class="flex-col gap-4"></div>
-                    <button id="btn-train" onclick="startTraining()" class="btn-md btn-primary w-full" style="margin-top: 20px;" disabled>
-                        <i class="ri-rocket-line"></i> Start Training
-                    </button>
-                </div>
-                <div class="card">
-                    <div class="card-header">
-                        <h2 class="text-16px medium">Training Progress</h2>
-                    </div>
-                    <div id="jobs-list"></div>
-                    <div id="jobs-empty" class="empty-state">
-                        <i class="ri-flask-line"></i>
-                        <p class="text-14px reguler">No training jobs yet</p>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Compare Tab -->
-        <div id="tab-compare" class="tab-panel">
+        <!-- AutoML Tab -->
+        <div id="tab-automl" class="tab-panel">
             <div class="card">
                 <div class="card-header">
-                    <h2 class="text-16px medium">Model Comparison</h2>
-                    <button id="btn-compare" onclick="compareAllModels()" class="btn-sm btn-primary" disabled>
-                        <i class="ri-bar-chart-grouped-line"></i> Compare All Models
-                    </button>
+                    <h2 class="text-16px medium"><i class="ri-magic-line"></i> One-Click AutoML</h2>
+                    <span class="badge" style="background: var(--color-information-500); color: #fff; padding: 2px 8px; border-radius: 4px; font-size: 11px;">NEW</span>
                 </div>
-                <div id="compare-results" style="display:none;">
-                    <div class="flex-col gap-24">
-                        <div id="compare-table-wrap" class="table-wrap"></div>
-                        <div style="max-height: 300px;">
-                            <canvas id="comparisonChart" width="400" height="200"></canvas>
+                <p class="text-14px reguler" style="color: var(--color-text-700); margin-bottom: 16px;">
+                    Automatically detect task type, preprocess data, train multiple models, optimize the best one, and generate a full report — all with a single click.
+                </p>
+
+                <!-- Target Column Selection -->
+                <div class="flex-col gap-8" style="margin-bottom: 16px;">
+                    <label class="text-14px medium">Target Column *</label>
+                    <select id="automl-target" class="input-text-md">
+                        <option value="">-- Select target column --</option>
+                    </select>
+                </div>
+
+                <!-- One-Click Button -->
+                <button id="btn-automl-run" onclick="runAutoML()" class="btn-md btn-primary w-full" disabled style="margin-bottom: 24px; font-size: 16px; padding: 14px;">
+                    <i class="ri-rocket-2-line"></i> Run AutoML Pipeline
+                </button>
+
+                <!-- Advanced Settings (Collapsible) -->
+                <details style="margin-bottom: 20px;">
+                    <summary class="text-14px medium" style="cursor: pointer; color: var(--color-text-800); padding: 8px 0;">
+                        <i class="ri-settings-3-line"></i> Advanced Settings (Optional)
+                    </summary>
+                    <div class="flex-col gap-12" style="padding: 16px; background: var(--color-grey-600); border-radius: 8px; margin-top: 8px;">
+                        <div class="grid-2" style="gap: 16px;">
+                            <div class="flex-col gap-4">
+                                <label class="text-13px reguler">Task Type</label>
+                                <select id="automl-task-type" class="input-text-md">
+                                    <option value="">Auto-Detect</option>
+                                    <option value="classification">Classification</option>
+                                    <option value="regression">Regression</option>
+                                </select>
+                            </div>
+                            <div class="flex-col gap-4">
+                                <label class="text-13px reguler">Scaler</label>
+                                <select id="automl-scaler" class="input-text-md">
+                                    <option value="">Auto (Standard)</option>
+                                    <option value="standard">Standard</option>
+                                    <option value="minmax">MinMax</option>
+                                    <option value="robust">Robust</option>
+                                    <option value="none">None</option>
+                                </select>
+                            </div>
+                            <div class="flex-col gap-4">
+                                <label class="text-13px reguler">Imputation</label>
+                                <select id="automl-imputation" class="input-text-md">
+                                    <option value="">Auto (Mean)</option>
+                                    <option value="mean">Mean</option>
+                                    <option value="median">Median</option>
+                                    <option value="mode">Mode</option>
+                                    <option value="drop">Drop</option>
+                                </select>
+                            </div>
+                            <div class="flex-col gap-4">
+                                <label class="text-13px reguler">Max Models</label>
+                                <input type="number" id="automl-max-models" class="input-text-md" value="8" min="1" max="20">
+                            </div>
+                            <div class="flex-col gap-4">
+                                <label class="text-13px reguler">HyperOpt Trials</label>
+                                <input type="number" id="automl-hyperopt-trials" class="input-text-md" value="20" min="0" max="200">
+                                <span class="text-12px reguler" style="color: var(--color-text-600);">Set to 0 to skip</span>
+                            </div>
+                            <div class="flex-col gap-4">
+                                <label class="text-13px reguler">CV Folds</label>
+                                <input type="number" id="automl-cv-folds" class="input-text-md" value="5" min="2" max="20">
+                            </div>
+                            <div class="flex-col gap-4">
+                                <label class="text-13px reguler">Time Budget (seconds)</label>
+                                <input type="number" id="automl-time-budget" class="input-text-md" value="0" min="0">
+                                <span class="text-12px reguler" style="color: var(--color-text-600);">0 = no limit</span>
+                            </div>
+                        </div>
+                        <!-- Model Selection -->
+                        <div class="flex-col gap-4" style="margin-top: 8px;">
+                            <label class="text-13px reguler">Select Models (leave empty for auto)</label>
+                            <div id="automl-model-checkboxes" class="grid-2" style="gap: 4px;"></div>
+                        </div>
+                    </div>
+                </details>
+
+                <!-- Pipeline Progress -->
+                <div id="automl-progress" style="display: none;">
+                    <div class="flex-col gap-12">
+                        <div class="flex items-center gap-8">
+                            <div class="spinner" style="width: 20px; height: 20px;"></div>
+                            <span id="automl-status-text" class="text-14px medium" style="color: var(--color-information-500);">Starting...</span>
+                        </div>
+                        <div style="background: var(--color-grey-800); border-radius: 8px; height: 8px; overflow: hidden;">
+                            <div id="automl-progress-bar" style="height: 100%; background: var(--color-information-500); border-radius: 8px; transition: width 0.5s ease; width: 0%;"></div>
+                        </div>
+                        <span id="automl-progress-pct" class="text-12px reguler" style="color: var(--color-text-600);">0%</span>
+                    </div>
+                </div>
+
+                <!-- Results -->
+                <div id="automl-results" style="display: none; margin-top: 24px;">
+                    <div class="flex-col gap-16">
+                        <!-- Best Model Card -->
+                        <div style="background: linear-gradient(135deg, var(--color-information-500), var(--color-information-600)); border-radius: 12px; padding: 20px; color: #fff;">
+                            <div class="flex items-center gap-8" style="margin-bottom: 8px;">
+                                <i class="ri-trophy-line" style="font-size: 24px;"></i>
+                                <span class="text-16px medium">Best Model</span>
+                            </div>
+                            <div class="text-24px medium" id="automl-best-model">—</div>
+                            <div class="text-14px reguler" id="automl-best-score" style="opacity: 0.9;">—</div>
+                        </div>
+
+                        <!-- Summary -->
+                        <div class="grid-2" style="gap: 12px;">
+                            <div style="background: var(--color-grey-600); border-radius: 8px; padding: 12px; text-align: center;">
+                                <div class="text-20px medium" id="automl-models-tested">0</div>
+                                <div class="text-12px reguler" style="color: var(--color-text-600);">Models Tested</div>
+                            </div>
+                            <div style="background: var(--color-grey-600); border-radius: 8px; padding: 12px; text-align: center;">
+                                <div class="text-20px medium" id="automl-total-time">0s</div>
+                                <div class="text-12px reguler" style="color: var(--color-text-600);">Total Time</div>
+                            </div>
+                        </div>
+
+                        <!-- Leaderboard -->
+                        <div>
+                            <h3 class="text-14px medium" style="margin-bottom: 8px;">Leaderboard</h3>
+                            <div id="automl-leaderboard" class="table-wrap"></div>
+                        </div>
+
+                        <!-- HyperOpt Results -->
+                        <div id="automl-hyperopt-result" style="display: none;">
+                            <h3 class="text-14px medium" style="margin-bottom: 8px;">Hyperparameter Optimization</h3>
+                            <div id="automl-hyperopt-details" style="background: var(--color-grey-600); border-radius: 8px; padding: 12px;"></div>
                         </div>
                     </div>
                 </div>
-                <div id="compare-empty" class="empty-state">
-                    <i class="ri-bar-chart-grouped-line"></i>
-                    <p class="text-14px reguler">Run a comparison to see results</p>
+            </div>
+
+            <!-- Auto-Tune (Quick Mode) -->
+            <div class="card" style="margin-top: 16px;">
+                <div class="card-header">
+                    <h2 class="text-16px medium"><i class="ri-robot-line"></i> Quick Auto-Tune</h2>
+                </div>
+                <p class="text-14px reguler" style="color: var(--color-text-700); margin-bottom: 16px;">
+                    Quickly train and rank multiple models without advanced configuration.
+                </p>
+                <div class="flex-row gap-12 items-center" style="margin-bottom: 16px;">
+                    <div class="form-group" style="flex:1;">
+                        <label class="form-label">Max Models to Test</label>
+                        <input type="number" id="at-max-models" class="input-text-md" value="6" min="2" max="10">
+                    </div>
+                    <button id="btn-autotune" onclick="startAutoTune()" class="btn-md btn-primary" disabled style="margin-top: 22px;">
+                        <i class="ri-robot-line"></i> Start Auto-Tune
+                    </button>
+                </div>
+                <div id="autotune-results"></div>
+                <div id="autotune-empty" class="empty-state" style="padding: 20px;">
+                    <i class="ri-robot-line"></i>
+                    <p class="text-14px reguler">Run auto-tune to see model rankings</p>
+                </div>
+            </div>
+        </div>
+        <!-- Train Tab (merged: Config + Training + Compare + HyperOpt + Ensemble + Explain) -->
+        <div id="tab-train" class="tab-panel">
+            <div class="sub-tabs">
+                <button class="sub-tab active" onclick="switchSubTab('train', 'setup')" data-subtab="setup">
+                    <i class="ri-settings-3-line"></i> Setup
+                </button>
+                <button class="sub-tab" onclick="switchSubTab('train', 'models')" data-subtab="models">
+                    <i class="ri-rocket-line"></i> Models
+                </button>
+                <button class="sub-tab" onclick="switchSubTab('train', 'compare')" data-subtab="compare">
+                    <i class="ri-bar-chart-grouped-line"></i> Compare
+                </button>
+                <button class="sub-tab" onclick="switchSubTab('train', 'hyperopt')" data-subtab="hyperopt">
+                    <i class="ri-flashlight-line"></i> HyperOpt
+                </button>
+                <button class="sub-tab" onclick="switchSubTab('train', 'ensemble')" data-subtab="ensemble">
+                    <i class="ri-stack-line"></i> Ensemble
+                </button>
+                <button class="sub-tab" onclick="switchSubTab('train', 'explain')" data-subtab="explain">
+                    <i class="ri-lightbulb-line"></i> Explain
+                </button>
+            </div>
+
+            <!-- Sub-panel: Setup (was Config tab) -->
+            <div id="sub-setup" class="sub-panel active">
+                <div class="card" style="max-width: 600px;">
+                    <div class="card-header">
+                        <h2 class="text-16px medium">Training Configuration</h2>
+                    </div>
+                    <div class="form-stack">
+                        <div class="form-group">
+                            <label class="form-label">Task Type</label>
+                            <select id="cfg-taskType" class="input-text-md">
+                                <option value="classification">Classification</option>
+                                <option value="regression">Regression</option>
+                                <option value="clustering">Clustering</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Target Column</label>
+                            <select id="cfg-targetColumn" class="input-text-md">
+                                <option value="">Select target...</option>
+                            </select>
+                        </div>
+                        <hr class="separator">
+                        <div class="form-group">
+                            <label class="form-label">Preprocessing</label>
+                            <div class="grid-2">
+                                <div class="form-group">
+                                    <label class="form-hint">Scaler</label>
+                                    <select id="cfg-scaler" class="input-text-sm">
+                                        <option value="none">None</option>
+                                        <option value="standard" selected>Standard</option>
+                                        <option value="minmax">MinMax</option>
+                                        <option value="robust">Robust</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-hint">Missing Values</label>
+                                    <select id="cfg-imputation" class="input-text-sm">
+                                        <option value="drop">Drop</option>
+                                        <option value="mean" selected>Mean</option>
+                                        <option value="median">Median</option>
+                                        <option value="mode">Mode</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">
+                                Cross-Validation Folds: <span id="cv-folds-display" class="mono-14px">5</span>
+                            </label>
+                            <input type="range" id="cfg-cvFolds" min="2" max="10" value="5" oninput="document.getElementById('cv-folds-display').textContent=this.value">
+                        </div>
+                        <button id="btn-preprocess" onclick="applyPreprocessing()" class="btn-md btn-primary w-full" disabled>
+                            <i class="ri-check-line"></i> Apply Preprocessing
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sub-panel: Models (was Training tab) -->
+            <div id="sub-models" class="sub-panel">
+                <div class="grid-1-2">
+                    <div class="card">
+                        <div class="card-header">
+                            <h2 class="text-16px medium">Select Models</h2>
+                        </div>
+                        <div id="model-checkboxes" class="flex-col gap-4"></div>
+                        <button id="btn-train" onclick="startTraining()" class="btn-md btn-primary w-full" style="margin-top: 20px;" disabled>
+                            <i class="ri-rocket-line"></i> Start Training
+                        </button>
+                    </div>
+                    <div class="card">
+                        <div class="card-header">
+                            <h2 class="text-16px medium">Training Progress</h2>
+                        </div>
+                        <div id="jobs-list"></div>
+                        <div id="jobs-empty" class="empty-state">
+                            <i class="ri-flask-line"></i>
+                            <p class="text-14px reguler">No training jobs yet</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="card" style="margin-top: 16px;">
+                    <div class="card-header">
+                        <h2 class="text-16px medium">Training Metrics</h2>
+                    </div>
+                    <div id="training-chart-wrap" style="display:none;">
+                        <div style="max-height: 300px;">
+                            <canvas id="trainingMetricsChart" width="400" height="200"></canvas>
+                        </div>
+                    </div>
+                    <div id="training-chart-empty" class="empty-state" style="padding: 20px;">
+                        <i class="ri-bar-chart-2-line"></i>
+                        <p class="text-14px reguler">Complete training to see metrics visualization</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sub-panel: Compare (was Compare tab) -->
+            <div id="sub-compare" class="sub-panel">
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="text-16px medium">Model Comparison</h2>
+                        <button id="btn-compare" onclick="compareAllModels()" class="btn-sm btn-primary" disabled>
+                            <i class="ri-bar-chart-grouped-line"></i> Compare All Models
+                        </button>
+                    </div>
+                    <div id="compare-results" style="display:none;">
+                        <div class="flex-col gap-24">
+                            <div id="compare-table-wrap" class="table-wrap"></div>
+                            <div style="max-height: 300px;">
+                                <canvas id="comparisonChart" width="400" height="200"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="compare-empty" class="empty-state">
+                        <i class="ri-bar-chart-grouped-line"></i>
+                        <p class="text-14px reguler">Run a comparison to see results</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sub-panel: HyperOpt (was HyperOpt tab) -->
+            <div id="sub-hyperopt" class="sub-panel">
+                <div class="grid-1-2">
+                    <div class="card">
+                        <div class="card-header">
+                            <h2 class="text-16px medium">Optimization Config</h2>
+                        </div>
+                        <div class="form-stack">
+                            <div class="form-group">
+                                <label class="form-label">Model</label>
+                                <select id="ho-model" class="input-text-md">
+                                    <option value="random_forest">Random Forest</option>
+                                    <option value="xgboost">XGBoost</option>
+                                    <option value="lightgbm">LightGBM</option>
+                                    <option value="catboost">CatBoost</option>
+                                    <option value="gradient_boosting">Gradient Boosting</option>
+                                    <option value="extra_trees">Extra Trees</option>
+                                    <option value="decision_tree">Decision Tree</option>
+                                    <option value="knn">K-Nearest Neighbors</option>
+                                    <option value="svm">SVM</option>
+                                    <option value="adaboost">AdaBoost</option>
+                                    <option value="sgd">SGD</option>
+                                    <option value="neural_network">Neural Network</option>
+                                    <option value="ridge">Ridge Regression</option>
+                                    <option value="lasso">Lasso Regression</option>
+                                    <option value="elastic_net">Elastic Net</option>
+                                    <option value="polynomial">Polynomial Regression</option>
+                                    <option value="gaussian_process">Gaussian Process</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Sampler</label>
+                                <select id="ho-sampler" class="input-text-md">
+                                    <option value="tpe">TPE (Bayesian)</option>
+                                    <option value="random">Random Search</option>
+                                    <option value="gp">Gaussian Process</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Number of Trials: <span id="ho-trials-display" class="mono-14px">20</span></label>
+                                <input type="range" id="ho-trials" min="5" max="100" value="20" oninput="document.getElementById('ho-trials-display').textContent=this.value">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Timeout (seconds, 0 = none)</label>
+                                <input type="number" id="ho-timeout" class="input-text-md" value="0" min="0" step="10">
+                            </div>
+                            <button id="btn-hyperopt" onclick="startHyperopt()" class="btn-md btn-primary w-full" disabled>
+                                <i class="ri-flashlight-line"></i> Start Optimization
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div class="card-header">
+                            <h2 class="text-16px medium">Optimization Results</h2>
+                        </div>
+                        <div id="hyperopt-results"></div>
+                        <div id="hyperopt-empty" class="empty-state">
+                            <i class="ri-flashlight-line"></i>
+                            <p class="text-14px reguler">Run hyperparameter optimization to see results</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="grid-1-2" style="margin-top: 16px;">
+                    <div class="card">
+                        <div class="card-header">
+                            <h2 class="text-16px medium">Search Space</h2>
+                        </div>
+                        <div id="ho-search-space" class="empty-state">
+                            <p class="text-14px reguler">Select a model to see its search space</p>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div class="card-header">
+                            <h2 class="text-16px medium">Convergence</h2>
+                        </div>
+                        <div style="max-height: 300px;">
+                            <canvas id="convergenceChart" width="400" height="200"></canvas>
+                        </div>
+                    </div>
+                </div>
+                <div class="card" style="margin-top: 16px;">
+                    <div class="card-header">
+                        <h2 class="text-16px medium">Study History</h2>
+                        <button onclick="loadHyperoptHistory()" class="btn-xs btn-ghost"><i class="ri-refresh-line"></i> Refresh</button>
+                    </div>
+                    <div id="ho-history" class="empty-state">
+                        <p class="text-14px reguler">No completed studies yet</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sub-panel: Ensemble (was Ensemble tab) -->
+            <div id="sub-ensemble" class="sub-panel">
+                <div class="grid-1-2">
+                    <div class="card">
+                        <div class="card-header">
+                            <h2 class="text-16px medium">Ensemble Config</h2>
+                        </div>
+                        <div class="form-stack">
+                            <div class="form-group">
+                                <label class="form-label">Strategy</label>
+                                <select id="ens-strategy" class="input-text-md">
+                                    <option value="voting">Voting</option>
+                                    <option value="averaging">Averaging</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Select Models</label>
+                                <div id="ens-model-checkboxes" class="flex-col gap-4"></div>
+                            </div>
+                            <button id="btn-ensemble" onclick="startEnsemble()" class="btn-md btn-primary w-full" disabled>
+                                <i class="ri-stack-line"></i> Train Ensemble
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div class="card-header">
+                            <h2 class="text-16px medium">Ensemble Results</h2>
+                        </div>
+                        <div id="ensemble-results"></div>
+                        <div id="ensemble-empty" class="empty-state">
+                            <i class="ri-stack-line"></i>
+                            <p class="text-14px reguler">Train an ensemble to see results</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sub-panel: Explain (was Explain tab) -->
+            <div id="sub-explain" class="sub-panel">
+                <div class="section-gap">
+                    <div class="card">
+                        <div class="card-header">
+                            <h2 class="text-16px medium">Feature Importance</h2>
+                            <button id="btn-explain" onclick="getFeatureImportance()" class="btn-sm btn-primary" disabled>
+                                <i class="ri-lightbulb-line"></i> Analyze
+                            </button>
+                        </div>
+                        <div id="explain-results"></div>
+                        <div id="explain-empty" class="empty-state">
+                            <i class="ri-lightbulb-line"></i>
+                            <p class="text-14px reguler">Train a model first, then analyze feature importance</p>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div class="card-header">
+                            <h2 class="text-16px medium">Feature Importance Chart</h2>
+                        </div>
+                        <div style="max-height: 400px;">
+                            <canvas id="importanceChart" width="400" height="250"></canvas>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
 
-        <!-- Predict Tab -->
+        <!-- Predict Tab (unchanged) -->
         <div id="tab-predict" class="tab-panel">
             <div class="grid-2">
                 <div class="card">
@@ -492,24 +907,377 @@
             </div>
         </div>
 
-        <!-- Monitor Tab -->
-        <div id="tab-monitor" class="tab-panel">
+        <!-- Analyze Tab (merged: Anomaly + Clustering) -->
+        <div id="tab-analyze" class="tab-panel">
             <div class="section-gap">
-                <div class="grid-3">
-                    <div class="card">
-                        <p class="text-12px medium" style="color: var(--color-text-700); margin-bottom: 8px;">CPU Usage</p>
-                        <p id="mon-cpu" class="stat-value info">0.0%</p>
+                <!-- Anomaly Detection -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="text-16px medium"><i class="ri-error-warning-line"></i> Anomaly Detection</h2>
+                        <button id="btn-anomaly" onclick="runAnomalyDetection()" class="btn-sm btn-primary" disabled>
+                            <i class="ri-error-warning-line"></i> Detect Anomalies
+                        </button>
                     </div>
-                    <div class="card">
-                        <p class="text-12px medium" style="color: var(--color-text-700); margin-bottom: 8px;">Memory Usage</p>
-                        <p id="mon-mem" class="stat-value success">0.0%</p>
-                        <p id="mon-mem-detail" class="text-12px reguler" style="color: var(--color-text-600); margin-top: 4px;">0.0 / 0.0 GB</p>
+                    <div class="form-stack" style="margin-bottom: 16px;">
+                        <div class="grid-3">
+                            <div class="form-group">
+                                <label class="form-label">Method</label>
+                                <select id="anomaly-method" class="input-text-sm">
+                                    <option value="isolation_forest">Isolation Forest</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Contamination</label>
+                                <input type="number" id="anomaly-contamination" class="input-text-sm" value="0.1" min="0.01" max="0.5" step="0.01">
+                                <span class="form-hint">Expected anomaly fraction (0.01–0.5)</span>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Estimators</label>
+                                <input type="number" id="anomaly-estimators" class="input-text-sm" value="100" min="10" max="1000" step="10">
+                            </div>
+                        </div>
                     </div>
-                    <div class="card">
-                        <p class="text-12px medium" style="color: var(--color-text-700); margin-bottom: 8px;">Status</p>
-                        <p id="mon-status" class="stat-value success">healthy</p>
+                    <div id="anomaly-results"></div>
+                    <div id="anomaly-chart-wrap" style="display:none; margin-top: 16px;">
+                        <div style="max-height: 250px;">
+                            <canvas id="anomalyChart" width="400" height="180"></canvas>
+                        </div>
+                    </div>
+                    <div id="anomaly-empty" class="empty-state">
+                        <i class="ri-error-warning-line"></i>
+                        <p class="text-14px reguler">Load a dataset and run anomaly detection to find outliers</p>
                     </div>
                 </div>
+
+                <!-- Clustering -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="text-16px medium"><i class="ri-bubble-chart-line"></i> Clustering</h2>
+                        <button id="btn-clustering" onclick="runClustering()" class="btn-sm btn-primary" disabled>
+                            <i class="ri-play-line"></i> Run Clustering
+                        </button>
+                    </div>
+                    <div class="form-stack" style="margin-bottom: 16px;">
+                        <div class="grid-3">
+                            <div class="form-group">
+                                <label class="form-label">Algorithm</label>
+                                <select id="cluster-algo" class="input-text-sm" onchange="toggleClusterParams()">
+                                    <option value="kmeans">KMeans</option>
+                                    <option value="dbscan">DBSCAN</option>
+                                </select>
+                            </div>
+                            <div class="form-group" id="cluster-k-group">
+                                <label class="form-label">Number of Clusters (k)</label>
+                                <input type="number" id="cluster-k" class="input-text-sm" value="3" min="2" max="50">
+                            </div>
+                            <div class="form-group" id="cluster-eps-group" style="display:none;">
+                                <label class="form-label">Epsilon (eps)</label>
+                                <input type="number" id="cluster-eps" class="input-text-sm" value="0.5" min="0.01" step="0.1">
+                            </div>
+                            <div class="form-group" id="cluster-minsamp-group" style="display:none;">
+                                <label class="form-label">Min Samples</label>
+                                <input type="number" id="cluster-minsamp" class="input-text-sm" value="5" min="1" max="100">
+                            </div>
+                        </div>
+                    </div>
+                    <div id="clustering-results"></div>
+                    <div id="clustering-chart-wrap" style="display:none; margin-top: 16px;">
+                        <div style="max-height: 250px;">
+                            <canvas id="clusteringChart" width="400" height="180"></canvas>
+                        </div>
+                    </div>
+                    <div id="clustering-empty" class="empty-state">
+                        <i class="ri-bubble-chart-line"></i>
+                        <p class="text-14px reguler">Load a dataset and run clustering to discover groups in your data</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Serve Tab: Deploy & API Docs -->
+        <div id="tab-serve" class="tab-panel">
+            <div class="section-gap">
+                <!-- Deployed Models -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="text-16px medium"><i class="ri-server-line"></i> Model Serving</h2>
+                        <button onclick="loadServeModels()" class="btn-xs btn-ghost"><i class="ri-refresh-line"></i> Refresh</button>
+                    </div>
+                    <div id="serve-models-list"></div>
+                    <div id="serve-empty" class="empty-state" style="padding: 24px;">
+                        <i class="ri-server-line" style="font-size: 28px;"></i>
+                        <p class="text-14px reguler">No models available</p>
+                        <p class="text-12px reguler" style="color: var(--color-text-600);">Train a model first, then come back to serve it</p>
+                    </div>
+                </div>
+
+                <!-- Quick Test -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="text-16px medium"><i class="ri-terminal-box-line"></i> Quick Test</h2>
+                    </div>
+                    <div class="form-stack">
+                        <div class="form-group">
+                            <label class="form-label">Model</label>
+                            <select id="serve-test-model" class="input-text-md">
+                                <option value="">Select a model</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Input (JSON array of arrays)</label>
+                            <textarea id="serve-test-input" class="input-textarea" rows="3" placeholder='[[5.1, 3.5, 1.4, 0.2]]'></textarea>
+                        </div>
+                        <button onclick="serveTestPredict()" class="btn-md btn-primary w-full">
+                            <i class="ri-play-line"></i> Send Request
+                        </button>
+                        <div id="serve-test-result" style="display:none;">
+                            <pre id="serve-test-output" class="mono-14px" style="background:var(--color-grey-600);padding:12px;border-radius:8px;overflow-x:auto;white-space:pre-wrap;max-height:200px;"></pre>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- API Reference -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="text-16px medium"><i class="ri-book-open-line"></i> API Reference</h2>
+                    </div>
+                    <p class="text-12px reguler" style="color:var(--color-text-600);margin-bottom:16px;">
+                        Base URL: <code id="serve-base-url" class="mono-12px" style="background:var(--color-grey-600);padding:2px 6px;border-radius:4px;"></code>
+                    </p>
+
+                    <!-- Predict -->
+                    <div class="api-endpoint" style="margin-bottom:20px;">
+                        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                            <span style="background:#0066F5;color:#fff;font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px;">POST</span>
+                            <code class="mono-14px">/api/predict</code>
+                        </div>
+                        <p class="text-12px reguler" style="color:var(--color-text-700);margin-bottom:8px;">Single or multi-row prediction. Uses latest model if <code>model_id</code> is omitted.</p>
+                        <div style="background:var(--color-grey-600);border-radius:8px;padding:12px;margin-bottom:8px;">
+                            <p class="text-12px medium" style="margin-bottom:4px;">Request</p>
+                            <pre class="mono-12px" style="white-space:pre-wrap;">{
+  "model_id": "optional-model-id",
+  "data": [[5.1, 3.5, 1.4, 0.2], [6.7, 3.0, 5.2, 2.3]]
+}</pre>
+                        </div>
+                        <div style="background:var(--color-grey-600);border-radius:8px;padding:12px;margin-bottom:8px;">
+                            <p class="text-12px medium" style="margin-bottom:4px;">Response</p>
+                            <pre class="mono-12px" style="white-space:pre-wrap;">{
+  "success": true,
+  "predictions": [0.0, 2.0],
+  "latency_ms": 0.42
+}</pre>
+                        </div>
+                        <div style="background:var(--color-grey-600);border-radius:8px;padding:12px;">
+                            <p class="text-12px medium" style="margin-bottom:4px;">cURL</p>
+                            <pre class="mono-12px" style="white-space:pre-wrap;">curl -X POST <span class="serve-curl-base">http://localhost:8080</span>/api/predict \
+  -H "Content-Type: application/json" \
+  -d '{"data": [[5.1, 3.5, 1.4, 0.2]]}'</pre>
+                        </div>
+                    </div>
+
+                    <!-- Batch Predict -->
+                    <div class="api-endpoint" style="margin-bottom:20px;">
+                        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                            <span style="background:#0066F5;color:#fff;font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px;">POST</span>
+                            <code class="mono-14px">/api/predict/batch</code>
+                        </div>
+                        <p class="text-12px reguler" style="color:var(--color-text-700);margin-bottom:8px;">Batch prediction optimized for large payloads (max 10,000 rows).</p>
+                        <div style="background:var(--color-grey-600);border-radius:8px;padding:12px;margin-bottom:8px;">
+                            <p class="text-12px medium" style="margin-bottom:4px;">Request</p>
+                            <pre class="mono-12px" style="white-space:pre-wrap;">{
+  "model_id": "optional-model-id",
+  "data": [[5.1, 3.5, 1.4, 0.2], [6.7, 3.0, 5.2, 2.3], ...]
+}</pre>
+                        </div>
+                        <div style="background:var(--color-grey-600);border-radius:8px;padding:12px;margin-bottom:8px;">
+                            <p class="text-12px medium" style="margin-bottom:4px;">Response</p>
+                            <pre class="mono-12px" style="white-space:pre-wrap;">{
+  "success": true,
+  "predictions": [0.0, 2.0, ...],
+  "count": 2,
+  "avg_latency_ms": 0.31
+}</pre>
+                        </div>
+                        <div style="background:var(--color-grey-600);border-radius:8px;padding:12px;">
+                            <p class="text-12px medium" style="margin-bottom:4px;">cURL</p>
+                            <pre class="mono-12px" style="white-space:pre-wrap;">curl -X POST <span class="serve-curl-base">http://localhost:8080</span>/api/predict/batch \
+  -H "Content-Type: application/json" \
+  -d '{"data": [[5.1, 3.5, 1.4, 0.2], [6.7, 3.0, 5.2, 2.3]]}'</pre>
+                        </div>
+                    </div>
+
+                    <!-- Predict Probabilities -->
+                    <div class="api-endpoint" style="margin-bottom:20px;">
+                        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                            <span style="background:#0066F5;color:#fff;font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px;">POST</span>
+                            <code class="mono-14px">/api/predict/proba</code>
+                        </div>
+                        <p class="text-12px reguler" style="color:var(--color-text-700);margin-bottom:8px;">Returns class probabilities for classification models.</p>
+                        <div style="background:var(--color-grey-600);border-radius:8px;padding:12px;margin-bottom:8px;">
+                            <p class="text-12px medium" style="margin-bottom:4px;">Request</p>
+                            <pre class="mono-12px" style="white-space:pre-wrap;">{
+  "model_id": "optional-model-id",
+  "data": [[5.1, 3.5, 1.4, 0.2]]
+}</pre>
+                        </div>
+                        <div style="background:var(--color-grey-600);border-radius:8px;padding:12px;margin-bottom:8px;">
+                            <p class="text-12px medium" style="margin-bottom:4px;">Response</p>
+                            <pre class="mono-12px" style="white-space:pre-wrap;">{
+  "success": true,
+  "probabilities": [[0.95, 0.03, 0.02]],
+  "count": 1
+}</pre>
+                        </div>
+                        <div style="background:var(--color-grey-600);border-radius:8px;padding:12px;">
+                            <p class="text-12px medium" style="margin-bottom:4px;">cURL</p>
+                            <pre class="mono-12px" style="white-space:pre-wrap;">curl -X POST <span class="serve-curl-base">http://localhost:8080</span>/api/predict/proba \
+  -H "Content-Type: application/json" \
+  -d '{"data": [[5.1, 3.5, 1.4, 0.2]]}'</pre>
+                        </div>
+                    </div>
+
+                    <!-- Inference Stats -->
+                    <div class="api-endpoint" style="margin-bottom:20px;">
+                        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                            <span style="background:#3ABC3F;color:#fff;font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px;">GET</span>
+                            <code class="mono-14px">/api/predict/stats/{model_id}</code>
+                        </div>
+                        <p class="text-12px reguler" style="color:var(--color-text-700);margin-bottom:8px;">Returns latency percentiles (p50/p95/p99), throughput, and error count for a cached model.</p>
+                        <div style="background:var(--color-grey-600);border-radius:8px;padding:12px;margin-bottom:8px;">
+                            <p class="text-12px medium" style="margin-bottom:4px;">Response</p>
+                            <pre class="mono-12px" style="white-space:pre-wrap;">{
+  "success": true,
+  "model_id": "abc123",
+  "stats": {
+    "total_predictions": 1042,
+    "avg_latency_ms": 0.38,
+    "p50_latency_ms": 0.32,
+    "p95_latency_ms": 0.71,
+    "p99_latency_ms": 1.20,
+    "throughput_per_sec": 2631.5,
+    "error_count": 0
+  }
+}</pre>
+                        </div>
+                        <div style="background:var(--color-grey-600);border-radius:8px;padding:12px;">
+                            <p class="text-12px medium" style="margin-bottom:4px;">cURL</p>
+                            <pre class="mono-12px" style="white-space:pre-wrap;">curl <span class="serve-curl-base">http://localhost:8080</span>/api/predict/stats/MODEL_ID</pre>
+                        </div>
+                    </div>
+
+                    <!-- List Models -->
+                    <div class="api-endpoint" style="margin-bottom:20px;">
+                        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                            <span style="background:#3ABC3F;color:#fff;font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px;">GET</span>
+                            <code class="mono-14px">/api/models</code>
+                        </div>
+                        <p class="text-12px reguler" style="color:var(--color-text-700);margin-bottom:8px;">List all trained models.</p>
+                        <div style="background:var(--color-grey-600);border-radius:8px;padding:12px;">
+                            <p class="text-12px medium" style="margin-bottom:4px;">cURL</p>
+                            <pre class="mono-12px" style="white-space:pre-wrap;">curl <span class="serve-curl-base">http://localhost:8080</span>/api/models</pre>
+                        </div>
+                    </div>
+
+                    <!-- Get Model -->
+                    <div class="api-endpoint" style="margin-bottom:20px;">
+                        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                            <span style="background:#3ABC3F;color:#fff;font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px;">GET</span>
+                            <code class="mono-14px">/api/models/{model_id}</code>
+                        </div>
+                        <p class="text-12px reguler" style="color:var(--color-text-700);margin-bottom:8px;">Get details of a specific model (metrics, config, creation date).</p>
+                        <div style="background:var(--color-grey-600);border-radius:8px;padding:12px;">
+                            <p class="text-12px medium" style="margin-bottom:4px;">cURL</p>
+                            <pre class="mono-12px" style="white-space:pre-wrap;">curl <span class="serve-curl-base">http://localhost:8080</span>/api/models/MODEL_ID</pre>
+                        </div>
+                    </div>
+
+                    <!-- Download Model -->
+                    <div class="api-endpoint" style="margin-bottom:20px;">
+                        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                            <span style="background:#3ABC3F;color:#fff;font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px;">GET</span>
+                            <code class="mono-14px">/api/models/{model_id}/download</code>
+                        </div>
+                        <p class="text-12px reguler" style="color:var(--color-text-700);margin-bottom:8px;">Download a trained model as a JSON file.</p>
+                        <div style="background:var(--color-grey-600);border-radius:8px;padding:12px;">
+                            <p class="text-12px medium" style="margin-bottom:4px;">cURL</p>
+                            <pre class="mono-12px" style="white-space:pre-wrap;">curl -O <span class="serve-curl-base">http://localhost:8080</span>/api/models/MODEL_ID/download</pre>
+                        </div>
+                    </div>
+
+                    <!-- Delete Model -->
+                    <div class="api-endpoint" style="margin-bottom:20px;">
+                        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                            <span style="background:#FF3131;color:#fff;font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px;">DELETE</span>
+                            <code class="mono-14px">/api/models/{model_id}</code>
+                        </div>
+                        <p class="text-12px reguler" style="color:var(--color-text-700);margin-bottom:8px;">Delete a model from the server.</p>
+                        <div style="background:var(--color-grey-600);border-radius:8px;padding:12px;">
+                            <p class="text-12px medium" style="margin-bottom:4px;">cURL</p>
+                            <pre class="mono-12px" style="white-space:pre-wrap;">curl -X DELETE <span class="serve-curl-base">http://localhost:8080</span>/api/models/MODEL_ID</pre>
+                        </div>
+                    </div>
+
+                    <!-- Evict Cache -->
+                    <div class="api-endpoint" style="margin-bottom:20px;">
+                        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                            <span style="background:#FF3131;color:#fff;font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px;">DELETE</span>
+                            <code class="mono-14px">/api/predict/cache/{model_id}</code>
+                        </div>
+                        <p class="text-12px reguler" style="color:var(--color-text-700);margin-bottom:8px;">Evict a model from the inference cache to free memory.</p>
+                        <div style="background:var(--color-grey-600);border-radius:8px;padding:12px;">
+                            <p class="text-12px medium" style="margin-bottom:4px;">cURL</p>
+                            <pre class="mono-12px" style="white-space:pre-wrap;">curl -X DELETE <span class="serve-curl-base">http://localhost:8080</span>/api/predict/cache/MODEL_ID</pre>
+                        </div>
+                    </div>
+
+                    <!-- Health -->
+                    <div class="api-endpoint">
+                        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                            <span style="background:#3ABC3F;color:#fff;font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px;">GET</span>
+                            <code class="mono-14px">/api/health</code>
+                        </div>
+                        <p class="text-12px reguler" style="color:var(--color-text-700);margin-bottom:8px;">Health check — use for readiness probes.</p>
+                        <div style="background:var(--color-grey-600);border-radius:8px;padding:12px;">
+                            <p class="text-12px medium" style="margin-bottom:4px;">cURL</p>
+                            <pre class="mono-12px" style="white-space:pre-wrap;">curl <span class="serve-curl-base">http://localhost:8080</span>/api/health</pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- System Tab (merged: Monitor + Security + Drift) -->
+        <div id="tab-system" class="tab-panel">
+            <div class="section-gap">
+                <!-- System Stats -->
+                <div class="grid-3">
+                    <div class="card" style="text-align:center;">
+                        <p class="text-12px medium" style="color: var(--color-text-700); margin-bottom: 8px;">CPU Usage</p>
+                        <div style="width:120px;height:120px;margin:0 auto 8px;">
+                            <canvas id="cpuGaugeChart" width="120" height="120"></canvas>
+                        </div>
+                        <p id="mon-cpu" class="mono-20px medium" style="color:var(--color-information-500);">0.0%</p>
+                    </div>
+                    <div class="card" style="text-align:center;">
+                        <p class="text-12px medium" style="color: var(--color-text-700); margin-bottom: 8px;">Memory Usage</p>
+                        <div style="width:120px;height:120px;margin:0 auto 8px;">
+                            <canvas id="memGaugeChart" width="120" height="120"></canvas>
+                        </div>
+                        <p id="mon-mem" class="mono-20px medium" style="color:var(--color-success-500);">0.0%</p>
+                        <p id="mon-mem-detail" class="text-12px reguler" style="color: var(--color-text-600); margin-top: 4px;">0.0 / 0.0 GB</p>
+                    </div>
+                    <div class="card" style="text-align:center;">
+                        <p class="text-12px medium" style="color: var(--color-text-700); margin-bottom: 8px;">Status</p>
+                        <div style="width:120px;height:120px;margin:0 auto 8px;display:flex;align-items:center;justify-content:center;">
+                            <div id="status-ring" style="width:80px;height:80px;border-radius:50%;border:6px solid var(--color-success-500);display:flex;align-items:center;justify-content:center;">
+                                <i id="status-icon" class="ri-check-line" style="font-size:32px;color:var(--color-success-500);"></i>
+                            </div>
+                        </div>
+                        <p id="mon-status" class="mono-20px medium" style="color:var(--color-success-500);">healthy</p>
+                    </div>
+                </div>
+
+                <!-- System Overview -->
                 <div class="card">
                     <div class="card-header">
                         <h2 class="text-16px medium">System Overview</h2>
@@ -530,8 +1298,112 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- Device + Alerts -->
+                <div class="grid-2">
+                    <div class="card">
+                        <div class="card-header">
+                            <h2 class="text-16px medium">Device Info</h2>
+                            <button onclick="loadDeviceInfo()" class="btn-xs btn-ghost"><i class="ri-cpu-line"></i> Refresh</button>
+                        </div>
+                        <div id="device-info">
+                            <div class="loading-overlay"><div class="spinner"></div><p class="text-12px reguler">Loading device info...</p></div>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div class="card-header">
+                            <h2 class="text-16px medium">Alerts</h2>
+                        </div>
+                        <div id="alerts-list">
+                            <div class="empty-state" style="padding: 20px;">
+                                <i class="ri-notification-line"></i>
+                                <p class="text-12px reguler">No alerts</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Performance -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="text-16px medium">Performance</h2>
+                    </div>
+                    <div id="perf-stats" class="grid-3" style="text-align: center;">
+                        <div>
+                            <p id="perf-completed" class="mono-20px medium">0</p>
+                            <p class="text-12px reguler" style="color: var(--color-text-700);">Completed</p>
+                        </div>
+                        <div>
+                            <p id="perf-failed" class="mono-20px medium" style="color: var(--color-danger-500);">0</p>
+                            <p class="text-12px reguler" style="color: var(--color-text-700);">Failed</p>
+                        </div>
+                        <div>
+                            <p id="perf-throughput" class="mono-20px medium">0</p>
+                            <p class="text-12px reguler" style="color: var(--color-text-700);">Models/min</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Security Overview -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="text-16px medium"><i class="ri-shield-check-line"></i> Security Overview</h2>
+                        <button class="btn-xs btn-ghost" onclick="loadSecurityStatus()">
+                            <i class="ri-refresh-line"></i> Refresh
+                        </button>
+                    </div>
+                    <div id="security-status" class="card-body">
+                        <div class="skeleton" style="height: 120px;"></div>
+                    </div>
+                </div>
+
+                <!-- Guards & Rate Limiting side by side -->
+                <div class="grid-2">
+                    <div class="card">
+                        <div class="card-header">
+                            <h2 class="text-16px medium"><i class="ri-lock-line"></i> Active Guards</h2>
+                        </div>
+                        <div id="security-guards" class="card-body">
+                            <div class="skeleton" style="height: 100px;"></div>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div class="card-header">
+                            <h2 class="text-16px medium"><i class="ri-speed-line"></i> Rate Limiting</h2>
+                        </div>
+                        <div id="rate-limit-stats" class="card-body">
+                            <div class="skeleton" style="height: 80px;"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Audit Log -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="text-16px medium"><i class="ri-file-list-3-line"></i> Audit Log</h2>
+                        <button class="btn-xs btn-ghost" onclick="loadAuditLog()">
+                            <i class="ri-refresh-line"></i> Refresh
+                        </button>
+                    </div>
+                    <div id="audit-log" class="card-body" style="max-height: 400px; overflow-y: auto;">
+                        <div class="skeleton" style="height: 200px;"></div>
+                    </div>
+                </div>
+
+                <!-- Drift (API info) -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="text-16px medium"><i class="ri-git-branch-line"></i> Data Drift Detection</h2>
+                    </div>
+                    <div class="empty-state" style="padding: 20px;">
+                        <i class="ri-git-branch-line"></i>
+                        <p class="text-14px reguler">Drift detection compares a reference dataset against new data</p>
+                        <p class="text-12px reguler" style="color: var(--color-text-600);">Use the API endpoint <code>POST /api/drift/detect</code> with reference and test data arrays</p>
+                    </div>
+                </div>
             </div>
         </div>
+
     </main>
 
     <!-- Toast Notifications -->
@@ -545,6 +1417,14 @@
         var comparisonResults = [];
         var selectedModels = [];
         var comparisonChartInstance = null;
+        var convergenceChartInstance = null;
+        var autotuneJobId = null;
+        var columnTypesChartInstance = null;
+        var trainingMetricsChartInstance = null;
+        var anomalyChartInstance = null;
+        var clusteringChartInstance = null;
+        var cpuGaugeInstance = null;
+        var memGaugeInstance = null;
 
         var sampleDatasets = [
             { id: 'iris', name: 'Iris' },
@@ -557,8 +1437,26 @@
         var availableModels = [
             { id: 'logistic_regression', name: 'Logistic Regression' },
             { id: 'linear_regression', name: 'Linear Regression' },
+            { id: 'ridge', name: 'Ridge Regression' },
+            { id: 'lasso', name: 'Lasso Regression' },
+            { id: 'elastic_net', name: 'Elastic Net' },
+            { id: 'polynomial', name: 'Polynomial Regression' },
             { id: 'decision_tree', name: 'Decision Tree' },
-            { id: 'random_forest', name: 'Random Forest' }
+            { id: 'random_forest', name: 'Random Forest' },
+            { id: 'gradient_boosting', name: 'Gradient Boosting' },
+            { id: 'xgboost', name: 'XGBoost' },
+            { id: 'lightgbm', name: 'LightGBM' },
+            { id: 'catboost', name: 'CatBoost' },
+            { id: 'extra_trees', name: 'Extra Trees' },
+            { id: 'adaboost', name: 'AdaBoost' },
+            { id: 'sgd', name: 'SGD' },
+            { id: 'knn', name: 'K-Nearest Neighbors' },
+            { id: 'naive_bayes', name: 'Naive Bayes' },
+            { id: 'svm', name: 'SVM' },
+            { id: 'neural_network', name: 'Neural Network' },
+            { id: 'gaussian_process', name: 'Gaussian Process' },
+            { id: 'kmeans', name: 'KMeans Clustering' },
+            { id: 'dbscan', name: 'DBSCAN Clustering' }
         ];
 
         // ── Helpers ──
@@ -588,6 +1486,20 @@
             for (var i = 0; i < tabs.length; i++) tabs[i].classList.remove('active');
             $('tab-' + name).classList.add('active');
             document.querySelector('[data-tab="' + name + '"]').classList.add('active');
+            if (name === 'serve') loadServeModels();
+        }
+
+        function switchSubTab(parentTab, name) {
+            var parent = $('tab-' + parentTab);
+            if (!parent) return;
+            var panels = parent.querySelectorAll('.sub-panel');
+            for (var i = 0; i < panels.length; i++) panels[i].classList.remove('active');
+            var tabs = parent.querySelectorAll('.sub-tab');
+            for (var i = 0; i < tabs.length; i++) tabs[i].classList.remove('active');
+            var panel = $('sub-' + name);
+            if (panel) panel.classList.add('active');
+            var tab = parent.querySelector('[data-subtab="' + name + '"]');
+            if (tab) tab.classList.add('active');
         }
 
         // ── File Upload ──
@@ -660,7 +1572,10 @@
                 $('data-cols').textContent = dataInfo.columns || 0;
                 $('preview-empty').style.display = 'none';
                 $('btn-preprocess').disabled = false;
+                $('btn-anomaly').disabled = false;
+                $('btn-clustering').disabled = false;
                 updateTargetOptions();
+                updateAutoMLTargetColumns();
                 updateTrainButton();
                 $('btn-compare').disabled = !getConfig().targetColumn;
             }
@@ -684,6 +1599,7 @@
                 .then(function(data) {
                     dataPreview = data;
                     renderPreviewTable();
+                    renderDataSummary();
                 })
                 .catch(function(e) { console.error('Preview failed:', e); });
         }
@@ -830,6 +1746,29 @@
                         var display = typeof v === 'number' ? v.toFixed(4) : JSON.stringify(v);
                         html += '<p class="text-12px reguler" style="color:var(--color-text-700);"><strong>' + escHtml(k) + ':</strong> <span class="mono-12px">' + escHtml(display) + '</span></p>';
                     });
+                    if (job.autotuning) {
+                        html += '<div class="flex-row items-center gap-6" style="margin-top:8px;padding:8px 12px;background:var(--color-information-100);border-radius:8px;">';
+                        html += '<div class="spinner" style="width:14px;height:14px;"></div>';
+                        html += '<span class="text-12px medium" style="color:var(--color-information-600);">Auto-tuning hyperparameters...</span>';
+                        html += '</div>';
+                    }
+                    if (job.hyperopt_status === 'completed' && job.hyperopt_metrics) {
+                        var hm = job.hyperopt_metrics;
+                        html += '<div style="margin-top:8px;padding:10px 12px;background:var(--color-success-100);border-radius:8px;">';
+                        html += '<p class="text-12px medium" style="color:var(--color-success-600);margin-bottom:4px;"><i class="ri-flashlight-line"></i> Auto-Tune Results</p>';
+                        if (hm.best_trial) {
+                            html += '<p class="mono-12px">Best score: ' + (hm.best_trial.value || 0).toFixed(6) + '</p>';
+                            html += '<p class="text-12px reguler" style="color:var(--color-text-700);">Trials: ' + (hm.total_trials || 0) + ' | Time: ' + (hm.total_duration_secs || 0).toFixed(1) + 's</p>';
+                        }
+                        html += '</div>';
+                    }
+                    if (job.hyperopt_status === 'failed') {
+                        html += '<p class="text-12px reguler" style="color:var(--color-warning-500);margin-top:4px;"><i class="ri-flashlight-line"></i> Auto-tune skipped</p>';
+                    }
+                    html += '<div class="flex-row gap-4" style="margin-top:8px;">';
+                    html += '<button onclick="exportModel(\'' + escHtml(job.id) + '\', \'onnx\')" class="btn-xs btn-outline"><i class="ri-download-line"></i> ONNX</button>';
+                    html += '<button onclick="exportModel(\'' + escHtml(job.id) + '\', \'pmml\')" class="btn-xs btn-outline"><i class="ri-download-line"></i> PMML</button>';
+                    html += '</div>';
                     html += '</div>';
                 }
                 if (job.status.Failed) {
@@ -839,16 +1778,74 @@
             });
             html += '</div>';
             container.innerHTML = html;
+            renderTrainingChart();
         }
 
         function pollJobs() {
             trainingJobs.forEach(function(job) {
-                if (job.status.Completed || job.status.Failed) return;
+                if (job.status.Completed || job.status.Failed) {
+                    // Poll hyperopt for auto-tuning jobs
+                    if (job.hyperopt_job_id && job.hyperopt_status === 'running') {
+                        fetch('/api/train/status/' + job.hyperopt_job_id)
+                            .then(function(r) { return r.json(); })
+                            .then(function(hdata) {
+                                if (hdata.status.Completed) {
+                                    job.hyperopt_status = 'completed';
+                                    job.hyperopt_metrics = hdata.status.Completed.metrics || {};
+                                    job.autotuning = false;
+                                    renderJobs();
+                                    notify('Auto-tune complete for ' + job.model_type + '!', 'success');
+                                } else if (hdata.status.Failed) {
+                                    job.hyperopt_status = 'failed';
+                                    job.autotuning = false;
+                                    renderJobs();
+                                }
+                            })
+                            .catch(function() {});
+                    }
+                    return;
+                }
                 fetch('/api/train/status/' + job.id)
                     .then(function(r) { return r.json(); })
                     .then(function(data) {
                         job.status = data.status;
                         renderJobs();
+                        if (data.status.Completed) {
+                            // Fetch latest model ID for explainability
+                            fetch('/api/models').then(function(r) { return r.json(); }).then(function(mdata) {
+                                var models = mdata.models || [];
+                                if (models.length > 0) {
+                                    lastTrainedModelId = models[models.length - 1].id;
+                                    $('btn-explain').disabled = false;
+                                }
+                            }).catch(function(){});
+                            // Auto-tune: run hyperopt for the completed model
+                            var cfg = getConfig();
+                            if (cfg.targetColumn && job.model_type) {
+                                job.autotuning = true;
+                                renderJobs();
+                                fetch('/api/hyperopt', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                        target_column: cfg.targetColumn,
+                                        task_type: cfg.taskType,
+                                        model_type: job.model_type,
+                                        n_trials: 15,
+                                        sampler: 'tpe'
+                                    })
+                                })
+                                .then(function(r) { return r.json(); })
+                                .then(function(hdata) {
+                                    if (hdata.success) {
+                                        job.hyperopt_job_id = hdata.job_id;
+                                        job.hyperopt_status = 'running';
+                                        notify('Auto-tuning ' + job.model_type + '...', 'info');
+                                    }
+                                })
+                                .catch(function() {});
+                            }
+                        }
                     })
                     .catch(function() {});
             });
@@ -858,8 +1855,8 @@
         function compareAllModels() {
             var cfg = getConfig();
             var models = cfg.taskType === 'classification'
-                ? ['logistic_regression', 'decision_tree', 'random_forest']
-                : ['linear_regression', 'decision_tree', 'random_forest'];
+                ? ['logistic_regression', 'decision_tree', 'random_forest', 'xgboost', 'gradient_boosting', 'extra_trees', 'adaboost', 'knn']
+                : ['linear_regression', 'ridge', 'lasso', 'decision_tree', 'random_forest', 'xgboost', 'gradient_boosting', 'extra_trees', 'knn'];
 
             fetch('/api/train/compare', {
                 method: 'POST',
@@ -962,6 +1959,17 @@
                     $('mon-mem').textContent = (sys.memory_usage_percent || 0).toFixed(1) + '%';
                     $('mon-mem-detail').textContent = (sys.used_memory_gb || 0).toFixed(1) + ' / ' + (sys.total_memory_gb || 0).toFixed(1) + ' GB';
                     $('mon-status').textContent = status;
+                    renderGaugeChart('cpuGaugeChart', sys.cpu_usage || 0, '#0066F5');
+                    renderGaugeChart('memGaugeChart', sys.memory_usage_percent || 0, '#3ABC3F');
+                    var ring = $('status-ring');
+                    var icon = $('status-icon');
+                    if (ring && icon) {
+                        var sColor = status === 'healthy' ? 'var(--color-success-500)' : 'var(--color-danger-500)';
+                        ring.style.borderColor = sColor;
+                        icon.style.color = sColor;
+                        icon.className = status === 'healthy' ? 'ri-check-line' : 'ri-close-line';
+                    }
+                    $('mon-status').style.color = status === 'healthy' ? 'var(--color-success-500)' : 'var(--color-danger-500)';
                     $('mon-datasets').textContent = data.datasets_count || 0;
                     $('mon-jobs').textContent = data.jobs_count || 0;
                     $('mon-models').textContent = data.models_count || 0;
@@ -971,7 +1979,1146 @@
                     $('status-badge').className = 'badge-sm badge-danger';
                     $('status-dot').className = 'status-dot error';
                     $('mon-status').textContent = 'error';
+                    $('mon-status').style.color = 'var(--color-danger-500)';
+                    var ring = $('status-ring');
+                    var icon = $('status-icon');
+                    if (ring && icon) {
+                        ring.style.borderColor = 'var(--color-danger-500)';
+                        icon.style.color = 'var(--color-danger-500)';
+                        icon.className = 'ri-close-line';
+                    }
                 });
+        }
+
+        // ── HyperOpt ──
+        var hyperoptJobId = null;
+        var importanceChartInstance = null;
+        var ensembleSelectedModels = [];
+
+        function startHyperopt() {
+            var cfg = getConfig();
+            if (!cfg.targetColumn) { notify('Select a target column first', 'error'); return; }
+            var timeout = parseInt($('ho-timeout').value) || 0;
+            $('btn-hyperopt').disabled = true;
+            $('hyperopt-empty').style.display = 'none';
+            $('hyperopt-results').innerHTML = '<div class="flex-col gap-8"><div class="progress-bar"><div class="progress-bar-fill" style="width:0%"></div></div><p class="text-12px reguler" style="color:var(--color-text-700);">Starting optimization...</p></div>';
+
+            fetch('/api/hyperopt', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    target_column: cfg.targetColumn,
+                    task_type: cfg.taskType,
+                    model_type: $('ho-model').value,
+                    n_trials: parseInt($('ho-trials').value),
+                    sampler: $('ho-sampler').value,
+                    timeout_secs: timeout > 0 ? timeout : null
+                })
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.success) {
+                    hyperoptJobId = data.job_id;
+                    notify('Hyperparameter optimization started!', 'info');
+                    pollHyperopt();
+                }
+            })
+            .catch(function(e) {
+                notify('HyperOpt failed: ' + e.message, 'error');
+                $('btn-hyperopt').disabled = false;
+            });
+        }
+
+        function pollHyperopt() {
+            if (!hyperoptJobId) return;
+            fetch('/api/train/status/' + hyperoptJobId)
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    var s = data.status;
+                    if (s.Completed) {
+                        var m = s.Completed.metrics || {};
+                        var html = '';
+                        if (m.best_trial) {
+                            html += '<div class="flex-col gap-12">';
+                            html += '<div style="padding:16px;background:var(--color-success-100);border-radius:8px;">';
+                            html += '<p class="text-14px medium" style="color:var(--color-success-600);">Best Trial</p>';
+                            html += '<p class="mono-14px" style="margin-top:4px;">Score: ' + (m.best_trial.value || 0).toFixed(6) + '</p>';
+                            html += '<p class="text-12px reguler" style="color:var(--color-text-700);margin-top:4px;">Params: ' + escHtml(m.best_trial.params || '') + '</p>';
+                            html += '<p class="text-12px reguler" style="color:var(--color-text-700);">Duration: ' + (m.best_trial.duration_secs || 0).toFixed(2) + 's</p>';
+                            html += '</div>';
+                        }
+                        html += '<p class="text-12px reguler" style="color:var(--color-text-700);">Total trials: ' + (m.total_trials || 0) + ' | Total time: ' + (m.total_duration_secs || 0).toFixed(2) + 's</p>';
+                        if (m.trials && m.trials.length > 0) {
+                            html += '<div class="table-wrap"><table class="data-table"><thead><tr><th>#</th><th>Score</th><th>Duration</th><th>Pruned</th></tr></thead><tbody>';
+                            m.trials.forEach(function(t) {
+                                html += '<tr><td>' + t.trial_id + '</td><td class="mono-12px">' + (t.value === Infinity ? 'Failed' : t.value.toFixed(6)) + '</td>';
+                                html += '<td class="mono-12px">' + t.duration_secs.toFixed(2) + 's</td>';
+                                html += '<td>' + (t.pruned ? '<span class="badge-sm badge-warning">Yes</span>' : '<span class="badge-sm badge-success">No</span>') + '</td></tr>';
+                            });
+                            html += '</tbody></table></div>';
+                        }
+                        html += '</div>';
+                        $('hyperopt-results').innerHTML = html;
+                        $('btn-hyperopt').disabled = false;
+                        hyperoptJobId = null;
+                        notify('Optimization complete!', 'success');
+                        if (m.trials) renderConvergenceChart(m.trials);
+                        loadHyperoptHistory();
+                    } else if (s.Failed) {
+                        $('hyperopt-results').innerHTML = '<p class="text-14px reguler" style="color:var(--color-danger-500);">' + escHtml(s.Failed.error || 'Failed') + '</p>';
+                        $('btn-hyperopt').disabled = false;
+                        hyperoptJobId = null;
+                    } else {
+                        var p = s.Running ? (s.Running.progress * 100).toFixed(0) : '0';
+                        $('hyperopt-results').innerHTML = '<div class="flex-col gap-8"><div class="progress-bar"><div class="progress-bar-fill" style="width:' + p + '%"></div></div><p class="text-12px reguler" style="color:var(--color-text-700);">' + (s.Running ? s.Running.message || 'Optimizing...' : 'Optimizing...') + '</p></div>';
+                        setTimeout(pollHyperopt, 1500);
+                    }
+                })
+                .catch(function() { setTimeout(pollHyperopt, 3000); });
+        }
+
+        // ── Ensemble ──
+        function setupEnsembleCheckboxes() {
+            var container = $('ens-model-checkboxes');
+            availableModels.forEach(function(m) {
+                var label = document.createElement('label');
+                label.className = 'checkbox-row';
+                var cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.value = m.id;
+                cb.onchange = function() {
+                    if (cb.checked) {
+                        if (ensembleSelectedModels.indexOf(m.id) === -1) ensembleSelectedModels.push(m.id);
+                    } else {
+                        ensembleSelectedModels = ensembleSelectedModels.filter(function(x) { return x !== m.id; });
+                    }
+                    $('btn-ensemble').disabled = ensembleSelectedModels.length < 2 || !getConfig().targetColumn;
+                };
+                var span = document.createElement('span');
+                span.className = 'text-14px reguler';
+                span.textContent = m.name;
+                label.appendChild(cb);
+                label.appendChild(span);
+                container.appendChild(label);
+            });
+        }
+
+        var ensembleJobId = null;
+
+        function startEnsemble() {
+            var cfg = getConfig();
+            if (!cfg.targetColumn) { notify('Select a target column first', 'error'); return; }
+            if (ensembleSelectedModels.length < 2) { notify('Select at least 2 models', 'error'); return; }
+
+            $('btn-ensemble').disabled = true;
+            $('ensemble-empty').style.display = 'none';
+            $('ensemble-results').innerHTML = '<div class="flex-col gap-8"><div class="progress-bar"><div class="progress-bar-fill" style="width:0%"></div></div><p class="text-12px reguler" style="color:var(--color-text-700);">Training ensemble...</p></div>';
+
+            fetch('/api/ensemble/train', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    target_column: cfg.targetColumn,
+                    task_type: cfg.taskType,
+                    models: ensembleSelectedModels,
+                    strategy: $('ens-strategy').value
+                })
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.success) {
+                    ensembleJobId = data.job_id;
+                    notify('Ensemble training started!', 'info');
+                    pollEnsemble();
+                }
+            })
+            .catch(function(e) {
+                notify('Ensemble failed: ' + e.message, 'error');
+                $('btn-ensemble').disabled = false;
+            });
+        }
+
+        function pollEnsemble() {
+            if (!ensembleJobId) return;
+            fetch('/api/train/status/' + ensembleJobId)
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    var s = data.status;
+                    if (s.Completed) {
+                        var m = s.Completed.metrics || {};
+                        var html = '<div class="flex-col gap-12">';
+                        html += '<div style="padding:12px;background:var(--color-information-100);border-radius:8px;">';
+                        html += '<p class="text-14px medium" style="color:var(--color-information-600);">Ensemble: ' + escHtml(m.strategy || 'voting') + ' | Models: ' + (m.successful_models || 0) + '/' + (m.model_count || 0) + '</p>';
+                        html += '<p class="text-12px reguler" style="color:var(--color-text-700);margin-top:4px;">Training time: ' + (m.training_time_secs || 0).toFixed(2) + 's</p>';
+                        html += '</div>';
+                        if (m.model_results && m.model_results.length > 0) {
+                            html += '<div class="table-wrap"><table class="data-table"><thead><tr><th>Model</th><th>Status</th><th>Metrics</th></tr></thead><tbody>';
+                            m.model_results.forEach(function(r) {
+                                html += '<tr><td class="text-14px medium">' + escHtml(r.model) + '</td>';
+                                html += '<td><span class="badge-sm ' + (r.status === 'success' ? 'badge-success' : 'badge-danger') + '">' + escHtml(r.status) + '</span></td>';
+                                if (r.metrics) {
+                                    var metricStr = Object.keys(r.metrics).map(function(k) { return k + ': ' + (typeof r.metrics[k] === 'number' ? r.metrics[k].toFixed(4) : r.metrics[k]); }).join(', ');
+                                    html += '<td class="mono-12px">' + escHtml(metricStr) + '</td>';
+                                } else {
+                                    html += '<td class="text-12px" style="color:var(--color-danger-500);">' + escHtml(r.error || '') + '</td>';
+                                }
+                                html += '</tr>';
+                            });
+                            html += '</tbody></table></div>';
+                        }
+                        html += '</div>';
+                        $('ensemble-results').innerHTML = html;
+                        $('btn-ensemble').disabled = false;
+                        ensembleJobId = null;
+                        notify('Ensemble training complete!', 'success');
+                    } else if (s.Failed) {
+                        $('ensemble-results').innerHTML = '<p class="text-14px reguler" style="color:var(--color-danger-500);">' + escHtml(s.Failed.error || 'Failed') + '</p>';
+                        $('btn-ensemble').disabled = false;
+                        ensembleJobId = null;
+                    } else {
+                        setTimeout(pollEnsemble, 1500);
+                    }
+                })
+                .catch(function() { setTimeout(pollEnsemble, 3000); });
+        }
+
+        // ── Explainability ──
+        var lastTrainedModelId = null;
+
+        function getFeatureImportance() {
+            if (!lastTrainedModelId) { notify('Train a model first', 'error'); return; }
+            $('btn-explain').disabled = true;
+            $('explain-empty').style.display = 'none';
+
+            fetch('/api/explain/importance', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ model_id: lastTrainedModelId })
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.success && data.features && data.features.length > 0) {
+                    var html = '<div class="table-wrap"><table class="data-table"><thead><tr><th>Feature</th><th>Importance</th><th>Bar</th></tr></thead><tbody>';
+                    var maxImp = Math.max.apply(null, data.features.map(function(f) { return Math.abs(f.importance); }));
+                    data.features.forEach(function(f) {
+                        var pct = maxImp > 0 ? (Math.abs(f.importance) / maxImp * 100).toFixed(0) : 0;
+                        html += '<tr><td class="text-14px medium">' + escHtml(f.feature) + '</td>';
+                        html += '<td class="mono-14px">' + f.importance.toFixed(6) + '</td>';
+                        html += '<td><div style="width:100%;background:var(--color-grey-700);border-radius:4px;height:8px;"><div style="width:' + pct + '%;background:var(--color-information-500);border-radius:4px;height:8px;"></div></div></td>';
+                        html += '</tr>';
+                    });
+                    html += '</tbody></table></div>';
+                    $('explain-results').innerHTML = html;
+
+                    // Render chart
+                    if (typeof Chart !== 'undefined') {
+                        var ctx = $('importanceChart');
+                        if (importanceChartInstance) importanceChartInstance.destroy();
+                        var features = data.features.slice(0, 15);
+                        importanceChartInstance = new Chart(ctx, {
+                            type: 'bar',
+                            data: {
+                                labels: features.map(function(f) { return f.feature; }),
+                                datasets: [{
+                                    label: 'Feature Importance',
+                                    data: features.map(function(f) { return f.importance; }),
+                                    backgroundColor: 'rgba(0, 102, 245, 0.15)',
+                                    borderColor: '#0066F5',
+                                    borderWidth: 1,
+                                    borderRadius: 6
+                                }]
+                            },
+                            options: {
+                                indexAxis: 'y',
+                                scales: { x: { beginAtZero: true }, y: { grid: { display: false } } },
+                                plugins: { legend: { display: false } }
+                            }
+                        });
+                    }
+                } else {
+                    $('explain-results').innerHTML = '<p class="text-14px reguler" style="color:var(--color-text-700);">' + (data.message || 'Feature importances not available for this model type') + '</p>';
+                }
+                $('btn-explain').disabled = false;
+            })
+            .catch(function(e) {
+                notify('Explainability failed: ' + e.message, 'error');
+                $('btn-explain').disabled = false;
+            });
+        }
+
+        // ── URL Import ──
+        function importFromUrl() {
+            var url = $('import-url').value.trim();
+            if (!url) { notify('Enter a URL', 'error'); return; }
+            $('btn-import-url').disabled = true;
+            $('import-url-status').innerHTML = '<p class="text-12px reguler" style="color:var(--color-text-700);"><i class="ri-loader-4-line"></i> Detecting source and downloading...</p>';
+
+            fetch('/api/data/import/url', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url: url })
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                $('btn-import-url').disabled = false;
+                if (data.success) {
+                    $('import-url-status').innerHTML = '<div style="padding:8px 12px;background:var(--color-success-100);border-radius:8px;"><p class="text-12px medium" style="color:var(--color-success-600);">✓ Imported from ' + escHtml(data.source) + '</p><p class="text-12px reguler" style="color:var(--color-text-700);margin-top:2px;">' + data.rows + ' rows × ' + data.columns + ' columns (' + escHtml(data.format) + ')</p></div>';
+                    dataInfo = { column_names: data.column_names, rows: data.rows, columns: data.columns };
+                    $('data-rows').textContent = data.rows;
+                    $('data-cols').textContent = data.columns;
+                    $('data-meta').style.display = '';
+                    refreshPreview();
+                    updateTargetOptions(data.column_names);
+                    notify('Dataset imported from ' + data.source + '!', 'success');
+                } else if (data.needs_credentials) {
+                    $('import-url-status').innerHTML = '<div style="padding:8px 12px;background:var(--color-warning-100);border-radius:8px;"><p class="text-12px medium" style="color:var(--color-warning-600);">⚠ ' + escHtml(data.message) + '</p></div>';
+                    notify('Kaggle credentials required', 'warning');
+                } else {
+                    $('import-url-status').innerHTML = '<p class="text-12px reguler" style="color:var(--color-danger-500);">' + escHtml(data.message || 'Import failed') + '</p>';
+                }
+            })
+            .catch(function(e) {
+                $('btn-import-url').disabled = false;
+                $('import-url-status').innerHTML = '<p class="text-12px reguler" style="color:var(--color-danger-500);">Error: ' + escHtml(e.message) + '</p>';
+            });
+        }
+
+        function updateTargetOptions(columns) {
+            var sel = $('cfg-targetColumn');
+            sel.innerHTML = '<option value="">Select target column...</option>';
+            (columns || []).forEach(function(c) {
+                var o = document.createElement('option');
+                o.value = c; o.textContent = c;
+                sel.appendChild(o);
+            });
+        }
+
+        // ── Auto-Tune ──
+        function startAutoTune() {
+            var cfg = getConfig();
+            if (!cfg.targetColumn) { notify('Select a target column first', 'error'); return; }
+            $('btn-autotune').disabled = true;
+            $('autotune-empty').style.display = 'none';
+            $('autotune-results').innerHTML = '<div class="flex-col gap-8"><div class="progress-bar"><div class="progress-bar-fill" style="width:0%"></div></div><p class="text-12px reguler" style="color:var(--color-text-700);">Starting auto-tune...</p></div>';
+
+            var maxModels = parseInt($('at-max-models').value) || 6;
+            fetch('/api/autotune', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    target_column: cfg.targetColumn,
+                    task_type: cfg.taskType,
+                    max_models: maxModels
+                })
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.success) {
+                    autotuneJobId = data.job_id;
+                    notify('Auto-tune started!', 'info');
+                    pollAutoTune();
+                }
+            })
+            .catch(function(e) {
+                notify('Auto-tune failed: ' + e.message, 'error');
+                $('btn-autotune').disabled = false;
+            });
+        }
+
+        function pollAutoTune() {
+            if (!autotuneJobId) return;
+            fetch('/api/train/status/' + autotuneJobId)
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    var s = data.status;
+                    if (s.Completed) {
+                        var m = s.Completed.metrics || {};
+                        var html = '<div class="flex-col gap-12">';
+                        if (m.best) {
+                            html += '<div style="padding:12px;background:var(--color-success-100);border-radius:8px;">';
+                            html += '<p class="text-14px medium" style="color:var(--color-success-600);">🏆 Best: ' + escHtml(m.best_model || '') + '</p>';
+                            html += '<p class="mono-14px" style="margin-top:4px;">Score: ' + (m.best.score || 0).toFixed(6) + '</p>';
+                            html += '<p class="text-12px reguler" style="color:var(--color-text-700);margin-top:2px;">Time: ' + (m.total_time_secs || 0).toFixed(2) + 's | Models: ' + (m.successful_models || 0) + '/' + (m.total_models_tested || 0) + '</p>';
+                            html += '</div>';
+                        }
+                        if (m.leaderboard && m.leaderboard.length > 0) {
+                            html += '<div class="table-wrap"><table class="data-table"><thead><tr><th>#</th><th>Model</th><th>Score</th><th>Time</th><th>Status</th></tr></thead><tbody>';
+                            m.leaderboard.forEach(function(r, i) {
+                                html += '<tr><td>' + (i + 1) + '</td>';
+                                html += '<td class="text-14px medium">' + escHtml(r.model) + '</td>';
+                                html += '<td class="mono-14px">' + (r.score || 0).toFixed(6) + '</td>';
+                                html += '<td class="mono-12px">' + (r.training_time_secs || 0).toFixed(2) + 's</td>';
+                                html += '<td><span class="badge-sm ' + (r.status === 'success' ? 'badge-success' : 'badge-danger') + '">' + escHtml(r.status) + '</span></td></tr>';
+                            });
+                            html += '</tbody></table></div>';
+                        }
+                        html += '</div>';
+                        $('autotune-results').innerHTML = html;
+                        $('btn-autotune').disabled = false;
+                        autotuneJobId = null;
+                        if (m.best && m.best.status === 'success') {
+                            var bestModelId = 'autotune_' + m.best_model + '_' + data.job_id;
+                            lastTrainedModelId = bestModelId;
+                            $('btn-explain').disabled = false;
+                        }
+                        notify('Auto-tune complete! Best: ' + (m.best_model || 'N/A'), 'success');
+                    } else if (s.Failed) {
+                        $('autotune-results').innerHTML = '<p class="text-14px reguler" style="color:var(--color-danger-500);">' + escHtml(s.Failed.error || 'Failed') + '</p>';
+                        $('btn-autotune').disabled = false;
+                        autotuneJobId = null;
+                    } else {
+                        var p = s.Running ? (s.Running.progress * 100).toFixed(0) : '0';
+                        var msg = s.Running ? s.Running.message || 'Auto-tuning...' : 'Auto-tuning...';
+                        $('autotune-results').innerHTML = '<div class="flex-col gap-8"><div class="progress-bar"><div class="progress-bar-fill" style="width:' + p + '%"></div></div><p class="text-12px reguler" style="color:var(--color-text-700);">' + escHtml(msg) + '</p></div>';
+                        setTimeout(pollAutoTune, 1500);
+                    }
+                })
+                .catch(function() { setTimeout(pollAutoTune, 3000); });
+        }
+
+        // ── Enhanced HyperOpt: Search Space, Convergence, History ──
+        function loadSearchSpace(modelType) {
+            fetch('/api/hyperopt/search-space/' + modelType)
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    var params = data.parameters || [];
+                    if (params.length === 0) { $('ho-search-space').innerHTML = '<p class="text-14px reguler" style="color:var(--color-text-700);">No parameters defined</p>'; return; }
+                    var html = '<div class="table-wrap"><table class="data-table"><thead><tr><th>Parameter</th><th>Type</th><th>Range</th><th>Default</th></tr></thead><tbody>';
+                    params.forEach(function(p) {
+                        html += '<tr><td class="text-14px medium">' + escHtml(p.name) + '</td>';
+                        html += '<td class="mono-12px">' + escHtml(p.type) + '</td>';
+                        html += '<td class="mono-12px">' + p.low + ' – ' + p.high + '</td>';
+                        html += '<td class="mono-12px">' + (p.default !== undefined ? p.default : '-') + '</td></tr>';
+                    });
+                    html += '</tbody></table></div>';
+                    $('ho-search-space').innerHTML = html;
+                })
+                .catch(function() {});
+        }
+
+        function renderConvergenceChart(trials) {
+            if (typeof Chart === 'undefined' || !trials || trials.length === 0) return;
+            var ctx = $('convergenceChart');
+            if (convergenceChartInstance) convergenceChartInstance.destroy();
+            var bestSoFar = [];
+            var best = Infinity;
+            trials.forEach(function(t) {
+                if (t.value < best) best = t.value;
+                bestSoFar.push(best);
+            });
+            convergenceChartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: trials.map(function(t) { return t.trial_id; }),
+                    datasets: [
+                        { label: 'Trial Score', data: trials.map(function(t) { return t.value === Infinity ? null : t.value; }), borderColor: '#B4D2FC', backgroundColor: 'rgba(0,102,245,0.05)', pointRadius: 3, tension: 0, fill: false },
+                        { label: 'Best So Far', data: bestSoFar, borderColor: '#0066F5', backgroundColor: 'rgba(0,102,245,0.1)', borderWidth: 2, pointRadius: 0, tension: 0.3, fill: true }
+                    ]
+                },
+                options: { scales: { x: { title: { display: true, text: 'Trial' } }, y: { title: { display: true, text: 'Score (lower=better)' } } }, plugins: { legend: { position: 'bottom' } } }
+            });
+        }
+
+        function loadHyperoptHistory() {
+            fetch('/api/hyperopt/history')
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    var studies = data.studies || [];
+                    if (studies.length === 0) { $('ho-history').innerHTML = '<p class="text-14px reguler" style="color:var(--color-text-700);">No studies yet</p>'; return; }
+                    var html = '<div class="table-wrap"><table class="data-table"><thead><tr><th>Model</th><th>Best Score</th><th>Trials</th><th>Time</th><th>Date</th></tr></thead><tbody>';
+                    studies.forEach(function(s) {
+                        html += '<tr><td class="text-14px medium">' + escHtml(s.model_type || '') + '</td>';
+                        html += '<td class="mono-14px">' + (s.best_trial ? (s.best_trial.value || 0).toFixed(6) : 'N/A') + '</td>';
+                        html += '<td>' + (s.total_trials || 0) + '</td>';
+                        html += '<td class="mono-12px">' + (s.total_duration_secs || 0).toFixed(2) + 's</td>';
+                        html += '<td class="text-12px">' + (s.timestamp ? new Date(s.timestamp).toLocaleString() : '') + '</td></tr>';
+                    });
+                    html += '</tbody></table></div>';
+                    $('ho-history').innerHTML = html;
+                })
+                .catch(function() {});
+        }
+
+        // ── Export Model ──
+        function exportModel(jobId, format) {
+            // Find the model ID from the job — look for it via the models API
+            fetch('/api/models')
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    var models = data.models || [];
+                    var model = models.find(function(m) { return m.name && m.name.includes(jobId); });
+                    if (!model) { notify('Model not found — it may not have been saved', 'error'); return; }
+                    return fetch('/api/export/model', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ model_id: model.id, format: format })
+                    });
+                })
+                .then(function(r) { if (r) return r.json(); })
+                .then(function(data) {
+                    if (data && data.success) {
+                        notify('Model exported as ' + format.toUpperCase() + ' to ' + data.path, 'success');
+                    } else if (data) {
+                        notify('Export failed: ' + (data.message || 'Unknown error'), 'error');
+                    }
+                })
+                .catch(function(e) { notify('Export failed: ' + e.message, 'error'); });
+        }
+
+        // ── Anomaly Detection ──
+        function runAnomalyDetection() {
+            $('btn-anomaly').disabled = true;
+            $('anomaly-empty').style.display = 'none';
+            $('anomaly-results').innerHTML = '<div class="loading-overlay"><div class="spinner"></div><p class="text-12px reguler">Running anomaly detection...</p></div>';
+
+            fetch('/api/anomaly/detect', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    method: $('anomaly-method').value,
+                    contamination: parseFloat($('anomaly-contamination').value),
+                    n_estimators: parseInt($('anomaly-estimators').value)
+                })
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                $('btn-anomaly').disabled = false;
+                if (data.success) {
+                    var rate = ((data.anomaly_rate || 0) * 100).toFixed(1);
+                    var html = '<div class="flex-col gap-12">';
+                    html += '<div class="grid-3" style="text-align:center;">';
+                    html += '<div><p class="mono-20px medium">' + data.total_samples + '</p><p class="text-12px reguler" style="color:var(--color-text-700);">Total Samples</p></div>';
+                    html += '<div><p class="mono-20px medium" style="color:var(--color-danger-500);">' + data.anomalies_found + '</p><p class="text-12px reguler" style="color:var(--color-text-700);">Anomalies</p></div>';
+                    html += '<div><p class="mono-20px medium">' + rate + '%</p><p class="text-12px reguler" style="color:var(--color-text-700);">Anomaly Rate</p></div>';
+                    html += '</div>';
+                    if (data.score_stats) {
+                        html += '<div class="grid-3" style="text-align:center;">';
+                        html += '<div><p class="mono-14px medium">' + (data.score_stats.min || 0).toFixed(4) + '</p><p class="text-12px reguler" style="color:var(--color-text-700);">Min Score</p></div>';
+                        html += '<div><p class="mono-14px medium">' + (data.score_stats.mean || 0).toFixed(4) + '</p><p class="text-12px reguler" style="color:var(--color-text-700);">Mean Score</p></div>';
+                        html += '<div><p class="mono-14px medium">' + (data.score_stats.max || 0).toFixed(4) + '</p><p class="text-12px reguler" style="color:var(--color-text-700);">Max Score</p></div>';
+                        html += '</div>';
+                    }
+                    html += '<p class="text-12px reguler" style="color:var(--color-text-600);">Columns used: ' + (data.columns_used || []).join(', ') + '</p>';
+                    html += '</div>';
+                    $('anomaly-results').innerHTML = html;
+                    renderAnomalyChart(data);
+                    notify('Found ' + data.anomalies_found + ' anomalies', 'success');
+                } else {
+                    $('anomaly-results').innerHTML = '<div class="alert-banner alert-danger"><i class="ri-error-warning-line"></i> ' + escHtml(data.message || 'Detection failed') + '</div>';
+                }
+            })
+            .catch(function(e) {
+                $('btn-anomaly').disabled = false;
+                $('anomaly-results').innerHTML = '';
+                $('anomaly-empty').style.display = '';
+                notify('Anomaly detection failed: ' + e.message, 'error');
+            });
+        }
+
+        // ── Clustering ──
+        function toggleClusterParams() {
+            var algo = $('cluster-algo').value;
+            $('cluster-k-group').style.display = algo === 'kmeans' ? '' : 'none';
+            $('cluster-eps-group').style.display = algo === 'dbscan' ? '' : 'none';
+            $('cluster-minsamp-group').style.display = algo === 'dbscan' ? '' : 'none';
+        }
+
+        function runClustering() {
+            var algo = $('cluster-algo').value;
+            var body = { algorithm: algo };
+            if (algo === 'kmeans') {
+                body.n_clusters = parseInt($('cluster-k').value) || 3;
+            } else {
+                body.eps = parseFloat($('cluster-eps').value) || 0.5;
+                body.min_samples = parseInt($('cluster-minsamp').value) || 5;
+            }
+            $('btn-clustering').disabled = true;
+            $('clustering-empty').style.display = 'none';
+            $('clustering-results').innerHTML = '<div class="loading-overlay"><div class="spinner"></div><p class="text-12px reguler">Running clustering...</p></div>';
+            fetch('/api/clustering/run', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            }).then(function(r) { return r.json(); }).then(function(data) {
+                $('btn-clustering').disabled = false;
+                if (!data.success) {
+                    $('clustering-results').innerHTML = '<div class="alert alert-error">Clustering failed</div>';
+                    return;
+                }
+                var r = data.result;
+                var html = '<div class="grid-3" style="margin-bottom:16px;">';
+                html += '<div><p class="mono-20px medium">' + (r.n_clusters || r.n_clusters_found || 0) + '</p><p class="text-12px reguler" style="color:var(--color-text-700);">Clusters Found</p></div>';
+                html += '<div><p class="mono-20px medium">' + (r.total_samples || 0) + '</p><p class="text-12px reguler" style="color:var(--color-text-700);">Total Samples</p></div>';
+                if (r.n_noise !== undefined) {
+                    html += '<div><p class="mono-20px medium">' + r.n_noise + '</p><p class="text-12px reguler" style="color:var(--color-text-700);">Noise Points</p></div>';
+                } else if (r.inertia !== undefined) {
+                    html += '<div><p class="mono-20px medium">' + r.inertia.toFixed(2) + '</p><p class="text-12px reguler" style="color:var(--color-text-700);">Inertia</p></div>';
+                }
+                html += '</div>';
+                // Cluster sizes table
+                if (r.cluster_sizes) {
+                    html += '<table class="data-table"><thead><tr><th>Cluster</th><th>Size</th></tr></thead><tbody>';
+                    var keys = Object.keys(r.cluster_sizes).sort(function(a,b) { return parseInt(a)-parseInt(b); });
+                    for (var i = 0; i < keys.length; i++) {
+                        var label = keys[i] === '-1' ? 'Noise' : 'Cluster ' + keys[i];
+                        html += '<tr><td>' + label + '</td><td>' + r.cluster_sizes[keys[i]] + '</td></tr>';
+                    }
+                    html += '</tbody></table>';
+                }
+                $('clustering-results').innerHTML = html;
+                renderClusteringChart(r);
+                notify('Clustering complete: ' + (r.n_clusters || r.n_clusters_found || 0) + ' clusters found', 'success');
+            }).catch(function(e) {
+                $('btn-clustering').disabled = false;
+                $('clustering-results').innerHTML = '';
+                $('clustering-empty').style.display = '';
+                notify('Clustering failed: ' + e.message, 'error');
+            });
+        }
+
+        // ── Device Info ──
+        function loadDeviceInfo() {
+            var container = $('device-info');
+            container.innerHTML = '<div class="loading-overlay"><div class="spinner"></div><p class="text-12px reguler">Loading...</p></div>';
+            fetch('/api/device/info')
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    var html = '<div class="flex-col gap-8">';
+                    if (data.cpu) {
+                        html += '<div class="flex-row justify-between"><span class="text-12px medium">CPU</span><span class="mono-12px">' + escHtml(data.cpu.brand || 'Unknown') + '</span></div>';
+                        html += '<div class="flex-row justify-between"><span class="text-12px medium">Cores</span><span class="mono-12px">' + (data.cpu.count || 0) + '</span></div>';
+                        html += '<div class="flex-row justify-between"><span class="text-12px medium">CPU Usage</span><span class="mono-12px">' + (data.cpu.usage_percent || 0).toFixed(1) + '%</span></div>';
+                    }
+                    if (data.memory) {
+                        html += '<div class="flex-row justify-between"><span class="text-12px medium">Memory</span><span class="mono-12px">' + (data.memory.total_gb || 0).toFixed(1) + ' GB</span></div>';
+                        html += '<div class="flex-row justify-between"><span class="text-12px medium">Mem Used</span><span class="mono-12px">' + (data.memory.usage_percent || 0).toFixed(1) + '%</span></div>';
+                    }
+                    html += '</div>';
+                    container.innerHTML = html;
+                })
+                .catch(function(e) {
+                    container.innerHTML = '<p class="text-12px reguler" style="color:var(--color-danger-500);">Failed to load device info</p>';
+                });
+        }
+
+        // ── Alerts ──
+        function loadAlerts() {
+            fetch('/api/monitoring/alerts')
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    var container = $('alerts-list');
+                    var alerts = data.alerts || [];
+                    if (alerts.length === 0) {
+                        container.innerHTML = '<div class="empty-state" style="padding:20px;"><i class="ri-checkbox-circle-line" style="color:var(--color-success-500);"></i><p class="text-12px reguler" style="color:var(--color-success-600);">No alerts — all systems normal</p></div>';
+                        return;
+                    }
+                    var html = '<div class="flex-col gap-8">';
+                    alerts.forEach(function(a) {
+                        var cls = a.level === 'critical' ? 'alert-danger' : 'alert-warning';
+                        html += '<div class="alert-banner ' + cls + '"><i class="ri-alarm-warning-line"></i> ' + escHtml(a.message) + '</div>';
+                    });
+                    html += '</div>';
+                    container.innerHTML = html;
+                })
+                .catch(function() {});
+        }
+
+        // ── Performance Stats ──
+        function loadPerformanceStats() {
+            fetch('/api/monitoring/performance')
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    var jobs = data.jobs || {};
+                    $('perf-completed').textContent = jobs.completed || 0;
+                    $('perf-failed').textContent = jobs.failed || 0;
+                    var tp = data.throughput || {};
+                    $('perf-throughput').textContent = (tp.models_per_minute || 0).toFixed(1);
+                })
+                .catch(function() {});
+        }
+
+        // ── Security ──
+        function loadSecurityStatus() {
+            fetch('/api/security/status')
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    var rl = data.rate_limiting || {};
+                    var guards = data.guards || {};
+                    $('security-status').innerHTML =
+                        '<div class="grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;">' +
+                        '<div style="padding:12px;background:var(--color-grey-600);border-radius:8px;">' +
+                            '<div class="text-12px reguler" style="color:var(--color-text-600);">Status</div>' +
+                            '<div class="text-16px medium" style="color:#22c55e;"><i class="ri-shield-check-fill"></i> Active</div></div>' +
+                        '<div style="padding:12px;background:var(--color-grey-600);border-radius:8px;">' +
+                            '<div class="text-12px reguler" style="color:var(--color-text-600);">Requests Tracked</div>' +
+                            '<div class="mono-16px medium">' + (rl.total_requests || 0) + '</div></div>' +
+                        '<div style="padding:12px;background:var(--color-grey-600);border-radius:8px;">' +
+                            '<div class="text-12px reguler" style="color:var(--color-text-600);">Blocked</div>' +
+                            '<div class="mono-16px medium" style="color:#ef4444;">' + (rl.total_blocked || 0) + '</div></div>' +
+                        '<div style="padding:12px;background:var(--color-grey-600);border-radius:8px;">' +
+                            '<div class="text-12px reguler" style="color:var(--color-text-600);">Active Clients</div>' +
+                            '<div class="mono-16px medium">' + (rl.active_clients || 0) + '</div></div>' +
+                        '<div style="padding:12px;background:var(--color-grey-600);border-radius:8px;">' +
+                            '<div class="text-12px reguler" style="color:var(--color-text-600);">Audit Entries</div>' +
+                            '<div class="mono-16px medium">' + (data.audit_log_entries || 0) + '</div></div>' +
+                        '</div>';
+
+                    // Guards panel
+                    var ghtml = '<div class="grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:8px;">';
+                    var guardItems = [
+                        { name: 'SSRF Protection', icon: 'ri-global-line', active: guards.ssrf_protection },
+                        { name: 'Path Traversal Guard', icon: 'ri-folder-shield-2-line', active: guards.path_traversal_protection },
+                        { name: 'Error Sanitization', icon: 'ri-eye-off-line', active: guards.error_sanitization },
+                        { name: 'Input Validation', icon: 'ri-input-method-line', active: guards.input_validation },
+                        { name: 'Max Rows: ' + (guards.max_dataset_rows || 0).toLocaleString(), icon: 'ri-database-2-line', active: true },
+                        { name: 'Max Columns: ' + (guards.max_dataset_columns || 0).toLocaleString(), icon: 'ri-layout-column-line', active: true },
+                        { name: 'Max Batch: ' + (guards.max_batch_items || 0).toLocaleString(), icon: 'ri-stack-line', active: true },
+                        { name: 'Train Timeout: ' + (guards.training_timeout_secs || 0) + 's', icon: 'ri-timer-line', active: true },
+                    ];
+                    guardItems.forEach(function(g) {
+                        var color = g.active ? '#22c55e' : '#ef4444';
+                        var icon2 = g.active ? 'ri-checkbox-circle-fill' : 'ri-close-circle-fill';
+                        ghtml += '<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--color-grey-600);border-radius:6px;">' +
+                            '<i class="' + g.icon + '" style="font-size:16px;color:var(--color-text-700);"></i>' +
+                            '<span class="text-13px reguler" style="flex:1;">' + g.name + '</span>' +
+                            '<i class="' + icon2 + '" style="color:' + color + ';font-size:16px;"></i></div>';
+                    });
+                    ghtml += '</div>';
+                    $('security-guards').innerHTML = ghtml;
+                })
+                .catch(function(e) {
+                    $('security-status').innerHTML = '<p class="text-14px" style="color:var(--color-text-600);">Failed to load security status</p>';
+                });
+        }
+
+        function loadRateLimitStats() {
+            fetch('/api/security/rate-limit/stats')
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    var m = data.metrics || {};
+                    var html = '<div class="grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;">';
+                    html += '<div style="padding:12px;background:var(--color-grey-600);border-radius:8px;">' +
+                        '<div class="text-12px reguler" style="color:var(--color-text-600);">Total Requests</div>' +
+                        '<div class="mono-16px medium">' + (m.total_requests || 0) + '</div></div>';
+                    html += '<div style="padding:12px;background:var(--color-grey-600);border-radius:8px;">' +
+                        '<div class="text-12px reguler" style="color:var(--color-text-600);">Blocked</div>' +
+                        '<div class="mono-16px medium" style="color:#ef4444;">' + (m.total_blocked || 0) + '</div></div>';
+                    html += '<div style="padding:12px;background:var(--color-grey-600);border-radius:8px;">' +
+                        '<div class="text-12px reguler" style="color:var(--color-text-600);">Active Clients</div>' +
+                        '<div class="mono-16px medium">' + (m.active_clients || 0) + '</div></div>';
+                    html += '</div>';
+                    $('rate-limit-stats').innerHTML = html;
+                })
+                .catch(function() {});
+        }
+
+        function loadAuditLog() {
+            fetch('/api/security/audit-log?limit=50')
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    var entries = data.entries || [];
+                    if (entries.length === 0) {
+                        $('audit-log').innerHTML = '<p class="text-14px reguler" style="color:var(--color-text-600);">No audit entries yet</p>';
+                        return;
+                    }
+                    var html = '<div class="table-wrap"><table class="data-table"><thead><tr>' +
+                        '<th>Time</th><th>Method</th><th>Resource</th><th>Status</th><th>IP</th></tr></thead><tbody>';
+                    entries.forEach(function(e) {
+                        var statusColor = e.status_code < 400 ? '#22c55e' : (e.status_code < 500 ? '#eab308' : '#ef4444');
+                        html += '<tr>' +
+                            '<td class="mono-12px">' + new Date(e.timestamp).toLocaleTimeString() + '</td>' +
+                            '<td class="text-13px medium">' + escHtml(e.action) + '</td>' +
+                            '<td class="mono-12px">' + escHtml(e.resource) + '</td>' +
+                            '<td class="mono-12px" style="color:' + statusColor + ';">' + e.status_code + '</td>' +
+                            '<td class="mono-12px">' + escHtml(e.ip_address) + '</td></tr>';
+                    });
+                    html += '</tbody></table></div>';
+                    $('audit-log').innerHTML = html;
+                })
+                .catch(function() {
+                    $('audit-log').innerHTML = '<p class="text-14px" style="color:var(--color-text-600);">Failed to load audit log</p>';
+                });
+        }
+
+        // ── AutoML Pipeline ──
+        var automlJobId = null;
+        var automlPollInterval = null;
+
+        function setupAutoMLModelCheckboxes() {
+            var container = $('automl-model-checkboxes');
+            if (!container) return;
+            container.innerHTML = '';
+            availableModels.forEach(function(m) {
+                if (m.id === 'kmeans' || m.id === 'dbscan') return;
+                var label = document.createElement('label');
+                label.className = 'text-13px reguler';
+                label.style.cssText = 'display:flex;align-items:center;gap:6px;cursor:pointer;';
+                label.innerHTML = '<input type="checkbox" class="automl-model-cb" value="' + m.id + '"> ' + m.name;
+                container.appendChild(label);
+            });
+        }
+
+        function updateAutoMLTargetColumns() {
+            var sel = $('automl-target');
+            if (!sel || !dataInfo) return;
+            var names = dataInfo.column_names || [];
+            sel.innerHTML = '<option value="">-- Select target column --</option>';
+            names.forEach(function(n) {
+                var opt = document.createElement('option');
+                opt.value = n;
+                opt.textContent = n;
+                sel.appendChild(opt);
+            });
+        }
+
+        function runAutoML() {
+            var target = $('automl-target').value;
+            if (!target) { notify('Please select a target column', 'error'); return; }
+
+            var selectedModels = [];
+            document.querySelectorAll('.automl-model-cb:checked').forEach(function(cb) {
+                selectedModels.push(cb.value);
+            });
+
+            var body = { target_column: target };
+            var taskType = $('automl-task-type').value;
+            if (taskType) body.task_type = taskType;
+            var scaler = $('automl-scaler').value;
+            if (scaler) body.scaler = scaler;
+            var imputation = $('automl-imputation').value;
+            if (imputation) body.imputation = imputation;
+            if (selectedModels.length > 0) body.models = selectedModels;
+
+            var maxModels = parseInt($('automl-max-models').value);
+            if (maxModels > 0) body.max_models = maxModels;
+            var trials = parseInt($('automl-hyperopt-trials').value);
+            body.hyperopt_trials = trials || 0;
+            var folds = parseInt($('automl-cv-folds').value);
+            if (folds > 0) body.cv_folds = folds;
+            var budget = parseInt($('automl-time-budget').value);
+            if (budget > 0) body.time_budget_secs = budget;
+
+            $('btn-automl-run').disabled = true;
+            $('automl-progress').style.display = 'block';
+            $('automl-results').style.display = 'none';
+            $('automl-status-text').textContent = 'Starting AutoML pipeline...';
+            $('automl-progress-bar').style.width = '0%';
+            $('automl-progress-pct').textContent = '0%';
+
+            fetch('/api/automl/run', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.success && data.job_id) {
+                    automlJobId = data.job_id;
+                    notify('AutoML pipeline started!', 'success');
+                    automlPollInterval = setInterval(pollAutoMLStatus, 2000);
+                } else {
+                    notify('Failed to start AutoML: ' + (data.error || 'Unknown error'), 'error');
+                    $('btn-automl-run').disabled = false;
+                    $('automl-progress').style.display = 'none';
+                }
+            })
+            .catch(function(err) {
+                notify('AutoML request failed: ' + err, 'error');
+                $('btn-automl-run').disabled = false;
+                $('automl-progress').style.display = 'none';
+            });
+        }
+
+        function pollAutoMLStatus() {
+            if (!automlJobId) return;
+            fetch('/api/automl/status/' + automlJobId)
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    var pct = Math.round(data.progress || 0);
+                    $('automl-progress-bar').style.width = pct + '%';
+                    $('automl-progress-pct').textContent = pct + '%';
+                    $('automl-status-text').textContent = data.message || data.status;
+
+                    if (data.status === 'completed') {
+                        clearInterval(automlPollInterval);
+                        automlPollInterval = null;
+                        $('automl-progress').style.display = 'none';
+                        $('btn-automl-run').disabled = false;
+                        displayAutoMLResults(data.result);
+                    } else if (data.status === 'failed') {
+                        clearInterval(automlPollInterval);
+                        automlPollInterval = null;
+                        $('automl-progress').style.display = 'none';
+                        $('btn-automl-run').disabled = false;
+                        notify('AutoML pipeline failed: ' + data.message, 'error');
+                    }
+                })
+                .catch(function() {});
+        }
+
+        function displayAutoMLResults(result) {
+            if (!result) return;
+            $('automl-results').style.display = 'block';
+
+            $('automl-best-model').textContent = result.best_model || '—';
+            var scoreText = (result.metric || 'Score') + ': ' + (result.best_score != null ? result.best_score.toFixed(4) : '—');
+            $('automl-best-score').textContent = scoreText;
+            $('automl-models-tested').textContent = result.models_evaluated || 0;
+            var totalTime = result.total_time_secs || 0;
+            $('automl-total-time').textContent = totalTime < 60 ? totalTime.toFixed(1) + 's' : (totalTime / 60).toFixed(1) + 'm';
+
+            // Leaderboard table
+            var lb = result.leaderboard || [];
+            var html = '<table class="data-table"><thead><tr><th>#</th><th>Model</th><th>Score</th><th>Time</th></tr></thead><tbody>';
+            lb.forEach(function(entry, i) {
+                var score = entry.score != null ? parseFloat(entry.score).toFixed(4) : 'Error';
+                var time = entry.training_time_secs != null ? entry.training_time_secs.toFixed(2) + 's' : '—';
+                var cls = i === 0 ? ' style="background:var(--color-information-100);font-weight:600;"' : '';
+                html += '<tr' + cls + '><td>' + (i + 1) + '</td><td>' + entry.model + '</td><td>' + score + '</td><td>' + time + '</td></tr>';
+            });
+            html += '</tbody></table>';
+            $('automl-leaderboard').innerHTML = html;
+
+            // HyperOpt results
+            if (result.hyperopt && !result.hyperopt.skipped) {
+                $('automl-hyperopt-result').style.display = 'block';
+                var hoHtml = '<div class="text-13px reguler">';
+                hoHtml += '<div><strong>Trials:</strong> ' + (result.hyperopt.n_trials || 0) + '</div>';
+                hoHtml += '<div><strong>Best Value:</strong> ' + (result.hyperopt.best_value != null ? result.hyperopt.best_value.toFixed(6) : '—') + '</div>';
+                hoHtml += '<div><strong>Best Params:</strong> ' + (result.hyperopt.best_params || '—') + '</div>';
+                hoHtml += '</div>';
+                $('automl-hyperopt-details').innerHTML = hoHtml;
+            } else {
+                $('automl-hyperopt-result').style.display = 'none';
+            }
+
+            notify('AutoML pipeline completed! Best model: ' + result.best_model, 'success');
+        }
+
+        // ── Chart Renderers ──
+        function renderDataSummary() {
+            if (!dataPreview || !dataPreview.columns || dataPreview.columns.length === 0) return;
+            $('data-summary-empty').style.display = 'none';
+            $('data-summary-chart-wrap').style.display = '';
+
+            var cols = dataPreview.columns;
+            var types = {};
+            cols.forEach(function(c) {
+                var t = c.dtype || 'unknown';
+                types[t] = (types[t] || 0) + 1;
+            });
+
+            var statsHtml = '<div class="grid-2" style="gap:8px;">';
+            statsHtml += '<div style="padding:12px;background:var(--color-grey-600);border-radius:8px;"><p class="text-12px reguler" style="color:var(--color-text-600);">Columns</p><p class="mono-20px medium">' + cols.length + '</p></div>';
+            statsHtml += '<div style="padding:12px;background:var(--color-grey-600);border-radius:8px;"><p class="text-12px reguler" style="color:var(--color-text-600);">Rows</p><p class="mono-20px medium">' + (dataPreview.rows || 0) + '</p></div>';
+            Object.keys(types).forEach(function(t) {
+                statsHtml += '<div style="padding:12px;background:var(--color-grey-600);border-radius:8px;"><p class="text-12px reguler" style="color:var(--color-text-600);">' + escHtml(t) + '</p><p class="mono-20px medium">' + types[t] + '</p></div>';
+            });
+            statsHtml += '</div>';
+            $('data-col-stats').innerHTML = statsHtml;
+
+            if (typeof Chart === 'undefined') return;
+            var ctx = $('columnTypesChart');
+            if (columnTypesChartInstance) columnTypesChartInstance.destroy();
+            var labels = Object.keys(types);
+            var colors = ['#0066F5', '#3ABC3F', '#FFA931', '#FF3131', '#9C9FA1', '#0052C4', '#2E9632'];
+            columnTypesChartInstance = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: labels,
+                    datasets: [{ data: labels.map(function(l) { return types[l]; }), backgroundColor: colors.slice(0, labels.length), borderWidth: 0 }]
+                },
+                options: { responsive: true, maintainAspectRatio: true, plugins: { legend: { position: 'bottom', labels: { font: { family: '"Inter", sans-serif', size: 12 }, padding: 12 } } } }
+            });
+        }
+
+        function renderTrainingChart() {
+            var completed = trainingJobs.filter(function(j) { return j.status.Completed; });
+            if (completed.length === 0) {
+                $('training-chart-wrap').style.display = 'none';
+                $('training-chart-empty').style.display = '';
+                return;
+            }
+            $('training-chart-wrap').style.display = '';
+            $('training-chart-empty').style.display = 'none';
+
+            if (typeof Chart === 'undefined') return;
+            var ctx = $('trainingMetricsChart');
+            if (trainingMetricsChartInstance) trainingMetricsChartInstance.destroy();
+
+            var labels = completed.map(function(j) { return j.model_type; });
+            var metrics = completed.map(function(j) {
+                var m = j.status.Completed.metrics || {};
+                return m.accuracy || m.r2 || m.score || 0;
+            });
+            var hoScores = completed.map(function(j) {
+                if (j.hyperopt_metrics && j.hyperopt_metrics.best_trial) return j.hyperopt_metrics.best_trial.value || 0;
+                return null;
+            });
+            var hasHo = hoScores.some(function(v) { return v !== null; });
+
+            var datasets = [{
+                label: 'Base Score',
+                data: metrics,
+                backgroundColor: 'rgba(0, 102, 245, 0.15)',
+                borderColor: '#0066F5',
+                borderWidth: 1.5,
+                borderRadius: 6
+            }];
+            if (hasHo) {
+                datasets.push({
+                    label: 'After Auto-Tune',
+                    data: hoScores,
+                    backgroundColor: 'rgba(58, 188, 63, 0.15)',
+                    borderColor: '#3ABC3F',
+                    borderWidth: 1.5,
+                    borderRadius: 6
+                });
+            }
+            trainingMetricsChartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: { labels: labels, datasets: datasets },
+                options: { responsive: true, maintainAspectRatio: true, scales: { y: { beginAtZero: true }, x: { grid: { display: false } } }, plugins: { legend: { position: 'top', labels: { font: { family: '"Inter", sans-serif', size: 12 } } } } }
+            });
+        }
+
+        function renderAnomalyChart(data) {
+            if (!data || typeof Chart === 'undefined') return;
+            $('anomaly-chart-wrap').style.display = '';
+            var ctx = $('anomalyChart');
+            if (anomalyChartInstance) anomalyChartInstance.destroy();
+            anomalyChartInstance = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Normal', 'Anomaly'],
+                    datasets: [{ data: [data.total_samples - data.anomalies_found, data.anomalies_found], backgroundColor: ['rgba(0, 102, 245, 0.15)', 'rgba(255, 49, 49, 0.2)'], borderColor: ['#0066F5', '#FF3131'], borderWidth: 1.5 }]
+                },
+                options: { responsive: true, maintainAspectRatio: true, plugins: { legend: { position: 'bottom', labels: { font: { family: '"Inter", sans-serif', size: 12 } } } } }
+            });
+        }
+
+        function renderClusteringChart(result) {
+            if (!result || !result.cluster_sizes || typeof Chart === 'undefined') return;
+            $('clustering-chart-wrap').style.display = '';
+            var ctx = $('clusteringChart');
+            if (clusteringChartInstance) clusteringChartInstance.destroy();
+            var keys = Object.keys(result.cluster_sizes).sort(function(a,b) { return parseInt(a)-parseInt(b); });
+            var labels = keys.map(function(k) { return k === '-1' ? 'Noise' : 'Cluster ' + k; });
+            var values = keys.map(function(k) { return result.cluster_sizes[k]; });
+            var colors = ['#0066F5', '#3ABC3F', '#FFA931', '#FF3131', '#9C9FA1', '#0052C4', '#2E9632', '#CC8727', '#3C8AF7', '#68CC6C'];
+            clusteringChartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{ label: 'Samples', data: values, backgroundColor: colors.slice(0, labels.length).map(function(c) { return c + '26'; }), borderColor: colors.slice(0, labels.length), borderWidth: 1.5, borderRadius: 6 }]
+                },
+                options: { responsive: true, maintainAspectRatio: true, scales: { y: { beginAtZero: true }, x: { grid: { display: false } } }, plugins: { legend: { display: false } } }
+            });
+        }
+
+        function renderGaugeChart(canvasId, value, color) {
+            if (typeof Chart === 'undefined') return;
+            var ctx = $(canvasId);
+            if (!ctx) return;
+            var existing = canvasId === 'cpuGaugeChart' ? cpuGaugeInstance : memGaugeInstance;
+            if (existing) existing.destroy();
+            var chart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    datasets: [{ data: [value, 100 - value], backgroundColor: [color, '#F1F3F4'], borderWidth: 0 }]
+                },
+                options: { responsive: true, maintainAspectRatio: true, cutout: '75%', rotation: -90, circumference: 180, plugins: { legend: { display: false }, tooltip: { enabled: false } } }
+            });
+            if (canvasId === 'cpuGaugeChart') cpuGaugeInstance = chart;
+            else memGaugeInstance = chart;
+        }
+
+        // ── Serve Tab ──
+        function loadServeModels() {
+            fetch('/api/models').then(function(r) { return r.json(); }).then(function(d) {
+                var models = d.models || [];
+                var sel = $('serve-test-model');
+                sel.innerHTML = '<option value="">Select a model</option>';
+                if (models.length === 0) {
+                    $('serve-models-list').style.display = 'none';
+                    $('serve-empty').style.display = '';
+                    return;
+                }
+                $('serve-empty').style.display = 'none';
+                $('serve-models-list').style.display = '';
+                var h = '<div class="table-wrap"><table><thead><tr><th>Model ID</th><th>Type</th><th>Task</th><th>Created</th><th>Actions</th></tr></thead><tbody>';
+                models.forEach(function(m) {
+                    var created = m.created_at ? new Date(m.created_at).toLocaleString() : '—';
+                    var mtype = m.model_type || m.algorithm || '—';
+                    var task = m.task_type || '—';
+                    sel.innerHTML += '<option value="' + m.id + '">' + m.id.substring(0,8) + ' (' + mtype + ')</option>';
+                    h += '<tr>';
+                    h += '<td class="mono-12px">' + m.id.substring(0,12) + '</td>';
+                    h += '<td>' + mtype + '</td>';
+                    h += '<td>' + task + '</td>';
+                    h += '<td class="text-12px reguler">' + created + '</td>';
+                    h += '<td style="display:flex;gap:6px;">';
+                    h += '<button class="btn-xs btn-ghost" onclick="serveViewStats(\'' + m.id + '\')" title="Stats"><i class="ri-bar-chart-line"></i></button>';
+                    h += '<a class="btn-xs btn-ghost" href="/api/models/' + m.id + '/download" title="Download"><i class="ri-download-line"></i></a>';
+                    h += '<button class="btn-xs btn-ghost" onclick="serveEvictCache(\'' + m.id + '\')" title="Evict cache"><i class="ri-delete-bin-line"></i></button>';
+                    h += '</td>';
+                    h += '</tr>';
+                });
+                h += '</tbody></table></div>';
+                $('serve-models-list').innerHTML = h;
+            }).catch(function() {
+                $('serve-models-list').style.display = 'none';
+                $('serve-empty').style.display = '';
+            });
+            // Set base URL in docs
+            var base = window.location.origin;
+            $('serve-base-url').textContent = base;
+            var curlSpans = document.querySelectorAll('.serve-curl-base');
+            for (var i = 0; i < curlSpans.length; i++) curlSpans[i].textContent = base;
+        }
+
+        function serveTestPredict() {
+            var modelId = $('serve-test-model').value;
+            var raw = $('serve-test-input').value.trim();
+            if (!raw) { showToast('Enter input data', 'warn'); return; }
+            var body;
+            try {
+                var parsed = JSON.parse(raw);
+                body = { data: parsed };
+                if (modelId) body.model_id = modelId;
+            } catch(e) { showToast('Invalid JSON: ' + e.message, 'error'); return; }
+            $('serve-test-result').style.display = 'none';
+            fetch('/api/predict', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+                .then(function(r) { return r.json(); })
+                .then(function(d) {
+                    $('serve-test-result').style.display = '';
+                    $('serve-test-output').textContent = JSON.stringify(d, null, 2);
+                })
+                .catch(function(e) {
+                    $('serve-test-result').style.display = '';
+                    $('serve-test-output').textContent = 'Error: ' + e.message;
+                });
+        }
+
+        function serveViewStats(modelId) {
+            fetch('/api/predict/stats/' + modelId)
+                .then(function(r) { return r.json(); })
+                .then(function(d) {
+                    if (d.stats) {
+                        var s = d.stats;
+                        showToast('p50=' + (s.p50_latency_ms||0).toFixed(2) + 'ms  p95=' + (s.p95_latency_ms||0).toFixed(2) + 'ms  reqs=' + (s.total_predictions||0), 'ok');
+                    } else {
+                        showToast('Model not cached yet — send a prediction first', 'warn');
+                    }
+                })
+                .catch(function() { showToast('Model not cached — send a prediction to load it', 'warn'); });
+        }
+
+        function serveEvictCache(modelId) {
+            fetch('/api/predict/cache/' + modelId, { method: 'DELETE' })
+                .then(function(r) { return r.json(); })
+                .then(function(d) { showToast(d.message || 'Cache evicted', 'ok'); })
+                .catch(function() { showToast('Failed to evict cache', 'error'); });
         }
 
         // ── Init ──
@@ -980,13 +3127,40 @@
                 setupDropzone();
                 setupSamplePills();
                 setupModelCheckboxes();
+                setupEnsembleCheckboxes();
+                setupAutoMLModelCheckboxes();
+                if ($('automl-target')) {
+                    $('automl-target').addEventListener('change', function() {
+                        $('btn-automl-run').disabled = !this.value;
+                    });
+                }
                 refreshSystemStatus();
+                loadDeviceInfo();
+                loadAlerts();
+                loadPerformanceStats();
+                loadSecurityStatus();
+                loadRateLimitStats();
+                loadAuditLog();
                 setInterval(pollJobs, 2000);
+                setInterval(function() { refreshSystemStatus(); loadAlerts(); loadPerformanceStats(); loadRateLimitStats(); }, 15000);
 
                 $('cfg-targetColumn').addEventListener('change', function() {
                     updateTrainButton();
                     $('btn-compare').disabled = !this.value;
+                    $('btn-hyperopt').disabled = !this.value;
+                    $('btn-autotune').disabled = !this.value;
+                    $('btn-ensemble').disabled = ensembleSelectedModels.length < 2 || !this.value;
+                    $('btn-anomaly').disabled = !dataInfo;
+                    $('btn-clustering').disabled = !dataInfo;
+                    $('btn-explain').disabled = !this.value;
                 });
+
+                // Load search space when hyperopt model changes
+                $('ho-model').addEventListener('change', function() {
+                    loadSearchSpace(this.value);
+                });
+                loadSearchSpace($('ho-model').value);
+                loadHyperoptHistory();
             } catch (e) {
                 console.error('Init error:', e);
             }

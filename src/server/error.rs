@@ -37,11 +37,29 @@ impl IntoResponse for ServerError {
         let (status, message) = match &self {
             ServerError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg.clone()),
             ServerError::NotFound(msg) => (StatusCode::NOT_FOUND, msg.clone()),
-            ServerError::Internal(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg.clone()),
-            ServerError::Io(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
-            ServerError::Polars(e) => (StatusCode::BAD_REQUEST, e.to_string()),
-            ServerError::Json(e) => (StatusCode::BAD_REQUEST, e.to_string()),
-            ServerError::Training(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg.clone()),
+            ServerError::Internal(msg) => {
+                tracing::error!(detail = %msg, "Internal server error");
+                (StatusCode::INTERNAL_SERVER_ERROR, "An internal error occurred".to_string())
+            }
+            ServerError::Io(e) => {
+                tracing::error!(detail = %e, "IO error");
+                (StatusCode::INTERNAL_SERVER_ERROR, "A file system error occurred".to_string())
+            }
+            ServerError::Polars(e) => {
+                let msg = e.to_string();
+                // Only expose safe parts of Polars errors
+                let safe_msg = if msg.contains("not found") || msg.contains("column") {
+                    msg.clone()
+                } else {
+                    "Data processing error. Check your data format.".to_string()
+                };
+                (StatusCode::BAD_REQUEST, safe_msg)
+            }
+            ServerError::Json(e) => (StatusCode::BAD_REQUEST, "Invalid JSON format".to_string()),
+            ServerError::Training(msg) => {
+                tracing::error!(detail = %msg, "Training error");
+                (StatusCode::INTERNAL_SERVER_ERROR, "Training failed. Check server logs for details.".to_string())
+            }
         };
 
         let body = Json(json!({

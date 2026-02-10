@@ -224,12 +224,98 @@ impl SecurityManager {
         );
         headers.insert(
             "Content-Security-Policy".to_string(),
-            "default-src 'self'".to_string(),
+            "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:".to_string(),
         );
         headers.insert(
             "Referrer-Policy".to_string(),
             "strict-origin-when-cross-origin".to_string(),
         );
         headers
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_manager() -> SecurityManager {
+        SecurityManager::new(SecurityConfig::default())
+    }
+
+    #[test]
+    fn test_csp_allows_inline_styles() {
+        let headers = SecurityManager::get_security_headers();
+        let csp = headers.get("Content-Security-Policy").expect("CSP header missing");
+        assert!(csp.contains("style-src 'self' 'unsafe-inline'"),
+            "CSP must allow inline styles for the web UI, got: {}", csp);
+    }
+
+    #[test]
+    fn test_csp_allows_inline_scripts() {
+        let headers = SecurityManager::get_security_headers();
+        let csp = headers.get("Content-Security-Policy").expect("CSP header missing");
+        assert!(csp.contains("script-src 'self' 'unsafe-inline'"),
+            "CSP must allow inline scripts for the web UI, got: {}", csp);
+    }
+
+    #[test]
+    fn test_csp_allows_data_uris_for_fonts() {
+        let headers = SecurityManager::get_security_headers();
+        let csp = headers.get("Content-Security-Policy").expect("CSP header missing");
+        assert!(csp.contains("font-src 'self' data:"),
+            "CSP must allow data: URIs for fonts, got: {}", csp);
+    }
+
+    #[test]
+    fn test_csp_allows_data_uris_for_images() {
+        let headers = SecurityManager::get_security_headers();
+        let csp = headers.get("Content-Security-Policy").expect("CSP header missing");
+        assert!(csp.contains("img-src 'self' data:"),
+            "CSP must allow data: URIs for images, got: {}", csp);
+    }
+
+    #[test]
+    fn test_all_required_security_headers_present() {
+        let headers = SecurityManager::get_security_headers();
+        let required = [
+            "Strict-Transport-Security",
+            "X-Content-Type-Options",
+            "X-Frame-Options",
+            "X-XSS-Protection",
+            "Content-Security-Policy",
+            "Referrer-Policy",
+        ];
+        for name in &required {
+            assert!(headers.contains_key(*name), "Missing security header: {}", name);
+        }
+    }
+
+    #[test]
+    fn test_security_manager_create_and_verify_key() {
+        let key = SecurityManager::generate_api_key();
+        let mut config = SecurityConfig::default();
+        config.api_keys.push(key.clone());
+        let mgr = SecurityManager::new(config);
+        assert!(mgr.verify_api_key(&key));
+        assert!(!mgr.verify_api_key("wrong-key"));
+    }
+
+    #[test]
+    fn test_input_sanitization_removes_script_tags() {
+        let clean = SecurityManager::sanitize_input("<script>alert('xss')</script>hello");
+        assert!(!clean.contains("<script>"));
+        assert!(clean.contains("hello"));
+    }
+
+    #[test]
+    fn test_input_validation_blocks_sql_injection() {
+        let result = SecurityManager::validate_input("'; DROP TABLE users; --");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_input_validation_allows_normal_input() {
+        let result = SecurityManager::validate_input("normal data input 123");
+        assert!(result.is_ok());
     }
 }

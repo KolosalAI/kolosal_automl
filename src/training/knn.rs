@@ -3,8 +3,11 @@
 //! KNN classifier and regressor with distance metrics.
 
 use ndarray::{Array1, Array2, Axis};
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
+use std::collections::BinaryHeap;
 use std::collections::HashMap;
+use std::cmp::Ordering;
 
 use crate::error::Result;
 
@@ -106,131 +109,52 @@ impl KNNClassifier {
         Ok(())
     }
 
-    /// Predict class labels
+    /// Predict class labels (parallelized over test samples)
     pub fn predict(&self, x: &Array2<f64>) -> Array1<f64> {
         let x_train = self.x_train.as_ref().expect("Model not fitted");
         let y_train = self.y_train.as_ref().expect("Model not fitted");
-        
-        x.rows().into_iter()
-            .map(|row| {
-                let neighbors = self.find_neighbors(&row.to_owned(), x_train, y_train);
-                self.vote(&neighbors)
+        let k = self.config.n_neighbors;
+        let metric = self.config.metric;
+        let weights = self.config.weights;
+        let classes = &self.classes;
+
+        let predictions: Vec<f64> = (0..x.nrows())
+            .into_par_iter()
+            .map(|i| {
+                let row = x.row(i);
+                let neighbors = find_k_nearest(row.as_slice().unwrap(), x_train, y_train, k, metric);
+                vote_classify(&neighbors, classes, weights)
             })
-            .collect()
+            .collect();
+
+        Array1::from_vec(predictions)
     }
 
-    /// Predict class probabilities
+    /// Predict class probabilities (parallelized)
     pub fn predict_proba(&self, x: &Array2<f64>) -> Array2<f64> {
         let x_train = self.x_train.as_ref().expect("Model not fitted");
         let y_train = self.y_train.as_ref().expect("Model not fitted");
         let n_classes = self.classes.len();
-        
-        let probs: Vec<f64> = x.rows().into_iter()
-            .flat_map(|row| {
-                let neighbors = self.find_neighbors(&row.to_owned(), x_train, y_train);
-                self.class_probs(&neighbors, n_classes)
+        let k = self.config.n_neighbors;
+        let metric = self.config.metric;
+        let weights = self.config.weights;
+        let classes = &self.classes;
+
+        let probs: Vec<Vec<f64>> = (0..x.nrows())
+            .into_par_iter()
+            .map(|i| {
+                let row = x.row(i);
+                let neighbors = find_k_nearest(row.as_slice().unwrap(), x_train, y_train, k, metric);
+                class_probs_from(&neighbors, classes, n_classes, weights)
             })
             .collect();
-        
-        Array2::from_shape_vec((x.nrows(), n_classes), probs).unwrap()
-    }
 
-    fn find_neighbors(
-        &self,
-        point: &Array1<f64>,
-        x_train: &Array2<f64>,
-        y_train: &Array1<f64>,
-    ) -> Vec<(f64, f64)> {
-        // Compute all distances
-        let mut distances: Vec<(f64, f64)> = x_train
-            .rows()
-            .into_iter()
-            .zip(y_train.iter())
-            .map(|(row, &label)| {
-                let dist = self.distance(point, &row.to_owned());
-                (dist, label)
-            })
-            .collect();
-        
-        // Sort by distance and take k nearest
-        distances.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
-        distances.truncate(self.config.n_neighbors);
-        
-        distances
-    }
-
-    fn vote(&self, neighbors: &[(f64, f64)]) -> f64 {
-        let mut votes: HashMap<i64, f64> = HashMap::new();
-        
-        for &(dist, label) in neighbors {
-            let weight = match self.config.weights {
-                WeightScheme::Uniform => 1.0,
-                WeightScheme::Distance => 1.0 / (dist + 1e-10),
-            };
-            *votes.entry(label as i64).or_insert(0.0) += weight;
-        }
-        
-        votes.into_iter()
-            .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
-            .map(|(label, _)| label as f64)
-            .unwrap_or(0.0)
-    }
-
-    fn class_probs(&self, neighbors: &[(f64, f64)], n_classes: usize) -> Vec<f64> {
-        let mut counts = vec![0.0; n_classes];
-        let mut total = 0.0;
-        
-        for &(dist, label) in neighbors {
-            let weight = match self.config.weights {
-                WeightScheme::Uniform => 1.0,
-                WeightScheme::Distance => 1.0 / (dist + 1e-10),
-            };
-            let class_idx = self.classes.iter().position(|&c| c == label as i64).unwrap_or(0);
-            counts[class_idx] += weight;
-            total += weight;
-        }
-        
-        if total > 0.0 {
-            counts.iter_mut().for_each(|c| *c /= total);
-        }
-        
-        counts
+        let flat: Vec<f64> = probs.into_iter().flatten().collect();
+        Array2::from_shape_vec((x.nrows(), n_classes), flat).unwrap()
     }
 
     fn distance(&self, a: &Array1<f64>, b: &Array1<f64>) -> f64 {
-        match self.config.metric {
-            DistanceMetric::Euclidean => {
-                a.iter()
-                    .zip(b.iter())
-                    .map(|(ai, bi)| (ai - bi).powi(2))
-                    .sum::<f64>()
-                    .sqrt()
-            }
-            DistanceMetric::Manhattan => {
-                a.iter()
-                    .zip(b.iter())
-                    .map(|(ai, bi)| (ai - bi).abs())
-                    .sum()
-            }
-            DistanceMetric::Minkowski(p) => {
-                a.iter()
-                    .zip(b.iter())
-                    .map(|(ai, bi)| (ai - bi).abs().powf(p))
-                    .sum::<f64>()
-                    .powf(1.0 / p)
-            }
-            DistanceMetric::Cosine => {
-                let dot: f64 = a.iter().zip(b.iter()).map(|(ai, bi)| ai * bi).sum();
-                let norm_a: f64 = a.iter().map(|ai| ai.powi(2)).sum::<f64>().sqrt();
-                let norm_b: f64 = b.iter().map(|bi| bi.powi(2)).sum::<f64>().sqrt();
-                
-                if norm_a > 0.0 && norm_b > 0.0 {
-                    1.0 - (dot / (norm_a * norm_b))
-                } else {
-                    1.0
-                }
-            }
-        }
+        compute_distance(a.as_slice().unwrap(), b.as_slice().unwrap(), self.config.metric)
     }
 }
 
@@ -266,99 +190,164 @@ impl KNNRegressor {
         Ok(())
     }
 
-    /// Predict target values
+    /// Predict target values (parallelized over test samples)
     pub fn predict(&self, x: &Array2<f64>) -> Array1<f64> {
         let x_train = self.x_train.as_ref().expect("Model not fitted");
         let y_train = self.y_train.as_ref().expect("Model not fitted");
-        
-        x.rows().into_iter()
-            .map(|row| {
-                let neighbors = self.find_neighbors(&row.to_owned(), x_train, y_train);
-                self.weighted_mean(&neighbors)
-            })
-            .collect()
-    }
+        let k = self.config.n_neighbors;
+        let metric = self.config.metric;
+        let weights = self.config.weights;
 
-    fn find_neighbors(
-        &self,
-        point: &Array1<f64>,
-        x_train: &Array2<f64>,
-        y_train: &Array1<f64>,
-    ) -> Vec<(f64, f64)> {
-        let mut distances: Vec<(f64, f64)> = x_train
-            .rows()
-            .into_iter()
-            .zip(y_train.iter())
-            .map(|(row, &label)| {
-                let dist = self.distance(point, &row.to_owned());
-                (dist, label)
+        let predictions: Vec<f64> = (0..x.nrows())
+            .into_par_iter()
+            .map(|i| {
+                let row = x.row(i);
+                let neighbors = find_k_nearest(row.as_slice().unwrap(), x_train, y_train, k, metric);
+                weighted_mean_from(&neighbors, weights)
             })
             .collect();
-        
-        distances.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
-        distances.truncate(self.config.n_neighbors);
-        
-        distances
-    }
 
-    fn weighted_mean(&self, neighbors: &[(f64, f64)]) -> f64 {
-        match self.config.weights {
-            WeightScheme::Uniform => {
-                let sum: f64 = neighbors.iter().map(|(_, y)| y).sum();
-                sum / neighbors.len() as f64
-            }
-            WeightScheme::Distance => {
-                let mut weighted_sum = 0.0;
-                let mut weight_total = 0.0;
-                
-                for &(dist, y) in neighbors {
-                    let weight = 1.0 / (dist + 1e-10);
-                    weighted_sum += weight * y;
-                    weight_total += weight;
-                }
-                
-                if weight_total > 0.0 {
-                    weighted_sum / weight_total
-                } else {
-                    neighbors.iter().map(|(_, y)| y).sum::<f64>() / neighbors.len() as f64
-                }
+        Array1::from_vec(predictions)
+    }
+}
+
+// ============================================================================
+// Shared optimized helpers (used by both Classifier and Regressor)
+// ============================================================================
+
+/// Max-heap entry for partial sort (keeps k smallest distances)
+#[derive(PartialEq)]
+struct DistLabel(f64, f64);
+
+impl Eq for DistLabel {}
+impl PartialOrd for DistLabel {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.0.partial_cmp(&other.0)
+    }
+}
+impl Ord for DistLabel {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.partial_cmp(other).unwrap_or(Ordering::Equal)
+    }
+}
+
+/// Find k nearest neighbors using a max-heap — O(n log k) instead of O(n log n)
+fn find_k_nearest(
+    point: &[f64],
+    x_train: &Array2<f64>,
+    y_train: &Array1<f64>,
+    k: usize,
+    metric: DistanceMetric,
+) -> Vec<(f64, f64)> {
+    let mut heap = BinaryHeap::with_capacity(k + 1);
+
+    for (i, row) in x_train.rows().into_iter().enumerate() {
+        let dist = compute_distance(point, row.as_slice().unwrap(), metric);
+        if heap.len() < k {
+            heap.push(DistLabel(dist, y_train[i]));
+        } else if let Some(top) = heap.peek() {
+            if dist < top.0 {
+                heap.pop();
+                heap.push(DistLabel(dist, y_train[i]));
             }
         }
     }
 
-    fn distance(&self, a: &Array1<f64>, b: &Array1<f64>) -> f64 {
-        match self.config.metric {
-            DistanceMetric::Euclidean => {
-                a.iter()
-                    .zip(b.iter())
-                    .map(|(ai, bi)| (ai - bi).powi(2))
-                    .sum::<f64>()
-                    .sqrt()
+    heap.into_iter().map(|dl| (dl.0, dl.1)).collect()
+}
+
+/// Compute distance between two points using the specified metric
+fn compute_distance(a: &[f64], b: &[f64], metric: DistanceMetric) -> f64 {
+    match metric {
+        DistanceMetric::Euclidean => {
+            a.iter()
+                .zip(b.iter())
+                .map(|(ai, bi)| {
+                    let d = ai - bi;
+                    d * d
+                })
+                .sum::<f64>()
+                .sqrt()
+        }
+        DistanceMetric::Manhattan => {
+            a.iter()
+                .zip(b.iter())
+                .map(|(ai, bi)| (ai - bi).abs())
+                .sum()
+        }
+        DistanceMetric::Minkowski(p) => {
+            a.iter()
+                .zip(b.iter())
+                .map(|(ai, bi)| (ai - bi).abs().powf(p))
+                .sum::<f64>()
+                .powf(1.0 / p)
+        }
+        DistanceMetric::Cosine => {
+            let mut dot = 0.0;
+            let mut norm_a = 0.0;
+            let mut norm_b = 0.0;
+            for (ai, bi) in a.iter().zip(b.iter()) {
+                dot += ai * bi;
+                norm_a += ai * ai;
+                norm_b += bi * bi;
             }
-            DistanceMetric::Manhattan => {
-                a.iter()
-                    .zip(b.iter())
-                    .map(|(ai, bi)| (ai - bi).abs())
-                    .sum()
+            let denom = norm_a.sqrt() * norm_b.sqrt();
+            if denom > 0.0 { 1.0 - (dot / denom) } else { 1.0 }
+        }
+    }
+}
+
+/// Classify by weighted majority vote
+fn vote_classify(neighbors: &[(f64, f64)], classes: &[i64], weights: WeightScheme) -> f64 {
+    let mut votes: HashMap<i64, f64> = HashMap::new();
+    for &(dist, label) in neighbors {
+        let weight = match weights {
+            WeightScheme::Uniform => 1.0,
+            WeightScheme::Distance => 1.0 / (dist + 1e-10),
+        };
+        *votes.entry(label as i64).or_insert(0.0) += weight;
+    }
+    votes.into_iter()
+        .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(Ordering::Equal))
+        .map(|(label, _)| label as f64)
+        .unwrap_or(0.0)
+}
+
+/// Compute class probabilities
+fn class_probs_from(neighbors: &[(f64, f64)], classes: &[i64], n_classes: usize, weights: WeightScheme) -> Vec<f64> {
+    let mut counts = vec![0.0; n_classes];
+    let mut total = 0.0;
+    for &(dist, label) in neighbors {
+        let weight = match weights {
+            WeightScheme::Uniform => 1.0,
+            WeightScheme::Distance => 1.0 / (dist + 1e-10),
+        };
+        let class_idx = classes.iter().position(|&c| c == label as i64).unwrap_or(0);
+        counts[class_idx] += weight;
+        total += weight;
+    }
+    if total > 0.0 {
+        counts.iter_mut().for_each(|c| *c /= total);
+    }
+    counts
+}
+
+/// Compute weighted mean for regression
+fn weighted_mean_from(neighbors: &[(f64, f64)], weights: WeightScheme) -> f64 {
+    match weights {
+        WeightScheme::Uniform => {
+            neighbors.iter().map(|(_, y)| y).sum::<f64>() / neighbors.len() as f64
+        }
+        WeightScheme::Distance => {
+            let mut weighted_sum = 0.0;
+            let mut weight_total = 0.0;
+            for &(dist, y) in neighbors {
+                let w = 1.0 / (dist + 1e-10);
+                weighted_sum += w * y;
+                weight_total += w;
             }
-            DistanceMetric::Minkowski(p) => {
-                a.iter()
-                    .zip(b.iter())
-                    .map(|(ai, bi)| (ai - bi).abs().powf(p))
-                    .sum::<f64>()
-                    .powf(1.0 / p)
-            }
-            DistanceMetric::Cosine => {
-                let dot: f64 = a.iter().zip(b.iter()).map(|(ai, bi)| ai * bi).sum();
-                let norm_a: f64 = a.iter().map(|ai| ai.powi(2)).sum::<f64>().sqrt();
-                let norm_b: f64 = b.iter().map(|bi| bi.powi(2)).sum::<f64>().sqrt();
-                
-                if norm_a > 0.0 && norm_b > 0.0 {
-                    1.0 - (dot / (norm_a * norm_b))
-                } else {
-                    1.0
-                }
-            }
+            if weight_total > 0.0 { weighted_sum / weight_total }
+            else { neighbors.iter().map(|(_, y)| y).sum::<f64>() / neighbors.len() as f64 }
         }
     }
 }

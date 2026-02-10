@@ -3,6 +3,7 @@
 use std::sync::Arc;
 use axum::{
     http::StatusCode,
+    middleware as axum_middleware,
     response::IntoResponse,
     routing::{get, post},
     Json, Router,
@@ -14,6 +15,8 @@ use tower_http::{
     services::ServeDir,
     trace::TraceLayer,
 };
+
+use crate::security::middleware::{SecurityMiddleware, security_layer};
 
 use super::{handlers, state::AppState, ServerConfig};
 
@@ -84,8 +87,45 @@ pub fn create_router(state: Arc<AppState>, config: &ServerConfig) -> Router {
         .route("/monitoring/dashboard", get(handlers::get_monitoring_dashboard))
         .route("/monitoring/alerts", get(handlers::get_alerts))
         .route("/monitoring/performance", get(handlers::get_performance_analysis))
+        // Hyperparameter optimization
+        .route("/hyperopt", post(handlers::run_hyperopt))
+        .route("/hyperopt/config", get(handlers::get_hyperopt_config))
+        // Explainability
+        .route("/explain/importance", post(handlers::get_feature_importance))
+        .route("/explain/local", post(handlers::get_local_explanations))
+        // Ensemble
+        .route("/ensemble/train", post(handlers::train_ensemble))
+        // Drift detection
+        .route("/drift/detect", post(handlers::detect_drift))
+        // URL import
+        .route("/data/import/url", post(handlers::import_from_url))
+        // Auto-tune
+        .route("/autotune", post(handlers::auto_tune))
+        // Enhanced hyperopt
+        .route("/hyperopt/search-space/:model", get(handlers::get_search_space))
+        .route("/hyperopt/history", get(handlers::get_hyperopt_history))
+        .route("/hyperopt/apply", post(handlers::apply_best_params))
+        // Model export
+        .route("/export/model", post(handlers::export_model))
+        // Anomaly detection
+        .route("/anomaly/detect", post(handlers::detect_anomalies))
+        // Clustering
+        .route("/clustering/run", post(handlers::run_clustering))
+        // AutoML pipeline
+        .route("/automl/run", post(handlers::run_automl_pipeline))
+        .route("/automl/status/:job_id", get(handlers::get_automl_status))
+        // Security management
+        .route("/security/status", get(handlers::get_security_status))
+        .route("/security/audit-log", get(handlers::get_audit_log))
+        .route("/security/rate-limit/stats", get(handlers::get_rate_limit_stats))
         .fallback(handle_404)
         .method_not_allowed_fallback(handle_405);
+
+    // Build security middleware
+    let security_middleware = SecurityMiddleware::new(
+        Arc::clone(&state.security_manager),
+        Arc::clone(&state.rate_limiter),
+    );
 
     // Build main router
     let mut app = Router::new()
@@ -93,7 +133,11 @@ pub fn create_router(state: Arc<AppState>, config: &ServerConfig) -> Router {
         .route("/", get(handlers::serve_index))
         .fallback(handle_404)
         .method_not_allowed_fallback(handle_405)
-        .with_state(state);
+        .with_state(state)
+        .layer(axum_middleware::from_fn_with_state(
+            security_middleware,
+            security_layer,
+        ));
 
     // Serve static files if directory exists
     if let Some(ref static_dir) = config.static_dir {
@@ -110,13 +154,24 @@ pub fn create_router(state: Arc<AppState>, config: &ServerConfig) -> Router {
         }
     }
 
-    // Add middleware
-    app.layer(CompressionLayer::new())
-        .layer(
+    // Add middleware — CORS configured via CORS_ORIGIN env var (default: allow all for local-first)
+    let cors = match std::env::var("CORS_ORIGIN") {
+        Ok(origin) if !origin.is_empty() && origin != "*" => {
+            CorsLayer::new()
+                .allow_origin(origin.parse::<axum::http::HeaderValue>().unwrap_or_else(|_| axum::http::HeaderValue::from_static("*")))
+                .allow_methods(Any)
+                .allow_headers(Any)
+        }
+        _ => {
+            // Local-first default: allow all origins (machine-local use)
             CorsLayer::new()
                 .allow_origin(Any)
                 .allow_methods(Any)
-                .allow_headers(Any),
-        )
+                .allow_headers(Any)
+        }
+    };
+
+    app.layer(CompressionLayer::new())
+        .layer(cors)
         .layer(TraceLayer::new_for_http())
 }

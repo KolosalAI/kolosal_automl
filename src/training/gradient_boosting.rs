@@ -4,6 +4,7 @@
 //! similar to LightGBM/XGBoost but simpler.
 
 use ndarray::{Array1, Array2, Axis};
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use rand::prelude::*;
 use rand_xoshiro::Xoshiro256PlusPlus;
@@ -88,11 +89,20 @@ impl GradientBoostingRegressor {
         
         // Boosting rounds
         for _ in 0..self.config.n_estimators {
-            // Compute residuals (negative gradient for MSE loss)
-            let residuals: Array1<f64> = y.iter()
-                .zip(predictions.iter())
-                .map(|(yi, pi)| yi - pi)
-                .collect();
+            // Compute residuals in parallel for large datasets
+            let residuals: Array1<f64> = if n_samples > 10000 {
+                let preds = &predictions;
+                let res: Vec<f64> = (0..n_samples)
+                    .into_par_iter()
+                    .map(|i| y[i] - preds[i])
+                    .collect();
+                Array1::from_vec(res)
+            } else {
+                y.iter()
+                    .zip(predictions.iter())
+                    .map(|(yi, pi)| yi - pi)
+                    .collect()
+            };
             
             // Sample rows
             let sample_indices = self.subsample_indices(n_samples, &mut rng);
@@ -183,19 +193,11 @@ impl GradientBoostingRegressor {
         row_indices: &[usize],
         col_indices: &[usize],
     ) -> (Array2<f64>, Array1<f64>) {
-        let n_rows = row_indices.len();
-        let n_cols = col_indices.len();
-        
-        let mut x_sub = Array2::zeros((n_rows, n_cols));
-        let mut y_sub = Array1::zeros(n_rows);
-        
-        for (i, &row) in row_indices.iter().enumerate() {
-            y_sub[i] = y[row];
-            for (j, &col) in col_indices.iter().enumerate() {
-                x_sub[[i, j]] = x[[row, col]];
-            }
-        }
-        
+        let x_rows = x.select(ndarray::Axis(0), row_indices);
+        let x_sub = x_rows.select(ndarray::Axis(1), col_indices);
+        let y_sub: Array1<f64> = Array1::from_vec(
+            row_indices.iter().map(|&i| y[i]).collect()
+        );
         (x_sub, y_sub)
     }
 }
@@ -344,19 +346,11 @@ impl GradientBoostingClassifier {
         row_indices: &[usize],
         col_indices: &[usize],
     ) -> (Array2<f64>, Array1<f64>) {
-        let n_rows = row_indices.len();
-        let n_cols = col_indices.len();
-        
-        let mut x_sub = Array2::zeros((n_rows, n_cols));
-        let mut y_sub = Array1::zeros(n_rows);
-        
-        for (i, &row) in row_indices.iter().enumerate() {
-            y_sub[i] = y[row];
-            for (j, &col) in col_indices.iter().enumerate() {
-                x_sub[[i, j]] = x[[row, col]];
-            }
-        }
-        
+        let x_rows = x.select(ndarray::Axis(0), row_indices);
+        let x_sub = x_rows.select(ndarray::Axis(1), col_indices);
+        let y_sub: Array1<f64> = Array1::from_vec(
+            row_indices.iter().map(|&i| y[i]).collect()
+        );
         (x_sub, y_sub)
     }
 }

@@ -2,7 +2,7 @@
 
 use crate::error::{KolosalError, Result};
 use super::{TrainingConfig, ModelType, TaskType, ModelMetrics};
-use super::linear_models::{LinearRegression, LogisticRegression};
+use super::linear_models::{LinearRegression, LogisticRegression, RidgeRegression, LassoRegression, ElasticNetRegression, PolynomialRegression};
 use super::decision_tree::DecisionTree;
 use super::random_forest::RandomForest;
 use super::gradient_boosting::{GradientBoostingRegressor, GradientBoostingClassifier, GradientBoostingConfig};
@@ -10,6 +10,14 @@ use super::knn::{KNNClassifier, KNNRegressor, KNNConfig};
 use super::neural_network::{MLPClassifier, MLPRegressor, MLPConfig};
 use super::naive_bayes::{GaussianNaiveBayes, MultinomialNaiveBayes};
 use super::svm::{SVMClassifier, SVMRegressor, SVMConfig, KernelType};
+use super::adaboost::AdaBoostClassifier;
+use super::extra_trees::ExtraTrees;
+use super::xgboost::{XGBoostRegressor, XGBoostClassifier, XGBoostConfig};
+use super::lightgbm::{LightGBMRegressor, LightGBMClassifier, LightGBMConfig};
+use super::catboost::{CatBoostRegressor, CatBoostClassifier, CatBoostConfig};
+use super::sgd::{SGDRegressor, SGDClassifier, SGDConfig};
+use super::gaussian_process_regression::{GaussianProcessRegressor, GPConfig};
+use super::clustering::{KMeans, DBSCAN};
 use ndarray::{Array1, Array2, Axis};
 use polars::prelude::*;
 use rayon::prelude::*;
@@ -22,6 +30,9 @@ use std::time::Instant;
 pub enum TrainedModel {
     LinearRegression(LinearRegression),
     LogisticRegression(LogisticRegression),
+    RidgeRegression(RidgeRegression),
+    LassoRegression(LassoRegression),
+    ElasticNetRegression(ElasticNetRegression),
     DecisionTreeClassifier(DecisionTree),
     DecisionTreeRegressor(DecisionTree),
     RandomForestClassifier(RandomForest),
@@ -36,6 +47,21 @@ pub enum TrainedModel {
     MultinomialNaiveBayes(MultinomialNaiveBayes),
     SVMClassifier(SVMClassifier),
     SVMRegressor(SVMRegressor),
+    AdaBoostClassifier(AdaBoostClassifier),
+    ExtraTreesClassifier(ExtraTrees),
+    ExtraTreesRegressor(ExtraTrees),
+    XGBoostRegressor(XGBoostRegressor),
+    XGBoostClassifier(XGBoostClassifier),
+    LightGBMRegressor(LightGBMRegressor),
+    LightGBMClassifier(LightGBMClassifier),
+    CatBoostRegressor(CatBoostRegressor),
+    CatBoostClassifier(CatBoostClassifier),
+    SGDRegressor(SGDRegressor),
+    SGDClassifier(SGDClassifier),
+    GaussianProcessRegressor(GaussianProcessRegressor),
+    PolynomialRegression(PolynomialRegression),
+    KMeans(KMeans),
+    DBSCAN(DBSCAN),
 }
 
 /// Ensemble training strategy
@@ -193,36 +219,42 @@ impl TrainEngine {
             .map(|v| v.unwrap_or(0.0))
             .collect();
 
-        // Extract features
+        // Extract features — build row-major directly to avoid transpose+clone
         let n_rows = df.height();
         let n_cols = feature_cols.len();
         let mut x_data = Vec::with_capacity(n_rows * n_cols);
 
-        for col_name in &feature_cols {
-            let series = df
-                .column(col_name)
-                .map_err(|_| KolosalError::FeatureNotFound(col_name.clone()))?;
+        // Collect all columns first as contiguous f64 slices
+        let col_data: Vec<Vec<f64>> = feature_cols
+            .iter()
+            .map(|col_name| {
+                let series = df
+                    .column(col_name)
+                    .map_err(|_| KolosalError::FeatureNotFound(col_name.clone()))?;
+                let series_f64 = series.cast(&DataType::Float64)
+                    .map_err(|e| KolosalError::DataError(e.to_string()))?;
+                let values: Vec<f64> = series_f64
+                    .f64()
+                    .map_err(|e| KolosalError::DataError(e.to_string()))?
+                    .into_iter()
+                    .map(|v| v.unwrap_or(0.0))
+                    .collect();
+                Ok(values)
+            })
+            .collect::<Result<Vec<Vec<f64>>>>()?;
 
-            let series_f64 = series.cast(&DataType::Float64)
-                .map_err(|e| KolosalError::DataError(e.to_string()))?;
-
-            let values: Vec<f64> = series_f64
-                .f64()
-                .map_err(|e| KolosalError::DataError(e.to_string()))?
-                .into_iter()
-                .map(|v| v.unwrap_or(0.0))
-                .collect();
-
-            x_data.extend(values);
+        // Interleave columns into row-major order directly
+        for row in 0..n_rows {
+            for col in &col_data {
+                x_data.push(col[row]);
+            }
         }
 
-        let x = Array2::from_shape_vec((n_cols, n_rows), x_data)
+        let x = Array2::from_shape_vec((n_rows, n_cols), x_data)
             .map_err(|e| KolosalError::ShapeError {
-                expected: format!("({}, {})", n_cols, n_rows),
+                expected: format!("({}, {})", n_rows, n_cols),
                 actual: e.to_string(),
-            })?
-            .t()
-            .to_owned();
+            })?;
 
         Ok((x, y))
     }
@@ -232,31 +264,37 @@ impl TrainEngine {
         let n_cols = self.feature_names.len();
         let mut x_data = Vec::with_capacity(n_rows * n_cols);
 
-        for col_name in &self.feature_names {
-            let series = df
-                .column(col_name)
-                .map_err(|_| KolosalError::FeatureNotFound(col_name.clone()))?;
+        // Collect columns first
+        let col_data: Vec<Vec<f64>> = self.feature_names
+            .iter()
+            .map(|col_name| {
+                let series = df
+                    .column(col_name)
+                    .map_err(|_| KolosalError::FeatureNotFound(col_name.clone()))?;
+                let series_f64 = series.cast(&DataType::Float64)
+                    .map_err(|e| KolosalError::DataError(e.to_string()))?;
+                let values: Vec<f64> = series_f64
+                    .f64()
+                    .map_err(|e| KolosalError::DataError(e.to_string()))?
+                    .into_iter()
+                    .map(|v| v.unwrap_or(0.0))
+                    .collect();
+                Ok(values)
+            })
+            .collect::<Result<Vec<Vec<f64>>>>()?;
 
-            let series_f64 = series.cast(&DataType::Float64)
-                .map_err(|e| KolosalError::DataError(e.to_string()))?;
-
-            let values: Vec<f64> = series_f64
-                .f64()
-                .map_err(|e| KolosalError::DataError(e.to_string()))?
-                .into_iter()
-                .map(|v| v.unwrap_or(0.0))
-                .collect();
-
-            x_data.extend(values);
+        // Interleave into row-major order
+        for row in 0..n_rows {
+            for col in &col_data {
+                x_data.push(col[row]);
+            }
         }
 
-        let x = Array2::from_shape_vec((n_cols, n_rows), x_data)
+        let x = Array2::from_shape_vec((n_rows, n_cols), x_data)
             .map_err(|e| KolosalError::ShapeError {
-                expected: format!("({}, {})", n_cols, n_rows),
+                expected: format!("({}, {})", n_rows, n_cols),
                 actual: e.to_string(),
-            })?
-            .t()
-            .to_owned();
+            })?;
 
         Ok(x)
     }
@@ -438,6 +476,232 @@ impl TrainEngine {
                 TrainedModel::SVMClassifier(model)
             }
             
+            // Ridge Regression
+            (TaskType::Regression, ModelType::Ridge) => {
+                let mut model = RidgeRegression::new(self.config.reg_lambda);
+                model.fit(x, y)?;
+                TrainedModel::RidgeRegression(model)
+            }
+            
+            // Lasso Regression
+            (TaskType::Regression, ModelType::Lasso) => {
+                let mut model = LassoRegression::new(self.config.reg_alpha.max(0.01));
+                if let Some(max_iter) = self.config.max_iter {
+                    model = model.with_max_iter(max_iter);
+                }
+                model.fit(x, y)?;
+                TrainedModel::LassoRegression(model)
+            }
+            
+            // Elastic Net
+            (TaskType::Regression, ModelType::ElasticNet) => {
+                let alpha = self.config.reg_alpha.max(0.01);
+                let l1_ratio = if self.config.reg_alpha > 0.0 && self.config.reg_lambda > 0.0 {
+                    self.config.reg_alpha / (self.config.reg_alpha + self.config.reg_lambda)
+                } else {
+                    0.5
+                };
+                let mut model = ElasticNetRegression::new(alpha, l1_ratio);
+                if let Some(max_iter) = self.config.max_iter {
+                    model = model.with_max_iter(max_iter);
+                }
+                model.fit(x, y)?;
+                TrainedModel::ElasticNetRegression(model)
+            }
+            
+            // AdaBoost (classification only)
+            (TaskType::BinaryClassification | TaskType::MultiClassification, ModelType::AdaBoost) => {
+                let mut model = AdaBoostClassifier::new(
+                    self.config.n_estimators.unwrap_or(50),
+                    self.config.learning_rate.unwrap_or(1.0),
+                );
+                model.fit(x, y)?;
+                TrainedModel::AdaBoostClassifier(model)
+            }
+            
+            // Extra Trees
+            (TaskType::Regression, ModelType::ExtraTrees) => {
+                let mut model = ExtraTrees::new_regressor(self.config.n_estimators.unwrap_or(100));
+                if let Some(depth) = self.config.max_depth {
+                    model = model.with_max_depth(depth);
+                }
+                if let Some(seed) = self.config.random_seed {
+                    model = model.with_random_state(seed);
+                }
+                model.fit(x, y)?;
+                TrainedModel::ExtraTreesRegressor(model)
+            }
+            (TaskType::BinaryClassification | TaskType::MultiClassification, ModelType::ExtraTrees) => {
+                let mut model = ExtraTrees::new_classifier(self.config.n_estimators.unwrap_or(100));
+                if let Some(depth) = self.config.max_depth {
+                    model = model.with_max_depth(depth);
+                }
+                if let Some(seed) = self.config.random_seed {
+                    model = model.with_random_state(seed);
+                }
+                model.fit(x, y)?;
+                TrainedModel::ExtraTreesClassifier(model)
+            }
+            
+            // XGBoost
+            (TaskType::Regression, ModelType::XGBoost) => {
+                let config = XGBoostConfig {
+                    n_estimators: self.config.n_estimators.unwrap_or(100),
+                    learning_rate: self.config.learning_rate.unwrap_or(0.3),
+                    max_depth: self.config.max_depth.unwrap_or(6),
+                    reg_lambda: self.config.reg_lambda,
+                    reg_alpha: self.config.reg_alpha,
+                    subsample: self.config.subsample,
+                    colsample_bytree: self.config.colsample_bytree,
+                    random_state: self.config.random_seed,
+                    ..Default::default()
+                };
+                let mut model = XGBoostRegressor::new(config);
+                model.fit(x, y)?;
+                TrainedModel::XGBoostRegressor(model)
+            }
+            (TaskType::BinaryClassification | TaskType::MultiClassification, ModelType::XGBoost) => {
+                let config = XGBoostConfig {
+                    n_estimators: self.config.n_estimators.unwrap_or(100),
+                    learning_rate: self.config.learning_rate.unwrap_or(0.3),
+                    max_depth: self.config.max_depth.unwrap_or(6),
+                    reg_lambda: self.config.reg_lambda,
+                    reg_alpha: self.config.reg_alpha,
+                    subsample: self.config.subsample,
+                    colsample_bytree: self.config.colsample_bytree,
+                    random_state: self.config.random_seed,
+                    ..Default::default()
+                };
+                let mut model = XGBoostClassifier::new(config);
+                model.fit(x, y)?;
+                TrainedModel::XGBoostClassifier(model)
+            }
+
+            // LightGBM
+            (TaskType::Regression | TaskType::TimeSeries, ModelType::LightGBM) => {
+                let config = LightGBMConfig {
+                    n_estimators: self.config.n_estimators.unwrap_or(100),
+                    learning_rate: self.config.learning_rate.unwrap_or(0.1),
+                    max_leaves: 31,
+                    max_depth: self.config.max_depth,
+                    reg_lambda: self.config.reg_lambda,
+                    reg_alpha: self.config.reg_alpha,
+                    subsample: self.config.subsample,
+                    colsample_bytree: self.config.colsample_bytree,
+                    random_state: self.config.random_seed,
+                    ..Default::default()
+                };
+                let mut model = LightGBMRegressor::new(config);
+                model.fit(x, y)?;
+                TrainedModel::LightGBMRegressor(model)
+            }
+            (TaskType::BinaryClassification | TaskType::MultiClassification, ModelType::LightGBM) => {
+                let config = LightGBMConfig {
+                    n_estimators: self.config.n_estimators.unwrap_or(100),
+                    learning_rate: self.config.learning_rate.unwrap_or(0.1),
+                    max_leaves: 31,
+                    max_depth: self.config.max_depth,
+                    reg_lambda: self.config.reg_lambda,
+                    reg_alpha: self.config.reg_alpha,
+                    subsample: self.config.subsample,
+                    colsample_bytree: self.config.colsample_bytree,
+                    random_state: self.config.random_seed,
+                    ..Default::default()
+                };
+                let mut model = LightGBMClassifier::new(config);
+                model.fit(x, y)?;
+                TrainedModel::LightGBMClassifier(model)
+            }
+
+            // CatBoost
+            (TaskType::Regression | TaskType::TimeSeries, ModelType::CatBoost) => {
+                let config = CatBoostConfig {
+                    n_estimators: self.config.n_estimators.unwrap_or(100),
+                    learning_rate: self.config.learning_rate.unwrap_or(0.1),
+                    max_depth: self.config.max_depth.unwrap_or(6),
+                    reg_lambda: self.config.reg_lambda.max(3.0),
+                    subsample: self.config.subsample,
+                    random_state: self.config.random_seed,
+                };
+                let mut model = CatBoostRegressor::new(config);
+                model.fit(x, y)?;
+                TrainedModel::CatBoostRegressor(model)
+            }
+            (TaskType::BinaryClassification | TaskType::MultiClassification, ModelType::CatBoost) => {
+                let config = CatBoostConfig {
+                    n_estimators: self.config.n_estimators.unwrap_or(100),
+                    learning_rate: self.config.learning_rate.unwrap_or(0.1),
+                    max_depth: self.config.max_depth.unwrap_or(6),
+                    reg_lambda: self.config.reg_lambda.max(3.0),
+                    subsample: self.config.subsample,
+                    random_state: self.config.random_seed,
+                };
+                let mut model = CatBoostClassifier::new(config);
+                model.fit(x, y)?;
+                TrainedModel::CatBoostClassifier(model)
+            }
+
+            // SGD
+            (TaskType::Regression | TaskType::TimeSeries, ModelType::SGD) => {
+                let config = SGDConfig {
+                    max_iter: self.config.max_iter.unwrap_or(1000),
+                    eta0: self.config.learning_rate.unwrap_or(0.01),
+                    alpha: self.config.reg_alpha,
+                    random_state: self.config.random_seed,
+                    ..Default::default()
+                };
+                let mut model = SGDRegressor::new(config);
+                model.fit(x, y)?;
+                TrainedModel::SGDRegressor(model)
+            }
+            (TaskType::BinaryClassification | TaskType::MultiClassification, ModelType::SGD) => {
+                let config = SGDConfig {
+                    max_iter: self.config.max_iter.unwrap_or(1000),
+                    eta0: self.config.learning_rate.unwrap_or(0.01),
+                    alpha: self.config.reg_alpha,
+                    random_state: self.config.random_seed,
+                    ..Default::default()
+                };
+                let mut model = SGDClassifier::new(config);
+                model.fit(x, y)?;
+                TrainedModel::SGDClassifier(model)
+            }
+
+            // Gaussian Process
+            (TaskType::Regression | TaskType::TimeSeries, ModelType::GaussianProcess) => {
+                let config = GPConfig::default();
+                let mut model = GaussianProcessRegressor::new(config);
+                model.fit(x, y)?;
+                TrainedModel::GaussianProcessRegressor(model)
+            }
+
+            // Polynomial Regression
+            (TaskType::Regression | TaskType::TimeSeries, ModelType::PolynomialRegression) => {
+                let degree = self.config.max_depth.unwrap_or(2).min(4);
+                let alpha = self.config.reg_alpha.max(0.01);
+                let mut model = PolynomialRegression::new(degree, alpha);
+                model.fit(x, y)?;
+                TrainedModel::PolynomialRegression(model)
+            }
+            
+            // Clustering (unsupervised — y is ignored, labels become predictions)
+            (TaskType::Clustering, ModelType::KMeans) | (_, ModelType::KMeans) => {
+                let mut model = KMeans::new(self.config.n_neighbors.unwrap_or(3));
+                if let Some(max_iter) = self.config.max_iter {
+                    model = model.with_max_iter(max_iter);
+                }
+                if let Some(seed) = self.config.random_seed {
+                    model = model.with_random_state(seed);
+                }
+                model.fit(x)?;
+                TrainedModel::KMeans(model)
+            }
+            (TaskType::Clustering, ModelType::DBSCAN) | (_, ModelType::DBSCAN) => {
+                let mut model = DBSCAN::new(0.5, 5);
+                model.fit(x)?;
+                TrainedModel::DBSCAN(model)
+            }
+            
             // Default cases - use appropriate model based on task type
             (TaskType::Regression, _) => {
                 let mut model = LinearRegression::new();
@@ -455,6 +719,16 @@ impl TrainEngine {
                 let mut model = LinearRegression::new();
                 model.fit(x, y)?;
                 TrainedModel::LinearRegression(model)
+            }
+            
+            // Clustering defaults to KMeans
+            (TaskType::Clustering, _) => {
+                let mut model = KMeans::new(self.config.n_neighbors.unwrap_or(3));
+                if let Some(seed) = self.config.random_seed {
+                    model = model.with_random_state(seed);
+                }
+                model.fit(x)?;
+                TrainedModel::KMeans(model)
             }
         };
 
@@ -482,6 +756,24 @@ impl TrainEngine {
             TrainedModel::MultinomialNaiveBayes(m) => m.predict(x),
             TrainedModel::SVMClassifier(m) => m.predict(x)?,
             TrainedModel::SVMRegressor(m) => m.predict(x)?,
+            TrainedModel::RidgeRegression(m) => m.predict(x)?,
+            TrainedModel::LassoRegression(m) => m.predict(x)?,
+            TrainedModel::ElasticNetRegression(m) => m.predict(x)?,
+            TrainedModel::AdaBoostClassifier(m) => m.predict(x)?,
+            TrainedModel::ExtraTreesClassifier(m) => m.predict(x)?,
+            TrainedModel::ExtraTreesRegressor(m) => m.predict(x)?,
+            TrainedModel::XGBoostRegressor(m) => m.predict(x)?,
+            TrainedModel::XGBoostClassifier(m) => m.predict(x)?,
+            TrainedModel::LightGBMRegressor(m) => m.predict(x)?,
+            TrainedModel::LightGBMClassifier(m) => m.predict(x)?,
+            TrainedModel::CatBoostRegressor(m) => m.predict(x)?,
+            TrainedModel::CatBoostClassifier(m) => m.predict(x)?,
+            TrainedModel::SGDRegressor(m) => m.predict(x)?,
+            TrainedModel::SGDClassifier(m) => m.predict(x)?,
+            TrainedModel::GaussianProcessRegressor(m) => m.predict(x)?,
+            TrainedModel::PolynomialRegression(m) => m.predict(x)?,
+            TrainedModel::KMeans(m) => m.predict(x)?,
+            TrainedModel::DBSCAN(m) => m.predict(x)?,
         };
 
         Ok(predictions)
@@ -542,13 +834,46 @@ impl TrainEngine {
                 }
                 out
             }
+            TrainedModel::AdaBoostClassifier(m) => m.predict_proba(x)?,
+            TrainedModel::ExtraTreesClassifier(m) => m.predict_proba(x)?,
+            TrainedModel::XGBoostClassifier(m) => {
+                let p = m.predict_proba(x)?;
+                let n = p.len();
+                let mut out = Array2::zeros((n, 2));
+                for (i, &pi) in p.iter().enumerate() {
+                    out[[i, 0]] = 1.0 - pi;
+                    out[[i, 1]] = pi;
+                }
+                out
+            }
+            TrainedModel::LightGBMClassifier(m) => {
+                m.predict_proba(x)?
+            }
+            TrainedModel::CatBoostClassifier(m) => {
+                m.predict_proba(x)?
+            }
+            TrainedModel::SGDClassifier(m) => {
+                m.predict_proba(x)?
+            }
             TrainedModel::LinearRegression(_)
+            | TrainedModel::RidgeRegression(_)
+            | TrainedModel::LassoRegression(_)
+            | TrainedModel::ElasticNetRegression(_)
+            | TrainedModel::PolynomialRegression(_)
             | TrainedModel::DecisionTreeRegressor(_)
             | TrainedModel::RandomForestRegressor(_)
             | TrainedModel::GradientBoostingRegressor(_)
             | TrainedModel::KNNRegressor(_)
             | TrainedModel::MLPRegressor(_)
-            | TrainedModel::SVMRegressor(_) => {
+            | TrainedModel::SVMRegressor(_)
+            | TrainedModel::ExtraTreesRegressor(_)
+            | TrainedModel::XGBoostRegressor(_)
+            | TrainedModel::LightGBMRegressor(_)
+            | TrainedModel::CatBoostRegressor(_)
+            | TrainedModel::SGDRegressor(_)
+            | TrainedModel::GaussianProcessRegressor(_)
+            | TrainedModel::KMeans(_)
+            | TrainedModel::DBSCAN(_) => {
                 return Err(KolosalError::TrainingError(
                     "predict_proba is only supported for classification models".to_string(),
                 ));

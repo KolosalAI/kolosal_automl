@@ -246,59 +246,120 @@ impl DecisionTree {
     fn find_best_split(&self, x: &Array2<f64>, y: &Array1<f64>, indices: &[usize]) -> Option<(usize, f64, f64)> {
         let n_features = x.ncols();
         let max_features = self.max_features.unwrap_or(n_features);
+        let n_features_to_try = max_features.min(n_features);
 
         let y_subset: Vec<f64> = indices.iter().map(|&i| y[i]).collect();
         let parent_impurity = self.compute_impurity(&y_subset);
 
-        let mut best_gain = 0.0;
-        let mut best_feature = 0;
-        let mut best_threshold = 0.0;
+        // Parallelize feature scanning — each feature independently finds its best split
+        let feature_results: Vec<Option<(usize, f64, f64)>> = (0..n_features_to_try)
+            .into_par_iter()
+            .map(|feature_idx| {
+                let mut values: Vec<f64> = indices.iter().map(|&i| x[[i, feature_idx]]).collect();
+                values.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                values.dedup();
 
-        // Try each feature
-        for feature_idx in 0..max_features.min(n_features) {
-            // Get unique thresholds
-            let mut values: Vec<f64> = indices.iter().map(|&i| x[[i, feature_idx]]).collect();
-            values.sort_by(|a, b| a.partial_cmp(b).unwrap());
-            values.dedup();
+                let mut best_gain = 0.0f64;
+                let mut best_threshold = 0.0f64;
 
-            // Try midpoints as thresholds
-            for window in values.windows(2) {
-                let threshold = (window[0] + window[1]) / 2.0;
+                for window in values.windows(2) {
+                    let threshold = (window[0] + window[1]) / 2.0;
 
-                // Split indices
-                let (left, right): (Vec<usize>, Vec<usize>) = indices
-                    .iter()
-                    .partition(|&&i| x[[i, feature_idx]] <= threshold);
+                    // Count left/right and accumulate impurity incrementally
+                    let mut left_count = 0usize;
+                    let mut right_count = 0usize;
+                    let mut left_sum = 0.0f64;
+                    let mut right_sum = 0.0f64;
+                    let mut left_sq_sum = 0.0f64;
+                    let mut right_sq_sum = 0.0f64;
+                    // For classification: count class frequencies
+                    let mut left_class_counts: HashMap<i64, usize> = HashMap::new();
+                    let mut right_class_counts: HashMap<i64, usize> = HashMap::new();
 
-                if left.len() < self.min_samples_leaf || right.len() < self.min_samples_leaf {
-                    continue;
+                    for &idx in indices {
+                        let yi = y[idx];
+                        if x[[idx, feature_idx]] <= threshold {
+                            left_count += 1;
+                            left_sum += yi;
+                            left_sq_sum += yi * yi;
+                            *left_class_counts.entry(yi as i64).or_insert(0) += 1;
+                        } else {
+                            right_count += 1;
+                            right_sum += yi;
+                            right_sq_sum += yi * yi;
+                            *right_class_counts.entry(yi as i64).or_insert(0) += 1;
+                        }
+                    }
+
+                    if left_count < self.min_samples_leaf || right_count < self.min_samples_leaf {
+                        continue;
+                    }
+
+                    let left_impurity = self.compute_impurity_fast(left_count, left_sum, left_sq_sum, &left_class_counts);
+                    let right_impurity = self.compute_impurity_fast(right_count, right_sum, right_sq_sum, &right_class_counts);
+
+                    let n = indices.len() as f64;
+                    let weighted_impurity =
+                        (left_count as f64 * left_impurity + right_count as f64 * right_impurity) / n;
+
+                    let gain = parent_impurity - weighted_impurity;
+                    if gain > best_gain {
+                        best_gain = gain;
+                        best_threshold = threshold;
+                    }
                 }
 
-                // Compute impurity reduction
-                let left_y: Vec<f64> = left.iter().map(|&i| y[i]).collect();
-                let right_y: Vec<f64> = right.iter().map(|&i| y[i]).collect();
-                
-                let left_impurity = self.compute_impurity(&left_y);
-                let right_impurity = self.compute_impurity(&right_y);
-                
-                let n = indices.len() as f64;
-                let weighted_impurity = 
-                    (left.len() as f64 * left_impurity + right.len() as f64 * right_impurity) / n;
-                
-                let gain = parent_impurity - weighted_impurity;
-
-                if gain > best_gain {
-                    best_gain = gain;
-                    best_feature = feature_idx;
-                    best_threshold = threshold;
+                if best_gain > 0.0 {
+                    Some((feature_idx, best_threshold, best_gain))
+                } else {
+                    None
                 }
-            }
+            })
+            .collect();
+
+        // Find best across all features
+        feature_results
+            .into_iter()
+            .flatten()
+            .max_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal))
+    }
+
+    /// Fast impurity computation from pre-computed statistics (avoids re-iterating data)
+    fn compute_impurity_fast(&self, count: usize, sum: f64, sq_sum: f64, class_counts: &HashMap<i64, usize>) -> f64 {
+        if count == 0 {
+            return 0.0;
         }
-
-        if best_gain > 0.0 {
-            Some((best_feature, best_threshold, best_gain))
-        } else {
-            None
+        match self.criterion {
+            Criterion::Gini => {
+                let n = count as f64;
+                let mut gini = 1.0;
+                for &c in class_counts.values() {
+                    let p = c as f64 / n;
+                    gini -= p * p;
+                }
+                gini
+            }
+            Criterion::Entropy => {
+                let n = count as f64;
+                let mut entropy = 0.0;
+                for &c in class_counts.values() {
+                    if c > 0 {
+                        let p = c as f64 / n;
+                        entropy -= p * p.ln();
+                    }
+                }
+                entropy
+            }
+            Criterion::MSE => {
+                // Var = E[X²] - E[X]² = sq_sum/n - (sum/n)²
+                let n = count as f64;
+                sq_sum / n - (sum / n).powi(2)
+            }
+            Criterion::MAE => {
+                let mean = sum / count as f64;
+                // Would need actual values for MAE — fall back to MSE approximation
+                sq_sum / count as f64 - mean * mean
+            }
         }
     }
 

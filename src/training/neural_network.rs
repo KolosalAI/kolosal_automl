@@ -305,12 +305,7 @@ impl MLPRegressor {
     }
 
     fn gather_rows(&self, x: &Array2<f64>, indices: &[usize]) -> Array2<f64> {
-        let n_cols = x.ncols();
-        let mut rows = Vec::with_capacity(indices.len() * n_cols);
-        for &i in indices {
-            rows.extend(x.row(i).iter().copied());
-        }
-        Array2::from_shape_vec((indices.len(), n_cols), rows).unwrap()
+        x.select(Axis(0), indices)
     }
 
     fn mse(&self, y_true: &Array1<f64>, y_pred: &Array1<f64>) -> f64 {
@@ -564,12 +559,7 @@ impl MLPClassifier {
     }
 
     fn gather_rows(&self, x: &Array2<f64>, indices: &[usize]) -> Array2<f64> {
-        let n_cols = x.ncols();
-        let mut rows = Vec::with_capacity(indices.len() * n_cols);
-        for &i in indices {
-            rows.extend(x.row(i).iter().copied());
-        }
-        Array2::from_shape_vec((indices.len(), n_cols), rows).unwrap()
+        x.select(Axis(0), indices)
     }
 }
 

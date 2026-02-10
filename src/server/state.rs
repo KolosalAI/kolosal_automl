@@ -7,6 +7,7 @@ use tokio::sync::RwLock;
 use uuid::Uuid;
 use polars::prelude::*;
 use crate::inference::{InferenceConfig, InferenceEngine};
+use crate::security::{SecurityManager, SecurityConfig, RateLimiter, RateLimitConfig};
 use crate::preprocessing::DataPreprocessor;
 use crate::training::TrainEngine;
 
@@ -135,10 +136,47 @@ pub struct AppState {
     pub current_data: RwLock<Option<DataFrame>>,
     pub preprocessor: RwLock<Option<DataPreprocessor>>,
     pub model_registry: ModelRegistry,
+    /// Store trained engines for post-training analysis (explainability, etc.)
+    pub train_engines: RwLock<HashMap<String, TrainEngine>>,
+    /// Store completed hyperopt studies for history
+    pub completed_studies: RwLock<Vec<serde_json::Value>>,
+    /// Security manager for auth, input validation, audit logging
+    pub security_manager: Arc<SecurityManager>,
+    /// Rate limiter for API throttling
+    pub rate_limiter: Arc<RateLimiter>,
 }
 
 impl AppState {
     pub fn new(config: ServerConfig) -> Self {
+        // Initialize security from env vars
+        let security_config = SecurityConfig {
+            api_keys: std::env::var("SECURITY_API_KEYS")
+                .map(|s| s.split(',').map(|k| k.trim().to_string()).filter(|k| !k.is_empty()).collect())
+                .unwrap_or_default(),
+            jwt_secret: std::env::var("SECURITY_JWT_SECRET").ok(),
+            jwt_expiry_secs: std::env::var("SECURITY_JWT_EXPIRY")
+                .ok().and_then(|s| s.parse().ok()).unwrap_or(3600),
+            enable_api_key_auth: std::env::var("SECURITY_ENABLE_API_KEY")
+                .map(|v| v == "true" || v == "1").unwrap_or(false),
+            enable_jwt_auth: std::env::var("SECURITY_ENABLE_JWT")
+                .map(|v| v == "true" || v == "1").unwrap_or(false),
+            blocked_ips: std::env::var("SECURITY_BLOCKED_IPS")
+                .map(|s| s.split(',').map(|ip| ip.trim().to_string()).filter(|ip| !ip.is_empty()).collect())
+                .unwrap_or_default(),
+            audit_log_enabled: std::env::var("SECURITY_AUDIT_LOG")
+                .map(|v| v != "false" && v != "0").unwrap_or(true),
+        };
+
+        let rate_limit_config = RateLimitConfig {
+            requests_per_window: std::env::var("SECURITY_RATE_LIMIT")
+                .ok().and_then(|s| s.parse().ok()).unwrap_or(200),
+            window_seconds: std::env::var("SECURITY_RATE_WINDOW")
+                .ok().and_then(|s| s.parse().ok()).unwrap_or(60),
+            burst_size: std::env::var("SECURITY_RATE_BURST")
+                .ok().and_then(|s| s.parse().ok()).unwrap_or(20),
+            ..Default::default()
+        };
+
         Self {
             config,
             datasets: RwLock::new(HashMap::new()),
@@ -146,7 +184,11 @@ impl AppState {
             models: RwLock::new(HashMap::new()),
             current_data: RwLock::new(None),
             preprocessor: RwLock::new(None),
-            model_registry: ModelRegistry::new(10), // Cache up to 10 models
+            model_registry: ModelRegistry::new(10),
+            train_engines: RwLock::new(HashMap::new()),
+            completed_studies: RwLock::new(Vec::new()),
+            security_manager: Arc::new(SecurityManager::new(security_config)),
+            rate_limiter: Arc::new(RateLimiter::new(rate_limit_config)),
         }
     }
 

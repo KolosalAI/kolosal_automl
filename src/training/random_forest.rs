@@ -199,11 +199,8 @@ impl RandomForest {
                     (0..n_samples).collect()
                 };
 
-                // Create bootstrap dataset
-                let x_boot: Array2<f64> = Array2::from_shape_fn(
-                    (sample_indices.len(), n_features),
-                    |(i, j)| x[[sample_indices[i], j]]
-                );
+                // Create bootstrap dataset using ndarray select (avoids element-wise copy)
+                let x_boot = x.select(ndarray::Axis(0), &sample_indices);
                 let y_boot: Array1<f64> = Array1::from_vec(
                     sample_indices.iter().map(|&i| y[i]).collect()
                 );

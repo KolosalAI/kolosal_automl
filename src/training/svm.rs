@@ -4,6 +4,7 @@
 
 use crate::error::{KolosalError, Result};
 use ndarray::{Array1, Array2, Axis};
+use rayon::prelude::*;
 use rand::prelude::*;
 use rand_xoshiro::Xoshiro256PlusPlus;
 use serde::{Deserialize, Serialize};
@@ -251,19 +252,64 @@ impl SVMClassifier {
         Ok((alphas, bias, support_indices))
     }
 
-    /// Compute kernel matrix
+    /// Compute kernel matrix (parallelized for large datasets)
     fn compute_kernel_matrix(&self, x: &Array2<f64>) -> Array2<f64> {
         let n = x.nrows();
+        let n_features = x.ncols();
+
+        // For small matrices, sequential is faster due to overhead
+        if n < 100 {
+            let mut k = Array2::zeros((n, n));
+            for i in 0..n {
+                for j in i..n {
+                    let val = self.kernel(&x.row(i).to_owned(), &x.row(j).to_owned());
+                    k[[i, j]] = val;
+                    k[[j, i]] = val;
+                }
+            }
+            return k;
+        }
+
+        // Parallel: compute upper triangle rows in parallel
+        let config = self.config.clone();
+        let x_data: Vec<Vec<f64>> = (0..n)
+            .map(|i| x.row(i).to_vec())
+            .collect();
+
+        let rows: Vec<Vec<(usize, f64)>> = (0..n)
+            .into_par_iter()
+            .map(|i| {
+                let row_i = &x_data[i];
+                let a = Array1::from_vec(row_i.clone());
+                (i..n)
+                    .map(|j| {
+                        let b = Array1::from_vec(x_data[j].clone());
+                        let val = match &config.kernel {
+                            KernelType::Linear => a.dot(&b),
+                            KernelType::Polynomial { degree, gamma, coef0 } => {
+                                (*gamma * a.dot(&b) + coef0).powi(*degree as i32)
+                            }
+                            KernelType::RBF { gamma } => {
+                                let diff = &a - &b;
+                                (-gamma * diff.dot(&diff)).exp()
+                            }
+                            KernelType::Sigmoid { gamma, coef0 } => {
+                                (*gamma * a.dot(&b) + coef0).tanh()
+                            }
+                        };
+                        (j, val)
+                    })
+                    .collect()
+            })
+            .collect();
+
         let mut k = Array2::zeros((n, n));
-        
-        for i in 0..n {
-            for j in i..n {
-                let val = self.kernel(&x.row(i).to_owned(), &x.row(j).to_owned());
+        for (i, row_vals) in rows.into_iter().enumerate() {
+            for (j, val) in row_vals {
                 k[[i, j]] = val;
                 k[[j, i]] = val;
             }
         }
-        
         k
     }
 

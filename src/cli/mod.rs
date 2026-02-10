@@ -266,6 +266,8 @@ pub fn cmd_train(
             ("Accuracy", metrics.accuracy.unwrap_or(0.0)),
         TaskType::Regression | TaskType::TimeSeries =>
             ("R²", metrics.r2.unwrap_or(0.0)),
+        TaskType::Clustering =>
+            ("Clusters", 0.0),
     };
 
     info!(
@@ -380,11 +382,16 @@ pub fn cmd_benchmark(
             ("Neural Network", ModelType::NeuralNetwork),
             ("SVM", ModelType::SVM),
         ],
+        TaskType::Clustering => vec![
+            ("KMeans", ModelType::KMeans),
+            ("DBSCAN", ModelType::DBSCAN),
+        ],
     };
 
     let metric_name = match task {
         TaskType::BinaryClassification | TaskType::MultiClassification => "Accuracy",
         TaskType::Regression | TaskType::TimeSeries => "R²",
+        TaskType::Clustering => "Inertia",
     };
 
     println!();
@@ -409,6 +416,7 @@ pub fn cmd_benchmark(
                         metrics.accuracy.unwrap_or(0.0),
                     TaskType::Regression | TaskType::TimeSeries =>
                         metrics.r2.unwrap_or(0.0),
+                    TaskType::Clustering => 0.0,
                 };
 
                 println!("  {:<24} {:>10.4} {:>10.2?}", name, score, elapsed);

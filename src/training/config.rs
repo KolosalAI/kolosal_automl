@@ -13,6 +13,8 @@ pub enum TaskType {
     Regression,
     /// Time series forecasting
     TimeSeries,
+    /// Clustering (unsupervised)
+    Clustering,
 }
 
 /// Type of model to train
@@ -22,10 +24,14 @@ pub enum ModelType {
     DecisionTree,
     /// Random Forest
     RandomForest,
-    /// Gradient Boosted Trees (LightGBM-style)
+    /// Gradient Boosted Trees
     GradientBoosting,
     /// XGBoost
     XGBoost,
+    /// LightGBM (leaf-wise gradient boosting)
+    LightGBM,
+    /// CatBoost (symmetric trees + ordered boosting)
+    CatBoost,
     /// Linear Regression
     LinearRegression,
     /// Logistic Regression
@@ -36,6 +42,8 @@ pub enum ModelType {
     Lasso,
     /// Elastic Net
     ElasticNet,
+    /// Polynomial Regression
+    PolynomialRegression,
     /// Support Vector Machine
     SVM,
     /// K-Nearest Neighbors
@@ -44,6 +52,18 @@ pub enum ModelType {
     NeuralNetwork,
     /// Naive Bayes classifier
     NaiveBayes,
+    /// AdaBoost classifier
+    AdaBoost,
+    /// Extra Trees (Extremely Randomized Trees)
+    ExtraTrees,
+    /// Stochastic Gradient Descent
+    SGD,
+    /// Gaussian Process Regression
+    GaussianProcess,
+    /// KMeans Clustering
+    KMeans,
+    /// DBSCAN Clustering
+    DBSCAN,
     /// Auto (automatically select best model)
     Auto,
 }
