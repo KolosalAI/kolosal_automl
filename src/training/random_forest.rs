@@ -173,7 +173,7 @@ impl RandomForest {
         // Get unique classes for classification
         if self.is_classification {
             let mut classes: Vec<f64> = y.iter().copied().collect();
-            classes.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            classes.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
             classes.dedup();
             self.classes = classes;
         }
@@ -183,7 +183,7 @@ impl RandomForest {
         
         let trees: Vec<DecisionTree> = (0..self.n_estimators)
             .into_par_iter()
-            .map(|tree_idx| {
+            .filter_map(|tree_idx| {
                 let seed = base_seed.wrapping_add(tree_idx as u64);
                 let mut rng = ChaCha8Rng::seed_from_u64(seed);
 
@@ -222,9 +222,11 @@ impl RandomForest {
                     .with_criterion(self.criterion);
 
                 tree.max_features = Some(max_features);
-                tree.fit(&x_boot, &y_boot).ok();
+                if tree.fit(&x_boot, &y_boot).is_err() {
+                    return None;
+                }
 
-                tree
+                Some(tree)
             })
             .collect();
 

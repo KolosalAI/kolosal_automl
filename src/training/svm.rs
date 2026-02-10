@@ -155,19 +155,23 @@ impl SVMClassifier {
         
         let mut passes = 0;
         let max_passes = 5;
-        
+
         while passes < max_passes {
             let mut num_changed = 0;
-            
+
+            if n <= 1 {
+                break;
+            }
+
             for i in 0..n {
                 // Calculate error for i
                 let e_i = self.decision_function_cached(&kernel_matrix, &alphas, y, bias, i) - y[i];
-                
+
                 // Check KKT conditions
                 if (y[i] * e_i < -self.config.tol && alphas[i] < self.config.c)
                     || (y[i] * e_i > self.config.tol && alphas[i] > 0.0)
                 {
-                    // Select j randomly
+                    // Select j randomly (safe: n > 1 guaranteed above)
                     let j = loop {
                         let j = rng.gen_range(0..n);
                         if j != i { break j; }

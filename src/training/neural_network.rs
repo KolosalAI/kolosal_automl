@@ -300,7 +300,10 @@ impl MLPRegressor {
                 1.0 - &t * &t
             }
             Activation::Linear => Array2::ones(z.raw_dim()),
-            Activation::Softmax => Array2::ones(z.raw_dim()), // Simplified
+            Activation::Softmax => {
+                let s = self.activate(z, Activation::Softmax);
+                &s * &(1.0 - &s)
+            }
         }
     }
 

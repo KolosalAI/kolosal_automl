@@ -53,6 +53,7 @@ impl Default for GradientBoostingConfig {
 pub struct GradientBoostingRegressor {
     config: GradientBoostingConfig,
     trees: Vec<DecisionTree>,
+    col_indices_per_tree: Vec<Vec<usize>>,
     initial_prediction: f64,
     feature_importances: Vec<f64>,
 }
@@ -62,6 +63,7 @@ impl GradientBoostingRegressor {
         Self {
             config,
             trees: Vec::new(),
+            col_indices_per_tree: Vec::new(),
             initial_prediction: 0.0,
             feature_importances: Vec::new(),
         }
@@ -133,10 +135,11 @@ impl GradientBoostingRegressor {
                     }
                 }
             }
-            
+
             self.trees.push(tree);
+            self.col_indices_per_tree.push(col_indices);
         }
-        
+
         // Normalize feature importances
         let total: f64 = self.feature_importances.iter().sum();
         if total > 0.0 {
@@ -144,7 +147,7 @@ impl GradientBoostingRegressor {
                 *imp /= total;
             }
         }
-        
+
         Ok(())
     }
 
@@ -152,14 +155,15 @@ impl GradientBoostingRegressor {
     pub fn predict(&self, x: &Array2<f64>) -> Result<Array1<f64>> {
         let n = x.nrows();
         let mut predictions = Array1::from_elem(n, self.initial_prediction);
-        
-        for tree in &self.trees {
-            let tree_pred = tree.predict(x)?;
+
+        for (tree, col_indices) in self.trees.iter().zip(self.col_indices_per_tree.iter()) {
+            let x_sub = x.select(ndarray::Axis(1), col_indices);
+            let tree_pred = tree.predict(&x_sub)?;
             for i in 0..n {
                 predictions[i] += self.config.learning_rate * tree_pred[i];
             }
         }
-        
+
         Ok(predictions)
     }
 
@@ -207,6 +211,7 @@ impl GradientBoostingRegressor {
 pub struct GradientBoostingClassifier {
     config: GradientBoostingConfig,
     trees: Vec<DecisionTree>,
+    col_indices_per_tree: Vec<Vec<usize>>,
     initial_log_odds: f64,
     classes: Vec<i64>,
     feature_importances: Vec<f64>,
@@ -217,6 +222,7 @@ impl GradientBoostingClassifier {
         Self {
             config,
             trees: Vec::new(),
+            col_indices_per_tree: Vec::new(),
             initial_log_odds: 0.0,
             classes: vec![0, 1],
             feature_importances: Vec::new(),
@@ -280,10 +286,11 @@ impl GradientBoostingClassifier {
                     }
                 }
             }
-            
+
             self.trees.push(tree);
+            self.col_indices_per_tree.push(col_indices);
         }
-        
+
         // Normalize feature importances
         let total: f64 = self.feature_importances.iter().sum();
         if total > 0.0 {
@@ -291,7 +298,7 @@ impl GradientBoostingClassifier {
                 *imp /= total;
             }
         }
-        
+
         Ok(())
     }
 
@@ -305,14 +312,15 @@ impl GradientBoostingClassifier {
     pub fn predict_proba(&self, x: &Array2<f64>) -> Result<Array1<f64>> {
         let n = x.nrows();
         let mut log_odds = Array1::from_elem(n, self.initial_log_odds);
-        
-        for tree in &self.trees {
-            let tree_pred = tree.predict(x)?;
+
+        for (tree, col_indices) in self.trees.iter().zip(self.col_indices_per_tree.iter()) {
+            let x_sub = x.select(ndarray::Axis(1), col_indices);
+            let tree_pred = tree.predict(&x_sub)?;
             for i in 0..n {
                 log_odds[i] += self.config.learning_rate * tree_pred[i];
             }
         }
-        
+
         Ok(log_odds.iter().map(|&lo| 1.0 / (1.0 + (-lo).exp())).collect())
     }
 

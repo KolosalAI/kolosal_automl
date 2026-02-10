@@ -115,32 +115,28 @@ impl Imputer {
 
     /// Compute mode (most frequent value) for a series
     fn compute_mode_numeric(series: &Series) -> Result<f64> {
-        let mut counts: HashMap<i64, usize> = HashMap::new();
-        
+        let mut counts: HashMap<u64, usize> = HashMap::new();
+
         // Count occurrences by converting to integer bits for f64
         if let Ok(ca) = series.f64() {
             for val in ca.into_iter().flatten() {
-                let key = val.to_bits() as i64;
+                let key = val.to_bits();
                 *counts.entry(key).or_insert(0) += 1;
             }
         } else if let Ok(ca) = series.i64() {
             for val in ca.into_iter().flatten() {
-                *counts.entry(val).or_insert(0) += 1;
+                let key = (val as f64).to_bits();
+                *counts.entry(key).or_insert(0) += 1;
             }
         }
-        
+
         let mode_key = counts
             .into_iter()
             .max_by_key(|(_, count)| *count)
             .map(|(k, _)| k)
             .unwrap_or(0);
-        
-        // Convert back
-        if series.dtype() == &DataType::Float64 {
-            Ok(f64::from_bits(mode_key as u64))
-        } else {
-            Ok(mode_key as f64)
-        }
+
+        Ok(f64::from_bits(mode_key))
     }
 
     /// Compute mode for string series

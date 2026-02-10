@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, RwLock, Weak};
 
 /// Buffer size category for pooling
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -50,8 +50,8 @@ pub struct PoolStats {
 pub struct PooledBuffer {
     /// The buffer data
     data: Vec<f64>,
-    /// Reference to the pool for return
-    pool: Option<Arc<MemoryPool>>,
+    /// Weak reference to the pool for return (avoids Arc cycle)
+    pool: Option<Weak<MemoryPool>>,
     /// Shape of the buffer
     shape: Vec<usize>,
 }
@@ -66,12 +66,12 @@ impl PooledBuffer {
             shape,
         }
     }
-    
-    /// Create a pooled buffer with pool reference
-    fn with_pool(data: Vec<f64>, shape: Vec<usize>, pool: Arc<MemoryPool>) -> Self {
+
+    /// Create a pooled buffer with weak pool reference
+    fn with_pool(data: Vec<f64>, shape: Vec<usize>, pool: &Arc<MemoryPool>) -> Self {
         Self {
             data,
-            pool: Some(pool),
+            pool: Some(Arc::downgrade(pool)),
             shape,
         }
     }
@@ -132,10 +132,12 @@ impl PooledBuffer {
 
 impl Drop for PooledBuffer {
     fn drop(&mut self) {
-        if let Some(pool) = self.pool.take() {
-            let data = std::mem::take(&mut self.data);
-            let shape = std::mem::take(&mut self.shape);
-            pool.return_buffer(data, shape);
+        if let Some(weak) = self.pool.take() {
+            if let Some(pool) = weak.upgrade() {
+                let data = std::mem::take(&mut self.data);
+                let shape = std::mem::take(&mut self.shape);
+                pool.return_buffer(data, shape);
+            }
         }
     }
 }
@@ -169,27 +171,17 @@ pub struct MemoryPool {
     /// Statistics
     hits: AtomicU64,
     misses: AtomicU64,
-    /// Self reference for pooled buffers
-    self_ref: Mutex<Option<Arc<MemoryPool>>>,
 }
 
 impl MemoryPool {
     /// Create a new memory pool
     pub fn new(max_buffers_per_shape: usize) -> Arc<Self> {
-        let pool = Arc::new(Self {
+        Arc::new(Self {
             max_buffers_per_shape,
             pools: RwLock::new(HashMap::new()),
             hits: AtomicU64::new(0),
             misses: AtomicU64::new(0),
-            self_ref: Mutex::new(None),
-        });
-        
-        // Store self reference
-        if let Ok(mut self_ref) = pool.self_ref.lock() {
-            *self_ref = Some(Arc::clone(&pool));
-        }
-        
-        pool
+        })
     }
     
     /// Get a buffer with the given shape
@@ -205,16 +197,16 @@ impl MemoryPool {
                 if let Some(buffers) = category_pool.get_mut(&key) {
                     if let Some(data) = buffers.pop() {
                         self.hits.fetch_add(1, Ordering::SeqCst);
-                        return PooledBuffer::with_pool(data, shape, Arc::clone(self));
+                        return PooledBuffer::with_pool(data, shape, self);
                     }
                 }
             }
         }
-        
+
         // Allocate new buffer
         self.misses.fetch_add(1, Ordering::SeqCst);
         let data = vec![0.0; size];
-        PooledBuffer::with_pool(data, shape, Arc::clone(self))
+        PooledBuffer::with_pool(data, shape, self)
     }
     
     /// Return a buffer to the pool

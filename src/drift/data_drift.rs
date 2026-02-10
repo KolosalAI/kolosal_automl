@@ -34,9 +34,9 @@ impl KolmogorovSmirnovTest {
         c_alpha * ((n1 + n2) as f64 / (n1 * n2) as f64).sqrt()
     }
 
-    /// Compute empirical CDF
+    /// Compute empirical CDF using binary search on sorted data (O(log n))
     fn ecdf(sorted_data: &[f64], x: f64) -> f64 {
-        let count = sorted_data.iter().filter(|&&v| v <= x).count();
+        let count = sorted_data.partition_point(|&v| v <= x);
         count as f64 / sorted_data.len() as f64
     }
 }

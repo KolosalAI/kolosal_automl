@@ -199,10 +199,10 @@ impl AdaBoostClassifier {
             let sample = row.as_slice().unwrap();
 
             // Weighted vote across all stumps
-            let mut class_scores: std::collections::HashMap<i64, f64> = std::collections::HashMap::new();
+            let mut class_scores: std::collections::HashMap<u64, f64> = std::collections::HashMap::new();
             for (stump, &alpha) in self.stumps.iter().zip(self.alphas.iter()) {
                 let pred = stump.predict_sample(sample);
-                let key = (pred * 1000.0).round() as i64;
+                let key = pred.to_bits();
                 *class_scores.entry(key).or_insert(0.0) += alpha;
             }
 
@@ -212,7 +212,7 @@ impl AdaBoostClassifier {
                 .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
                 .map(|(&k, _)| k)
                 .unwrap_or(0);
-            predictions[i] = best_class_key as f64 / 1000.0;
+            predictions[i] = f64::from_bits(best_class_key);
         }
 
         Ok(predictions)

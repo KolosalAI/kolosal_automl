@@ -2,6 +2,7 @@
 //!
 //! High-performance async batch processor with adaptive sizing and priority queuing.
 
+use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::thread::{self, JoinHandle};
@@ -132,7 +133,7 @@ pub struct BatchProcessor<T: Send + 'static> {
     total_processing_time_ns: AtomicU64,
     
     // Processing times for adaptive batching
-    processing_times: Arc<RwLock<Vec<f64>>>,
+    processing_times: Arc<RwLock<VecDeque<f64>>>,
     
     // Worker handles
     workers: Arc<Mutex<Vec<JoinHandle<()>>>>,
@@ -155,7 +156,7 @@ impl<T: Send + 'static> BatchProcessor<T> {
             items_processed: AtomicU64::new(0),
             error_count: AtomicU64::new(0),
             total_processing_time_ns: AtomicU64::new(0),
-            processing_times: Arc::new(RwLock::new(Vec::with_capacity(monitoring_window))),
+            processing_times: Arc::new(RwLock::new(VecDeque::with_capacity(monitoring_window))),
             workers: Arc::new(Mutex::new(Vec::new())),
         }
     }
@@ -278,9 +279,9 @@ impl<T: Send + 'static> BatchProcessor<T> {
         // Record processing time for adaptive batching
         if self.config.adaptive_batching {
             if let Ok(mut times) = self.processing_times.write() {
-                times.push(processing_time_ms);
-                if times.len() > self.config.monitoring_window {
-                    times.remove(0);
+                times.push_back(processing_time_ms);
+                while times.len() > self.config.monitoring_window {
+                    times.pop_front();
                 }
             }
             self.adapt_batch_size(processing_time_ms);

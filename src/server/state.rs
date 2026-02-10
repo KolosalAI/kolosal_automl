@@ -230,7 +230,8 @@ impl AppState {
         sys.refresh_all();
 
         // Calculate overall CPU usage
-        let cpu_usage: f32 = sys.cpus().iter().map(|c| c.cpu_usage()).sum::<f32>() / sys.cpus().len() as f32;
+        let cpu_count = sys.cpus().len().max(1);
+        let cpu_usage: f32 = sys.cpus().iter().map(|c| c.cpu_usage()).sum::<f32>() / cpu_count as f32;
 
         serde_json::json!({
             "cpu_count": sys.cpus().len(),

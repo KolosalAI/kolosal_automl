@@ -232,7 +232,7 @@ impl DataPreprocessor {
         let start = Instant::now();
         let result = self.transform(df)?;
         self.transform_time = Some(start.elapsed().as_secs_f64());
-        self.samples_processed += df.height();
+        // Note: samples_processed already incremented in fit(), don't double-count
         Ok(result)
     }
 

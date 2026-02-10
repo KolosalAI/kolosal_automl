@@ -149,7 +149,7 @@ impl DecisionTree {
         // Get unique classes for classification
         if self.is_classification {
             let mut classes: Vec<f64> = y.iter().copied().collect();
-            classes.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            classes.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
             classes.dedup();
             self.classes = classes;
         }
@@ -256,7 +256,7 @@ impl DecisionTree {
             .into_par_iter()
             .map(|feature_idx| {
                 let mut values: Vec<f64> = indices.iter().map(|&i| x[[i, feature_idx]]).collect();
-                values.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
                 values.dedup();
 
                 let mut best_gain = 0.0f64;
@@ -421,8 +421,12 @@ impl DecisionTree {
         }
         let median = {
             let mut sorted = y.to_vec();
-            sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
-            sorted[sorted.len() / 2]
+            sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            if sorted.len() % 2 == 0 && sorted.len() >= 2 {
+                (sorted[sorted.len() / 2 - 1] + sorted[sorted.len() / 2]) / 2.0
+            } else {
+                sorted[sorted.len() / 2]
+            }
         };
         y.iter().map(|&v| (v - median).abs()).sum::<f64>() / y.len() as f64
     }

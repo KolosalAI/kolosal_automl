@@ -27,8 +27,8 @@ impl PartialOrd for OrderedFloat {
 
 impl Ord for OrderedFloat {
     fn cmp(&self, other: &Self) -> Ordering {
-        // Reverse ordering for min-heap behavior
-        other.0.partial_cmp(&self.0).unwrap_or(Ordering::Equal)
+        // Natural ordering for max-heap: peek() returns largest distance
+        self.0.partial_cmp(&other.0).unwrap_or(Ordering::Equal)
     }
 }
 

@@ -189,7 +189,7 @@ impl EDDM {
 
         // Mean and std of distances between errors
         let mean = self.sum_distances / self.n_errors as f64;
-        let std = (self.sum_sq_distances / self.n_errors as f64 - mean * mean).sqrt();
+        let std = (self.sum_sq_distances / self.n_errors as f64 - mean * mean).max(0.0).sqrt();
         let p = mean + 2.0 * std;
 
         // Update maximum

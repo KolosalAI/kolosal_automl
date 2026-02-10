@@ -71,6 +71,14 @@ impl RateLimiter {
 
     pub fn is_allowed(&self, client_id: &str) -> bool {
         let mut clients = self.clients.lock();
+
+        // Evict stale clients when map gets too large
+        if clients.len() > 10_000 {
+            let window = std::time::Duration::from_secs(self.config.window_seconds * 2);
+            let now = Instant::now();
+            clients.retain(|_, state| now.duration_since(state.window_start) < window);
+        }
+
         let state = clients
             .entry(client_id.to_string())
             .or_insert_with(|| ClientState::new(self.config.burst_size));

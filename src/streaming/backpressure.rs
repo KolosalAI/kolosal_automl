@@ -108,15 +108,23 @@ impl BackpressureController {
         new_size
     }
     
-    /// Decrement queue size
+    /// Decrement queue size (uses CAS loop to prevent underflow)
     pub fn decrement_queue(&self) -> usize {
-        let old_size = self.current_queue_size.load(Ordering::SeqCst);
-        if old_size > 0 {
-            let new_size = self.current_queue_size.fetch_sub(1, Ordering::SeqCst) - 1;
-            self.set_queue_size(new_size);
-            new_size
-        } else {
-            0
+        loop {
+            let current = self.current_queue_size.load(Ordering::SeqCst);
+            if current == 0 {
+                return 0;
+            }
+            match self.current_queue_size.compare_exchange(
+                current, current - 1, Ordering::SeqCst, Ordering::SeqCst
+            ) {
+                Ok(_) => {
+                    let new_size = current - 1;
+                    self.set_queue_size(new_size);
+                    return new_size;
+                }
+                Err(_) => continue,
+            }
         }
     }
     

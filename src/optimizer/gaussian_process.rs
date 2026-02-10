@@ -9,7 +9,7 @@ use rand_xoshiro::Xoshiro256PlusPlus;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use super::search_space::{SearchSpace, TrialParams, ParameterValue};
+use super::search_space::{SearchSpace, TrialParams, ParameterValue, ParameterType};
 use super::Sampler;
 
 /// Kernel function types for Gaussian Process
@@ -378,8 +378,25 @@ impl GPSampler {
             .collect()
     }
 
-    /// Convert parameter value to float [0, 1]
-    fn value_to_float(&self, value: &ParameterValue, _name: &str, _space: &SearchSpace) -> f64 {
+    /// Convert parameter value to float [0, 1] normalized by parameter bounds
+    fn value_to_float(&self, value: &ParameterValue, name: &str, space: &SearchSpace) -> f64 {
+        if let Some(param) = space.parameters().iter().find(|p| p.name == name) {
+            match (&param.param_type, value) {
+                (ParameterType::Float { low, high, .. }, ParameterValue::Float(v)) => {
+                    if (high - low).abs() > 1e-15 {
+                        return (*v - low) / (high - low);
+                    }
+                    return *v;
+                }
+                (ParameterType::Int { low, high, .. }, ParameterValue::Int(v)) => {
+                    if high != low {
+                        return (*v - low) as f64 / (high - low) as f64;
+                    }
+                    return *v as f64;
+                }
+                _ => {}
+            }
+        }
         match value {
             ParameterValue::Float(v) => *v,
             ParameterValue::Int(v) => *v as f64,

@@ -224,6 +224,35 @@
         .checkbox-row { display: flex; flex-direction: row; align-items: center; gap: 10px; cursor: pointer; padding: 6px 0; }
         .checkbox-row input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--color-text-900); cursor: pointer; }
 
+        /* Multiselect Dropdown */
+        .multiselect { position: relative; width: 100%; }
+        .multiselect-trigger { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-height: 40px; padding: 6px 12px; background: var(--color-grey-600); border: 1px solid var(--color-grey-700); border-radius: 8px; cursor: pointer; transition: border-color 0.15s; }
+        .multiselect-trigger:hover { border-color: var(--color-grey-800); }
+        .multiselect.open .multiselect-trigger { border-color: var(--color-text-900); }
+        .multiselect-tags { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; min-width: 0; }
+        .multiselect-tag { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; background: var(--color-grey-800); border-radius: 4px; font-size: 12px; line-height: 20px; color: var(--color-text-900); white-space: nowrap; }
+        .multiselect-tag-remove { cursor: pointer; opacity: 0.6; font-size: 14px; line-height: 1; }
+        .multiselect-tag-remove:hover { opacity: 1; }
+        .multiselect-placeholder { color: var(--color-text-600); font-size: 14px; }
+        .multiselect-arrow { flex-shrink: 0; color: var(--color-text-600); transition: transform 0.15s; font-size: 16px; }
+        .multiselect.open .multiselect-arrow { transform: rotate(180deg); }
+        .multiselect-dropdown { position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: var(--color-grey-500); border: 1px solid var(--color-grey-700); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.25); z-index: 50; display: none; max-height: 280px; overflow: hidden; flex-direction: column; }
+        .multiselect.open .multiselect-dropdown { display: flex; }
+        .multiselect-search { padding: 8px; border-bottom: 1px solid var(--color-grey-700); }
+        .multiselect-search input { width: 100%; padding: 6px 8px; background: var(--color-grey-600); border: 1px solid var(--color-grey-700); border-radius: 6px; color: var(--color-text-900); font-size: 13px; outline: none; }
+        .multiselect-search input:focus { border-color: var(--color-text-900); }
+        .multiselect-actions { display: flex; gap: 8px; padding: 6px 8px; border-bottom: 1px solid var(--color-grey-700); }
+        .multiselect-actions button { padding: 2px 8px; font-size: 12px; background: none; border: 1px solid var(--color-grey-700); border-radius: 4px; color: var(--color-text-700); cursor: pointer; }
+        .multiselect-actions button:hover { color: var(--color-text-900); border-color: var(--color-text-900); }
+        .multiselect-options { overflow-y: auto; max-height: 200px; padding: 4px; }
+        .multiselect-option { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; cursor: pointer; font-size: 13px; color: var(--color-text-800); transition: background 0.1s; }
+        .multiselect-option:hover { background: var(--color-grey-600); }
+        .multiselect-option.selected { color: var(--color-text-900); font-weight: 500; }
+        .multiselect-option .ms-check { width: 16px; height: 16px; border: 1.5px solid var(--color-grey-800); border-radius: 4px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: all 0.1s; }
+        .multiselect-option.selected .ms-check { background: var(--color-text-900); border-color: var(--color-text-900); }
+        .multiselect-option.selected .ms-check::after { content: '✓'; font-size: 11px; color: var(--color-grey-500); }
+        .multiselect-group-label { padding: 6px 8px 2px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--color-text-600); }
+
         /* Stat card */
         .stat-value { font-size: 32px; line-height: 44px; letter-spacing: -0.6px; font-family: "Geist Mono", monospace; font-weight: 500; }
         .stat-value.info { color: var(--color-information-500); }
@@ -497,7 +526,7 @@
                         <!-- Model Selection -->
                         <div class="flex-col gap-4" style="margin-top: 8px;">
                             <label class="text-13px reguler">Select Models (leave empty for auto)</label>
-                            <div id="automl-model-checkboxes" class="grid-2" style="gap: 4px;"></div>
+                            <div id="automl-model-checkboxes"></div>
                         </div>
                     </div>
                 </details>
@@ -668,7 +697,7 @@
                         <div class="card-header">
                             <h2 class="text-16px medium">Select Models</h2>
                         </div>
-                        <div id="model-checkboxes" class="flex-col gap-4"></div>
+                        <div id="model-checkboxes"></div>
                         <button id="btn-train" onclick="startTraining()" class="btn-md btn-primary w-full" style="margin-top: 20px;" disabled>
                             <i class="ri-rocket-line"></i> Start Training
                         </button>
@@ -832,7 +861,7 @@
                             </div>
                             <div class="form-group">
                                 <label class="form-label">Select Models</label>
-                                <div id="ens-model-checkboxes" class="flex-col gap-4"></div>
+                                <div id="ens-model-checkboxes"></div>
                             </div>
                             <button id="btn-ensemble" onclick="startEnsemble()" class="btn-md btn-primary w-full" disabled>
                                 <i class="ri-stack-line"></i> Train Ensemble
@@ -1435,28 +1464,28 @@
         ];
 
         var availableModels = [
-            { id: 'logistic_regression', name: 'Logistic Regression' },
-            { id: 'linear_regression', name: 'Linear Regression' },
-            { id: 'ridge', name: 'Ridge Regression' },
-            { id: 'lasso', name: 'Lasso Regression' },
-            { id: 'elastic_net', name: 'Elastic Net' },
-            { id: 'polynomial', name: 'Polynomial Regression' },
-            { id: 'decision_tree', name: 'Decision Tree' },
-            { id: 'random_forest', name: 'Random Forest' },
-            { id: 'gradient_boosting', name: 'Gradient Boosting' },
-            { id: 'xgboost', name: 'XGBoost' },
-            { id: 'lightgbm', name: 'LightGBM' },
-            { id: 'catboost', name: 'CatBoost' },
-            { id: 'extra_trees', name: 'Extra Trees' },
-            { id: 'adaboost', name: 'AdaBoost' },
-            { id: 'sgd', name: 'SGD' },
-            { id: 'knn', name: 'K-Nearest Neighbors' },
-            { id: 'naive_bayes', name: 'Naive Bayes' },
-            { id: 'svm', name: 'SVM' },
-            { id: 'neural_network', name: 'Neural Network' },
-            { id: 'gaussian_process', name: 'Gaussian Process' },
-            { id: 'kmeans', name: 'KMeans Clustering' },
-            { id: 'dbscan', name: 'DBSCAN Clustering' }
+            { id: 'logistic_regression', name: 'Logistic Regression', task: 'classification' },
+            { id: 'naive_bayes', name: 'Naive Bayes', task: 'classification' },
+            { id: 'adaboost', name: 'AdaBoost', task: 'classification' },
+            { id: 'linear_regression', name: 'Linear Regression', task: 'regression' },
+            { id: 'ridge', name: 'Ridge Regression', task: 'regression' },
+            { id: 'lasso', name: 'Lasso Regression', task: 'regression' },
+            { id: 'elastic_net', name: 'Elastic Net', task: 'regression' },
+            { id: 'polynomial', name: 'Polynomial Regression', task: 'regression' },
+            { id: 'decision_tree', name: 'Decision Tree', task: 'both' },
+            { id: 'random_forest', name: 'Random Forest', task: 'both' },
+            { id: 'gradient_boosting', name: 'Gradient Boosting', task: 'both' },
+            { id: 'xgboost', name: 'XGBoost', task: 'both' },
+            { id: 'lightgbm', name: 'LightGBM', task: 'both' },
+            { id: 'catboost', name: 'CatBoost', task: 'both' },
+            { id: 'extra_trees', name: 'Extra Trees', task: 'both' },
+            { id: 'sgd', name: 'SGD', task: 'both' },
+            { id: 'knn', name: 'K-Nearest Neighbors', task: 'both' },
+            { id: 'svm', name: 'SVM', task: 'both' },
+            { id: 'neural_network', name: 'Neural Network', task: 'both' },
+            { id: 'gaussian_process', name: 'Gaussian Process', task: 'both' },
+            { id: 'kmeans', name: 'KMeans Clustering', task: 'clustering' },
+            { id: 'dbscan', name: 'DBSCAN Clustering', task: 'clustering' }
         ];
 
         // ── Helpers ──
@@ -1476,6 +1505,9 @@
             var d = document.createElement('div');
             d.textContent = s;
             return d.innerHTML;
+        }
+        function escAttr(s) {
+            return String(s).replace(/&/g,'&amp;').replace(/'/g,'&#39;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
         }
 
         // ── Tabs ──
@@ -1581,9 +1613,9 @@
             }
         }
 
-        function updateTargetOptions() {
+        function updateTargetOptions(columns) {
             var sel = $('cfg-targetColumn');
-            var names = (dataInfo && dataInfo.column_names) || [];
+            var names = columns || (dataInfo && dataInfo.column_names) || [];
             sel.innerHTML = '<option value="">Select target...</option>';
             names.forEach(function(n) {
                 var opt = document.createElement('option');
@@ -1654,28 +1686,223 @@
         }
 
         // ── Model Selection ──
+        function getModelsForTask(taskType, excludeClustering) {
+            return availableModels.filter(function(m) {
+                if (excludeClustering && m.task === 'clustering') return false;
+                if (taskType === 'classification') return m.task === 'classification' || m.task === 'both';
+                if (taskType === 'regression') return m.task === 'regression' || m.task === 'both';
+                if (taskType === 'clustering') return m.task === 'clustering';
+                return true;
+            });
+        }
+
+        function createMultiselect(container, opts) {
+            var selected = opts.selected || [];
+            var placeholder = opts.placeholder || 'Select models...';
+            var onChange = opts.onChange || function() {};
+            var getItems = opts.getItems || function() { return availableModels; };
+
+            container.innerHTML = '';
+            var wrap = document.createElement('div');
+            wrap.className = 'multiselect';
+
+            var trigger = document.createElement('div');
+            trigger.className = 'multiselect-trigger';
+            var tagsDiv = document.createElement('div');
+            tagsDiv.className = 'multiselect-tags';
+            var arrow = document.createElement('i');
+            arrow.className = 'ri-arrow-down-s-line multiselect-arrow';
+            trigger.appendChild(tagsDiv);
+            trigger.appendChild(arrow);
+
+            var dropdown = document.createElement('div');
+            dropdown.className = 'multiselect-dropdown';
+
+            var searchWrap = document.createElement('div');
+            searchWrap.className = 'multiselect-search';
+            var searchInput = document.createElement('input');
+            searchInput.type = 'text';
+            searchInput.placeholder = 'Search models...';
+            searchWrap.appendChild(searchInput);
+
+            var actionsWrap = document.createElement('div');
+            actionsWrap.className = 'multiselect-actions';
+            var btnAll = document.createElement('button');
+            btnAll.textContent = 'Select All';
+            btnAll.type = 'button';
+            var btnNone = document.createElement('button');
+            btnNone.textContent = 'Clear';
+            btnNone.type = 'button';
+            actionsWrap.appendChild(btnAll);
+            actionsWrap.appendChild(btnNone);
+
+            var optionsDiv = document.createElement('div');
+            optionsDiv.className = 'multiselect-options';
+
+            dropdown.appendChild(searchWrap);
+            dropdown.appendChild(actionsWrap);
+            dropdown.appendChild(optionsDiv);
+            wrap.appendChild(trigger);
+            wrap.appendChild(dropdown);
+            container.appendChild(wrap);
+
+            function renderTags() {
+                tagsDiv.innerHTML = '';
+                if (selected.length === 0) {
+                    var ph = document.createElement('span');
+                    ph.className = 'multiselect-placeholder';
+                    ph.textContent = placeholder;
+                    tagsDiv.appendChild(ph);
+                } else {
+                    selected.forEach(function(id) {
+                        var model = availableModels.find(function(m) { return m.id === id; });
+                        if (!model) return;
+                        var tag = document.createElement('span');
+                        tag.className = 'multiselect-tag';
+                        tag.textContent = model.name;
+                        var rm = document.createElement('span');
+                        rm.className = 'multiselect-tag-remove';
+                        rm.innerHTML = '&times;';
+                        rm.onclick = function(e) {
+                            e.stopPropagation();
+                            selected = selected.filter(function(x) { return x !== id; });
+                            syncBack();
+                            renderTags();
+                            renderOptions();
+                            onChange(selected);
+                        };
+                        tag.appendChild(rm);
+                        tagsDiv.appendChild(tag);
+                    });
+                }
+            }
+
+            function renderOptions() {
+                var query = searchInput.value.toLowerCase();
+                optionsDiv.innerHTML = '';
+                var items = getItems();
+                var groups = {};
+                items.forEach(function(m) {
+                    var lbl = m.task === 'classification' ? 'Classification' : m.task === 'regression' ? 'Regression' : m.task === 'clustering' ? 'Clustering' : 'Universal';
+                    if (!groups[lbl]) groups[lbl] = [];
+                    groups[lbl].push(m);
+                });
+                var order = ['Classification', 'Regression', 'Universal', 'Clustering'];
+                order.forEach(function(grp) {
+                    if (!groups[grp]) return;
+                    var filtered = groups[grp].filter(function(m) { return m.name.toLowerCase().indexOf(query) !== -1; });
+                    if (filtered.length === 0) return;
+                    var label = document.createElement('div');
+                    label.className = 'multiselect-group-label';
+                    label.textContent = grp;
+                    optionsDiv.appendChild(label);
+                    filtered.forEach(function(m) {
+                        var opt = document.createElement('div');
+                        opt.className = 'multiselect-option' + (selected.indexOf(m.id) !== -1 ? ' selected' : '');
+                        var check = document.createElement('span');
+                        check.className = 'ms-check';
+                        var name = document.createElement('span');
+                        name.textContent = m.name;
+                        opt.appendChild(check);
+                        opt.appendChild(name);
+                        opt.onclick = function(e) {
+                            e.stopPropagation();
+                            if (selected.indexOf(m.id) !== -1) {
+                                selected = selected.filter(function(x) { return x !== m.id; });
+                            } else {
+                                selected.push(m.id);
+                            }
+                            syncBack();
+                            renderTags();
+                            renderOptions();
+                            onChange(selected);
+                        };
+                        optionsDiv.appendChild(opt);
+                    });
+                });
+            }
+
+            function syncBack() {
+                if (opts.selected !== undefined && opts.syncArray) {
+                    opts.syncArray(selected);
+                }
+            }
+
+            trigger.onclick = function(e) {
+                e.stopPropagation();
+                var isOpen = wrap.classList.contains('open');
+                closeAllMultiselects();
+                if (!isOpen) {
+                    wrap.classList.add('open');
+                    searchInput.value = '';
+                    renderOptions();
+                    searchInput.focus();
+                }
+            };
+
+            searchInput.oninput = function() { renderOptions(); };
+            searchInput.onclick = function(e) { e.stopPropagation(); };
+
+            btnAll.onclick = function(e) {
+                e.stopPropagation();
+                var items = getItems();
+                var query = searchInput.value.toLowerCase();
+                items.forEach(function(m) {
+                    if (m.name.toLowerCase().indexOf(query) !== -1 && selected.indexOf(m.id) === -1) {
+                        selected.push(m.id);
+                    }
+                });
+                syncBack();
+                renderTags();
+                renderOptions();
+                onChange(selected);
+            };
+
+            btnNone.onclick = function(e) {
+                e.stopPropagation();
+                selected.length = 0;
+                syncBack();
+                renderTags();
+                renderOptions();
+                onChange(selected);
+            };
+
+            renderTags();
+
+            return {
+                refresh: function(newTaskType) {
+                    var items = getItems();
+                    var validIds = items.map(function(m) { return m.id; });
+                    selected = selected.filter(function(id) { return validIds.indexOf(id) !== -1; });
+                    syncBack();
+                    renderTags();
+                    renderOptions();
+                    onChange(selected);
+                },
+                getSelected: function() { return selected.slice(); }
+            };
+        }
+
+        function closeAllMultiselects() {
+            document.querySelectorAll('.multiselect.open').forEach(function(el) {
+                el.classList.remove('open');
+            });
+        }
+        document.addEventListener('click', closeAllMultiselects);
+
+        var modelMultiselect = null;
+
         function setupModelCheckboxes() {
             var container = $('model-checkboxes');
-            availableModels.forEach(function(m) {
-                var label = document.createElement('label');
-                label.className = 'checkbox-row';
-                var cb = document.createElement('input');
-                cb.type = 'checkbox';
-                cb.value = m.id;
-                cb.onchange = function() {
-                    if (cb.checked) {
-                        if (selectedModels.indexOf(m.id) === -1) selectedModels.push(m.id);
-                    } else {
-                        selectedModels = selectedModels.filter(function(x) { return x !== m.id; });
-                    }
+            var taskType = getConfig().taskType;
+            modelMultiselect = createMultiselect(container, {
+                placeholder: 'Select models to train...',
+                getItems: function() { return getModelsForTask(getConfig().taskType, false); },
+                syncArray: function(arr) { selectedModels = arr; },
+                onChange: function(sel) {
+                    selectedModels = sel;
                     updateTrainButton();
-                };
-                var span = document.createElement('span');
-                span.className = 'text-14px reguler';
-                span.textContent = m.name;
-                label.appendChild(cb);
-                label.appendChild(span);
-                container.appendChild(label);
+                }
             });
         }
 
@@ -1766,8 +1993,8 @@
                         html += '<p class="text-12px reguler" style="color:var(--color-warning-500);margin-top:4px;"><i class="ri-flashlight-line"></i> Auto-tune skipped</p>';
                     }
                     html += '<div class="flex-row gap-4" style="margin-top:8px;">';
-                    html += '<button onclick="exportModel(\'' + escHtml(job.id) + '\', \'onnx\')" class="btn-xs btn-outline"><i class="ri-download-line"></i> ONNX</button>';
-                    html += '<button onclick="exportModel(\'' + escHtml(job.id) + '\', \'pmml\')" class="btn-xs btn-outline"><i class="ri-download-line"></i> PMML</button>';
+                    html += '<button onclick="exportModel(\'' + escAttr(job.id) + '\', \'onnx\')" class="btn-xs btn-outline"><i class="ri-download-line"></i> ONNX</button>';
+                    html += '<button onclick="exportModel(\'' + escAttr(job.id) + '\', \'pmml\')" class="btn-xs btn-outline"><i class="ri-download-line"></i> PMML</button>';
                     html += '</div>';
                     html += '</div>';
                 }
@@ -2078,28 +2305,18 @@
         }
 
         // ── Ensemble ──
+        var ensembleMultiselect = null;
+
         function setupEnsembleCheckboxes() {
             var container = $('ens-model-checkboxes');
-            availableModels.forEach(function(m) {
-                var label = document.createElement('label');
-                label.className = 'checkbox-row';
-                var cb = document.createElement('input');
-                cb.type = 'checkbox';
-                cb.value = m.id;
-                cb.onchange = function() {
-                    if (cb.checked) {
-                        if (ensembleSelectedModels.indexOf(m.id) === -1) ensembleSelectedModels.push(m.id);
-                    } else {
-                        ensembleSelectedModels = ensembleSelectedModels.filter(function(x) { return x !== m.id; });
-                    }
+            ensembleMultiselect = createMultiselect(container, {
+                placeholder: 'Select at least 2 models...',
+                getItems: function() { return getModelsForTask(getConfig().taskType, true); },
+                syncArray: function(arr) { ensembleSelectedModels = arr; },
+                onChange: function(sel) {
+                    ensembleSelectedModels = sel;
                     $('btn-ensemble').disabled = ensembleSelectedModels.length < 2 || !getConfig().targetColumn;
-                };
-                var span = document.createElement('span');
-                span.className = 'text-14px reguler';
-                span.textContent = m.name;
-                label.appendChild(cb);
-                label.appendChild(span);
-                container.appendChild(label);
+                }
             });
         }
 
@@ -2280,16 +2497,6 @@
             .catch(function(e) {
                 $('btn-import-url').disabled = false;
                 $('import-url-status').innerHTML = '<p class="text-12px reguler" style="color:var(--color-danger-500);">Error: ' + escHtml(e.message) + '</p>';
-            });
-        }
-
-        function updateTargetOptions(columns) {
-            var sel = $('cfg-targetColumn');
-            sel.innerHTML = '<option value="">Select target column...</option>';
-            (columns || []).forEach(function(c) {
-                var o = document.createElement('option');
-                o.value = c; o.textContent = c;
-                sel.appendChild(o);
             });
         }
 
@@ -2744,17 +2951,21 @@
         var automlJobId = null;
         var automlPollInterval = null;
 
+        var automlMultiselect = null;
+        var automlSelectedModels = [];
+
         function setupAutoMLModelCheckboxes() {
             var container = $('automl-model-checkboxes');
             if (!container) return;
-            container.innerHTML = '';
-            availableModels.forEach(function(m) {
-                if (m.id === 'kmeans' || m.id === 'dbscan') return;
-                var label = document.createElement('label');
-                label.className = 'text-13px reguler';
-                label.style.cssText = 'display:flex;align-items:center;gap:6px;cursor:pointer;';
-                label.innerHTML = '<input type="checkbox" class="automl-model-cb" value="' + m.id + '"> ' + m.name;
-                container.appendChild(label);
+            automlMultiselect = createMultiselect(container, {
+                placeholder: 'Leave empty for auto...',
+                getItems: function() {
+                    var taskType = $('automl-task-type') ? $('automl-task-type').value : '';
+                    if (!taskType) return availableModels.filter(function(m) { return m.task !== 'clustering'; });
+                    return getModelsForTask(taskType, true);
+                },
+                syncArray: function(arr) { automlSelectedModels = arr; },
+                onChange: function(sel) { automlSelectedModels = sel; }
             });
         }
 
@@ -2775,10 +2986,7 @@
             var target = $('automl-target').value;
             if (!target) { notify('Please select a target column', 'error'); return; }
 
-            var selectedModels = [];
-            document.querySelectorAll('.automl-model-cb:checked').forEach(function(cb) {
-                selectedModels.push(cb.value);
-            });
+            var models = automlSelectedModels.slice();
 
             var body = { target_column: target };
             var taskType = $('automl-task-type').value;
@@ -2787,7 +2995,7 @@
             if (scaler) body.scaler = scaler;
             var imputation = $('automl-imputation').value;
             if (imputation) body.imputation = imputation;
-            if (selectedModels.length > 0) body.models = selectedModels;
+            if (models.length > 0) body.models = models;
 
             var maxModels = parseInt($('automl-max-models').value);
             if (maxModels > 0) body.max_models = maxModels;
@@ -3051,8 +3259,8 @@
                     var created = m.created_at ? new Date(m.created_at).toLocaleString() : '—';
                     var mtype = escHtml(m.model_type || m.algorithm || '—');
                     var task = escHtml(m.task_type || '—');
-                    var safeId = escHtml(m.id || '');
-                    sel.innerHTML += '<option value="' + safeId + '">' + safeId.substring(0,8) + ' (' + mtype + ')</option>';
+                    var safeId = escAttr(m.id || '');
+                    sel.innerHTML += '<option value="' + safeId + '">' + escHtml((m.id||'').substring(0,8)) + ' (' + escHtml(mtype) + ')</option>';
                     h += '<tr>';
                     h += '<td class="mono-12px">' + safeId.substring(0,12) + '</td>';
                     h += '<td>' + mtype + '</td>';
@@ -3081,13 +3289,13 @@
         function serveTestPredict() {
             var modelId = $('serve-test-model').value;
             var raw = $('serve-test-input').value.trim();
-            if (!raw) { showToast('Enter input data', 'warn'); return; }
+            if (!raw) { notify('Enter input data', 'warn'); return; }
             var body;
             try {
                 var parsed = JSON.parse(raw);
                 body = { data: parsed };
                 if (modelId) body.model_id = modelId;
-            } catch(e) { showToast('Invalid JSON: ' + e.message, 'error'); return; }
+            } catch(e) { notify('Invalid JSON: ' + e.message, 'error'); return; }
             $('serve-test-result').style.display = 'none';
             fetch('/api/predict', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
                 .then(function(r) { return r.json(); })
@@ -3107,19 +3315,19 @@
                 .then(function(d) {
                     if (d.stats) {
                         var s = d.stats;
-                        showToast('p50=' + (s.p50_latency_ms||0).toFixed(2) + 'ms  p95=' + (s.p95_latency_ms||0).toFixed(2) + 'ms  reqs=' + (s.total_predictions||0), 'ok');
+                        notify('p50=' + (s.p50_latency_ms||0).toFixed(2) + 'ms  p95=' + (s.p95_latency_ms||0).toFixed(2) + 'ms  reqs=' + (s.total_predictions||0), 'ok');
                     } else {
-                        showToast('Model not cached yet — send a prediction first', 'warn');
+                        notify('Model not cached yet — send a prediction first', 'warn');
                     }
                 })
-                .catch(function() { showToast('Model not cached — send a prediction to load it', 'warn'); });
+                .catch(function() { notify('Model not cached — send a prediction to load it', 'warn'); });
         }
 
         function serveEvictCache(modelId) {
             fetch('/api/predict/cache/' + modelId, { method: 'DELETE' })
                 .then(function(r) { return r.json(); })
-                .then(function(d) { showToast(d.message || 'Cache evicted', 'ok'); })
-                .catch(function() { showToast('Failed to evict cache', 'error'); });
+                .then(function(d) { notify(d.message || 'Cache evicted', 'ok'); })
+                .catch(function() { notify('Failed to evict cache', 'error'); });
         }
 
         // ── Init ──
@@ -3133,6 +3341,11 @@
                 if ($('automl-target')) {
                     $('automl-target').addEventListener('change', function() {
                         $('btn-automl-run').disabled = !this.value;
+                    });
+                }
+                if ($('automl-task-type')) {
+                    $('automl-task-type').addEventListener('change', function() {
+                        if (automlMultiselect) automlMultiselect.refresh();
                     });
                 }
                 refreshSystemStatus();
@@ -3154,6 +3367,11 @@
                     $('btn-anomaly').disabled = !dataInfo;
                     $('btn-clustering').disabled = !dataInfo;
                     $('btn-explain').disabled = !this.value;
+                });
+
+                $('cfg-taskType').addEventListener('change', function() {
+                    if (modelMultiselect) modelMultiselect.refresh();
+                    if (ensembleMultiselect) ensembleMultiselect.refresh();
                 });
 
                 // Load search space when hyperopt model changes

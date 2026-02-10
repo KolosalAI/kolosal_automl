@@ -278,7 +278,7 @@ impl NASController {
     pub fn best_architecture(&self) -> Option<&NetworkArchitecture> {
         self.history
             .iter()
-            .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
+            .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
             .map(|(arch, _)| arch)
     }
 

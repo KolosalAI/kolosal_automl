@@ -310,7 +310,14 @@ impl Encoder {
                     .map_err(|e| KolosalError::DataError(e.to_string()))?;
 
                 let n_categories = mapping.len();
-                let n_bits = (n_categories as f64).log2().ceil() as usize;
+                if n_categories == 0 {
+                    // No categories - just drop the column
+                    result = result
+                        .drop(col_name)
+                        .map_err(|e| KolosalError::DataError(e.to_string()))?;
+                    continue;
+                }
+                let n_bits = if n_categories <= 1 { 1 } else { (n_categories as f64).log2().ceil() as usize };
 
                 // Create binary columns for each bit position
                 for bit_pos in 0..n_bits {

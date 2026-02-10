@@ -51,9 +51,13 @@ impl FeatureStats {
 
         let min = sorted.first().copied().unwrap_or(0.0);
         let max = sorted.last().copied().unwrap_or(0.0);
-        let median = sorted[sorted.len() / 2];
+        let median = if sorted.len() % 2 == 0 && sorted.len() >= 2 {
+            (sorted[sorted.len() / 2 - 1] + sorted[sorted.len() / 2]) / 2.0
+        } else {
+            sorted[sorted.len() / 2]
+        };
         let q25 = sorted[sorted.len() / 4];
-        let q75 = sorted[3 * sorted.len() / 4];
+        let q75 = sorted[(3 * sorted.len()) / 4];
 
         // Count unique values (approximately)
         let mut unique: Vec<f64> = sorted.clone();

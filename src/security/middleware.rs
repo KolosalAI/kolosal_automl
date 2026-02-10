@@ -30,13 +30,22 @@ pub async fn security_layer(
     request: Request,
     next: Next,
 ) -> Result<Response, StatusCode> {
-    // Extract client IP
+    // Extract client IP - use x-real-ip first, then x-forwarded-for (first entry only),
+    // falling back to "unknown". In production, configure a reverse proxy to set these.
     let ip = request
         .headers()
-        .get("x-forwarded-for")
+        .get("x-real-ip")
         .and_then(|v| v.to_str().ok())
-        .unwrap_or("unknown")
-        .to_string();
+        .map(|s| s.trim().to_string())
+        .or_else(|| {
+            request
+                .headers()
+                .get("x-forwarded-for")
+                .and_then(|v| v.to_str().ok())
+                .and_then(|s| s.split(',').next())
+                .map(|s| s.trim().to_string())
+        })
+        .unwrap_or_else(|| "unknown".to_string());
 
     // Check IP blocked
     if middleware.security_manager.check_ip_blocked(&ip) {
@@ -56,10 +65,18 @@ pub async fn security_layer(
         return Err(StatusCode::TOO_MANY_REQUESTS);
     }
 
-    // Verify API key if present
-    if let Some(api_key) = request.headers().get("x-api-key").and_then(|v| v.to_str().ok()) {
-        if !middleware.security_manager.verify_api_key(api_key) {
-            return Err(StatusCode::UNAUTHORIZED);
+    // Verify API key - require it when API key auth is enabled
+    match request.headers().get("x-api-key").and_then(|v| v.to_str().ok()) {
+        Some(api_key) => {
+            if !middleware.security_manager.verify_api_key(api_key) {
+                return Err(StatusCode::UNAUTHORIZED);
+            }
+        }
+        None => {
+            // No API key provided - reject if API key auth is enabled and keys are configured
+            if !middleware.security_manager.verify_api_key("") {
+                return Err(StatusCode::UNAUTHORIZED);
+            }
         }
     }
 

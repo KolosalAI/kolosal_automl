@@ -6,6 +6,20 @@ use chrono::{Utc, DateTime};
 use jsonwebtoken::{encode, decode, Header, Validation, EncodingKey, DecodingKey};
 use rand::Rng;
 
+/// Constant-time byte comparison to prevent timing attacks
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut result = 0u8;
+    for (x, y) in a.iter().zip(b.iter()) {
+        result |= x ^ y;
+    }
+    result == 0
+}
+
+const MAX_AUDIT_LOG_ENTRIES: usize = 10_000;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SecurityConfig {
     pub api_keys: Vec<String>,
@@ -44,7 +58,8 @@ impl ApiKeyVerifier {
     }
 
     pub fn verify(&self, key: &str) -> bool {
-        self.keys.read().iter().any(|k| k == key)
+        let keys = self.keys.read();
+        keys.iter().any(|k| constant_time_eq(k.as_bytes(), key.as_bytes()))
     }
 
     pub fn add_key(&self, key: &str) {
@@ -187,7 +202,12 @@ impl SecurityManager {
 
     pub fn log_request(&self, entry: AuditEntry) {
         if self.config.audit_log_enabled {
-            self.audit_log.write().push(entry);
+            let mut log = self.audit_log.write();
+            if log.len() >= MAX_AUDIT_LOG_ENTRIES {
+                let drain_count = MAX_AUDIT_LOG_ENTRIES / 10;
+                log.drain(..drain_count);
+            }
+            log.push(entry);
         }
     }
 

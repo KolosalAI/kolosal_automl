@@ -245,13 +245,13 @@ impl ExtraTrees {
             // Majority vote
             let mut counts: HashMap<i64, usize> = HashMap::new();
             for &i in indices {
-                let key = (y[i] * 1000.0).round() as i64;
+                let key = y[i].to_bits() as i64;
                 *counts.entry(key).or_insert(0) += 1;
             }
             counts
                 .into_iter()
                 .max_by_key(|&(_, c)| c)
-                .map(|(k, _)| k as f64 / 1000.0)
+                .map(|(k, _)| f64::from_bits(k as u64))
                 .unwrap_or(0.0)
         } else {
             // Mean
@@ -272,7 +272,7 @@ impl ExtraTrees {
         if n == 0.0 { return 0.0; }
         let mut counts: HashMap<i64, usize> = HashMap::new();
         for &i in indices {
-            let key = (y[i] * 1000.0).round() as i64;
+            let key = y[i].to_bits() as i64;
             *counts.entry(key).or_insert(0) += 1;
         }
         1.0 - counts.values().map(|&c| (c as f64 / n).powi(2)).sum::<f64>()
@@ -353,12 +353,12 @@ impl ExtraTrees {
                 let mut votes: HashMap<i64, usize> = HashMap::new();
                 for tree in &self.trees {
                     let pred = tree.predict_sample(s);
-                    let key = (pred * 1000.0).round() as i64;
+                    let key = pred.to_bits() as i64;
                     *votes.entry(key).or_insert(0) += 1;
                 }
                 let best = votes.into_iter()
                     .max_by_key(|&(_, c)| c)
-                    .map(|(k, _)| k as f64 / 1000.0)
+                    .map(|(k, _)| f64::from_bits(k as u64))
                     .unwrap_or(0.0);
                 predictions[i] = best;
             } else {
