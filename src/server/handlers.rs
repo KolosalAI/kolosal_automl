@@ -524,7 +524,8 @@ async fn run_training_job(
         training_future,
     )
     .await
-    .map_err(|_| anyhow::anyhow!("Training timed out after {} seconds", TRAINING_TIMEOUT_SECS))???;
+    .map_err(|_| anyhow::anyhow!("Training timed out after {} seconds", TRAINING_TIMEOUT_SECS))?
+    .map_err(|e| anyhow::anyhow!("Training task panicked: {}", e))??;
 
     Ok((metrics_val, engine))
 }

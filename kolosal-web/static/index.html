@@ -2070,7 +2070,7 @@
                         hyperoptJobId = null;
                     } else {
                         var p = s.Running ? (s.Running.progress * 100).toFixed(0) : '0';
-                        $('hyperopt-results').innerHTML = '<div class="flex-col gap-8"><div class="progress-bar"><div class="progress-bar-fill" style="width:' + p + '%"></div></div><p class="text-12px reguler" style="color:var(--color-text-700);">' + (s.Running ? s.Running.message || 'Optimizing...' : 'Optimizing...') + '</p></div>';
+                        $('hyperopt-results').innerHTML = '<div class="flex-col gap-8"><div class="progress-bar"><div class="progress-bar-fill" style="width:' + p + '%"></div></div><p class="text-12px reguler" style="color:var(--color-text-700);">' + escHtml(s.Running ? s.Running.message || 'Optimizing...' : 'Optimizing...') + '</p></div>';
                         setTimeout(pollHyperopt, 1500);
                     }
                 })
@@ -2236,7 +2236,7 @@
                         });
                     }
                 } else {
-                    $('explain-results').innerHTML = '<p class="text-14px reguler" style="color:var(--color-text-700);">' + (data.message || 'Feature importances not available for this model type') + '</p>';
+                    $('explain-results').innerHTML = '<p class="text-14px reguler" style="color:var(--color-text-700);">' + escHtml(data.message || 'Feature importances not available for this model type') + '</p>';
                 }
                 $('btn-explain').disabled = false;
             })
@@ -3049,18 +3049,19 @@
                 var h = '<div class="table-wrap"><table><thead><tr><th>Model ID</th><th>Type</th><th>Task</th><th>Created</th><th>Actions</th></tr></thead><tbody>';
                 models.forEach(function(m) {
                     var created = m.created_at ? new Date(m.created_at).toLocaleString() : '—';
-                    var mtype = m.model_type || m.algorithm || '—';
-                    var task = m.task_type || '—';
-                    sel.innerHTML += '<option value="' + m.id + '">' + m.id.substring(0,8) + ' (' + mtype + ')</option>';
+                    var mtype = escHtml(m.model_type || m.algorithm || '—');
+                    var task = escHtml(m.task_type || '—');
+                    var safeId = escHtml(m.id || '');
+                    sel.innerHTML += '<option value="' + safeId + '">' + safeId.substring(0,8) + ' (' + mtype + ')</option>';
                     h += '<tr>';
-                    h += '<td class="mono-12px">' + m.id.substring(0,12) + '</td>';
+                    h += '<td class="mono-12px">' + safeId.substring(0,12) + '</td>';
                     h += '<td>' + mtype + '</td>';
                     h += '<td>' + task + '</td>';
-                    h += '<td class="text-12px reguler">' + created + '</td>';
+                    h += '<td class="text-12px reguler">' + escHtml(created) + '</td>';
                     h += '<td style="display:flex;gap:6px;">';
-                    h += '<button class="btn-xs btn-ghost" onclick="serveViewStats(\'' + m.id + '\')" title="Stats"><i class="ri-bar-chart-line"></i></button>';
-                    h += '<a class="btn-xs btn-ghost" href="/api/models/' + m.id + '/download" title="Download"><i class="ri-download-line"></i></a>';
-                    h += '<button class="btn-xs btn-ghost" onclick="serveEvictCache(\'' + m.id + '\')" title="Evict cache"><i class="ri-delete-bin-line"></i></button>';
+                    h += '<button class="btn-xs btn-ghost" onclick="serveViewStats(\'' + safeId + '\')" title="Stats"><i class="ri-bar-chart-line"></i></button>';
+                    h += '<a class="btn-xs btn-ghost" href="/api/models/' + encodeURIComponent(m.id) + '/download" title="Download"><i class="ri-download-line"></i></a>';
+                    h += '<button class="btn-xs btn-ghost" onclick="serveEvictCache(\'' + safeId + '\')" title="Evict cache"><i class="ri-delete-bin-line"></i></button>';
                     h += '</td>';
                     h += '</tr>';
                 });

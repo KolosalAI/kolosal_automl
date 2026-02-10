@@ -3,6 +3,36 @@
 use tracing::{info, warn};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
+/// Build an HTTP client with SSRF-safe redirect policy
+fn safe_http_client(timeout_secs: u64) -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(timeout_secs))
+        .redirect(reqwest::redirect::Policy::custom(|attempt| {
+            if attempt.previous().len() >= 5 {
+                attempt.error("too many redirects")
+            } else if let Some(host) = attempt.url().host_str() {
+                let lower = host.to_lowercase();
+                if lower == "localhost" || lower.ends_with(".local")
+                    || lower.ends_with(".internal") || lower == "metadata.google.internal"
+                {
+                    attempt.error("redirect to internal host blocked")
+                } else if let Ok(ip) = host.parse::<IpAddr>() {
+                    if is_private_ip(&ip) {
+                        attempt.error("redirect to private IP blocked")
+                    } else {
+                        attempt.follow()
+                    }
+                } else {
+                    attempt.follow()
+                }
+            } else {
+                attempt.error("redirect has no host")
+            }
+        }))
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client: {}", e))
+}
+
 /// Check if an IP address is in a private/reserved range (SSRF protection)
 fn is_private_ip(ip: &IpAddr) -> bool {
     match ip {
@@ -212,11 +242,7 @@ pub async fn download_dataset(url: &str, source: &SourceType) -> Result<(Vec<u8>
 
     info!(url = %download_url, source = %source, "Downloading dataset");
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(300))
-        .redirect(reqwest::redirect::Policy::limited(10))
-        .build()
-        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+    let client = safe_http_client(300)?;
 
     let response = client.get(&download_url)
         .header("User-Agent", "Kolosal-AutoML/0.5")
@@ -325,11 +351,7 @@ async fn download_kaggle(slug: &str) -> Result<(Vec<u8>, FileFormat, String), St
     let api_url = format!("https://www.kaggle.com/api/v1/datasets/download/{}", slug);
     info!(slug = %slug, "Downloading from Kaggle API");
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(600))
-        .redirect(reqwest::redirect::Policy::limited(10))
-        .build()
-        .map_err(|e| format!("HTTP client error: {}", e))?;
+    let client = safe_http_client(600)?;
 
     let response = client.get(&api_url)
         .basic_auth(&username, Some(&key))
@@ -362,11 +384,7 @@ async fn download_huggingface(dataset_id: &str) -> Result<(Vec<u8>, FileFormat, 
         dataset_id
     );
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(300))
-        .redirect(reqwest::redirect::Policy::limited(10))
-        .build()
-        .map_err(|e| format!("HTTP client error: {}", e))?;
+    let client = safe_http_client(300)?;
 
     // Try parquet
     info!(dataset_id = %dataset_id, "Trying HuggingFace parquet download");
