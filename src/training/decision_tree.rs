@@ -1,7 +1,7 @@
 //! Decision tree implementation
 
 use crate::error::{KolosalError, Result};
-use ndarray::{Array1, Array2, Axis};
+use ndarray::{Array1, Array2};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

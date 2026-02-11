@@ -92,7 +92,7 @@
         .mono-14px { font-size: 14px; line-height: 20px; letter-spacing: -0.4px; font-family: "Geist Mono", monospace; }
         .mono-20px { font-size: 20px; line-height: 32px; letter-spacing: -0.4px; font-family: "Geist Mono", monospace; }
         .mono-32px { font-size: 32px; line-height: 44px; letter-spacing: -0.8px; font-family: "Geist Mono", monospace; }
-        .reguler { font-weight: 400; font-style: normal; }
+        .regular { font-weight: 400; font-style: normal; }
         .medium { font-weight: 500; font-style: normal; }
 
         /* === Layout === */
@@ -336,7 +336,7 @@
                 <i class="ri-brain-line" style="font-size: 24px; color: var(--color-text-900);"></i>
                 <span class="mono-20px medium">Kolosal AutoML</span>
                 <div class="divider"></div>
-                <span class="text-14px reguler" style="color: var(--color-text-700);">Rust-Powered</span>
+                <span class="text-14px regular" style="color: var(--color-text-700);">Rust-Powered</span>
             </div>
             <div class="app-header-status">
                 <div id="status-badge" class="badge-sm badge-success">healthy</div>
@@ -377,7 +377,7 @@
         <noscript>
             <div class="card" style="text-align: center; padding: 40px;">
                 <p class="text-16px medium" style="color: var(--color-text-800);">JavaScript is required to use Kolosal AutoML.</p>
-                <p class="text-14px reguler" style="color: var(--color-text-700); margin-top: 8px;">Please enable JavaScript in your browser settings.</p>
+                <p class="text-14px regular" style="color: var(--color-text-700); margin-top: 8px;">Please enable JavaScript in your browser settings.</p>
             </div>
         </noscript>
 
@@ -391,8 +391,8 @@
                     <div id="dropzone" class="dropzone">
                         <input type="file" id="fileInput" accept=".csv,.json,.parquet" class="hidden">
                         <i class="ri-upload-cloud-2-line"></i>
-                        <p class="text-14px reguler" style="color: var(--color-text-800);">Drop your CSV, JSON, or Parquet file here</p>
-                        <p class="text-12px reguler" style="color: var(--color-text-600); margin-top: 4px;">or click to browse</p>
+                        <p class="text-14px regular" style="color: var(--color-text-800);">Drop your CSV, JSON, or Parquet file here</p>
+                        <p class="text-12px regular" style="color: var(--color-text-600); margin-top: 4px;">or click to browse</p>
                     </div>
                     <div style="margin-top: 20px;">
                         <p class="text-12px medium" style="color: var(--color-text-700); margin-bottom: 8px;">Or load a sample dataset:</p>
@@ -413,7 +413,7 @@
                     <div class="card-header">
                         <h2 class="text-16px medium">Data Preview</h2>
                         <div id="data-meta" class="flex-row items-center gap-12" style="display:none;">
-                            <span class="text-12px reguler" style="color: var(--color-text-700);">
+                            <span class="text-12px regular" style="color: var(--color-text-700);">
                                 <span id="data-rows">0</span> rows &times; <span id="data-cols">0</span> columns
                             </span>
                             <button onclick="refreshPreview()" class="btn-xs btn-ghost"><i class="ri-refresh-line"></i> Refresh</button>
@@ -422,7 +422,7 @@
                     <div id="preview-table" style="display:none;"></div>
                     <div id="preview-empty" class="empty-state">
                         <i class="ri-database-2-line"></i>
-                        <p class="text-14px reguler">No data loaded</p>
+                        <p class="text-14px regular">No data loaded</p>
                     </div>
                 </div>
             </div>
@@ -440,7 +440,7 @@
                 </div>
                 <div id="data-summary-empty" class="empty-state" style="padding: 20px;">
                     <i class="ri-pie-chart-line"></i>
-                    <p class="text-14px reguler">Load data to see summary</p>
+                    <p class="text-14px regular">Load data to see summary</p>
                 </div>
             </div>
         </div>
@@ -452,7 +452,7 @@
                     <h2 class="text-16px medium"><i class="ri-magic-line"></i> One-Click AutoML</h2>
                     <span class="badge" style="background: var(--color-information-500); color: #fff; padding: 2px 8px; border-radius: 4px; font-size: 11px;">NEW</span>
                 </div>
-                <p class="text-14px reguler" style="color: var(--color-text-700); margin-bottom: 16px;">
+                <p class="text-14px regular" style="color: var(--color-text-700); margin-bottom: 16px;">
                     Automatically detect task type, preprocess data, train multiple models, optimize the best one, and generate a full report — all with a single click.
                 </p>
 
@@ -477,7 +477,7 @@
                     <div class="flex-col gap-12" style="padding: 16px; background: var(--color-grey-600); border-radius: 8px; margin-top: 8px;">
                         <div class="grid-2" style="gap: 16px;">
                             <div class="flex-col gap-4">
-                                <label class="text-13px reguler">Task Type</label>
+                                <label class="text-13px regular">Task Type</label>
                                 <select id="automl-task-type" class="input-text-md">
                                     <option value="">Auto-Detect</option>
                                     <option value="classification">Classification</option>
@@ -485,7 +485,7 @@
                                 </select>
                             </div>
                             <div class="flex-col gap-4">
-                                <label class="text-13px reguler">Scaler</label>
+                                <label class="text-13px regular">Scaler</label>
                                 <select id="automl-scaler" class="input-text-md">
                                     <option value="">Auto (Standard)</option>
                                     <option value="standard">Standard</option>
@@ -495,7 +495,7 @@
                                 </select>
                             </div>
                             <div class="flex-col gap-4">
-                                <label class="text-13px reguler">Imputation</label>
+                                <label class="text-13px regular">Imputation</label>
                                 <select id="automl-imputation" class="input-text-md">
                                     <option value="">Auto (Mean)</option>
                                     <option value="mean">Mean</option>
@@ -505,27 +505,27 @@
                                 </select>
                             </div>
                             <div class="flex-col gap-4">
-                                <label class="text-13px reguler">Max Models</label>
+                                <label class="text-13px regular">Max Models</label>
                                 <input type="number" id="automl-max-models" class="input-text-md" value="8" min="1" max="20">
                             </div>
                             <div class="flex-col gap-4">
-                                <label class="text-13px reguler">HyperOpt Trials</label>
+                                <label class="text-13px regular">HyperOpt Trials</label>
                                 <input type="number" id="automl-hyperopt-trials" class="input-text-md" value="20" min="0" max="200">
-                                <span class="text-12px reguler" style="color: var(--color-text-600);">Set to 0 to skip</span>
+                                <span class="text-12px regular" style="color: var(--color-text-600);">Set to 0 to skip</span>
                             </div>
                             <div class="flex-col gap-4">
-                                <label class="text-13px reguler">CV Folds</label>
+                                <label class="text-13px regular">CV Folds</label>
                                 <input type="number" id="automl-cv-folds" class="input-text-md" value="5" min="2" max="20">
                             </div>
                             <div class="flex-col gap-4">
-                                <label class="text-13px reguler">Time Budget (seconds)</label>
+                                <label class="text-13px regular">Time Budget (seconds)</label>
                                 <input type="number" id="automl-time-budget" class="input-text-md" value="0" min="0">
-                                <span class="text-12px reguler" style="color: var(--color-text-600);">0 = no limit</span>
+                                <span class="text-12px regular" style="color: var(--color-text-600);">0 = no limit</span>
                             </div>
                         </div>
                         <!-- Model Selection -->
                         <div class="flex-col gap-4" style="margin-top: 8px;">
-                            <label class="text-13px reguler">Select Models (leave empty for auto)</label>
+                            <label class="text-13px regular">Select Models (leave empty for auto)</label>
                             <div id="automl-model-checkboxes"></div>
                         </div>
                     </div>
@@ -541,7 +541,7 @@
                         <div style="background: var(--color-grey-800); border-radius: 8px; height: 8px; overflow: hidden;">
                             <div id="automl-progress-bar" style="height: 100%; background: var(--color-information-500); border-radius: 8px; transition: width 0.5s ease; width: 0%;"></div>
                         </div>
-                        <span id="automl-progress-pct" class="text-12px reguler" style="color: var(--color-text-600);">0%</span>
+                        <span id="automl-progress-pct" class="text-12px regular" style="color: var(--color-text-600);">0%</span>
                     </div>
                 </div>
 
@@ -555,18 +555,18 @@
                                 <span class="text-16px medium">Best Model</span>
                             </div>
                             <div class="text-24px medium" id="automl-best-model">—</div>
-                            <div class="text-14px reguler" id="automl-best-score" style="opacity: 0.9;">—</div>
+                            <div class="text-14px regular" id="automl-best-score" style="opacity: 0.9;">—</div>
                         </div>
 
                         <!-- Summary -->
                         <div class="grid-2" style="gap: 12px;">
                             <div style="background: var(--color-grey-600); border-radius: 8px; padding: 12px; text-align: center;">
                                 <div class="text-20px medium" id="automl-models-tested">0</div>
-                                <div class="text-12px reguler" style="color: var(--color-text-600);">Models Tested</div>
+                                <div class="text-12px regular" style="color: var(--color-text-600);">Models Tested</div>
                             </div>
                             <div style="background: var(--color-grey-600); border-radius: 8px; padding: 12px; text-align: center;">
                                 <div class="text-20px medium" id="automl-total-time">0s</div>
-                                <div class="text-12px reguler" style="color: var(--color-text-600);">Total Time</div>
+                                <div class="text-12px regular" style="color: var(--color-text-600);">Total Time</div>
                             </div>
                         </div>
 
@@ -590,7 +590,7 @@
                 <div class="card-header">
                     <h2 class="text-16px medium"><i class="ri-robot-line"></i> Quick Auto-Tune</h2>
                 </div>
-                <p class="text-14px reguler" style="color: var(--color-text-700); margin-bottom: 16px;">
+                <p class="text-14px regular" style="color: var(--color-text-700); margin-bottom: 16px;">
                     Quickly train and rank multiple models without advanced configuration.
                 </p>
                 <div class="flex-row gap-12 items-center" style="margin-bottom: 16px;">
@@ -605,7 +605,7 @@
                 <div id="autotune-results"></div>
                 <div id="autotune-empty" class="empty-state" style="padding: 20px;">
                     <i class="ri-robot-line"></i>
-                    <p class="text-14px reguler">Run auto-tune to see model rankings</p>
+                    <p class="text-14px regular">Run auto-tune to see model rankings</p>
                 </div>
             </div>
         </div>
@@ -709,7 +709,7 @@
                         <div id="jobs-list"></div>
                         <div id="jobs-empty" class="empty-state">
                             <i class="ri-flask-line"></i>
-                            <p class="text-14px reguler">No training jobs yet</p>
+                            <p class="text-14px regular">No training jobs yet</p>
                         </div>
                     </div>
                 </div>
@@ -724,7 +724,7 @@
                     </div>
                     <div id="training-chart-empty" class="empty-state" style="padding: 20px;">
                         <i class="ri-bar-chart-2-line"></i>
-                        <p class="text-14px reguler">Complete training to see metrics visualization</p>
+                        <p class="text-14px regular">Complete training to see metrics visualization</p>
                     </div>
                 </div>
             </div>
@@ -748,7 +748,7 @@
                     </div>
                     <div id="compare-empty" class="empty-state">
                         <i class="ri-bar-chart-grouped-line"></i>
-                        <p class="text-14px reguler">Run a comparison to see results</p>
+                        <p class="text-14px regular">Run a comparison to see results</p>
                     </div>
                 </div>
             </div>
@@ -811,7 +811,7 @@
                         <div id="hyperopt-results"></div>
                         <div id="hyperopt-empty" class="empty-state">
                             <i class="ri-flashlight-line"></i>
-                            <p class="text-14px reguler">Run hyperparameter optimization to see results</p>
+                            <p class="text-14px regular">Run hyperparameter optimization to see results</p>
                         </div>
                     </div>
                 </div>
@@ -821,7 +821,7 @@
                             <h2 class="text-16px medium">Search Space</h2>
                         </div>
                         <div id="ho-search-space" class="empty-state">
-                            <p class="text-14px reguler">Select a model to see its search space</p>
+                            <p class="text-14px regular">Select a model to see its search space</p>
                         </div>
                     </div>
                     <div class="card">
@@ -839,7 +839,7 @@
                         <button onclick="loadHyperoptHistory()" class="btn-xs btn-ghost"><i class="ri-refresh-line"></i> Refresh</button>
                     </div>
                     <div id="ho-history" class="empty-state">
-                        <p class="text-14px reguler">No completed studies yet</p>
+                        <p class="text-14px regular">No completed studies yet</p>
                     </div>
                 </div>
             </div>
@@ -875,7 +875,7 @@
                         <div id="ensemble-results"></div>
                         <div id="ensemble-empty" class="empty-state">
                             <i class="ri-stack-line"></i>
-                            <p class="text-14px reguler">Train an ensemble to see results</p>
+                            <p class="text-14px regular">Train an ensemble to see results</p>
                         </div>
                     </div>
                 </div>
@@ -894,7 +894,7 @@
                         <div id="explain-results"></div>
                         <div id="explain-empty" class="empty-state">
                             <i class="ri-lightbulb-line"></i>
-                            <p class="text-14px reguler">Train a model first, then analyze feature importance</p>
+                            <p class="text-14px regular">Train a model first, then analyze feature importance</p>
                         </div>
                     </div>
                     <div class="card">
@@ -930,7 +930,7 @@
                     <div id="prediction-output"></div>
                     <div id="prediction-empty" class="empty-state">
                         <i class="ri-magic-line"></i>
-                        <p class="text-14px reguler">No predictions yet</p>
+                        <p class="text-14px regular">No predictions yet</p>
                     </div>
                 </div>
             </div>
@@ -974,7 +974,7 @@
                     </div>
                     <div id="anomaly-empty" class="empty-state">
                         <i class="ri-error-warning-line"></i>
-                        <p class="text-14px reguler">Load a dataset and run anomaly detection to find outliers</p>
+                        <p class="text-14px regular">Load a dataset and run anomaly detection to find outliers</p>
                     </div>
                 </div>
 
@@ -1017,7 +1017,7 @@
                     </div>
                     <div id="clustering-empty" class="empty-state">
                         <i class="ri-bubble-chart-line"></i>
-                        <p class="text-14px reguler">Load a dataset and run clustering to discover groups in your data</p>
+                        <p class="text-14px regular">Load a dataset and run clustering to discover groups in your data</p>
                     </div>
                 </div>
             </div>
@@ -1035,8 +1035,8 @@
                     <div id="serve-models-list"></div>
                     <div id="serve-empty" class="empty-state" style="padding: 24px;">
                         <i class="ri-server-line" style="font-size: 28px;"></i>
-                        <p class="text-14px reguler">No models available</p>
-                        <p class="text-12px reguler" style="color: var(--color-text-600);">Train a model first, then come back to serve it</p>
+                        <p class="text-14px regular">No models available</p>
+                        <p class="text-12px regular" style="color: var(--color-text-600);">Train a model first, then come back to serve it</p>
                     </div>
                 </div>
 
@@ -1070,7 +1070,7 @@
                     <div class="card-header">
                         <h2 class="text-16px medium"><i class="ri-book-open-line"></i> API Reference</h2>
                     </div>
-                    <p class="text-12px reguler" style="color:var(--color-text-600);margin-bottom:16px;">
+                    <p class="text-12px regular" style="color:var(--color-text-600);margin-bottom:16px;">
                         Base URL: <code id="serve-base-url" class="mono-12px" style="background:var(--color-grey-600);padding:2px 6px;border-radius:4px;"></code>
                     </p>
 
@@ -1080,7 +1080,7 @@
                             <span style="background:#0066F5;color:#fff;font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px;">POST</span>
                             <code class="mono-14px">/api/predict</code>
                         </div>
-                        <p class="text-12px reguler" style="color:var(--color-text-700);margin-bottom:8px;">Single or multi-row prediction. Uses latest model if <code>model_id</code> is omitted.</p>
+                        <p class="text-12px regular" style="color:var(--color-text-700);margin-bottom:8px;">Single or multi-row prediction. Uses latest model if <code>model_id</code> is omitted.</p>
                         <div style="background:var(--color-grey-600);border-radius:8px;padding:12px;margin-bottom:8px;">
                             <p class="text-12px medium" style="margin-bottom:4px;">Request</p>
                             <pre class="mono-12px" style="white-space:pre-wrap;">{
@@ -1110,7 +1110,7 @@
                             <span style="background:#0066F5;color:#fff;font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px;">POST</span>
                             <code class="mono-14px">/api/predict/batch</code>
                         </div>
-                        <p class="text-12px reguler" style="color:var(--color-text-700);margin-bottom:8px;">Batch prediction optimized for large payloads (max 10,000 rows).</p>
+                        <p class="text-12px regular" style="color:var(--color-text-700);margin-bottom:8px;">Batch prediction optimized for large payloads (max 10,000 rows).</p>
                         <div style="background:var(--color-grey-600);border-radius:8px;padding:12px;margin-bottom:8px;">
                             <p class="text-12px medium" style="margin-bottom:4px;">Request</p>
                             <pre class="mono-12px" style="white-space:pre-wrap;">{
@@ -1141,7 +1141,7 @@
                             <span style="background:#0066F5;color:#fff;font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px;">POST</span>
                             <code class="mono-14px">/api/predict/proba</code>
                         </div>
-                        <p class="text-12px reguler" style="color:var(--color-text-700);margin-bottom:8px;">Returns class probabilities for classification models.</p>
+                        <p class="text-12px regular" style="color:var(--color-text-700);margin-bottom:8px;">Returns class probabilities for classification models.</p>
                         <div style="background:var(--color-grey-600);border-radius:8px;padding:12px;margin-bottom:8px;">
                             <p class="text-12px medium" style="margin-bottom:4px;">Request</p>
                             <pre class="mono-12px" style="white-space:pre-wrap;">{
@@ -1171,7 +1171,7 @@
                             <span style="background:#3ABC3F;color:#fff;font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px;">GET</span>
                             <code class="mono-14px">/api/predict/stats/{model_id}</code>
                         </div>
-                        <p class="text-12px reguler" style="color:var(--color-text-700);margin-bottom:8px;">Returns latency percentiles (p50/p95/p99), throughput, and error count for a cached model.</p>
+                        <p class="text-12px regular" style="color:var(--color-text-700);margin-bottom:8px;">Returns latency percentiles (p50/p95/p99), throughput, and error count for a cached model.</p>
                         <div style="background:var(--color-grey-600);border-radius:8px;padding:12px;margin-bottom:8px;">
                             <p class="text-12px medium" style="margin-bottom:4px;">Response</p>
                             <pre class="mono-12px" style="white-space:pre-wrap;">{
@@ -1200,7 +1200,7 @@
                             <span style="background:#3ABC3F;color:#fff;font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px;">GET</span>
                             <code class="mono-14px">/api/models</code>
                         </div>
-                        <p class="text-12px reguler" style="color:var(--color-text-700);margin-bottom:8px;">List all trained models.</p>
+                        <p class="text-12px regular" style="color:var(--color-text-700);margin-bottom:8px;">List all trained models.</p>
                         <div style="background:var(--color-grey-600);border-radius:8px;padding:12px;">
                             <p class="text-12px medium" style="margin-bottom:4px;">cURL</p>
                             <pre class="mono-12px" style="white-space:pre-wrap;">curl <span class="serve-curl-base">http://localhost:8080</span>/api/models</pre>
@@ -1213,7 +1213,7 @@
                             <span style="background:#3ABC3F;color:#fff;font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px;">GET</span>
                             <code class="mono-14px">/api/models/{model_id}</code>
                         </div>
-                        <p class="text-12px reguler" style="color:var(--color-text-700);margin-bottom:8px;">Get details of a specific model (metrics, config, creation date).</p>
+                        <p class="text-12px regular" style="color:var(--color-text-700);margin-bottom:8px;">Get details of a specific model (metrics, config, creation date).</p>
                         <div style="background:var(--color-grey-600);border-radius:8px;padding:12px;">
                             <p class="text-12px medium" style="margin-bottom:4px;">cURL</p>
                             <pre class="mono-12px" style="white-space:pre-wrap;">curl <span class="serve-curl-base">http://localhost:8080</span>/api/models/MODEL_ID</pre>
@@ -1226,7 +1226,7 @@
                             <span style="background:#3ABC3F;color:#fff;font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px;">GET</span>
                             <code class="mono-14px">/api/models/{model_id}/download</code>
                         </div>
-                        <p class="text-12px reguler" style="color:var(--color-text-700);margin-bottom:8px;">Download a trained model as a JSON file.</p>
+                        <p class="text-12px regular" style="color:var(--color-text-700);margin-bottom:8px;">Download a trained model as a JSON file.</p>
                         <div style="background:var(--color-grey-600);border-radius:8px;padding:12px;">
                             <p class="text-12px medium" style="margin-bottom:4px;">cURL</p>
                             <pre class="mono-12px" style="white-space:pre-wrap;">curl -O <span class="serve-curl-base">http://localhost:8080</span>/api/models/MODEL_ID/download</pre>
@@ -1239,7 +1239,7 @@
                             <span style="background:#FF3131;color:#fff;font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px;">DELETE</span>
                             <code class="mono-14px">/api/models/{model_id}</code>
                         </div>
-                        <p class="text-12px reguler" style="color:var(--color-text-700);margin-bottom:8px;">Delete a model from the server.</p>
+                        <p class="text-12px regular" style="color:var(--color-text-700);margin-bottom:8px;">Delete a model from the server.</p>
                         <div style="background:var(--color-grey-600);border-radius:8px;padding:12px;">
                             <p class="text-12px medium" style="margin-bottom:4px;">cURL</p>
                             <pre class="mono-12px" style="white-space:pre-wrap;">curl -X DELETE <span class="serve-curl-base">http://localhost:8080</span>/api/models/MODEL_ID</pre>
@@ -1252,7 +1252,7 @@
                             <span style="background:#FF3131;color:#fff;font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px;">DELETE</span>
                             <code class="mono-14px">/api/predict/cache/{model_id}</code>
                         </div>
-                        <p class="text-12px reguler" style="color:var(--color-text-700);margin-bottom:8px;">Evict a model from the inference cache to free memory.</p>
+                        <p class="text-12px regular" style="color:var(--color-text-700);margin-bottom:8px;">Evict a model from the inference cache to free memory.</p>
                         <div style="background:var(--color-grey-600);border-radius:8px;padding:12px;">
                             <p class="text-12px medium" style="margin-bottom:4px;">cURL</p>
                             <pre class="mono-12px" style="white-space:pre-wrap;">curl -X DELETE <span class="serve-curl-base">http://localhost:8080</span>/api/predict/cache/MODEL_ID</pre>
@@ -1265,7 +1265,7 @@
                             <span style="background:#3ABC3F;color:#fff;font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px;">GET</span>
                             <code class="mono-14px">/api/health</code>
                         </div>
-                        <p class="text-12px reguler" style="color:var(--color-text-700);margin-bottom:8px;">Health check — use for readiness probes.</p>
+                        <p class="text-12px regular" style="color:var(--color-text-700);margin-bottom:8px;">Health check — use for readiness probes.</p>
                         <div style="background:var(--color-grey-600);border-radius:8px;padding:12px;">
                             <p class="text-12px medium" style="margin-bottom:4px;">cURL</p>
                             <pre class="mono-12px" style="white-space:pre-wrap;">curl <span class="serve-curl-base">http://localhost:8080</span>/api/health</pre>
@@ -1293,7 +1293,7 @@
                             <canvas id="memGaugeChart" width="120" height="120"></canvas>
                         </div>
                         <p id="mon-mem" class="mono-20px medium" style="color:var(--color-success-500);">0.0%</p>
-                        <p id="mon-mem-detail" class="text-12px reguler" style="color: var(--color-text-600); margin-top: 4px;">0.0 / 0.0 GB</p>
+                        <p id="mon-mem-detail" class="text-12px regular" style="color: var(--color-text-600); margin-top: 4px;">0.0 / 0.0 GB</p>
                     </div>
                     <div class="card" style="text-align:center;">
                         <p class="text-12px medium" style="color: var(--color-text-700); margin-bottom: 8px;">Status</p>
@@ -1315,15 +1315,15 @@
                     <div class="grid-3" style="text-align: center;">
                         <div>
                             <p id="mon-datasets" class="mono-32px medium">0</p>
-                            <p class="text-12px reguler" style="color: var(--color-text-700);">Datasets</p>
+                            <p class="text-12px regular" style="color: var(--color-text-700);">Datasets</p>
                         </div>
                         <div>
                             <p id="mon-jobs" class="mono-32px medium">0</p>
-                            <p class="text-12px reguler" style="color: var(--color-text-700);">Jobs</p>
+                            <p class="text-12px regular" style="color: var(--color-text-700);">Jobs</p>
                         </div>
                         <div>
                             <p id="mon-models" class="mono-32px medium">0</p>
-                            <p class="text-12px reguler" style="color: var(--color-text-700);">Models</p>
+                            <p class="text-12px regular" style="color: var(--color-text-700);">Models</p>
                         </div>
                     </div>
                 </div>
@@ -1336,7 +1336,7 @@
                             <button onclick="loadDeviceInfo()" class="btn-xs btn-ghost"><i class="ri-cpu-line"></i> Refresh</button>
                         </div>
                         <div id="device-info">
-                            <div class="loading-overlay"><div class="spinner"></div><p class="text-12px reguler">Loading device info...</p></div>
+                            <div class="loading-overlay"><div class="spinner"></div><p class="text-12px regular">Loading device info...</p></div>
                         </div>
                     </div>
                     <div class="card">
@@ -1346,7 +1346,7 @@
                         <div id="alerts-list">
                             <div class="empty-state" style="padding: 20px;">
                                 <i class="ri-notification-line"></i>
-                                <p class="text-12px reguler">No alerts</p>
+                                <p class="text-12px regular">No alerts</p>
                             </div>
                         </div>
                     </div>
@@ -1360,15 +1360,15 @@
                     <div id="perf-stats" class="grid-3" style="text-align: center;">
                         <div>
                             <p id="perf-completed" class="mono-20px medium">0</p>
-                            <p class="text-12px reguler" style="color: var(--color-text-700);">Completed</p>
+                            <p class="text-12px regular" style="color: var(--color-text-700);">Completed</p>
                         </div>
                         <div>
                             <p id="perf-failed" class="mono-20px medium" style="color: var(--color-danger-500);">0</p>
-                            <p class="text-12px reguler" style="color: var(--color-text-700);">Failed</p>
+                            <p class="text-12px regular" style="color: var(--color-text-700);">Failed</p>
                         </div>
                         <div>
                             <p id="perf-throughput" class="mono-20px medium">0</p>
-                            <p class="text-12px reguler" style="color: var(--color-text-700);">Models/min</p>
+                            <p class="text-12px regular" style="color: var(--color-text-700);">Models/min</p>
                         </div>
                     </div>
                 </div>
@@ -1426,8 +1426,8 @@
                     </div>
                     <div class="empty-state" style="padding: 20px;">
                         <i class="ri-git-branch-line"></i>
-                        <p class="text-14px reguler">Drift detection compares a reference dataset against new data</p>
-                        <p class="text-12px reguler" style="color: var(--color-text-600);">Use the API endpoint <code>POST /api/drift/detect</code> with reference and test data arrays</p>
+                        <p class="text-14px regular">Drift detection compares a reference dataset against new data</p>
+                        <p class="text-12px regular" style="color: var(--color-text-600);">Use the API endpoint <code>POST /api/drift/detect</code> with reference and test data arrays</p>
                     </div>
                 </div>
             </div>
@@ -1443,6 +1443,7 @@
         var dataInfo = null;
         var dataPreview = { rows: 0, columns: [] };
         var trainingJobs = [];
+        var pollJobsIntervalId = null;
         var comparisonResults = [];
         var selectedModels = [];
         var comparisonChartInstance = null;
@@ -1519,6 +1520,15 @@
             $('tab-' + name).classList.add('active');
             document.querySelector('[data-tab="' + name + '"]').classList.add('active');
             if (name === 'serve') loadServeModels();
+            if (name === 'system') {
+                refreshSystemStatus();
+                loadDeviceInfo();
+                loadAlerts();
+                loadPerformanceStats();
+                loadSecurityStatus();
+                loadRateLimitStats();
+                loadAuditLog();
+            }
         }
 
         function switchSubTab(parentTab, name) {
@@ -1556,7 +1566,7 @@
             var formData = new FormData();
             formData.append('file', file);
             fetch('/api/data/upload', { method: 'POST', body: formData })
-                .then(function(r) { return r.json(); })
+                .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
                 .then(function(data) {
                     if (data.success) {
                         dataInfo = data;
@@ -1584,7 +1594,7 @@
 
         function loadSampleData(name) {
             fetch('/api/data/sample/' + name)
-                .then(function(r) { return r.json(); })
+                .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
                 .then(function(data) {
                     if (data.success) {
                         dataInfo = data;
@@ -1627,7 +1637,7 @@
 
         function refreshPreview() {
             fetch('/api/data/preview?rows=10')
-                .then(function(r) { return r.json(); })
+                .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
                 .then(function(data) {
                     dataPreview = data;
                     renderPreviewTable();
@@ -1675,7 +1685,7 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ scaler: cfg.scaler, imputation: cfg.imputation })
             })
-            .then(function(r) { return r.json(); })
+            .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
             .then(function(data) {
                 if (data.success) {
                     refreshPreview();
@@ -1925,7 +1935,7 @@
                         cv_folds: cfg.cvFolds
                     })
                 })
-                .then(function(r) { return r.json(); })
+                .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
                 .then(function(data) {
                     if (data.success) {
                         trainingJobs.push({
@@ -1934,6 +1944,7 @@
                             status: { Running: { progress: 0, message: 'Starting...' } }
                         });
                         renderJobs();
+                        startJobPolling();
                         notify('Training started for ' + modelId, 'info');
                     }
                 })
@@ -1962,7 +1973,7 @@
                     var pct = (job.status.Running.progress * 100).toFixed(0);
                     html += '<div class="flex-col gap-6">';
                     html += '<div class="progress-bar"><div class="progress-bar-fill" style="width:' + pct + '%"></div></div>';
-                    html += '<p class="text-12px reguler" style="color:var(--color-text-700);">' + escHtml(job.status.Running.message || '') + '</p>';
+                    html += '<p class="text-12px regular" style="color:var(--color-text-700);">' + escHtml(job.status.Running.message || '') + '</p>';
                     html += '</div>';
                 }
                 if (job.status.Completed) {
@@ -1971,7 +1982,7 @@
                     Object.keys(metrics).forEach(function(k) {
                         var v = metrics[k];
                         var display = typeof v === 'number' ? v.toFixed(4) : JSON.stringify(v);
-                        html += '<p class="text-12px reguler" style="color:var(--color-text-700);"><strong>' + escHtml(k) + ':</strong> <span class="mono-12px">' + escHtml(display) + '</span></p>';
+                        html += '<p class="text-12px regular" style="color:var(--color-text-700);"><strong>' + escHtml(k) + ':</strong> <span class="mono-12px">' + escHtml(display) + '</span></p>';
                     });
                     if (job.autotuning) {
                         html += '<div class="flex-row items-center gap-6" style="margin-top:8px;padding:8px 12px;background:var(--color-information-100);border-radius:8px;">';
@@ -1985,12 +1996,12 @@
                         html += '<p class="text-12px medium" style="color:var(--color-success-600);margin-bottom:4px;"><i class="ri-flashlight-line"></i> Auto-Tune Results</p>';
                         if (hm.best_trial) {
                             html += '<p class="mono-12px">Best score: ' + (hm.best_trial.value || 0).toFixed(6) + '</p>';
-                            html += '<p class="text-12px reguler" style="color:var(--color-text-700);">Trials: ' + (hm.total_trials || 0) + ' | Time: ' + (hm.total_duration_secs || 0).toFixed(1) + 's</p>';
+                            html += '<p class="text-12px regular" style="color:var(--color-text-700);">Trials: ' + (hm.total_trials || 0) + ' | Time: ' + (hm.total_duration_secs || 0).toFixed(1) + 's</p>';
                         }
                         html += '</div>';
                     }
                     if (job.hyperopt_status === 'failed') {
-                        html += '<p class="text-12px reguler" style="color:var(--color-warning-500);margin-top:4px;"><i class="ri-flashlight-line"></i> Auto-tune skipped</p>';
+                        html += '<p class="text-12px regular" style="color:var(--color-warning-500);margin-top:4px;"><i class="ri-flashlight-line"></i> Auto-tune skipped</p>';
                     }
                     html += '<div class="flex-row gap-4" style="margin-top:8px;">';
                     html += '<button onclick="exportModel(\'' + escAttr(job.id) + '\', \'onnx\')" class="btn-xs btn-outline"><i class="ri-download-line"></i> ONNX</button>';
@@ -1999,7 +2010,7 @@
                     html += '</div>';
                 }
                 if (job.status.Failed) {
-                    html += '<p class="text-12px reguler" style="color:var(--color-danger-500);">' + escHtml(job.status.Failed.error || 'Unknown error') + '</p>';
+                    html += '<p class="text-12px regular" style="color:var(--color-danger-500);">' + escHtml(job.status.Failed.error || 'Unknown error') + '</p>';
                 }
                 html += '</div>';
             });
@@ -2008,13 +2019,32 @@
             renderTrainingChart();
         }
 
+        function startJobPolling() {
+            if (!pollJobsIntervalId) {
+                pollJobsIntervalId = setInterval(pollJobs, 2000);
+            }
+        }
+
+        function stopJobPolling() {
+            if (pollJobsIntervalId) {
+                clearInterval(pollJobsIntervalId);
+                pollJobsIntervalId = null;
+            }
+        }
+
         function pollJobs() {
+            var hasActive = trainingJobs.some(function(job) {
+                if (!job.status.Completed && !job.status.Failed) return true;
+                if (job.hyperopt_job_id && job.hyperopt_status === 'running') return true;
+                return false;
+            });
+            if (!hasActive) { stopJobPolling(); return; }
             trainingJobs.forEach(function(job) {
                 if (job.status.Completed || job.status.Failed) {
                     // Poll hyperopt for auto-tuning jobs
                     if (job.hyperopt_job_id && job.hyperopt_status === 'running') {
                         fetch('/api/train/status/' + job.hyperopt_job_id)
-                            .then(function(r) { return r.json(); })
+                            .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
                             .then(function(hdata) {
                                 if (hdata.status.Completed) {
                                     job.hyperopt_status = 'completed';
@@ -2028,24 +2058,24 @@
                                     renderJobs();
                                 }
                             })
-                            .catch(function() {});
+                            .catch(function(e) { console.error('Request failed:', e); });
                     }
                     return;
                 }
                 fetch('/api/train/status/' + job.id)
-                    .then(function(r) { return r.json(); })
+                    .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
                     .then(function(data) {
                         job.status = data.status;
                         renderJobs();
                         if (data.status.Completed) {
                             // Fetch latest model ID for explainability
-                            fetch('/api/models').then(function(r) { return r.json(); }).then(function(mdata) {
+                            fetch('/api/models').then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }).then(function(mdata) {
                                 var models = mdata.models || [];
                                 if (models.length > 0) {
                                     lastTrainedModelId = models[models.length - 1].id;
                                     $('btn-explain').disabled = false;
                                 }
-                            }).catch(function(){});
+                            }).catch(function(e) { console.error('Request failed:', e); });
                             // Auto-tune: run hyperopt for the completed model
                             var cfg = getConfig();
                             if (cfg.targetColumn && job.model_type) {
@@ -2062,7 +2092,7 @@
                                         sampler: 'tpe'
                                     })
                                 })
-                                .then(function(r) { return r.json(); })
+                                .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
                                 .then(function(hdata) {
                                     if (hdata.success) {
                                         job.hyperopt_job_id = hdata.job_id;
@@ -2070,11 +2100,11 @@
                                         notify('Auto-tuning ' + job.model_type + '...', 'info');
                                     }
                                 })
-                                .catch(function() {});
+                                .catch(function(e) { console.error('Request failed:', e); });
                             }
                         }
                     })
-                    .catch(function() {});
+                    .catch(function(e) { console.error('Request failed:', e); });
             });
         }
 
@@ -2082,8 +2112,11 @@
         function compareAllModels() {
             var cfg = getConfig();
             var models = cfg.taskType === 'classification'
-                ? ['logistic_regression', 'decision_tree', 'random_forest', 'xgboost', 'gradient_boosting', 'extra_trees', 'adaboost', 'knn']
-                : ['linear_regression', 'ridge', 'lasso', 'decision_tree', 'random_forest', 'xgboost', 'gradient_boosting', 'extra_trees', 'knn'];
+                ? ['logistic_regression', 'decision_tree', 'random_forest', 'svm', 'xgboost', 'gradient_boosting', 'extra_trees', 'adaboost', 'knn']
+                : ['linear_regression', 'ridge', 'lasso', 'decision_tree', 'random_forest', 'svm', 'xgboost', 'gradient_boosting', 'extra_trees', 'knn'];
+
+            notify('Running model comparison...', 'info');
+            $('btn-compare').disabled = true;
 
             fetch('/api/train/compare', {
                 method: 'POST',
@@ -2095,15 +2128,29 @@
                     cv_folds: cfg.cvFolds
                 })
             })
-            .then(function(r) { return r.json(); })
+            .then(function(r) {
+                if (!r.ok) throw new Error('Server returned ' + r.status);
+                return r.json();
+            })
             .then(function(data) {
+                $('btn-compare').disabled = false;
                 if (data.success) {
-                    comparisonResults = data.comparison;
+                    comparisonResults = data.comparison || [];
                     renderComparison();
-                    notify('Comparison complete!', 'success');
+                    var failed = comparisonResults.filter(function(r) { return r.error; }).length;
+                    if (failed > 0) {
+                        notify('Comparison done — ' + failed + ' model(s) failed', 'error');
+                    } else {
+                        notify('Comparison complete!', 'success');
+                    }
+                } else {
+                    notify('Comparison failed: ' + (data.error || 'Unknown error'), 'error');
                 }
             })
-            .catch(function(e) { notify('Comparison failed: ' + e.message, 'error'); });
+            .catch(function(e) {
+                $('btn-compare').disabled = false;
+                notify('Comparison failed: ' + e.message, 'error');
+            });
         }
 
         function renderComparison() {
@@ -2116,16 +2163,29 @@
             $('compare-results').style.display = '';
 
             var cfg = getConfig();
-            var html = '<table class="data-table"><thead><tr><th>Model</th><th>Score</th><th>Std Dev</th></tr></thead><tbody>';
+            var isClassification = cfg.taskType === 'classification';
+            var scoreLabel = isClassification ? 'Accuracy' : 'R\u00B2';
+
+            var html = '<table class="data-table"><thead><tr><th>Model</th><th>' + scoreLabel + '</th><th>Status</th></tr></thead><tbody>';
             comparisonResults.forEach(function(r) {
-                var score = (r.metrics.accuracy || r.metrics.r2 || 0).toFixed(4);
-                var std = (r.metrics.std || 0).toFixed(4);
-                html += '<tr><td><span class="text-14px medium">' + escHtml(r.model) + '</span></td>';
-                html += '<td><span class="mono-14px">' + score + '</span></td>';
-                html += '<td><span class="mono-14px">' + std + '</span></td></tr>';
+                if (r.error) {
+                    html += '<tr><td><span class="text-14px medium">' + escHtml(r.model) + '</span></td>';
+                    html += '<td><span class="mono-14px">—</span></td>';
+                    html += '<td><span class="text-14px" style="color:var(--danger,#e53e3e);" title="' + escHtml(r.error) + '">Failed</span></td></tr>';
+                } else {
+                    var m = r.metrics || {};
+                    var score = (m.accuracy || m.r2 || 0).toFixed(4);
+                    html += '<tr><td><span class="text-14px medium">' + escHtml(r.model) + '</span></td>';
+                    html += '<td><span class="mono-14px">' + score + '</span></td>';
+                    html += '<td><span class="text-14px" style="color:var(--success,#38a169);">OK</span></td></tr>';
+                }
             });
             html += '</tbody></table>';
             $('compare-table-wrap').innerHTML = html;
+
+            // Filter to only successful results for the chart
+            var successful = comparisonResults.filter(function(r) { return !r.error && r.metrics; });
+            if (successful.length === 0) return;
 
             // Render chart
             var ctx = $('comparisonChart');
@@ -2134,10 +2194,10 @@
             comparisonChartInstance = new Chart(ctx, {
                 type: 'bar',
                 data: {
-                    labels: comparisonResults.map(function(r) { return r.model; }),
+                    labels: successful.map(function(r) { return r.model; }),
                     datasets: [{
-                        label: cfg.taskType === 'classification' ? 'Accuracy' : 'R²',
-                        data: comparisonResults.map(function(r) { return r.metrics.accuracy || r.metrics.r2 || 0; }),
+                        label: scoreLabel,
+                        data: successful.map(function(r) { var m = r.metrics || {}; return m.accuracy || m.r2 || 0; }),
                         backgroundColor: 'rgba(0, 102, 245, 0.15)',
                         borderColor: '#0066F5',
                         borderWidth: 1,
@@ -2164,7 +2224,7 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ data: input })
             })
-            .then(function(r) { return r.json(); })
+            .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
             .then(function(data) {
                 $('prediction-empty').style.display = 'none';
                 $('prediction-output').innerHTML = '<pre class="code-block">' + escHtml(JSON.stringify(data, null, 2)) + '</pre>';
@@ -2175,7 +2235,7 @@
         // ── Monitor ──
         function refreshSystemStatus() {
             fetch('/api/system/status')
-                .then(function(r) { return r.json(); })
+                .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
                 .then(function(data) {
                     var sys = data.system || {};
                     var status = data.status || 'error';
@@ -2228,7 +2288,7 @@
             var timeout = parseInt($('ho-timeout').value) || 0;
             $('btn-hyperopt').disabled = true;
             $('hyperopt-empty').style.display = 'none';
-            $('hyperopt-results').innerHTML = '<div class="flex-col gap-8"><div class="progress-bar"><div class="progress-bar-fill" style="width:0%"></div></div><p class="text-12px reguler" style="color:var(--color-text-700);">Starting optimization...</p></div>';
+            $('hyperopt-results').innerHTML = '<div class="flex-col gap-8"><div class="progress-bar"><div class="progress-bar-fill" style="width:0%"></div></div><p class="text-12px regular" style="color:var(--color-text-700);">Starting optimization...</p></div>';
 
             fetch('/api/hyperopt', {
                 method: 'POST',
@@ -2242,7 +2302,7 @@
                     timeout_secs: timeout > 0 ? timeout : null
                 })
             })
-            .then(function(r) { return r.json(); })
+            .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
             .then(function(data) {
                 if (data.success) {
                     hyperoptJobId = data.job_id;
@@ -2259,7 +2319,7 @@
         function pollHyperopt() {
             if (!hyperoptJobId) return;
             fetch('/api/train/status/' + hyperoptJobId)
-                .then(function(r) { return r.json(); })
+                .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
                 .then(function(data) {
                     var s = data.status;
                     if (s.Completed) {
@@ -2270,15 +2330,15 @@
                             html += '<div style="padding:16px;background:var(--color-success-100);border-radius:8px;">';
                             html += '<p class="text-14px medium" style="color:var(--color-success-600);">Best Trial</p>';
                             html += '<p class="mono-14px" style="margin-top:4px;">Score: ' + (m.best_trial.value || 0).toFixed(6) + '</p>';
-                            html += '<p class="text-12px reguler" style="color:var(--color-text-700);margin-top:4px;">Params: ' + escHtml(m.best_trial.params || '') + '</p>';
-                            html += '<p class="text-12px reguler" style="color:var(--color-text-700);">Duration: ' + (m.best_trial.duration_secs || 0).toFixed(2) + 's</p>';
+                            html += '<p class="text-12px regular" style="color:var(--color-text-700);margin-top:4px;">Params: ' + escHtml(m.best_trial.params || '') + '</p>';
+                            html += '<p class="text-12px regular" style="color:var(--color-text-700);">Duration: ' + (m.best_trial.duration_secs || 0).toFixed(2) + 's</p>';
                             html += '</div>';
                         }
-                        html += '<p class="text-12px reguler" style="color:var(--color-text-700);">Total trials: ' + (m.total_trials || 0) + ' | Total time: ' + (m.total_duration_secs || 0).toFixed(2) + 's</p>';
+                        html += '<p class="text-12px regular" style="color:var(--color-text-700);">Total trials: ' + (m.total_trials || 0) + ' | Total time: ' + (m.total_duration_secs || 0).toFixed(2) + 's</p>';
                         if (m.trials && m.trials.length > 0) {
                             html += '<div class="table-wrap"><table class="data-table"><thead><tr><th>#</th><th>Score</th><th>Duration</th><th>Pruned</th></tr></thead><tbody>';
                             m.trials.forEach(function(t) {
-                                html += '<tr><td>' + t.trial_id + '</td><td class="mono-12px">' + (t.value === Infinity ? 'Failed' : t.value.toFixed(6)) + '</td>';
+                                html += '<tr><td>' + escHtml(String(t.trial_id)) + '</td><td class="mono-12px">' + (t.value === Infinity ? 'Failed' : escHtml(String(t.value.toFixed(6)))) + '</td>';
                                 html += '<td class="mono-12px">' + t.duration_secs.toFixed(2) + 's</td>';
                                 html += '<td>' + (t.pruned ? '<span class="badge-sm badge-warning">Yes</span>' : '<span class="badge-sm badge-success">No</span>') + '</td></tr>';
                             });
@@ -2292,12 +2352,12 @@
                         if (m.trials) renderConvergenceChart(m.trials);
                         loadHyperoptHistory();
                     } else if (s.Failed) {
-                        $('hyperopt-results').innerHTML = '<p class="text-14px reguler" style="color:var(--color-danger-500);">' + escHtml(s.Failed.error || 'Failed') + '</p>';
+                        $('hyperopt-results').innerHTML = '<p class="text-14px regular" style="color:var(--color-danger-500);">' + escHtml(s.Failed.error || 'Failed') + '</p>';
                         $('btn-hyperopt').disabled = false;
                         hyperoptJobId = null;
                     } else {
                         var p = s.Running ? (s.Running.progress * 100).toFixed(0) : '0';
-                        $('hyperopt-results').innerHTML = '<div class="flex-col gap-8"><div class="progress-bar"><div class="progress-bar-fill" style="width:' + p + '%"></div></div><p class="text-12px reguler" style="color:var(--color-text-700);">' + escHtml(s.Running ? s.Running.message || 'Optimizing...' : 'Optimizing...') + '</p></div>';
+                        $('hyperopt-results').innerHTML = '<div class="flex-col gap-8"><div class="progress-bar"><div class="progress-bar-fill" style="width:' + p + '%"></div></div><p class="text-12px regular" style="color:var(--color-text-700);">' + escHtml(s.Running ? s.Running.message || 'Optimizing...' : 'Optimizing...') + '</p></div>';
                         setTimeout(pollHyperopt, 1500);
                     }
                 })
@@ -2329,7 +2389,7 @@
 
             $('btn-ensemble').disabled = true;
             $('ensemble-empty').style.display = 'none';
-            $('ensemble-results').innerHTML = '<div class="flex-col gap-8"><div class="progress-bar"><div class="progress-bar-fill" style="width:0%"></div></div><p class="text-12px reguler" style="color:var(--color-text-700);">Training ensemble...</p></div>';
+            $('ensemble-results').innerHTML = '<div class="flex-col gap-8"><div class="progress-bar"><div class="progress-bar-fill" style="width:0%"></div></div><p class="text-12px regular" style="color:var(--color-text-700);">Training ensemble...</p></div>';
 
             fetch('/api/ensemble/train', {
                 method: 'POST',
@@ -2341,7 +2401,7 @@
                     strategy: $('ens-strategy').value
                 })
             })
-            .then(function(r) { return r.json(); })
+            .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
             .then(function(data) {
                 if (data.success) {
                     ensembleJobId = data.job_id;
@@ -2358,7 +2418,7 @@
         function pollEnsemble() {
             if (!ensembleJobId) return;
             fetch('/api/train/status/' + ensembleJobId)
-                .then(function(r) { return r.json(); })
+                .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
                 .then(function(data) {
                     var s = data.status;
                     if (s.Completed) {
@@ -2366,7 +2426,7 @@
                         var html = '<div class="flex-col gap-12">';
                         html += '<div style="padding:12px;background:var(--color-information-100);border-radius:8px;">';
                         html += '<p class="text-14px medium" style="color:var(--color-information-600);">Ensemble: ' + escHtml(m.strategy || 'voting') + ' | Models: ' + (m.successful_models || 0) + '/' + (m.model_count || 0) + '</p>';
-                        html += '<p class="text-12px reguler" style="color:var(--color-text-700);margin-top:4px;">Training time: ' + (m.training_time_secs || 0).toFixed(2) + 's</p>';
+                        html += '<p class="text-12px regular" style="color:var(--color-text-700);margin-top:4px;">Training time: ' + (m.training_time_secs || 0).toFixed(2) + 's</p>';
                         html += '</div>';
                         if (m.model_results && m.model_results.length > 0) {
                             html += '<div class="table-wrap"><table class="data-table"><thead><tr><th>Model</th><th>Status</th><th>Metrics</th></tr></thead><tbody>';
@@ -2389,7 +2449,7 @@
                         ensembleJobId = null;
                         notify('Ensemble training complete!', 'success');
                     } else if (s.Failed) {
-                        $('ensemble-results').innerHTML = '<p class="text-14px reguler" style="color:var(--color-danger-500);">' + escHtml(s.Failed.error || 'Failed') + '</p>';
+                        $('ensemble-results').innerHTML = '<p class="text-14px regular" style="color:var(--color-danger-500);">' + escHtml(s.Failed.error || 'Failed') + '</p>';
                         $('btn-ensemble').disabled = false;
                         ensembleJobId = null;
                     } else {
@@ -2412,7 +2472,7 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ model_id: lastTrainedModelId })
             })
-            .then(function(r) { return r.json(); })
+            .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
             .then(function(data) {
                 if (data.success && data.features && data.features.length > 0) {
                     var html = '<div class="table-wrap"><table class="data-table"><thead><tr><th>Feature</th><th>Importance</th><th>Bar</th></tr></thead><tbody>';
@@ -2453,7 +2513,7 @@
                         });
                     }
                 } else {
-                    $('explain-results').innerHTML = '<p class="text-14px reguler" style="color:var(--color-text-700);">' + escHtml(data.message || 'Feature importances not available for this model type') + '</p>';
+                    $('explain-results').innerHTML = '<p class="text-14px regular" style="color:var(--color-text-700);">' + escHtml(data.message || 'Feature importances not available for this model type') + '</p>';
                 }
                 $('btn-explain').disabled = false;
             })
@@ -2468,18 +2528,18 @@
             var url = $('import-url').value.trim();
             if (!url) { notify('Enter a URL', 'error'); return; }
             $('btn-import-url').disabled = true;
-            $('import-url-status').innerHTML = '<p class="text-12px reguler" style="color:var(--color-text-700);"><i class="ri-loader-4-line"></i> Detecting source and downloading...</p>';
+            $('import-url-status').innerHTML = '<p class="text-12px regular" style="color:var(--color-text-700);"><i class="ri-loader-4-line"></i> Detecting source and downloading...</p>';
 
             fetch('/api/data/import/url', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ url: url })
             })
-            .then(function(r) { return r.json(); })
+            .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
             .then(function(data) {
                 $('btn-import-url').disabled = false;
                 if (data.success) {
-                    $('import-url-status').innerHTML = '<div style="padding:8px 12px;background:var(--color-success-100);border-radius:8px;"><p class="text-12px medium" style="color:var(--color-success-600);">✓ Imported from ' + escHtml(data.source) + '</p><p class="text-12px reguler" style="color:var(--color-text-700);margin-top:2px;">' + data.rows + ' rows × ' + data.columns + ' columns (' + escHtml(data.format) + ')</p></div>';
+                    $('import-url-status').innerHTML = '<div style="padding:8px 12px;background:var(--color-success-100);border-radius:8px;"><p class="text-12px medium" style="color:var(--color-success-600);">✓ Imported from ' + escHtml(data.source) + '</p><p class="text-12px regular" style="color:var(--color-text-700);margin-top:2px;">' + data.rows + ' rows × ' + data.columns + ' columns (' + escHtml(data.format) + ')</p></div>';
                     dataInfo = { column_names: data.column_names, rows: data.rows, columns: data.columns };
                     $('data-rows').textContent = data.rows;
                     $('data-cols').textContent = data.columns;
@@ -2489,14 +2549,14 @@
                     notify('Dataset imported from ' + data.source + '!', 'success');
                 } else if (data.needs_credentials) {
                     $('import-url-status').innerHTML = '<div style="padding:8px 12px;background:var(--color-warning-100);border-radius:8px;"><p class="text-12px medium" style="color:var(--color-warning-600);">⚠ ' + escHtml(data.message) + '</p></div>';
-                    notify('Kaggle credentials required', 'warning');
+                    notify('Kaggle credentials required', 'error');
                 } else {
-                    $('import-url-status').innerHTML = '<p class="text-12px reguler" style="color:var(--color-danger-500);">' + escHtml(data.message || 'Import failed') + '</p>';
+                    $('import-url-status').innerHTML = '<p class="text-12px regular" style="color:var(--color-danger-500);">' + escHtml(data.message || 'Import failed') + '</p>';
                 }
             })
             .catch(function(e) {
                 $('btn-import-url').disabled = false;
-                $('import-url-status').innerHTML = '<p class="text-12px reguler" style="color:var(--color-danger-500);">Error: ' + escHtml(e.message) + '</p>';
+                $('import-url-status').innerHTML = '<p class="text-12px regular" style="color:var(--color-danger-500);">Error: ' + escHtml(e.message) + '</p>';
             });
         }
 
@@ -2506,7 +2566,7 @@
             if (!cfg.targetColumn) { notify('Select a target column first', 'error'); return; }
             $('btn-autotune').disabled = true;
             $('autotune-empty').style.display = 'none';
-            $('autotune-results').innerHTML = '<div class="flex-col gap-8"><div class="progress-bar"><div class="progress-bar-fill" style="width:0%"></div></div><p class="text-12px reguler" style="color:var(--color-text-700);">Starting auto-tune...</p></div>';
+            $('autotune-results').innerHTML = '<div class="flex-col gap-8"><div class="progress-bar"><div class="progress-bar-fill" style="width:0%"></div></div><p class="text-12px regular" style="color:var(--color-text-700);">Starting auto-tune...</p></div>';
 
             var maxModels = parseInt($('at-max-models').value) || 6;
             fetch('/api/autotune', {
@@ -2518,7 +2578,7 @@
                     max_models: maxModels
                 })
             })
-            .then(function(r) { return r.json(); })
+            .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
             .then(function(data) {
                 if (data.success) {
                     autotuneJobId = data.job_id;
@@ -2535,7 +2595,7 @@
         function pollAutoTune() {
             if (!autotuneJobId) return;
             fetch('/api/train/status/' + autotuneJobId)
-                .then(function(r) { return r.json(); })
+                .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
                 .then(function(data) {
                     var s = data.status;
                     if (s.Completed) {
@@ -2545,7 +2605,7 @@
                             html += '<div style="padding:12px;background:var(--color-success-100);border-radius:8px;">';
                             html += '<p class="text-14px medium" style="color:var(--color-success-600);">🏆 Best: ' + escHtml(m.best_model || '') + '</p>';
                             html += '<p class="mono-14px" style="margin-top:4px;">Score: ' + (m.best.score || 0).toFixed(6) + '</p>';
-                            html += '<p class="text-12px reguler" style="color:var(--color-text-700);margin-top:2px;">Time: ' + (m.total_time_secs || 0).toFixed(2) + 's | Models: ' + (m.successful_models || 0) + '/' + (m.total_models_tested || 0) + '</p>';
+                            html += '<p class="text-12px regular" style="color:var(--color-text-700);margin-top:2px;">Time: ' + (m.total_time_secs || 0).toFixed(2) + 's | Models: ' + (m.successful_models || 0) + '/' + (m.total_models_tested || 0) + '</p>';
                             html += '</div>';
                         }
                         if (m.leaderboard && m.leaderboard.length > 0) {
@@ -2570,13 +2630,13 @@
                         }
                         notify('Auto-tune complete! Best: ' + (m.best_model || 'N/A'), 'success');
                     } else if (s.Failed) {
-                        $('autotune-results').innerHTML = '<p class="text-14px reguler" style="color:var(--color-danger-500);">' + escHtml(s.Failed.error || 'Failed') + '</p>';
+                        $('autotune-results').innerHTML = '<p class="text-14px regular" style="color:var(--color-danger-500);">' + escHtml(s.Failed.error || 'Failed') + '</p>';
                         $('btn-autotune').disabled = false;
                         autotuneJobId = null;
                     } else {
                         var p = s.Running ? (s.Running.progress * 100).toFixed(0) : '0';
                         var msg = s.Running ? s.Running.message || 'Auto-tuning...' : 'Auto-tuning...';
-                        $('autotune-results').innerHTML = '<div class="flex-col gap-8"><div class="progress-bar"><div class="progress-bar-fill" style="width:' + p + '%"></div></div><p class="text-12px reguler" style="color:var(--color-text-700);">' + escHtml(msg) + '</p></div>';
+                        $('autotune-results').innerHTML = '<div class="flex-col gap-8"><div class="progress-bar"><div class="progress-bar-fill" style="width:' + p + '%"></div></div><p class="text-12px regular" style="color:var(--color-text-700);">' + escHtml(msg) + '</p></div>';
                         setTimeout(pollAutoTune, 1500);
                     }
                 })
@@ -2586,21 +2646,21 @@
         // ── Enhanced HyperOpt: Search Space, Convergence, History ──
         function loadSearchSpace(modelType) {
             fetch('/api/hyperopt/search-space/' + modelType)
-                .then(function(r) { return r.json(); })
+                .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
                 .then(function(data) {
                     var params = data.parameters || [];
-                    if (params.length === 0) { $('ho-search-space').innerHTML = '<p class="text-14px reguler" style="color:var(--color-text-700);">No parameters defined</p>'; return; }
+                    if (params.length === 0) { $('ho-search-space').innerHTML = '<p class="text-14px regular" style="color:var(--color-text-700);">No parameters defined</p>'; return; }
                     var html = '<div class="table-wrap"><table class="data-table"><thead><tr><th>Parameter</th><th>Type</th><th>Range</th><th>Default</th></tr></thead><tbody>';
                     params.forEach(function(p) {
                         html += '<tr><td class="text-14px medium">' + escHtml(p.name) + '</td>';
                         html += '<td class="mono-12px">' + escHtml(p.type) + '</td>';
-                        html += '<td class="mono-12px">' + p.low + ' – ' + p.high + '</td>';
-                        html += '<td class="mono-12px">' + (p.default !== undefined ? p.default : '-') + '</td></tr>';
+                        html += '<td class="mono-12px">' + escHtml(String(p.low)) + ' – ' + escHtml(String(p.high)) + '</td>';
+                        html += '<td class="mono-12px">' + (p.default !== undefined ? escHtml(String(p.default)) : '-') + '</td></tr>';
                     });
                     html += '</tbody></table></div>';
                     $('ho-search-space').innerHTML = html;
                 })
-                .catch(function() {});
+                .catch(function(e) { console.error('Request failed:', e); });
         }
 
         function renderConvergenceChart(trials) {
@@ -2628,10 +2688,10 @@
 
         function loadHyperoptHistory() {
             fetch('/api/hyperopt/history')
-                .then(function(r) { return r.json(); })
+                .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
                 .then(function(data) {
                     var studies = data.studies || [];
-                    if (studies.length === 0) { $('ho-history').innerHTML = '<p class="text-14px reguler" style="color:var(--color-text-700);">No studies yet</p>'; return; }
+                    if (studies.length === 0) { $('ho-history').innerHTML = '<p class="text-14px regular" style="color:var(--color-text-700);">No studies yet</p>'; return; }
                     var html = '<div class="table-wrap"><table class="data-table"><thead><tr><th>Model</th><th>Best Score</th><th>Trials</th><th>Time</th><th>Date</th></tr></thead><tbody>';
                     studies.forEach(function(s) {
                         html += '<tr><td class="text-14px medium">' + escHtml(s.model_type || '') + '</td>';
@@ -2643,14 +2703,14 @@
                     html += '</tbody></table></div>';
                     $('ho-history').innerHTML = html;
                 })
-                .catch(function() {});
+                .catch(function(e) { console.error('Request failed:', e); });
         }
 
         // ── Export Model ──
         function exportModel(jobId, format) {
             // Find the model ID from the job — look for it via the models API
             fetch('/api/models')
-                .then(function(r) { return r.json(); })
+                .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
                 .then(function(data) {
                     var models = data.models || [];
                     var model = models.find(function(m) { return m.name && m.name.includes(jobId); });
@@ -2661,7 +2721,7 @@
                         body: JSON.stringify({ model_id: model.id, format: format })
                     });
                 })
-                .then(function(r) { if (r) return r.json(); })
+                .then(function(r) { if (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); } })
                 .then(function(data) {
                     if (data && data.success) {
                         notify('Model exported as ' + format.toUpperCase() + ' to ' + data.path, 'success');
@@ -2676,7 +2736,7 @@
         function runAnomalyDetection() {
             $('btn-anomaly').disabled = true;
             $('anomaly-empty').style.display = 'none';
-            $('anomaly-results').innerHTML = '<div class="loading-overlay"><div class="spinner"></div><p class="text-12px reguler">Running anomaly detection...</p></div>';
+            $('anomaly-results').innerHTML = '<div class="loading-overlay"><div class="spinner"></div><p class="text-12px regular">Running anomaly detection...</p></div>';
 
             fetch('/api/anomaly/detect', {
                 method: 'POST',
@@ -2687,25 +2747,25 @@
                     n_estimators: parseInt($('anomaly-estimators').value)
                 })
             })
-            .then(function(r) { return r.json(); })
+            .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
             .then(function(data) {
                 $('btn-anomaly').disabled = false;
                 if (data.success) {
                     var rate = ((data.anomaly_rate || 0) * 100).toFixed(1);
                     var html = '<div class="flex-col gap-12">';
                     html += '<div class="grid-3" style="text-align:center;">';
-                    html += '<div><p class="mono-20px medium">' + data.total_samples + '</p><p class="text-12px reguler" style="color:var(--color-text-700);">Total Samples</p></div>';
-                    html += '<div><p class="mono-20px medium" style="color:var(--color-danger-500);">' + data.anomalies_found + '</p><p class="text-12px reguler" style="color:var(--color-text-700);">Anomalies</p></div>';
-                    html += '<div><p class="mono-20px medium">' + rate + '%</p><p class="text-12px reguler" style="color:var(--color-text-700);">Anomaly Rate</p></div>';
+                    html += '<div><p class="mono-20px medium">' + data.total_samples + '</p><p class="text-12px regular" style="color:var(--color-text-700);">Total Samples</p></div>';
+                    html += '<div><p class="mono-20px medium" style="color:var(--color-danger-500);">' + data.anomalies_found + '</p><p class="text-12px regular" style="color:var(--color-text-700);">Anomalies</p></div>';
+                    html += '<div><p class="mono-20px medium">' + rate + '%</p><p class="text-12px regular" style="color:var(--color-text-700);">Anomaly Rate</p></div>';
                     html += '</div>';
                     if (data.score_stats) {
                         html += '<div class="grid-3" style="text-align:center;">';
-                        html += '<div><p class="mono-14px medium">' + (data.score_stats.min || 0).toFixed(4) + '</p><p class="text-12px reguler" style="color:var(--color-text-700);">Min Score</p></div>';
-                        html += '<div><p class="mono-14px medium">' + (data.score_stats.mean || 0).toFixed(4) + '</p><p class="text-12px reguler" style="color:var(--color-text-700);">Mean Score</p></div>';
-                        html += '<div><p class="mono-14px medium">' + (data.score_stats.max || 0).toFixed(4) + '</p><p class="text-12px reguler" style="color:var(--color-text-700);">Max Score</p></div>';
+                        html += '<div><p class="mono-14px medium">' + (data.score_stats.min || 0).toFixed(4) + '</p><p class="text-12px regular" style="color:var(--color-text-700);">Min Score</p></div>';
+                        html += '<div><p class="mono-14px medium">' + (data.score_stats.mean || 0).toFixed(4) + '</p><p class="text-12px regular" style="color:var(--color-text-700);">Mean Score</p></div>';
+                        html += '<div><p class="mono-14px medium">' + (data.score_stats.max || 0).toFixed(4) + '</p><p class="text-12px regular" style="color:var(--color-text-700);">Max Score</p></div>';
                         html += '</div>';
                     }
-                    html += '<p class="text-12px reguler" style="color:var(--color-text-600);">Columns used: ' + (data.columns_used || []).join(', ') + '</p>';
+                    html += '<p class="text-12px regular" style="color:var(--color-text-600);">Columns used: ' + (data.columns_used || []).join(', ') + '</p>';
                     html += '</div>';
                     $('anomaly-results').innerHTML = html;
                     renderAnomalyChart(data);
@@ -2741,12 +2801,12 @@
             }
             $('btn-clustering').disabled = true;
             $('clustering-empty').style.display = 'none';
-            $('clustering-results').innerHTML = '<div class="loading-overlay"><div class="spinner"></div><p class="text-12px reguler">Running clustering...</p></div>';
+            $('clustering-results').innerHTML = '<div class="loading-overlay"><div class="spinner"></div><p class="text-12px regular">Running clustering...</p></div>';
             fetch('/api/clustering/run', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body)
-            }).then(function(r) { return r.json(); }).then(function(data) {
+            }).then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }).then(function(data) {
                 $('btn-clustering').disabled = false;
                 if (!data.success) {
                     $('clustering-results').innerHTML = '<div class="alert alert-error">Clustering failed</div>';
@@ -2754,12 +2814,12 @@
                 }
                 var r = data.result;
                 var html = '<div class="grid-3" style="margin-bottom:16px;">';
-                html += '<div><p class="mono-20px medium">' + (r.n_clusters || r.n_clusters_found || 0) + '</p><p class="text-12px reguler" style="color:var(--color-text-700);">Clusters Found</p></div>';
-                html += '<div><p class="mono-20px medium">' + (r.total_samples || 0) + '</p><p class="text-12px reguler" style="color:var(--color-text-700);">Total Samples</p></div>';
+                html += '<div><p class="mono-20px medium">' + (r.n_clusters || r.n_clusters_found || 0) + '</p><p class="text-12px regular" style="color:var(--color-text-700);">Clusters Found</p></div>';
+                html += '<div><p class="mono-20px medium">' + (r.total_samples || 0) + '</p><p class="text-12px regular" style="color:var(--color-text-700);">Total Samples</p></div>';
                 if (r.n_noise !== undefined) {
-                    html += '<div><p class="mono-20px medium">' + r.n_noise + '</p><p class="text-12px reguler" style="color:var(--color-text-700);">Noise Points</p></div>';
+                    html += '<div><p class="mono-20px medium">' + r.n_noise + '</p><p class="text-12px regular" style="color:var(--color-text-700);">Noise Points</p></div>';
                 } else if (r.inertia !== undefined) {
-                    html += '<div><p class="mono-20px medium">' + r.inertia.toFixed(2) + '</p><p class="text-12px reguler" style="color:var(--color-text-700);">Inertia</p></div>';
+                    html += '<div><p class="mono-20px medium">' + r.inertia.toFixed(2) + '</p><p class="text-12px regular" style="color:var(--color-text-700);">Inertia</p></div>';
                 }
                 html += '</div>';
                 // Cluster sizes table
@@ -2786,9 +2846,9 @@
         // ── Device Info ──
         function loadDeviceInfo() {
             var container = $('device-info');
-            container.innerHTML = '<div class="loading-overlay"><div class="spinner"></div><p class="text-12px reguler">Loading...</p></div>';
+            container.innerHTML = '<div class="loading-overlay"><div class="spinner"></div><p class="text-12px regular">Loading...</p></div>';
             fetch('/api/device/info')
-                .then(function(r) { return r.json(); })
+                .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
                 .then(function(data) {
                     var html = '<div class="flex-col gap-8">';
                     if (data.cpu) {
@@ -2804,19 +2864,19 @@
                     container.innerHTML = html;
                 })
                 .catch(function(e) {
-                    container.innerHTML = '<p class="text-12px reguler" style="color:var(--color-danger-500);">Failed to load device info</p>';
+                    container.innerHTML = '<p class="text-12px regular" style="color:var(--color-danger-500);">Failed to load device info</p>';
                 });
         }
 
         // ── Alerts ──
         function loadAlerts() {
             fetch('/api/monitoring/alerts')
-                .then(function(r) { return r.json(); })
+                .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
                 .then(function(data) {
                     var container = $('alerts-list');
                     var alerts = data.alerts || [];
                     if (alerts.length === 0) {
-                        container.innerHTML = '<div class="empty-state" style="padding:20px;"><i class="ri-checkbox-circle-line" style="color:var(--color-success-500);"></i><p class="text-12px reguler" style="color:var(--color-success-600);">No alerts — all systems normal</p></div>';
+                        container.innerHTML = '<div class="empty-state" style="padding:20px;"><i class="ri-checkbox-circle-line" style="color:var(--color-success-500);"></i><p class="text-12px regular" style="color:var(--color-success-600);">No alerts — all systems normal</p></div>';
                         return;
                     }
                     var html = '<div class="flex-col gap-8">';
@@ -2827,13 +2887,13 @@
                     html += '</div>';
                     container.innerHTML = html;
                 })
-                .catch(function() {});
+                .catch(function(e) { console.error('Request failed:', e); });
         }
 
         // ── Performance Stats ──
         function loadPerformanceStats() {
             fetch('/api/monitoring/performance')
-                .then(function(r) { return r.json(); })
+                .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
                 .then(function(data) {
                     var jobs = data.jobs || {};
                     $('perf-completed').textContent = jobs.completed || 0;
@@ -2841,32 +2901,32 @@
                     var tp = data.throughput || {};
                     $('perf-throughput').textContent = (tp.models_per_minute || 0).toFixed(1);
                 })
-                .catch(function() {});
+                .catch(function(e) { console.error('Request failed:', e); });
         }
 
         // ── Security ──
         function loadSecurityStatus() {
             fetch('/api/security/status')
-                .then(function(r) { return r.json(); })
+                .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
                 .then(function(data) {
                     var rl = data.rate_limiting || {};
                     var guards = data.guards || {};
                     $('security-status').innerHTML =
                         '<div class="grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;">' +
                         '<div style="padding:12px;background:var(--color-grey-600);border-radius:8px;">' +
-                            '<div class="text-12px reguler" style="color:var(--color-text-600);">Status</div>' +
+                            '<div class="text-12px regular" style="color:var(--color-text-600);">Status</div>' +
                             '<div class="text-16px medium" style="color:#22c55e;"><i class="ri-shield-check-fill"></i> Active</div></div>' +
                         '<div style="padding:12px;background:var(--color-grey-600);border-radius:8px;">' +
-                            '<div class="text-12px reguler" style="color:var(--color-text-600);">Requests Tracked</div>' +
+                            '<div class="text-12px regular" style="color:var(--color-text-600);">Requests Tracked</div>' +
                             '<div class="mono-16px medium">' + (rl.total_requests || 0) + '</div></div>' +
                         '<div style="padding:12px;background:var(--color-grey-600);border-radius:8px;">' +
-                            '<div class="text-12px reguler" style="color:var(--color-text-600);">Blocked</div>' +
+                            '<div class="text-12px regular" style="color:var(--color-text-600);">Blocked</div>' +
                             '<div class="mono-16px medium" style="color:#ef4444;">' + (rl.total_blocked || 0) + '</div></div>' +
                         '<div style="padding:12px;background:var(--color-grey-600);border-radius:8px;">' +
-                            '<div class="text-12px reguler" style="color:var(--color-text-600);">Active Clients</div>' +
+                            '<div class="text-12px regular" style="color:var(--color-text-600);">Active Clients</div>' +
                             '<div class="mono-16px medium">' + (rl.active_clients || 0) + '</div></div>' +
                         '<div style="padding:12px;background:var(--color-grey-600);border-radius:8px;">' +
-                            '<div class="text-12px reguler" style="color:var(--color-text-600);">Audit Entries</div>' +
+                            '<div class="text-12px regular" style="color:var(--color-text-600);">Audit Entries</div>' +
                             '<div class="mono-16px medium">' + (data.audit_log_entries || 0) + '</div></div>' +
                         '</div>';
 
@@ -2887,7 +2947,7 @@
                         var icon2 = g.active ? 'ri-checkbox-circle-fill' : 'ri-close-circle-fill';
                         ghtml += '<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--color-grey-600);border-radius:6px;">' +
                             '<i class="' + g.icon + '" style="font-size:16px;color:var(--color-text-700);"></i>' +
-                            '<span class="text-13px reguler" style="flex:1;">' + g.name + '</span>' +
+                            '<span class="text-13px regular" style="flex:1;">' + g.name + '</span>' +
                             '<i class="' + icon2 + '" style="color:' + color + ';font-size:16px;"></i></div>';
                     });
                     ghtml += '</div>';
@@ -2900,32 +2960,32 @@
 
         function loadRateLimitStats() {
             fetch('/api/security/rate-limit/stats')
-                .then(function(r) { return r.json(); })
+                .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
                 .then(function(data) {
                     var m = data.metrics || {};
                     var html = '<div class="grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;">';
                     html += '<div style="padding:12px;background:var(--color-grey-600);border-radius:8px;">' +
-                        '<div class="text-12px reguler" style="color:var(--color-text-600);">Total Requests</div>' +
+                        '<div class="text-12px regular" style="color:var(--color-text-600);">Total Requests</div>' +
                         '<div class="mono-16px medium">' + (m.total_requests || 0) + '</div></div>';
                     html += '<div style="padding:12px;background:var(--color-grey-600);border-radius:8px;">' +
-                        '<div class="text-12px reguler" style="color:var(--color-text-600);">Blocked</div>' +
+                        '<div class="text-12px regular" style="color:var(--color-text-600);">Blocked</div>' +
                         '<div class="mono-16px medium" style="color:#ef4444;">' + (m.total_blocked || 0) + '</div></div>';
                     html += '<div style="padding:12px;background:var(--color-grey-600);border-radius:8px;">' +
-                        '<div class="text-12px reguler" style="color:var(--color-text-600);">Active Clients</div>' +
+                        '<div class="text-12px regular" style="color:var(--color-text-600);">Active Clients</div>' +
                         '<div class="mono-16px medium">' + (m.active_clients || 0) + '</div></div>';
                     html += '</div>';
                     $('rate-limit-stats').innerHTML = html;
                 })
-                .catch(function() {});
+                .catch(function(e) { console.error('Request failed:', e); });
         }
 
         function loadAuditLog() {
             fetch('/api/security/audit-log?limit=50')
-                .then(function(r) { return r.json(); })
+                .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
                 .then(function(data) {
                     var entries = data.entries || [];
                     if (entries.length === 0) {
-                        $('audit-log').innerHTML = '<p class="text-14px reguler" style="color:var(--color-text-600);">No audit entries yet</p>';
+                        $('audit-log').innerHTML = '<p class="text-14px regular" style="color:var(--color-text-600);">No audit entries yet</p>';
                         return;
                     }
                     var html = '<div class="table-wrap"><table class="data-table"><thead><tr>' +
@@ -2936,7 +2996,7 @@
                             '<td class="mono-12px">' + new Date(e.timestamp).toLocaleTimeString() + '</td>' +
                             '<td class="text-13px medium">' + escHtml(e.action) + '</td>' +
                             '<td class="mono-12px">' + escHtml(e.resource) + '</td>' +
-                            '<td class="mono-12px" style="color:' + statusColor + ';">' + e.status_code + '</td>' +
+                            '<td class="mono-12px" style="color:' + statusColor + ';">' + escHtml(String(e.status_code)) + '</td>' +
                             '<td class="mono-12px">' + escHtml(e.ip_address) + '</td></tr>';
                     });
                     html += '</tbody></table></div>';
@@ -3018,7 +3078,7 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body)
             })
-            .then(function(r) { return r.json(); })
+            .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
             .then(function(data) {
                 if (data.success && data.job_id) {
                     automlJobId = data.job_id;
@@ -3040,7 +3100,7 @@
         function pollAutoMLStatus() {
             if (!automlJobId) return;
             fetch('/api/automl/status/' + automlJobId)
-                .then(function(r) { return r.json(); })
+                .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
                 .then(function(data) {
                     var pct = Math.round(data.progress || 0);
                     $('automl-progress-bar').style.width = pct + '%';
@@ -3061,7 +3121,7 @@
                         notify('AutoML pipeline failed: ' + data.message, 'error');
                     }
                 })
-                .catch(function() {});
+                .catch(function(e) { console.error('Request failed:', e); });
         }
 
         function displayAutoMLResults(result) {
@@ -3082,7 +3142,7 @@
                 var score = entry.score != null ? parseFloat(entry.score).toFixed(4) : 'Error';
                 var time = entry.training_time_secs != null ? entry.training_time_secs.toFixed(2) + 's' : '—';
                 var cls = i === 0 ? ' style="background:var(--color-information-100);font-weight:600;"' : '';
-                html += '<tr' + cls + '><td>' + (i + 1) + '</td><td>' + entry.model + '</td><td>' + score + '</td><td>' + time + '</td></tr>';
+                html += '<tr' + cls + '><td>' + (i + 1) + '</td><td>' + escHtml(entry.model) + '</td><td>' + score + '</td><td>' + time + '</td></tr>';
             });
             html += '</tbody></table>';
             $('automl-leaderboard').innerHTML = html;
@@ -3090,10 +3150,10 @@
             // HyperOpt results
             if (result.hyperopt && !result.hyperopt.skipped) {
                 $('automl-hyperopt-result').style.display = 'block';
-                var hoHtml = '<div class="text-13px reguler">';
+                var hoHtml = '<div class="text-13px regular">';
                 hoHtml += '<div><strong>Trials:</strong> ' + (result.hyperopt.n_trials || 0) + '</div>';
                 hoHtml += '<div><strong>Best Value:</strong> ' + (result.hyperopt.best_value != null ? result.hyperopt.best_value.toFixed(6) : '—') + '</div>';
-                hoHtml += '<div><strong>Best Params:</strong> ' + (result.hyperopt.best_params || '—') + '</div>';
+                hoHtml += '<div><strong>Best Params:</strong> ' + escHtml(result.hyperopt.best_params || '—') + '</div>';
                 hoHtml += '</div>';
                 $('automl-hyperopt-details').innerHTML = hoHtml;
             } else {
@@ -3117,10 +3177,10 @@
             });
 
             var statsHtml = '<div class="grid-2" style="gap:8px;">';
-            statsHtml += '<div style="padding:12px;background:var(--color-grey-600);border-radius:8px;"><p class="text-12px reguler" style="color:var(--color-text-600);">Columns</p><p class="mono-20px medium">' + cols.length + '</p></div>';
-            statsHtml += '<div style="padding:12px;background:var(--color-grey-600);border-radius:8px;"><p class="text-12px reguler" style="color:var(--color-text-600);">Rows</p><p class="mono-20px medium">' + (dataPreview.rows || 0) + '</p></div>';
+            statsHtml += '<div style="padding:12px;background:var(--color-grey-600);border-radius:8px;"><p class="text-12px regular" style="color:var(--color-text-600);">Columns</p><p class="mono-20px medium">' + cols.length + '</p></div>';
+            statsHtml += '<div style="padding:12px;background:var(--color-grey-600);border-radius:8px;"><p class="text-12px regular" style="color:var(--color-text-600);">Rows</p><p class="mono-20px medium">' + (dataPreview.rows || 0) + '</p></div>';
             Object.keys(types).forEach(function(t) {
-                statsHtml += '<div style="padding:12px;background:var(--color-grey-600);border-radius:8px;"><p class="text-12px reguler" style="color:var(--color-text-600);">' + escHtml(t) + '</p><p class="mono-20px medium">' + types[t] + '</p></div>';
+                statsHtml += '<div style="padding:12px;background:var(--color-grey-600);border-radius:8px;"><p class="text-12px regular" style="color:var(--color-text-600);">' + escHtml(t) + '</p><p class="mono-20px medium">' + types[t] + '</p></div>';
             });
             statsHtml += '</div>';
             $('data-col-stats').innerHTML = statsHtml;
@@ -3243,7 +3303,7 @@
 
         // ── Serve Tab ──
         function loadServeModels() {
-            fetch('/api/models').then(function(r) { return r.json(); }).then(function(d) {
+            fetch('/api/models').then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }).then(function(d) {
                 var models = d.models || [];
                 var sel = $('serve-test-model');
                 sel.innerHTML = '<option value="">Select a model</option>';
@@ -3265,7 +3325,7 @@
                     h += '<td class="mono-12px">' + safeId.substring(0,12) + '</td>';
                     h += '<td>' + mtype + '</td>';
                     h += '<td>' + task + '</td>';
-                    h += '<td class="text-12px reguler">' + escHtml(created) + '</td>';
+                    h += '<td class="text-12px regular">' + escHtml(created) + '</td>';
                     h += '<td style="display:flex;gap:6px;">';
                     h += '<button class="btn-xs btn-ghost" onclick="serveViewStats(\'' + safeId + '\')" title="Stats"><i class="ri-bar-chart-line"></i></button>';
                     h += '<a class="btn-xs btn-ghost" href="/api/models/' + encodeURIComponent(m.id) + '/download" title="Download"><i class="ri-download-line"></i></a>';
@@ -3289,7 +3349,7 @@
         function serveTestPredict() {
             var modelId = $('serve-test-model').value;
             var raw = $('serve-test-input').value.trim();
-            if (!raw) { notify('Enter input data', 'warn'); return; }
+            if (!raw) { notify('Enter input data', 'error'); return; }
             var body;
             try {
                 var parsed = JSON.parse(raw);
@@ -3298,7 +3358,7 @@
             } catch(e) { notify('Invalid JSON: ' + e.message, 'error'); return; }
             $('serve-test-result').style.display = 'none';
             fetch('/api/predict', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-                .then(function(r) { return r.json(); })
+                .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
                 .then(function(d) {
                     $('serve-test-result').style.display = '';
                     $('serve-test-output').textContent = JSON.stringify(d, null, 2);
@@ -3311,22 +3371,22 @@
 
         function serveViewStats(modelId) {
             fetch('/api/predict/stats/' + modelId)
-                .then(function(r) { return r.json(); })
+                .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
                 .then(function(d) {
                     if (d.stats) {
                         var s = d.stats;
-                        notify('p50=' + (s.p50_latency_ms||0).toFixed(2) + 'ms  p95=' + (s.p95_latency_ms||0).toFixed(2) + 'ms  reqs=' + (s.total_predictions||0), 'ok');
+                        notify('p50=' + (s.p50_latency_ms||0).toFixed(2) + 'ms  p95=' + (s.p95_latency_ms||0).toFixed(2) + 'ms  reqs=' + (s.total_predictions||0), 'success');
                     } else {
-                        notify('Model not cached yet — send a prediction first', 'warn');
+                        notify('Model not cached yet — send a prediction first', 'error');
                     }
                 })
-                .catch(function() { notify('Model not cached — send a prediction to load it', 'warn'); });
+                .catch(function() { notify('Model not cached — send a prediction to load it', 'error'); });
         }
 
         function serveEvictCache(modelId) {
             fetch('/api/predict/cache/' + modelId, { method: 'DELETE' })
-                .then(function(r) { return r.json(); })
-                .then(function(d) { notify(d.message || 'Cache evicted', 'ok'); })
+                .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+                .then(function(d) { notify(d.message || 'Cache evicted', 'success'); })
                 .catch(function() { notify('Failed to evict cache', 'error'); });
         }
 
@@ -3348,14 +3408,6 @@
                         if (automlMultiselect) automlMultiselect.refresh();
                     });
                 }
-                refreshSystemStatus();
-                loadDeviceInfo();
-                loadAlerts();
-                loadPerformanceStats();
-                loadSecurityStatus();
-                loadRateLimitStats();
-                loadAuditLog();
-                setInterval(pollJobs, 2000);
                 setInterval(function() { refreshSystemStatus(); loadAlerts(); loadPerformanceStats(); loadRateLimitStats(); }, 15000);
 
                 $('cfg-targetColumn').addEventListener('change', function() {

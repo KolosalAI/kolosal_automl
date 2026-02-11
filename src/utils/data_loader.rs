@@ -5,7 +5,6 @@ use polars::prelude::*;
 use std::path::Path;
 use std::io::{BufRead, BufReader};
 use std::fs::File;
-use std::sync::Arc;
 use std::time::Instant;
 
 /// Data loader for various file formats
@@ -57,7 +56,7 @@ impl DataLoader {
         let file = File::open(path)
             .map_err(|e| KolosalError::DataError(e.to_string()))?;
 
-        let mut reader = CsvReadOptions::default()
+        let reader = CsvReadOptions::default()
             .with_has_header(true)
             .with_infer_schema_length(Some(100))
             .into_reader_with_file_handle(file);

@@ -5,7 +5,6 @@ use crate::synthetic::{Sampler, ResampleResult, class_counts, class_indices};
 use ndarray::{Array1, Array2};
 use rand::prelude::*;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 /// ADASYN adaptive synthetic sampling
 #[derive(Debug, Clone, Serialize, Deserialize)]

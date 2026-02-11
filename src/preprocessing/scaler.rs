@@ -1,7 +1,6 @@
 //! Feature scaling implementations
 
 use crate::error::{KolosalError, Result};
-use ndarray::{Array1, Array2, ArrayView1, Axis};
 use polars::prelude::*;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};

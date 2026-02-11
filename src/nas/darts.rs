@@ -3,7 +3,7 @@
 //! Implements differentiable architecture search using continuous relaxation
 //! of the discrete architecture space.
 
-use ndarray::{Array1, Array2, Array3, Axis};
+use ndarray::{Array1, Array2, Array3};
 use rand::prelude::*;
 use rand_xoshiro::Xoshiro256PlusPlus;
 use serde::{Deserialize, Serialize};

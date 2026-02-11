@@ -14,6 +14,3 @@ pub use voting::{VotingClassifier, VotingRegressor, VotingStrategy};
 pub use stacking::{StackingClassifier, StackingRegressor, StackingConfig};
 pub use blending::{BlendingClassifier, BlendingRegressor, BlendingConfig};
 
-use crate::error::Result;
-use ndarray::{Array1, Array2};
-use serde::{Deserialize, Serialize};

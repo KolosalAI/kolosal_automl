@@ -8,7 +8,7 @@
 //! - L1-based selection (Lasso)
 
 use crate::error::{KolosalError, Result};
-use ndarray::{Array1, Array2, Axis};
+use ndarray::{Array1, Array2};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 

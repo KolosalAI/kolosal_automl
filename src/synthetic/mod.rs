@@ -16,7 +16,6 @@ pub use random_sampling::{RandomOverSampler, RandomUnderSampler, NearMiss};
 
 use crate::error::Result;
 use ndarray::{Array1, Array2};
-use serde::{Deserialize, Serialize};
 
 /// Result of resampling
 #[derive(Debug, Clone)]

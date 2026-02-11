@@ -5,10 +5,10 @@
 use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
-use std::thread::{self, JoinHandle};
-use std::time::{Duration, Instant};
+use std::thread::JoinHandle;
+use std::time::Instant;
 
-use super::priority::{Priority, PriorityQueue};
+use super::priority::Priority;
 
 /// Configuration for dynamic batcher
 #[derive(Debug, Clone)]

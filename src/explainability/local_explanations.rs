@@ -1,10 +1,9 @@
 //! Local explanations (SHAP-like feature contributions)
 
-use crate::error::{KolosalError, Result};
+use crate::error::Result;
 use ndarray::{Array1, Array2};
 use rand::prelude::*;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 /// Feature contribution to a prediction
 #[derive(Debug, Clone, Serialize, Deserialize)]

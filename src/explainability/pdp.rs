@@ -1,7 +1,7 @@
 //! Partial Dependence Plots and Individual Conditional Expectation
 
 use crate::error::{KolosalError, Result};
-use ndarray::{Array1, Array2, Axis};
+use ndarray::{Array1, Array2};
 use serde::{Deserialize, Serialize};
 
 /// Result of Partial Dependence computation

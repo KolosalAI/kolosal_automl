@@ -1,6 +1,6 @@
 //! Pipeline composition
 
-use crate::error::{KolosalError, Result};
+use crate::error::Result;
 use crate::autopipeline::detector::DetectedSchema;
 use crate::training::TaskType;
 use serde::{Deserialize, Serialize};

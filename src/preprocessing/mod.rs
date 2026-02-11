@@ -16,6 +16,7 @@ mod pipeline;
 pub mod outlier;
 pub mod transforms;
 pub mod feature_selection;
+pub mod quality;
 
 pub use config::PreprocessingConfig;
 pub use imputer::{Imputer, ImputeStrategy};
@@ -25,9 +26,9 @@ pub use pipeline::DataPreprocessor;
 pub use outlier::{OutlierDetector, OutlierMethod, OutlierStrategy, OutlierBounds};
 pub use transforms::{Transformer, TransformType, Binner, BinningStrategy, BinEncoding};
 pub use feature_selection::{FeatureSelector, SelectionMethod, CorrelationFilter};
+pub use quality::{DataQualityReport, DataQualityScorer, ColumnQuality, QualityWarning, ColumnStatistics};
 
 use crate::error::Result;
-use ndarray::{Array1, Array2};
 use polars::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -81,7 +82,7 @@ impl FeatureStats {
         stats.count = series.len();
         stats.null_count = series.null_count();
 
-        if let Ok(ca) = series.cast(&DataType::Float64).and_then(|s| Ok(s.f64().unwrap().clone())) {
+        if let Ok(ca) = series.cast(&DataType::Float64).and_then(|s| s.f64().cloned()) {
             stats.mean = ca.mean();
             stats.std = ca.std(1);
             stats.min = ca.min();

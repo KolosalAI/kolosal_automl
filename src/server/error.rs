@@ -35,8 +35,8 @@ pub enum ServerError {
 impl IntoResponse for ServerError {
     fn into_response(self) -> Response {
         let (status, message) = match &self {
-            ServerError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg.clone()),
-            ServerError::NotFound(msg) => (StatusCode::NOT_FOUND, msg.clone()),
+            ServerError::BadRequest(msg) => (StatusCode::BAD_REQUEST, sanitize_error(msg)),
+            ServerError::NotFound(msg) => (StatusCode::NOT_FOUND, sanitize_error(msg)),
             ServerError::Internal(msg) => {
                 tracing::error!(detail = %msg, "Internal server error");
                 (StatusCode::INTERNAL_SERVER_ERROR, "An internal error occurred".to_string())
@@ -49,13 +49,13 @@ impl IntoResponse for ServerError {
                 let msg = e.to_string();
                 // Only expose safe parts of Polars errors
                 let safe_msg = if msg.contains("not found") || msg.contains("column") {
-                    msg.clone()
+                    sanitize_error(&msg)
                 } else {
                     "Data processing error. Check your data format.".to_string()
                 };
                 (StatusCode::BAD_REQUEST, safe_msg)
             }
-            ServerError::Json(e) => (StatusCode::BAD_REQUEST, "Invalid JSON format".to_string()),
+            ServerError::Json(_e) => (StatusCode::BAD_REQUEST, "Invalid JSON format".to_string()),
             ServerError::Training(msg) => {
                 tracing::error!(detail = %msg, "Training error");
                 (StatusCode::INTERNAL_SERVER_ERROR, "Training failed. Check server logs for details.".to_string())
@@ -68,6 +68,18 @@ impl IntoResponse for ServerError {
         }));
 
         (status, body).into_response()
+    }
+}
+
+/// Sanitize error messages to avoid leaking internal details to clients.
+fn sanitize_error(msg: &str) -> String {
+    if msg.contains('/') || msg.contains("src/") || msg.contains("thread") || msg.contains("panicked") {
+        "An internal error occurred. Please check the server logs for details.".to_string()
+    } else if msg.len() > 200 {
+        let end = msg.char_indices().nth(200).map(|(i, _)| i).unwrap_or(msg.len());
+        format!("{}...", &msg[..end])
+    } else {
+        msg.to_string()
     }
 }
 

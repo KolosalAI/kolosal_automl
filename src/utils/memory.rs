@@ -1,8 +1,7 @@
 //! Memory management utilities
 
-use std::alloc::{alloc, dealloc, Layout};
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Mutex, RwLock};
 use std::time::{Duration, Instant};
 
 /// Memory pool for efficient allocation
@@ -261,7 +260,7 @@ impl<K: Clone + Eq + std::hash::Hash, V: Clone> LruCache<K, V> {
     }
 
     fn evict_lru(&self) {
-        let mut order = self.access_order.lock().unwrap();
+        let order = self.access_order.lock().unwrap();
         if let Some(oldest_key) = order.first().cloned() {
             drop(order);
             self.remove(&oldest_key);

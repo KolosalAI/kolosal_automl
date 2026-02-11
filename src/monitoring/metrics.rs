@@ -5,7 +5,7 @@
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::RwLock;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 /// Type of metric
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

@@ -3,11 +3,10 @@
 //! Implements GP regression with various kernels and acquisition functions
 //! for intelligent hyperparameter search.
 
-use ndarray::{Array1, Array2, Axis, s};
+use ndarray::{Array1, Array2, Axis};
 use rand::prelude::*;
 use rand_xoshiro::Xoshiro256PlusPlus;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 use super::search_space::{SearchSpace, TrialParams, ParameterValue, ParameterType};
 use super::Sampler;
@@ -677,6 +676,7 @@ impl BayesianOptimizer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
 
     #[test]
     fn test_rbf_kernel() {

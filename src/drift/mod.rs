@@ -12,7 +12,7 @@ pub use concept_drift::{ConceptDriftDetector, DDM, ADWIN, PageHinkley, EDDM};
 pub use feature_drift::{FeatureDriftMonitor, DriftReport, FeatureDriftResult};
 
 use crate::error::Result;
-use ndarray::{Array1, Array2};
+use ndarray::Array1;
 use serde::{Deserialize, Serialize};
 
 /// Drift detection result

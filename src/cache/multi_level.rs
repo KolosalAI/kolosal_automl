@@ -4,7 +4,6 @@
 //! and intelligent partitioning.
 
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
 use std::hash::Hash;
 
 use super::lru_ttl::LruTtlCache;

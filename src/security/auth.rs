@@ -121,6 +121,15 @@ impl JwtVerifier {
     }
 }
 
+/// Security status for compliance reporting
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SecurityStatus {
+    pub api_key_auth_enabled: bool,
+    pub jwt_auth_enabled: bool,
+    pub audit_log_enabled: bool,
+    pub blocked_ips_count: usize,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuditEntry {
     pub timestamp: DateTime<Utc>,
@@ -214,6 +223,23 @@ impl SecurityManager {
     pub fn get_audit_log(&self, limit: usize) -> Vec<AuditEntry> {
         let log = self.audit_log.read();
         log.iter().rev().take(limit).cloned().collect()
+    }
+
+    /// Get the most recent N audit entries (oldest first)
+    pub fn get_recent_entries(&self, limit: usize) -> Vec<AuditEntry> {
+        let log = self.audit_log.read();
+        let start = log.len().saturating_sub(limit);
+        log[start..].to_vec()
+    }
+
+    /// Get security status summary for compliance reporting
+    pub fn get_status(&self) -> SecurityStatus {
+        SecurityStatus {
+            api_key_auth_enabled: self.config.enable_api_key_auth,
+            jwt_auth_enabled: self.config.enable_jwt_auth,
+            audit_log_enabled: self.config.audit_log_enabled,
+            blocked_ips_count: self.config.blocked_ips.len(),
+        }
     }
 
     pub fn generate_api_key() -> String {

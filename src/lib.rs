@@ -43,8 +43,14 @@
 //!
 //! ## Utilities
 //! - [`autopipeline`] - Automatic pipeline construction
-//! - [`export`] - Model serialization (ONNX, PMML)
+//! - [`export`] - Model serialization (ONNX, PMML), model cards, datasheets
 //! - [`nas`] - Neural architecture search
+//!
+//! ## ISO Compliance
+//! - [`provenance`] - Data lineage and provenance tracking (ISO 5259, 5338)
+//! - [`fairness`] - Fairness metrics and bias detection (ISO TR 24027)
+//! - [`privacy`] - PII detection, anonymization, retention (ISO 27701)
+//! - [`compliance`] - Compliance reporting and audit (ISO 42001, 27001)
 
 // Core error handling
 pub mod error;
@@ -97,6 +103,12 @@ pub mod adaptive;
 
 // Security
 pub mod security;
+
+// ISO Compliance Modules
+pub mod provenance;
+pub mod fairness;
+pub mod privacy;
+pub mod compliance;
 
 pub use error::{KolosalError, Result};
 
@@ -188,7 +200,25 @@ pub mod prelude {
     
     // Neural architecture search
     pub use crate::nas::{NASSearchSpace, NASController, DARTSSearch, DARTSConfig, ArchitectureEvaluator};
-    
+
     // Architecture layers
     pub use crate::architectures::{TabNet, TabNetConfig, FTTransformer, FTTransformerConfig};
+
+    // ISO Compliance - Provenance
+    pub use crate::provenance::{ProvenanceTracker, DataLineage, DataSource, TransformationRecord};
+
+    // ISO Compliance - Fairness
+    pub use crate::fairness::{FairnessEvaluator, FairnessConfig, FairnessReport, BiasReport};
+
+    // ISO Compliance - Privacy
+    pub use crate::privacy::{PiiScanner, PiiScanResult, Anonymizer, AnonymizationMethod, RetentionManager, DataClassification};
+
+    // ISO Compliance - Compliance Reporting
+    pub use crate::compliance::{ComplianceChecker, ComplianceReport, ComplianceCheckConfig};
+
+    // ISO Compliance - Security Extensions
+    pub use crate::security::{RbacManager, Role, AuditTrail, AuditEventType};
+
+    // ISO Compliance - Export Extensions
+    pub use crate::export::{ModelCard, Datasheet};
 }

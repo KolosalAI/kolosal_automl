@@ -2,7 +2,7 @@
 //!
 //! Implements Gaussian Naive Bayes for continuous features.
 
-use ndarray::{Array1, Array2, Axis};
+use ndarray::{Array1, Array2};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::f64::consts::PI;

@@ -1,15 +1,14 @@
 //! HyperOptX - Main hyperparameter optimizer
 
-use crate::error::{KolosalError, Result};
+use crate::error::Result;
 use super::{
     config::{OptimizationConfig, OptimizeDirection},
-    search_space::{SearchSpace, TrialParams, ParameterValue},
+    search_space::{SearchSpace, TrialParams},
     samplers::{Sampler, create_sampler},
 };
 use polars::prelude::*;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 /// Result of a single trial
@@ -158,7 +157,7 @@ impl HyperOptX {
                 Ok(value) => {
                     history.push((params.clone(), value));
 
-                    let mut trial = TrialResult {
+                    let trial = TrialResult {
                         trial_id,
                         params,
                         value,

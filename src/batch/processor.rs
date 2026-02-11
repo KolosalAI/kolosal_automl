@@ -5,8 +5,8 @@
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
-use std::thread::{self, JoinHandle};
-use std::time::{Duration, Instant};
+use std::thread::JoinHandle;
+use std::time::Instant;
 
 use crate::error::{KolosalError, Result};
 use super::priority::{Priority, PriorityQueue};

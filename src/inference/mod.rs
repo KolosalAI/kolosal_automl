@@ -16,6 +16,3 @@ mod engine;
 pub use config::{InferenceConfig, QuantizationType};
 pub use engine::{InferenceEngine, InferenceStats};
 
-use crate::error::Result;
-use ndarray::{Array1, Array2};
-use serde::{Deserialize, Serialize};

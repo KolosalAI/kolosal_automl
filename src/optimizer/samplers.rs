@@ -1,11 +1,9 @@
 //! Sampling strategies for hyperparameter optimization
 
-use crate::error::Result;
 use super::search_space::{SearchSpace, TrialParams, ParameterValue};
 use rand::prelude::*;
 use rand_xoshiro::Xoshiro256PlusPlus;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 /// Type of sampler to use
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -230,6 +228,7 @@ pub fn create_sampler_from_config(config: SamplerConfig, seed: Option<u64>) -> B
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
 
     #[test]
     fn test_random_sampler() {

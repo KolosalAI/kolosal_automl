@@ -3,7 +3,7 @@
 use crate::error::{KolosalError, Result};
 use crate::autopipeline::{
     composer::{
-        ComposerConfig, EncodeMethod, FeatureSelectionMethod, ImputeStrategy,
+        ComposerConfig, ImputeStrategy,
         ModelStep, OutlierMethod, PipelineBlueprint, PipelineComposer,
         PreprocessingStep, ScaleMethod, TransformMethod,
     },

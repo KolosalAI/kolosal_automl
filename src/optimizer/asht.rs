@@ -1,6 +1,6 @@
 //! ASHT - Adaptive Successive Halving with Time budget
 
-use crate::error::{KolosalError, Result};
+use crate::error::Result;
 use super::search_space::{SearchSpace, TrialParams};
 use super::samplers::{Sampler, create_sampler_from_config, SamplerConfig};
 use serde::{Deserialize, Serialize};

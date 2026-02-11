@@ -1,7 +1,7 @@
 //! URL-based dataset import with auto-detection of source type
 
 use tracing::{info, warn};
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::net::IpAddr;
 
 /// Build an HTTP client with SSRF-safe redirect policy
 fn safe_http_client(timeout_secs: u64) -> Result<reqwest::Client, String> {

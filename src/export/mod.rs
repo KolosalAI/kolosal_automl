@@ -10,6 +10,8 @@ mod serializer;
 mod onnx;
 mod pmml;
 mod versioning;
+pub mod model_card;
+pub mod datasheet;
 
 pub use serializer::{
     ModelSerializer, SerializationFormat, ModelMetadata,
@@ -18,3 +20,5 @@ pub use serializer::{
 pub use onnx::{ONNXExporter, ONNXConfig};
 pub use pmml::{PMMLExporter};
 pub use versioning::{ModelVersion, VersionedModel, ModelRegistry};
+pub use model_card::ModelCard;
+pub use datasheet::Datasheet;

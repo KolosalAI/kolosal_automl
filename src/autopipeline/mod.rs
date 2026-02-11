@@ -14,6 +14,3 @@ pub use detector::{DataTypeDetector, DetectedSchema, ColumnInfo};
 pub use composer::{PipelineComposer, ComposerConfig, PreprocessingStep, ModelStep};
 pub use pipeline::{AutoPipeline, PipelineConfig, PipelineResult};
 
-use crate::error::Result;
-use ndarray::{Array1, Array2};
-use serde::{Deserialize, Serialize};

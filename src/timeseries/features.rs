@@ -1,9 +1,8 @@
 //! Time series feature engineering
 
 use crate::error::{KolosalError, Result};
-use ndarray::{Array1, Array2, Axis};
+use ndarray::{Array1, Array2};
 use serde::{Deserialize, Serialize};
-use std::collections::VecDeque;
 
 /// Configuration for lag features
 #[derive(Debug, Clone, Serialize, Deserialize)]

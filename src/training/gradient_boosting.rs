@@ -3,13 +3,13 @@
 //! A native Rust implementation of gradient boosted decision trees,
 //! similar to LightGBM/XGBoost but simpler.
 
-use ndarray::{Array1, Array2, Axis};
+use ndarray::{Array1, Array2};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use rand::prelude::*;
 use rand_xoshiro::Xoshiro256PlusPlus;
 
-use super::decision_tree::{DecisionTree, Criterion};
+use super::decision_tree::DecisionTree;
 use crate::error::Result;
 
 /// Gradient Boosting configuration

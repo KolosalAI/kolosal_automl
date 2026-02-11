@@ -1,8 +1,6 @@
 //! Search space definition for hyperparameters
 
-use crate::error::{KolosalError, Result};
 use rand::prelude::*;
-use rand_xoshiro::Xoshiro256PlusPlus;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -256,6 +254,7 @@ pub type TrialParams = HashMap<String, ParameterValue>;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rand_xoshiro::Xoshiro256PlusPlus;
 
     #[test]
     fn test_search_space_builder() {

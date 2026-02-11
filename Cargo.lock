@@ -1981,6 +1981,7 @@ dependencies = [
  "rand_chacha 0.3.1",
  "rand_xoshiro",
  "rayon",
+ "regex",
  "reqwest",
  "rstest",
  "serde",

@@ -18,7 +18,7 @@ use super::catboost::{CatBoostRegressor, CatBoostClassifier, CatBoostConfig};
 use super::sgd::{SGDRegressor, SGDClassifier, SGDConfig};
 use super::gaussian_process_regression::{GaussianProcessRegressor, GPConfig};
 use super::clustering::{KMeans, DBSCAN};
-use ndarray::{Array1, Array2, Axis};
+use ndarray::{Array1, Array2};
 use polars::prelude::*;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};

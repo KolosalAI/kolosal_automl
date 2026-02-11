@@ -9,11 +9,13 @@ use chrono::Utc;
 
 use super::auth::{AuditEntry, SecurityManager};
 use super::rate_limiter::RateLimiter;
+use super::rbac::{RbacManager, Role};
 
 #[derive(Debug, Clone)]
 pub struct SecurityMiddleware {
     pub security_manager: Arc<SecurityManager>,
     pub rate_limiter: Arc<RateLimiter>,
+    pub rbac_manager: Arc<RbacManager>,
 }
 
 impl SecurityMiddleware {
@@ -21,6 +23,7 @@ impl SecurityMiddleware {
         Self {
             security_manager,
             rate_limiter,
+            rbac_manager: Arc::new(RbacManager::new()),
         }
     }
 }
@@ -82,6 +85,19 @@ pub async fn security_layer(
 
     let method = request.method().to_string();
     let uri = request.uri().path().to_string();
+
+    // RBAC check: extract role from x-role header (defaults to Admin for local-first use).
+    // In production, the role should come from the authenticated session/JWT.
+    let role = request
+        .headers()
+        .get("x-role")
+        .and_then(|v| v.to_str().ok())
+        .and_then(Role::from_str)
+        .unwrap_or(Role::Admin);
+
+    if !middleware.rbac_manager.check_api_access(&role, &uri, &method) {
+        return Err(StatusCode::FORBIDDEN);
+    }
 
     // Process request
     let response = next.run(request).await;

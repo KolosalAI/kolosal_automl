@@ -1,7 +1,7 @@
 //! Feature drift monitoring
 
 use crate::error::{KolosalError, Result};
-use crate::drift::{DriftDetector, DriftResult};
+use crate::drift::DriftDetector;
 use crate::drift::data_drift::{KolmogorovSmirnovTest, PopulationStabilityIndex, JensenShannonDivergence};
 use ndarray::{Array1, Array2};
 use serde::{Deserialize, Serialize};

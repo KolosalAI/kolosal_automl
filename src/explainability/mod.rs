@@ -15,6 +15,3 @@ pub use importance::{PermutationImportance, ImportanceResult};
 pub use pdp::{PartialDependence, PDPResult, ICEResult};
 pub use local_explanations::{LocalExplainer, LocalExplanation, FeatureContribution};
 
-use crate::error::Result;
-use ndarray::{Array1, Array2};
-use serde::{Deserialize, Serialize};

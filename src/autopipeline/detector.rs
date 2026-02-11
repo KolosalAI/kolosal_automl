@@ -1,9 +1,8 @@
 //! Automatic data type detection
 
-use crate::error::{KolosalError, Result};
+use crate::error::Result;
 use crate::preprocessing::ColumnType;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 /// Detected column information
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -68,6 +68,21 @@ pub enum KolosalError {
 
     #[error("Processing error: {0}")]
     ProcessingError(String),
+
+    #[error("Security error: {0}")]
+    SecurityError(String),
+
+    #[error("Privacy error: {0}")]
+    PrivacyError(String),
+
+    #[error("Fairness error: {0}")]
+    FairnessError(String),
+
+    #[error("Compliance error: {0}")]
+    ComplianceError(String),
+
+    #[error("Provenance error: {0}")]
+    ProvenanceError(String),
 }
 
 impl From<polars::error::PolarsError> for KolosalError {
@@ -85,7 +100,7 @@ impl From<serde_json::Error> for KolosalError {
 impl From<ndarray::ShapeError> for KolosalError {
     fn from(err: ndarray::ShapeError) -> Self {
         KolosalError::ShapeError {
-            expected: "valid shape".to_string(),
+            expected: format!("compatible shape (kind: {:?})", err.kind()),
             actual: err.to_string(),
         }
     }

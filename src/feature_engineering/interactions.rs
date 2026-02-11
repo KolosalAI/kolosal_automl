@@ -4,7 +4,6 @@ use crate::error::{KolosalError, Result};
 use crate::feature_engineering::FeatureTransformer;
 use ndarray::Array2;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 /// Type of interaction to generate
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

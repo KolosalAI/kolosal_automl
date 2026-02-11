@@ -28,5 +28,3 @@ pub use gaussian_process::{
     BayesianOptimizer, BayesianOptConfig,
 };
 
-use crate::error::Result;
-use serde::{Deserialize, Serialize};

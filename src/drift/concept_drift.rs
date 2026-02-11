@@ -1,8 +1,6 @@
 //! Concept drift detection (online/streaming methods)
 
-use crate::error::Result;
 use crate::drift::DriftResult;
-use ndarray::Array1;
 use serde::{Deserialize, Serialize};
 
 /// Drift Detection Method (DDM)

@@ -2,7 +2,7 @@
 
 use crate::error::{KolosalError, Result};
 use crate::imputation::{Imputer, InitialStrategy, is_missing};
-use ndarray::{Array1, Array2, Axis};
+use ndarray::{Array1, Array2};
 use rand::prelude::*;
 use serde::{Deserialize, Serialize};
 

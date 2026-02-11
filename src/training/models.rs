@@ -1,6 +1,6 @@
 //! Model implementations and traits
 
-use crate::error::{KolosalError, Result};
+use crate::error::Result;
 use ndarray::{Array1, Array2};
 use serde::{Deserialize, Serialize};
 

@@ -4,7 +4,7 @@
 //! misclassified samples more heavily in subsequent rounds.
 
 use crate::error::{KolosalError, Result};
-use ndarray::{Array1, Array2, Axis};
+use ndarray::{Array1, Array2};
 use serde::{Deserialize, Serialize};
 
 /// A single decision stump: splits on one feature at one threshold

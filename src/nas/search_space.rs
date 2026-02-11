@@ -4,7 +4,6 @@
 
 use rand::prelude::SliceRandom;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 /// Types of operations in the search space
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

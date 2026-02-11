@@ -12,4 +12,3 @@ pub use data_loader::{DataLoader, DataSaver, ChunkedReader, FileInfo, LoadingStr
 pub use simd::SimdOps;
 pub use memory::{MemoryPool, LruCache, Arena, PoolStats, CacheStats};
 
-use std::time::{Duration, Instant};

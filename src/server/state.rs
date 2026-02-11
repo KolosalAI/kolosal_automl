@@ -7,9 +7,11 @@ use tokio::sync::RwLock;
 use uuid::Uuid;
 use polars::prelude::*;
 use crate::inference::{InferenceConfig, InferenceEngine};
-use crate::security::{SecurityManager, SecurityConfig, RateLimiter, RateLimitConfig};
+use crate::security::{SecurityManager, SecurityConfig, RateLimiter, RateLimitConfig, AuditTrail};
 use crate::preprocessing::DataPreprocessor;
 use crate::training::TrainEngine;
+use crate::provenance::ProvenanceTracker;
+use crate::privacy::RetentionManager;
 
 use super::ServerConfig;
 
@@ -17,7 +19,13 @@ use super::ServerConfig;
 #[derive(Debug, Clone, serde::Serialize)]
 pub enum JobStatus {
     Pending,
-    Running { progress: f64, message: String },
+    Running {
+        progress: f64,
+        message: String,
+        /// Partial results streamed as they arrive (e.g. leaderboard entries, trial results)
+        #[serde(skip_serializing_if = "Option::is_none")]
+        partial_results: Option<Vec<serde_json::Value>>,
+    },
     Completed { metrics: serde_json::Value },
     Failed { error: String },
 }
@@ -75,30 +83,32 @@ impl ModelRegistry {
         model_id: &str,
         model_path: &str,
     ) -> crate::error::Result<Arc<InferenceEngine>> {
-        // Fast path: check cache
-        {
-            let engines = self.engines.read().await;
-            if let Some(engine) = engines.get(model_id) {
-                return Ok(Arc::clone(engine));
-            }
+        // Take write lock immediately to prevent TOCTOU race where multiple
+        // tasks could simultaneously load the same model from disk.
+        let mut engines = self.engines.write().await;
+
+        // Check cache under the same lock
+        if let Some(engine) = engines.get(model_id) {
+            return Ok(Arc::clone(engine));
         }
 
-        // Slow path: load from disk
+        // Load from disk (still holding lock — acceptable since load is fast I/O)
         let mut engine = InferenceEngine::load(InferenceConfig::new(), None, model_path)?;
         engine.warmup()?;
         let engine = Arc::new(engine);
 
-        // Insert into cache, evict oldest if needed
-        {
-            let mut engines = self.engines.write().await;
-            if engines.len() >= self.max_cached {
-                // Evict first entry (simple LRU approximation)
-                if let Some(key) = engines.keys().next().cloned() {
-                    engines.remove(&key);
-                }
+        // Evict least-recently-inserted entry if at capacity.
+        // HashMap doesn't track insertion order, so evict the entry with
+        // the fewest total_predictions (least-used heuristic).
+        if engines.len() >= self.max_cached {
+            let least_used = engines.iter()
+                .min_by_key(|(_, e)| e.stats().total_predictions)
+                .map(|(k, _)| k.clone());
+            if let Some(key) = least_used {
+                engines.remove(&key);
             }
-            engines.insert(model_id.to_string(), Arc::clone(&engine));
         }
+        engines.insert(model_id.to_string(), Arc::clone(&engine));
 
         Ok(engine)
     }
@@ -144,6 +154,12 @@ pub struct AppState {
     pub security_manager: Arc<SecurityManager>,
     /// Rate limiter for API throttling
     pub rate_limiter: Arc<RateLimiter>,
+    /// Data provenance tracker (ISO 5259, 5338)
+    pub provenance_tracker: ProvenanceTracker,
+    /// Tamper-evident audit trail (ISO 27001, TR 24028)
+    pub audit_trail: AuditTrail,
+    /// Data retention manager (ISO 27701)
+    pub retention_manager: RetentionManager,
 }
 
 impl AppState {
@@ -189,11 +205,22 @@ impl AppState {
             completed_studies: RwLock::new(Vec::new()),
             security_manager: Arc::new(SecurityManager::new(security_config)),
             rate_limiter: Arc::new(RateLimiter::new(rate_limit_config)),
+            provenance_tracker: ProvenanceTracker::default(),
+            audit_trail: AuditTrail::default(),
+            retention_manager: RetentionManager::new(),
         }
     }
 
+    /// Maximum number of completed jobs to retain in memory
+    const MAX_JOBS: usize = 1000;
+    /// Maximum number of train engines to retain
+    const MAX_TRAIN_ENGINES: usize = 50;
+    /// Maximum number of completed studies to retain
+    const MAX_COMPLETED_STUDIES: usize = 100;
+
     pub fn generate_id() -> String {
-        Uuid::new_v4().to_string()[..8].to_string()
+        // Use full UUID to avoid collisions (previously only 8 hex chars = 32 bits)
+        Uuid::new_v4().to_string()
     }
 
     /// Store a dataset and return its ID
@@ -222,10 +249,47 @@ impl AppState {
         id
     }
 
+    /// Evict completed/failed jobs and old train engines to prevent unbounded memory growth.
+    /// Called automatically after adding new entries.
+    pub async fn evict_stale_entries(&self) {
+        // Evict oldest completed/failed jobs if over limit
+        let mut jobs = self.jobs.write().await;
+        if jobs.len() > Self::MAX_JOBS {
+            let mut completed_ids: Vec<(String, chrono::DateTime<chrono::Utc>)> = jobs.iter()
+                .filter(|(_, j)| matches!(j.status, JobStatus::Completed { .. } | JobStatus::Failed { .. }))
+                .map(|(id, j)| (id.clone(), j.created_at))
+                .collect();
+            completed_ids.sort_by_key(|(_, t)| *t);
+            let to_remove = jobs.len() - Self::MAX_JOBS;
+            for (id, _) in completed_ids.into_iter().take(to_remove) {
+                jobs.remove(&id);
+            }
+        }
+        drop(jobs);
+
+        // Evict oldest train engines if over limit
+        let mut engines = self.train_engines.write().await;
+        if engines.len() > Self::MAX_TRAIN_ENGINES {
+            let keys: Vec<String> = engines.keys().cloned().collect();
+            let to_remove = engines.len() - Self::MAX_TRAIN_ENGINES;
+            for key in keys.into_iter().take(to_remove) {
+                engines.remove(&key);
+            }
+        }
+        drop(engines);
+
+        // Truncate completed studies
+        let mut studies = self.completed_studies.write().await;
+        if studies.len() > Self::MAX_COMPLETED_STUDIES {
+            let drain_count = studies.len() - Self::MAX_COMPLETED_STUDIES;
+            studies.drain(..drain_count);
+        }
+    }
+
     /// Get system information
     pub fn get_system_info(&self) -> serde_json::Value {
         use sysinfo::System;
-        
+
         let mut sys = System::new_all();
         sys.refresh_all();
 
@@ -233,12 +297,14 @@ impl AppState {
         let cpu_count = sys.cpus().len().max(1);
         let cpu_usage: f32 = sys.cpus().iter().map(|c| c.cpu_usage()).sum::<f32>() / cpu_count as f32;
 
+        let total_memory = sys.total_memory().max(1); // avoid division by zero
+
         serde_json::json!({
             "cpu_count": sys.cpus().len(),
             "cpu_usage": cpu_usage,
-            "total_memory_gb": sys.total_memory() as f64 / 1024.0 / 1024.0 / 1024.0,
+            "total_memory_gb": total_memory as f64 / 1024.0 / 1024.0 / 1024.0,
             "used_memory_gb": sys.used_memory() as f64 / 1024.0 / 1024.0 / 1024.0,
-            "memory_usage_percent": (sys.used_memory() as f64 / sys.total_memory() as f64) * 100.0,
+            "memory_usage_percent": (sys.used_memory() as f64 / total_memory as f64) * 100.0,
         })
     }
 }

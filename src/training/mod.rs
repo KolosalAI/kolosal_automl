@@ -56,6 +56,3 @@ pub use sgd::{SGDRegressor, SGDClassifier, SGDConfig};
 pub use gaussian_process_regression::{GaussianProcessRegressor, GPConfig};
 pub use clustering::{KMeans, DBSCAN};
 
-use crate::error::Result;
-use ndarray::Array2;
-use serde::{Deserialize, Serialize};

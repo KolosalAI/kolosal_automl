@@ -13,7 +13,7 @@ use crate::monitoring::PerformanceMetrics;
 use crate::preprocessing::DataPreprocessor;
 use crate::training::TrainEngine;
 use super::InferenceConfig;
-use ndarray::{Array1, Array2, Axis};
+use ndarray::{Array1, Array2};
 use polars::prelude::*;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};

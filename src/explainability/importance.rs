@@ -1,11 +1,10 @@
 //! Permutation feature importance
 
-use crate::error::{KolosalError, Result};
+use crate::error::Result;
 use crate::training::Model;
-use ndarray::{Array1, Array2, Axis};
+use ndarray::{Array1, Array2};
 use rand::prelude::*;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 
 /// Result of feature importance computation
 #[derive(Debug, Clone, Serialize, Deserialize)]

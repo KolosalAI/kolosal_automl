@@ -2,7 +2,7 @@
 
 use crate::error::{KolosalError, Result};
 use crate::training::Model;
-use ndarray::{Array1, Array2, Axis};
+use ndarray::{Array1, Array2};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 

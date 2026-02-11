@@ -32,7 +32,7 @@ pub struct ServerConfig {
 impl Default for ServerConfig {
     fn default() -> Self {
         Self {
-            host: std::env::var("API_HOST").unwrap_or_else(|_| "0.0.0.0".to_string()),
+            host: std::env::var("API_HOST").unwrap_or_else(|_| "127.0.0.1".to_string()),
             port: std::env::var("API_PORT")
                 .ok()
                 .and_then(|p| p.parse().ok())
@@ -124,6 +124,20 @@ pub async fn run_server(config: ServerConfig) -> anyhow::Result<()> {
             uptime_secs = uptime.num_seconds(),
             "Shutdown signal received, stopping server gracefully"
         );
+
+        // Handle second ctrl+c (force exit) or timeout
+        tokio::spawn(async {
+            tokio::select! {
+                _ = tokio::signal::ctrl_c() => {
+                    eprintln!("\nForce shutdown requested, exiting immediately");
+                    std::process::exit(1);
+                }
+                _ = tokio::time::sleep(std::time::Duration::from_secs(10)) => {
+                    eprintln!("Graceful shutdown timed out after 10s, forcing exit");
+                    std::process::exit(1);
+                }
+            }
+        });
     };
 
     info!("Server started successfully (press ctrl+c to stop)");

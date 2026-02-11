@@ -3,7 +3,7 @@
 use crate::error::{KolosalError, Result};
 use crate::training::Model;
 use crate::training::cross_validation::{CrossValidator, CVStrategy};
-use ndarray::{Array1, Array2, Axis};
+use ndarray::{Array1, Array2};
 use serde::{Deserialize, Serialize};
 
 /// Configuration for stacking ensemble

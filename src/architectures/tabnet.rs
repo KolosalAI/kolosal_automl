@@ -3,7 +3,6 @@
 //! TabNet: Attentive Interpretable Tabular Learning
 //! Based on the paper: https://arxiv.org/abs/1908.07442
 
-use std::collections::HashMap;
 
 /// TabNet configuration
 #[derive(Debug, Clone)]

@@ -3,11 +3,15 @@
 //! Provides SVM classifier and regressor using SMO (Sequential Minimal Optimization) algorithm.
 
 use crate::error::{KolosalError, Result};
-use ndarray::{Array1, Array2, Axis};
+use ndarray::{Array1, Array2};
 use rayon::prelude::*;
 use rand::prelude::*;
 use rand_xoshiro::Xoshiro256PlusPlus;
 use serde::{Deserialize, Serialize};
+
+/// Maximum number of samples for eager kernel matrix computation.
+/// Beyond this, training will return an error to prevent OOM.
+const MAX_KERNEL_MATRIX_SAMPLES: usize = 10_000;
 
 /// Kernel function type
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -58,11 +62,20 @@ impl Default for SVMConfig {
     }
 }
 
+/// A single binary SVM trained for one class vs rest
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct BinarySVM {
+    support_vectors: Array2<f64>,
+    alphas: Array1<f64>,
+    support_labels: Array1<f64>,
+    bias: f64,
+}
+
 /// Support Vector Classifier
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SVMClassifier {
     config: SVMConfig,
-    /// Support vectors
+    /// Support vectors (used for binary classification)
     support_vectors: Option<Array2<f64>>,
     /// Alpha coefficients (Lagrange multipliers)
     alphas: Option<Array1<f64>>,
@@ -72,6 +85,8 @@ pub struct SVMClassifier {
     bias: f64,
     /// Unique class labels
     classes: Vec<i64>,
+    /// One-vs-Rest binary classifiers for multi-class
+    ovr_classifiers: Vec<BinarySVM>,
     is_fitted: bool,
 }
 
@@ -85,53 +100,104 @@ impl SVMClassifier {
             support_labels: None,
             bias: 0.0,
             classes: Vec::new(),
+            ovr_classifiers: Vec::new(),
             is_fitted: false,
         }
     }
 
-    /// Fit the classifier
+    /// Fit the classifier (supports binary and multi-class via One-vs-Rest)
     pub fn fit(&mut self, x: &Array2<f64>, y: &Array1<f64>) -> Result<()> {
-        // Find unique classes (binary classification for now)
-        let mut classes: Vec<i64> = y.iter().map(|&v| v as i64).collect();
+        // Validate that all labels are integral values (no silent truncation)
+        for (i, &v) in y.iter().enumerate() {
+            if (v - v.round()).abs() > 1e-9 {
+                return Err(KolosalError::InvalidInput(
+                    format!("SVM classifier requires integer class labels, but sample {} has label {}", i, v)
+                ));
+            }
+        }
+
+        let mut classes: Vec<i64> = y.iter().map(|&v| v.round() as i64).collect();
         classes.sort();
         classes.dedup();
-        
-        if classes.len() != 2 {
+
+        if classes.len() < 2 {
             return Err(KolosalError::InvalidInput(
-                "SVM currently only supports binary classification".to_string()
+                "SVM requires at least 2 distinct classes".to_string()
             ));
         }
-        
+
         self.classes = classes.clone();
-        
-        // Convert labels to +1/-1
+
+        if classes.len() == 2 {
+            self.fit_binary(x, y)?;
+        } else {
+            self.fit_ovr(x, y)?;
+        }
+
+        self.is_fitted = true;
+        Ok(())
+    }
+
+    /// Fit binary classification directly
+    fn fit_binary(&mut self, x: &Array2<f64>, y: &Array1<f64>) -> Result<()> {
         let y_binary: Array1<f64> = y.mapv(|v| {
-            if v as i64 == classes[1] { 1.0 } else { -1.0 }
+            if v.round() as i64 == self.classes[1] { 1.0 } else { -1.0 }
         });
-        
-        // Train using SMO
+
         let (alphas, bias, support_indices) = self.smo_train(x, &y_binary)?;
-        
-        // Store support vectors
+
         let sv_count = support_indices.len();
         let n_features = x.ncols();
-        
+
         let mut support_vectors = Array2::zeros((sv_count, n_features));
         let mut support_labels = Array1::zeros(sv_count);
         let mut support_alphas = Array1::zeros(sv_count);
-        
+
         for (i, &idx) in support_indices.iter().enumerate() {
             support_vectors.row_mut(i).assign(&x.row(idx));
             support_labels[i] = y_binary[idx];
             support_alphas[i] = alphas[idx];
         }
-        
+
         self.support_vectors = Some(support_vectors);
         self.support_labels = Some(support_labels);
         self.alphas = Some(support_alphas);
         self.bias = bias;
-        self.is_fitted = true;
-        
+        Ok(())
+    }
+
+    /// Fit multi-class classification using One-vs-Rest strategy
+    fn fit_ovr(&mut self, x: &Array2<f64>, y: &Array1<f64>) -> Result<()> {
+        self.ovr_classifiers.clear();
+
+        for &cls in &self.classes {
+            let y_binary: Array1<f64> = y.mapv(|v| {
+                if v.round() as i64 == cls { 1.0 } else { -1.0 }
+            });
+
+            let (alphas, bias, support_indices) = self.smo_train(x, &y_binary)?;
+
+            let sv_count = support_indices.len();
+            let n_features = x.ncols();
+
+            let mut support_vectors = Array2::zeros((sv_count, n_features));
+            let mut support_labels = Array1::zeros(sv_count);
+            let mut support_alphas = Array1::zeros(sv_count);
+
+            for (i, &idx) in support_indices.iter().enumerate() {
+                support_vectors.row_mut(i).assign(&x.row(idx));
+                support_labels[i] = y_binary[idx];
+                support_alphas[i] = alphas[idx];
+            }
+
+            self.ovr_classifiers.push(BinarySVM {
+                support_vectors,
+                alphas: support_alphas,
+                support_labels,
+                bias,
+            });
+        }
+
         Ok(())
     }
 
@@ -142,21 +208,33 @@ impl SVMClassifier {
         y: &Array1<f64>,
     ) -> Result<(Array1<f64>, f64, Vec<usize>)> {
         let n = x.nrows();
+
+        if n > MAX_KERNEL_MATRIX_SAMPLES {
+            return Err(KolosalError::InvalidInput(
+                format!(
+                    "Dataset has {} samples, exceeding the maximum {} for SVM kernel matrix. \
+                     Consider subsampling or using a different algorithm.",
+                    n, MAX_KERNEL_MATRIX_SAMPLES
+                )
+            ));
+        }
+
         let mut alphas = Array1::zeros(n);
         let mut bias = 0.0;
-        
+
         // Precompute kernel matrix for efficiency
         let kernel_matrix = self.compute_kernel_matrix(x);
-        
+
         let mut rng = match self.config.random_state {
             Some(seed) => Xoshiro256PlusPlus::seed_from_u64(seed),
             None => Xoshiro256PlusPlus::from_entropy(),
         };
-        
+
         let mut passes = 0;
         let max_passes = 5;
+        let mut total_iter = 0;
 
-        while passes < max_passes {
+        while passes < max_passes && total_iter < self.config.max_iter {
             let mut num_changed = 0;
 
             if n <= 1 {
@@ -238,6 +316,7 @@ impl SVMClassifier {
                 }
             }
             
+            total_iter += 1;
             if num_changed == 0 {
                 passes += 1;
             } else {
@@ -259,7 +338,6 @@ impl SVMClassifier {
     /// Compute kernel matrix (parallelized for large datasets)
     fn compute_kernel_matrix(&self, x: &Array2<f64>) -> Array2<f64> {
         let n = x.nrows();
-        let n_features = x.ncols();
 
         // For small matrices, sequential is faster due to overhead
         if n < 100 {
@@ -291,7 +369,7 @@ impl SVMClassifier {
                         let val = match &config.kernel {
                             KernelType::Linear => a.dot(&b),
                             KernelType::Polynomial { degree, gamma, coef0 } => {
-                                (*gamma * a.dot(&b) + coef0).powi(*degree as i32)
+                                (*gamma * a.dot(&b) + coef0).powi((*degree).min(i32::MAX as usize) as i32)
                             }
                             KernelType::RBF { gamma } => {
                                 let diff = &a - &b;
@@ -322,7 +400,7 @@ impl SVMClassifier {
         match &self.config.kernel {
             KernelType::Linear => x1.dot(x2),
             KernelType::Polynomial { degree, gamma, coef0 } => {
-                (*gamma * x1.dot(x2) + coef0).powi(*degree as i32)
+                (*gamma * x1.dot(x2) + coef0).powi((*degree).min(i32::MAX as usize) as i32)
             }
             KernelType::RBF { gamma } => {
                 let diff = x1 - x2;
@@ -351,64 +429,111 @@ impl SVMClassifier {
         sum + bias
     }
 
-    /// Predict class labels
+    /// Compute the decision function score for a single sample using given SVM parameters
+    fn score_sample(
+        &self,
+        sample: &Array1<f64>,
+        sv: &Array2<f64>,
+        alphas: &Array1<f64>,
+        sv_labels: &Array1<f64>,
+        bias: f64,
+    ) -> f64 {
+        let mut sum = bias;
+        for j in 0..sv.nrows() {
+            let k_val = self.kernel(sample, &sv.row(j).to_owned());
+            sum += alphas[j] * sv_labels[j] * k_val;
+        }
+        sum
+    }
+
+    /// Predict class labels (binary and multi-class)
     pub fn predict(&self, x: &Array2<f64>) -> Result<Array1<f64>> {
         if !self.is_fitted {
             return Err(KolosalError::ModelNotFitted);
         }
-        
-        let sv = self.support_vectors.as_ref().unwrap();
-        let sv_labels = self.support_labels.as_ref().unwrap();
-        let alphas = self.alphas.as_ref().unwrap();
-        
+
         let n = x.nrows();
         let mut predictions = Array1::zeros(n);
-        
-        for i in 0..n {
-            let sample = x.row(i).to_owned();
-            let mut sum = self.bias;
-            
-            for j in 0..sv.nrows() {
-                let k_val = self.kernel(&sample, &sv.row(j).to_owned());
-                sum += alphas[j] * sv_labels[j] * k_val;
+
+        if self.classes.len() == 2 {
+            let sv = self.support_vectors.as_ref().unwrap();
+            let sv_labels = self.support_labels.as_ref().unwrap();
+            let alphas = self.alphas.as_ref().unwrap();
+
+            for i in 0..n {
+                let sample = x.row(i).to_owned();
+                let score = self.score_sample(&sample, sv, alphas, sv_labels, self.bias);
+                predictions[i] = if score >= 0.0 {
+                    self.classes[1] as f64
+                } else {
+                    self.classes[0] as f64
+                };
             }
-            
-            // Convert decision to original class labels
-            predictions[i] = if sum >= 0.0 {
-                self.classes[1] as f64
-            } else {
-                self.classes[0] as f64
-            };
+        } else {
+            for i in 0..n {
+                let sample = x.row(i).to_owned();
+                let mut best_score = f64::NEG_INFINITY;
+                let mut best_class = self.classes[0];
+
+                for (k, clf) in self.ovr_classifiers.iter().enumerate() {
+                    let score = self.score_sample(
+                        &sample,
+                        &clf.support_vectors,
+                        &clf.alphas,
+                        &clf.support_labels,
+                        clf.bias,
+                    );
+                    if score > best_score {
+                        best_score = score;
+                        best_class = self.classes[k];
+                    }
+                }
+
+                predictions[i] = best_class as f64;
+            }
         }
-        
+
         Ok(predictions)
     }
 
-    /// Get decision function values
+    /// Get decision function values (binary: single score, multi-class: max OvR score)
     pub fn decision_function(&self, x: &Array2<f64>) -> Result<Array1<f64>> {
         if !self.is_fitted {
             return Err(KolosalError::ModelNotFitted);
         }
-        
-        let sv = self.support_vectors.as_ref().unwrap();
-        let sv_labels = self.support_labels.as_ref().unwrap();
-        let alphas = self.alphas.as_ref().unwrap();
-        
+
         let n = x.nrows();
         let mut scores = Array1::zeros(n);
-        
-        for i in 0..n {
-            let sample = x.row(i).to_owned();
-            let mut sum = self.bias;
-            
-            for j in 0..sv.nrows() {
-                let k_val = self.kernel(&sample, &sv.row(j).to_owned());
-                sum += alphas[j] * sv_labels[j] * k_val;
+
+        if self.classes.len() == 2 {
+            let sv = self.support_vectors.as_ref().unwrap();
+            let sv_labels = self.support_labels.as_ref().unwrap();
+            let alphas = self.alphas.as_ref().unwrap();
+
+            for i in 0..n {
+                let sample = x.row(i).to_owned();
+                scores[i] = self.score_sample(&sample, sv, alphas, sv_labels, self.bias);
             }
-            
-            scores[i] = sum;
+        } else {
+            for i in 0..n {
+                let sample = x.row(i).to_owned();
+                let mut best_score = f64::NEG_INFINITY;
+                for clf in &self.ovr_classifiers {
+                    let score = self.score_sample(
+                        &sample,
+                        &clf.support_vectors,
+                        &clf.alphas,
+                        &clf.support_labels,
+                        clf.bias,
+                    );
+                    if score > best_score {
+                        best_score = score;
+                    }
+                }
+                scores[i] = best_score;
+            }
         }
-        
+
         Ok(scores)
     }
 
@@ -440,41 +565,60 @@ impl SVMRegressor {
         }
     }
 
-    /// Fit the regressor using simplified SMO for SVR
+    /// Fit the regressor using gradient descent on epsilon-insensitive loss
     pub fn fit(&mut self, x: &Array2<f64>, y: &Array1<f64>) -> Result<()> {
         let n = x.nrows();
+
+        if n > MAX_KERNEL_MATRIX_SAMPLES {
+            return Err(KolosalError::InvalidInput(
+                format!(
+                    "Dataset has {} samples, exceeding the maximum {} for SVR kernel matrix. \
+                     Consider subsampling or using a different algorithm.",
+                    n, MAX_KERNEL_MATRIX_SAMPLES
+                )
+            ));
+        }
+
         let mut alphas: Array1<f64> = Array1::zeros(n);      // alpha
         let mut alphas_star: Array1<f64> = Array1::zeros(n); // alpha*
         let mut bias: f64 = 0.0;
-        
+
         let kernel_matrix = self.compute_kernel_matrix(x);
-        
-        let mut rng = match self.config.random_state {
-            Some(seed) => Xoshiro256PlusPlus::seed_from_u64(seed),
-            None => Xoshiro256PlusPlus::from_entropy(),
-        };
-        
-        // Simple gradient descent approach for SVR
+
+        // Gradient descent approach for SVR with convergence check
         let learning_rate: f64 = 0.01;
-        
-        for _ in 0..self.config.max_iter {
+
+        for _iter in 0..self.config.max_iter {
+            let mut max_change: f64 = 0.0;
+
             for i in 0..n {
                 let mut pred: f64 = bias;
                 for j in 0..n {
                     pred += (alphas[j] - alphas_star[j]) * kernel_matrix[[j, i]];
                 }
-                
+
                 let error: f64 = pred - y[i];
-                
+
                 // Update alphas based on epsilon-insensitive loss
                 if error > self.config.epsilon {
-                    alphas_star[i] = (alphas_star[i] + learning_rate).min(self.config.c);
+                    let new_val = (alphas_star[i] + learning_rate).min(self.config.c);
+                    max_change = max_change.max((new_val - alphas_star[i]).abs());
+                    alphas_star[i] = new_val;
                 } else if error < -self.config.epsilon {
-                    alphas[i] = (alphas[i] + learning_rate).min(self.config.c);
+                    let new_val = (alphas[i] + learning_rate).min(self.config.c);
+                    max_change = max_change.max((new_val - alphas[i]).abs());
+                    alphas[i] = new_val;
                 }
-                
+
                 // Update bias
-                bias -= learning_rate * 0.1 * error;
+                let bias_update = learning_rate * 0.1 * error;
+                max_change = max_change.max(bias_update.abs());
+                bias -= bias_update;
+            }
+
+            // Convergence check: stop if all updates are within tolerance
+            if max_change < self.config.tol {
+                break;
             }
         }
         
@@ -533,7 +677,7 @@ impl SVMRegressor {
         match &self.config.kernel {
             KernelType::Linear => x1.dot(x2),
             KernelType::Polynomial { degree, gamma, coef0 } => {
-                (*gamma * x1.dot(x2) + coef0).powi(*degree as i32)
+                (*gamma * x1.dot(x2) + coef0).powi((*degree).min(i32::MAX as usize) as i32)
             }
             KernelType::RBF { gamma } => {
                 let diff = x1 - x2;
@@ -645,6 +789,48 @@ mod tests {
         
         let predictions = svm.predict(&x).unwrap();
         assert_eq!(predictions.len(), 10);
+    }
+
+    #[test]
+    fn test_svm_classifier_multiclass() {
+        // 3-class data
+        let x = Array2::from_shape_vec((15, 2), vec![
+            1.0, 1.0,  1.5, 1.2,  2.0, 2.0,  1.2, 1.8,  0.8, 1.5,
+            5.0, 5.0,  5.5, 5.2,  6.0, 6.0,  5.2, 5.8,  4.8, 5.5,
+            1.0, 5.0,  1.5, 5.2,  2.0, 6.0,  1.2, 5.8,  0.8, 5.5,
+        ]).unwrap();
+
+        let y = Array1::from_vec(vec![
+            0.0, 0.0, 0.0, 0.0, 0.0,
+            1.0, 1.0, 1.0, 1.0, 1.0,
+            2.0, 2.0, 2.0, 2.0, 2.0,
+        ]);
+
+        let config = SVMConfig {
+            c: 10.0,
+            kernel: KernelType::RBF { gamma: 0.5 },
+            max_iter: 1000,
+            ..Default::default()
+        };
+
+        let mut svm = SVMClassifier::new(config);
+        svm.fit(&x, &y).unwrap();
+
+        let predictions = svm.predict(&x).unwrap();
+        assert_eq!(predictions.len(), 15);
+
+        // All predictions should be one of the 3 classes
+        for &p in predictions.iter() {
+            assert!(p == 0.0 || p == 1.0 || p == 2.0, "Unexpected class: {}", p);
+        }
+
+        // Should get reasonable accuracy on training data
+        let correct: usize = y.iter()
+            .zip(predictions.iter())
+            .filter(|(&yi, &pi)| yi == pi)
+            .count();
+        let accuracy = correct as f64 / y.len() as f64;
+        assert!(accuracy > 0.6, "Multi-class accuracy {} should be > 0.6", accuracy);
     }
 
     #[test]

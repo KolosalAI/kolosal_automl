@@ -16,6 +16,3 @@ pub use features::{TimeSeriesFeatures, TimeFeatureConfig, LagConfig, RollingConf
 pub use transforms::{TimeSeriesTransformer, Differencer, SeasonalDecomposer, DecomposeMethod};
 pub use validation::{TimeSeriesCV, TimeSeriesSplit, WalkForwardCV};
 
-use crate::error::Result;
-use ndarray::{Array1, Array2};
-use serde::{Deserialize, Serialize};

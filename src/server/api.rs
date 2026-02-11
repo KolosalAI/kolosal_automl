@@ -118,6 +118,28 @@ pub fn create_router(state: Arc<AppState>, config: &ServerConfig) -> Router {
         .route("/security/status", get(handlers::get_security_status))
         .route("/security/audit-log", get(handlers::get_audit_log))
         .route("/security/rate-limit/stats", get(handlers::get_rate_limit_stats))
+        // === ISO Compliance Endpoints ===
+        // Data provenance (ISO 5259, 5338)
+        .route("/data/lineage", get(handlers::get_data_lineage))
+        .route("/data/quality", get(handlers::get_data_quality))
+        .route("/data/datasheet", get(handlers::get_data_datasheet))
+        // Fairness (ISO TR 24027)
+        .route("/fairness/evaluate", post(handlers::evaluate_fairness))
+        .route("/fairness/bias-scan", post(handlers::bias_scan))
+        // Model cards (ISO TR 24028)
+        .route("/models/:model_id/card", get(handlers::get_model_card))
+        // Audit trail (ISO 27001, TR 24028)
+        .route("/audit/events", get(handlers::get_audit_events))
+        .route("/audit/integrity", get(handlers::verify_audit_integrity))
+        // Privacy (ISO 27701)
+        .route("/privacy/scan", post(handlers::scan_pii))
+        .route("/privacy/retention", get(handlers::get_retention_status))
+        // Compliance (ISO 42001)
+        .route("/compliance/report", get(handlers::get_compliance_report))
+        // SLO monitoring (ISO 25010)
+        .route("/monitoring/slo", get(handlers::get_slo_status))
+        // Feedback loop (ISO 42001, 5338)
+        .route("/predict/feedback", post(handlers::submit_prediction_feedback))
         .fallback(handle_404)
         .method_not_allowed_fallback(handle_405);
 
@@ -154,18 +176,35 @@ pub fn create_router(state: Arc<AppState>, config: &ServerConfig) -> Router {
         }
     }
 
-    // Add middleware — CORS configured via CORS_ORIGIN env var (default: allow all for local-first)
+    // Add middleware — CORS configured via CORS_ORIGIN env var.
+    // Default: allow only localhost origins (safe for local-first use).
+    // Set CORS_ORIGIN=* to allow all origins in development.
     let cors = match std::env::var("CORS_ORIGIN") {
-        Ok(origin) if !origin.is_empty() && origin != "*" => {
+        Ok(origin) if origin == "*" => {
             CorsLayer::new()
-                .allow_origin(origin.parse::<axum::http::HeaderValue>().unwrap_or_else(|_| axum::http::HeaderValue::from_static("*")))
+                .allow_origin(Any)
+                .allow_methods(Any)
+                .allow_headers(Any)
+        }
+        Ok(origin) if !origin.is_empty() => {
+            let header_val = origin.parse::<axum::http::HeaderValue>().unwrap_or_else(|e| {
+                tracing::warn!(origin = %origin, error = %e, "Invalid CORS_ORIGIN, falling back to localhost");
+                axum::http::HeaderValue::from_static("http://localhost:8080")
+            });
+            CorsLayer::new()
+                .allow_origin(header_val)
                 .allow_methods(Any)
                 .allow_headers(Any)
         }
         _ => {
-            // Local-first default: allow all origins (machine-local use)
+            // Default: only allow same-origin (localhost)
             CorsLayer::new()
-                .allow_origin(Any)
+                .allow_origin(
+                    [
+                        "http://localhost:8080".parse().unwrap(),
+                        "http://127.0.0.1:8080".parse().unwrap(),
+                    ]
+                )
                 .allow_methods(Any)
                 .allow_headers(Any)
         }

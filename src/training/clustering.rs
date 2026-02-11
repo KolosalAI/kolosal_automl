@@ -4,7 +4,7 @@
 //! They implement `fit()` and `predict()` to assign cluster labels.
 
 use crate::error::{KolosalError, Result};
-use ndarray::{Array1, Array2, Axis};
+use ndarray::{Array1, Array2};
 use rand::SeedableRng;
 use rand::RngCore;
 use rand_chacha::ChaCha8Rng;

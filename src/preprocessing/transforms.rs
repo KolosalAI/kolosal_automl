@@ -3,7 +3,6 @@
 //! Provides log, power, box-cox, yeo-johnson transforms and binning/discretization.
 
 use crate::error::{KolosalError, Result};
-use ndarray::{Array1, Array2};
 use polars::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

@@ -2,7 +2,7 @@
 //!
 //! KNN classifier and regressor with distance metrics.
 
-use ndarray::{Array1, Array2, Axis};
+use ndarray::{Array1, Array2};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::BinaryHeap;
