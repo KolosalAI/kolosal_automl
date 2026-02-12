@@ -1,34 +1,92 @@
-# Include any files or directories that you don't want to be copied to your
-# container here (e.g., local build artifacts, temporary files, etc.).
-#
-# For more help, visit the .dockerignore file reference guide at
-# https://docs.docker.com/go/build-context-dockerignore/
+# ============================================================================
+# Kolosal AutoML - Docker Ignore
+# ============================================================================
+# Keeps the build context small and fast. Only send what the build needs:
+#   - Cargo.toml, Cargo.lock (dependency resolution)
+#   - src/ (Rust source code)
+#   - kolosal-web/ (static web UI assets)
+# ============================================================================
 
+# --- Rust build artifacts (huge, rebuild inside container) ---
+target/
+**/*.rs.bk
+
+# --- Git ---
+.git/
+.gitignore
+.gitattributes
+
+# --- Docker (avoid recursive inclusion) ---
+Dockerfile*
+.dockerignore
+docker-compose*
+compose.y*ml
+
+# --- Environment & secrets (NEVER ship to image) ---
+.env
+.env.*
+!.env.example
+.secrets
+certs/
+
+# --- IDE & OS ---
+.vscode/
+.idea/
 **/.DS_Store
-**/__pycache__
-**/.venv
-**/.classpath
-**/.dockerignore
-**/.env
-**/.git
-**/.gitignore
-**/.project
-**/.settings
-**/.toolstarget
-**/.vs
-**/.vscode
-**/*.*proj.user
-**/*.dbmdl
-**/*.jfm
-**/bin
-**/charts
-**/docker-compose*
-**/compose.y*ml
-**/Dockerfile*
-**/node_modules
-**/npm-debug.log
-**/obj
-**/secrets.dev.yaml
-**/values.dev.yaml
+*.swp
+*.swo
+*~
+
+# --- Documentation & metadata (not needed at runtime) ---
+docs/
+*.md
 LICENSE
-README.md
+plan.md
+
+# --- Tests & benchmarks (not needed in production image) ---
+tests/
+benches/
+e2e/
+test-results/
+playwright-report/
+playwright.config.ts
+
+# --- Node / Playwright (e2e test tooling only) ---
+node_modules/
+package.json
+package-lock.json
+
+# --- Legacy code ---
+legacy/
+
+# --- Examples ---
+examples/
+
+# --- Data & models (mounted at runtime, not baked into image) ---
+data/
+models/
+catboost_info/
+experiment_results/
+result/
+configs/
+mlruns/
+model_registry/
+notebooks/
+standard_ml_results/
+temp_data/
+
+# --- Python artifacts (legacy) ---
+__pycache__/
+*.py[cod]
+*.pyd
+*.so
+*.egg-info/
+.venv/
+.tox/
+.nox/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# --- GitHub ---
+.github/
