@@ -187,34 +187,34 @@ impl<T: Send + 'static> BatchProcessor<T> {
     
     /// Check if the processor is running
     pub fn is_running(&self) -> bool {
-        self.running.load(Ordering::SeqCst)
+        self.running.load(Ordering::Relaxed)
     }
     
     /// Pause the processor
     pub fn pause(&self) {
-        self.paused.store(true, Ordering::SeqCst);
+        self.paused.store(true, Ordering::Relaxed);
     }
     
     /// Resume the processor
     pub fn resume(&self) {
-        self.paused.store(false, Ordering::SeqCst);
+        self.paused.store(false, Ordering::Relaxed);
     }
     
     /// Check if the processor is paused
     pub fn is_paused(&self) -> bool {
-        self.paused.load(Ordering::SeqCst)
+        self.paused.load(Ordering::Relaxed)
     }
     
     /// Get the current optimal batch size
     pub fn current_batch_size(&self) -> usize {
-        self.current_batch_size.load(Ordering::SeqCst)
+        self.current_batch_size.load(Ordering::Relaxed)
     }
     
     /// Get processing statistics
     pub fn stats(&self) -> BatchStats {
-        let batches = self.batches_processed.load(Ordering::SeqCst);
-        let items = self.items_processed.load(Ordering::SeqCst);
-        let total_time_ns = self.total_processing_time_ns.load(Ordering::SeqCst);
+        let batches = self.batches_processed.load(Ordering::Relaxed);
+        let items = self.items_processed.load(Ordering::Relaxed);
+        let total_time_ns = self.total_processing_time_ns.load(Ordering::Relaxed);
         
         let avg_batch_size = if batches > 0 {
             items as f64 / batches as f64
@@ -242,13 +242,13 @@ impl<T: Send + 'static> BatchProcessor<T> {
             avg_processing_time_ms,
             queue_size: self.queue_size(),
             throughput,
-            error_count: self.error_count.load(Ordering::SeqCst),
+            error_count: self.error_count.load(Ordering::Relaxed),
         }
     }
     
     /// Collect a batch of items from the queue
     pub fn collect_batch(&self) -> Vec<T> {
-        let batch_size = self.current_batch_size.load(Ordering::SeqCst);
+        let batch_size = self.current_batch_size.load(Ordering::Relaxed);
         
         let mut queue = match self.queue.lock() {
             Ok(q) => q,
@@ -272,9 +272,9 @@ impl<T: Send + 'static> BatchProcessor<T> {
         let processing_time_ms = elapsed.as_secs_f64() * 1000.0;
         
         // Update statistics
-        self.batches_processed.fetch_add(1, Ordering::SeqCst);
-        self.items_processed.fetch_add(batch_size as u64, Ordering::SeqCst);
-        self.total_processing_time_ns.fetch_add(elapsed.as_nanos() as u64, Ordering::SeqCst);
+        self.batches_processed.fetch_add(1, Ordering::Relaxed);
+        self.items_processed.fetch_add(batch_size as u64, Ordering::Relaxed);
+        self.total_processing_time_ns.fetch_add(elapsed.as_nanos() as u64, Ordering::Relaxed);
         
         // Record processing time for adaptive batching
         if self.config.adaptive_batching {
@@ -293,7 +293,7 @@ impl<T: Send + 'static> BatchProcessor<T> {
     /// Adapt batch size based on processing performance
     fn adapt_batch_size(&self, processing_time_ms: f64) {
         let target_time_ms = self.config.batch_timeout_ms as f64 * 0.8; // Target 80% of timeout
-        let current_size = self.current_batch_size.load(Ordering::SeqCst);
+        let current_size = self.current_batch_size.load(Ordering::Relaxed);
         
         let new_size = if processing_time_ms < target_time_ms * 0.5 {
             // Processing is fast, increase batch size
@@ -309,12 +309,12 @@ impl<T: Send + 'static> BatchProcessor<T> {
             .max(self.config.min_batch_size)
             .min(self.config.max_batch_size);
         
-        self.current_batch_size.store(new_size, Ordering::SeqCst);
+        self.current_batch_size.store(new_size, Ordering::Relaxed);
     }
     
     /// Shutdown the processor and wait for workers to finish
     pub fn shutdown(&self) {
-        self.running.store(false, Ordering::SeqCst);
+        self.running.store(false, Ordering::Relaxed);
         
         // Wait for workers to finish
         if let Ok(mut workers) = self.workers.lock() {

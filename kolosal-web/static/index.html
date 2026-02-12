@@ -727,6 +727,17 @@
                         <p class="text-14px regular">Complete training to see metrics visualization</p>
                     </div>
                 </div>
+                <!-- Live UMAP Visualization (shown during training) -->
+                <div id="train-umap-card" class="card" style="margin-top: 16px; display: none;">
+                    <div class="card-header">
+                        <h2 class="text-16px medium"><i class="ri-scatter-chart-line"></i> Data Projection</h2>
+                        <span id="train-umap-badge" class="badge-sm badge-info" style="display:none;">Live</span>
+                    </div>
+                    <div id="train-umap-status" style="margin-bottom: 8px;"></div>
+                    <div style="max-height: 380px;">
+                        <canvas id="trainUmapChart" width="500" height="320"></canvas>
+                    </div>
+                </div>
             </div>
 
             <!-- Sub-panel: Compare (was Compare tab) -->
@@ -1018,6 +1029,85 @@
                     <div id="clustering-empty" class="empty-state">
                         <i class="ri-bubble-chart-line"></i>
                         <p class="text-14px regular">Load a dataset and run clustering to discover groups in your data</p>
+                    </div>
+                </div>
+
+                <!-- UMAP Visualization -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="text-16px medium"><i class="ri-scatter-chart-line"></i> UMAP Visualization</h2>
+                        <button id="btn-umap" onclick="runUmap()" class="btn-sm btn-primary" disabled>
+                            <i class="ri-play-line"></i> Run UMAP
+                        </button>
+                    </div>
+                    <div class="form-stack" style="margin-bottom: 16px;">
+                        <div class="grid-3">
+                            <div class="form-group">
+                                <label class="form-label">Neighbors (k)</label>
+                                <input type="number" id="umap-neighbors" class="input-text-sm" value="15" min="2" max="200">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Min Distance</label>
+                                <input type="number" id="umap-mindist" class="input-text-sm" value="0.1" min="0.01" max="1.0" step="0.05">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Color By</label>
+                                <select id="umap-colorby" class="input-text-sm">
+                                    <option value="">None</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="umap-results"></div>
+                    <div id="umap-chart-wrap" style="display:none; margin-top: 16px;">
+                        <div style="max-height: 360px;">
+                            <canvas id="umapChart" width="500" height="300"></canvas>
+                        </div>
+                    </div>
+                    <div id="umap-empty" class="empty-state">
+                        <i class="ri-scatter-chart-line"></i>
+                        <p class="text-14px regular">Load a dataset and run UMAP to visualize high-dimensional data in 2D</p>
+                    </div>
+                </div>
+
+                <!-- PCA Visualization -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="text-16px medium"><i class="ri-line-chart-line"></i> PCA Visualization</h2>
+                        <button id="btn-pca" onclick="runPca()" class="btn-sm btn-primary" disabled>
+                            <i class="ri-play-line"></i> Run PCA
+                        </button>
+                    </div>
+                    <div class="form-stack" style="margin-bottom: 16px;">
+                        <div class="grid-3">
+                            <div class="form-group">
+                                <label class="form-label">Scale Features</label>
+                                <select id="pca-scale" class="input-text-sm">
+                                    <option value="true" selected>Yes (recommended)</option>
+                                    <option value="false">No</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Color By</label>
+                                <select id="pca-colorby" class="input-text-sm">
+                                    <option value="">None</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Variance</label>
+                                <span id="pca-variance" class="mono-12px" style="line-height: 32px; color:var(--color-text-700);">--</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="pca-results"></div>
+                    <div id="pca-chart-wrap" style="display:none; margin-top: 16px;">
+                        <div style="max-height: 360px;">
+                            <canvas id="pcaChart" width="500" height="300"></canvas>
+                        </div>
+                    </div>
+                    <div id="pca-empty" class="empty-state">
+                        <i class="ri-line-chart-line"></i>
+                        <p class="text-14px regular">Load a dataset and run PCA for fast linear 2D projection</p>
                     </div>
                 </div>
             </div>
@@ -1453,6 +1543,9 @@
         var trainingMetricsChartInstance = null;
         var anomalyChartInstance = null;
         var clusteringChartInstance = null;
+        var umapChartInstance = null;
+        var trainUmapChartInstance = null;
+        var pcaChartInstance = null;
         var cpuGaugeInstance = null;
         var memGaugeInstance = null;
 
@@ -1616,10 +1709,27 @@
                 $('btn-preprocess').disabled = false;
                 $('btn-anomaly').disabled = false;
                 $('btn-clustering').disabled = false;
+                $('btn-umap').disabled = false;
+                $('btn-pca').disabled = false;
+                // Populate UMAP and PCA color-by dropdowns
+                if (dataInfo && dataInfo.column_names) {
+                    var sel = $('umap-colorby');
+                    sel.innerHTML = '<option value="">None</option>';
+                    var selPca = $('pca-colorby');
+                    selPca.innerHTML = '<option value="">None</option>';
+                    for (var ci = 0; ci < dataInfo.column_names.length; ci++) {
+                        sel.innerHTML += '<option value="' + escAttr(dataInfo.column_names[ci]) + '">' + escHtml(dataInfo.column_names[ci]) + '</option>';
+                        selPca.innerHTML += '<option value="' + escAttr(dataInfo.column_names[ci]) + '">' + escHtml(dataInfo.column_names[ci]) + '</option>';
+                    }
+                }
                 updateTargetOptions();
                 updateAutoMLTargetColumns();
                 updateTrainButton();
                 $('btn-compare').disabled = !getConfig().targetColumn;
+                // Auto-run UMAP on data load for instant 2D overview
+                if (dataInfo.rows >= 3 && dataInfo.columns >= 2) {
+                    setTimeout(function() { runUmap(); }, 200);
+                }
             }
         }
 
@@ -1950,6 +2060,162 @@
                 })
                 .catch(function(e) { notify('Training failed: ' + e.message, 'error'); });
             });
+            // Launch live UMAP visualization while training runs async
+            if (cfg.targetColumn && dataInfo) {
+                launchTrainUmap(cfg.targetColumn);
+            }
+        }
+
+        // Launch UMAP in the training panel (runs async alongside training)
+        function launchTrainUmap(colorBy) {
+            var card = $('train-umap-card');
+            card.style.display = '';
+            $('train-umap-badge').style.display = '';
+            $('train-umap-status').innerHTML = '<div class="loading-overlay" style="padding:12px 0;"><div class="spinner"></div><p class="text-12px regular">Projecting data to 2D while models train...</p></div>';
+            if (trainUmapChartInstance) { trainUmapChartInstance.destroy(); trainUmapChartInstance = null; }
+
+            var body = { n_neighbors: 15, min_dist: 0.1 };
+            if (colorBy) body.color_by = colorBy;
+
+            fetch('/api/visualization/umap', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            }).then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }).then(function(data) {
+                if (!data.success) {
+                    $('train-umap-status').innerHTML = '<p class="text-12px regular" style="color:var(--color-text-700);">UMAP projection unavailable</p>';
+                    return;
+                }
+                var modeLabel = data.color_mode === 'classification' ? 'Classification' : data.color_mode === 'regression' ? 'Regression' : 'Projection';
+                var html = '<div class="flex-row gap-16" style="margin-bottom:8px;">';
+                html += '<span class="text-12px regular" style="color:var(--color-text-700);">' + (data.n_samples || 0) + ' samples</span>';
+                html += '<span class="text-12px regular" style="color:var(--color-text-700);">' + escHtml(modeLabel) + ' mode</span>';
+                if (data.params.color_by) html += '<span class="text-12px regular" style="color:var(--color-text-700);">by <strong>' + escHtml(data.params.color_by) + '</strong></span>';
+                html += '</div>';
+                $('train-umap-status').innerHTML = html;
+                renderTrainUmapChart(data);
+            }).catch(function(e) {
+                $('train-umap-status').innerHTML = '<p class="text-12px regular" style="color:var(--color-text-700);">UMAP: ' + escHtml(e.message) + '</p>';
+            });
+        }
+
+        function renderTrainUmapChart(data) {
+            if (!data || !data.points || typeof Chart === 'undefined') return;
+            var ctx = $('trainUmapChart');
+            if (trainUmapChartInstance) trainUmapChartInstance.destroy();
+
+            var colors = ['#0066F5', '#3ABC3F', '#FFA931', '#FF3131', '#9C27B0', '#00BCD4', '#FF9800', '#795548', '#607D8B', '#E91E63'];
+            var datasets = [];
+            var points = data.points;
+            var labels = data.labels;
+            var labelNames = data.label_names;
+            var colorValues = data.color_values;
+            var colorMode = data.color_mode || 'none';
+            var nPoints = points.length;
+
+            if (colorMode === 'classification' && labels && labelNames && labelNames.length > 0) {
+                for (var li = 0; li < labelNames.length; li++) {
+                    var pts = [];
+                    for (var pi = 0; pi < nPoints; pi++) {
+                        if (labels[pi] === li) pts.push({ x: points[pi][0], y: points[pi][1] });
+                    }
+                    var c = colors[li % colors.length];
+                    datasets.push({
+                        label: labelNames[li], data: pts, type: 'scatter',
+                        backgroundColor: c + '80', borderColor: c, borderWidth: 1,
+                        pointRadius: 3, pointHoverRadius: 5, order: 2
+                    });
+                    if (pts.length >= 3) {
+                        var hull = convexHull(pts);
+                        if (hull.length > 0) hull.push(hull[0]);
+                        datasets.push({
+                            label: labelNames[li] + ' boundary', data: hull, type: 'line',
+                            borderColor: c, borderWidth: 2, borderDash: [6, 4],
+                            backgroundColor: c + '18', fill: true,
+                            pointRadius: 0, pointHitRadius: 0, tension: 0.3, order: 1
+                        });
+                    }
+                }
+            } else if (colorMode === 'regression' && colorValues && colorValues.length > 0) {
+                var minVal = colorValues[0], maxVal = colorValues[0];
+                for (var i = 1; i < colorValues.length; i++) {
+                    if (colorValues[i] < minVal) minVal = colorValues[i];
+                    if (colorValues[i] > maxVal) maxVal = colorValues[i];
+                }
+                var range = maxVal - minVal || 1;
+                var ptColors = []; var allPts = [];
+                for (var pi = 0; pi < nPoints; pi++) {
+                    var t = (colorValues[pi] - minVal) / range;
+                    ptColors.push(lerpColor('#0066F5', '#FF3131', t));
+                    allPts.push({ x: points[pi][0], y: points[pi][1], v: colorValues[pi] });
+                }
+                datasets.push({
+                    label: 'Data', data: allPts, type: 'scatter',
+                    backgroundColor: ptColors, borderColor: ptColors.map(function(c) { return c; }),
+                    borderWidth: 1, pointRadius: 3, pointHoverRadius: 5, order: 2
+                });
+                var sorted = allPts.slice().sort(function(a, b) { return a.x - b.x; });
+                var nBins = Math.min(30, Math.max(8, Math.floor(nPoints / 10)));
+                var binSize = Math.ceil(sorted.length / nBins);
+                var trendPts = [];
+                for (var b = 0; b < nBins; b++) {
+                    var start = b * binSize, end = Math.min(start + binSize, sorted.length);
+                    if (start >= sorted.length) break;
+                    var sx = 0, sy = 0, cnt = 0;
+                    for (var j = start; j < end; j++) { sx += sorted[j].x; sy += sorted[j].y; cnt++; }
+                    trendPts.push({ x: sx / cnt, y: sy / cnt });
+                }
+                datasets.push({
+                    label: 'Trend', data: trendPts, type: 'line',
+                    borderColor: '#FF313180', borderWidth: 3, backgroundColor: 'transparent',
+                    pointRadius: 0, tension: 0.4, borderDash: [8, 4], order: 1
+                });
+            } else {
+                var allPts = [];
+                for (var pi = 0; pi < nPoints; pi++) allPts.push({ x: points[pi][0], y: points[pi][1] });
+                datasets.push({
+                    label: 'Data', data: allPts, backgroundColor: '#0066F580',
+                    borderColor: '#0066F5', borderWidth: 1, pointRadius: 3, pointHoverRadius: 5
+                });
+            }
+
+            trainUmapChartInstance = new Chart(ctx, {
+                type: 'scatter',
+                data: { datasets: datasets },
+                options: {
+                    responsive: true, maintainAspectRatio: true,
+                    animation: {
+                        duration: 2500, easing: 'easeOutQuart',
+                        delay: function(context) {
+                            var idx = context.dataIndex || 0;
+                            var total = context.dataset ? context.dataset.data.length : 1;
+                            return idx * (2000 / Math.max(total, 1));
+                        }
+                    },
+                    scales: {
+                        x: { title: { display: true, text: 'UMAP-1', font: { size: 11 } }, grid: { color: '#F1F3F4' } },
+                        y: { title: { display: true, text: 'UMAP-2', font: { size: 11 } }, grid: { color: '#F1F3F4' } }
+                    },
+                    plugins: {
+                        legend: {
+                            display: colorMode !== 'none', position: 'top',
+                            labels: {
+                                usePointStyle: true, pointStyle: 'circle', boxWidth: 8, font: { size: 11 },
+                                filter: function(item) { return item.text.indexOf(' boundary') === -1 && item.text !== 'Trend'; }
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(ctx) {
+                                    var base = (ctx.dataset.label || '') + ': (' + ctx.parsed.x.toFixed(2) + ', ' + ctx.parsed.y.toFixed(2) + ')';
+                                    if (ctx.raw && ctx.raw.v !== undefined) base += ' val=' + ctx.raw.v.toFixed(3);
+                                    return base;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
         }
 
         function renderJobs() {
@@ -2076,6 +2342,13 @@
                                     $('btn-explain').disabled = false;
                                 }
                             }).catch(function(e) { console.error('Request failed:', e); });
+                            // Update training UMAP badge and refresh Analyze tab UMAP
+                            var umapBadge = $('train-umap-badge');
+                            if (umapBadge) { umapBadge.textContent = 'Complete'; umapBadge.className = 'badge-sm badge-success'; }
+                            var umapCfg = getConfig();
+                            if (umapCfg.targetColumn && dataInfo) {
+                                runUmap(umapCfg.targetColumn);
+                            }
                             // Auto-tune: run hyperopt for the completed model
                             var cfg = getConfig();
                             if (cfg.targetColumn && job.model_type) {
@@ -2843,6 +3116,435 @@
             });
         }
 
+        // ── UMAP Visualization ──
+        function runUmap(autoColorBy) {
+            var body = {
+                n_neighbors: parseInt($('umap-neighbors').value) || 15,
+                min_dist: parseFloat($('umap-mindist').value) || 0.1
+            };
+            var colorBy = autoColorBy || $('umap-colorby').value;
+            if (colorBy) {
+                body.color_by = colorBy;
+                // Sync dropdown if auto-triggered
+                if (autoColorBy) {
+                    var sel = $('umap-colorby');
+                    for (var i = 0; i < sel.options.length; i++) {
+                        if (sel.options[i].value === autoColorBy) { sel.selectedIndex = i; break; }
+                    }
+                }
+            }
+
+            $('btn-umap').disabled = true;
+            $('umap-empty').style.display = 'none';
+            $('umap-results').innerHTML = '<div class="loading-overlay"><div class="spinner"></div><p class="text-12px regular">Running UMAP dimensionality reduction...</p></div>';
+            $('umap-chart-wrap').style.display = 'none';
+
+            fetch('/api/visualization/umap', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            }).then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }).then(function(data) {
+                $('btn-umap').disabled = false;
+                if (!data.success) {
+                    $('umap-results').innerHTML = '<div class="alert alert-error">UMAP failed</div>';
+                    return;
+                }
+                var modeLabel = data.color_mode === 'classification' ? 'Classification' : data.color_mode === 'regression' ? 'Regression' : 'Projection';
+                var html = '<div class="grid-3" style="margin-bottom:16px;">';
+                html += '<div><p class="mono-20px medium">' + (data.n_samples || 0) + '</p><p class="text-12px regular" style="color:var(--color-text-700);">Samples</p></div>';
+                html += '<div><p class="mono-20px medium">' + escHtml(modeLabel) + '</p><p class="text-12px regular" style="color:var(--color-text-700);">Mode</p></div>';
+                html += '<div><p class="mono-20px medium">' + (data.params.n_neighbors || 15) + '</p><p class="text-12px regular" style="color:var(--color-text-700);">Neighbors</p></div>';
+                html += '</div>';
+                if (data.label_names && data.label_names.length > 0) {
+                    html += '<p class="text-12px regular" style="color:var(--color-text-700); margin-bottom:8px;">Colored by: <strong>' + escHtml(data.params.color_by || '') + '</strong> (' + data.label_names.length + ' classes)</p>';
+                } else if (data.color_mode === 'regression') {
+                    html += '<p class="text-12px regular" style="color:var(--color-text-700); margin-bottom:8px;">Gradient by: <strong>' + escHtml(data.params.color_by || '') + '</strong></p>';
+                }
+                $('umap-results').innerHTML = html;
+                renderUmapChart(data);
+                notify('UMAP complete: ' + modeLabel + ' — ' + (data.n_samples || 0) + ' samples', 'success');
+            }).catch(function(e) {
+                $('btn-umap').disabled = false;
+                $('umap-results').innerHTML = '';
+                $('umap-empty').style.display = '';
+                notify('UMAP failed: ' + e.message, 'error');
+            });
+        }
+
+        // Compute convex hull of 2D points (Andrew's monotone chain)
+        function convexHull(pts) {
+            if (pts.length < 3) return pts.slice();
+            var sorted = pts.slice().sort(function(a, b) { return a.x === b.x ? a.y - b.y : a.x - b.x; });
+            var lower = [];
+            for (var i = 0; i < sorted.length; i++) {
+                while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], sorted[i]) <= 0) lower.pop();
+                lower.push(sorted[i]);
+            }
+            var upper = [];
+            for (var i = sorted.length - 1; i >= 0; i--) {
+                while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], sorted[i]) <= 0) upper.pop();
+                upper.push(sorted[i]);
+            }
+            upper.pop(); lower.pop();
+            return lower.concat(upper);
+        }
+        function cross(o, a, b) { return (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x); }
+
+        // Interpolate between two hex colors
+        function lerpColor(c1, c2, t) {
+            var r1 = parseInt(c1.slice(1, 3), 16), g1 = parseInt(c1.slice(3, 5), 16), b1 = parseInt(c1.slice(5, 7), 16);
+            var r2 = parseInt(c2.slice(1, 3), 16), g2 = parseInt(c2.slice(3, 5), 16), b2 = parseInt(c2.slice(5, 7), 16);
+            var r = Math.round(r1 + (r2 - r1) * t), g = Math.round(g1 + (g2 - g1) * t), b = Math.round(b1 + (b2 - b1) * t);
+            return 'rgb(' + r + ',' + g + ',' + b + ')';
+        }
+
+        function renderUmapChart(data) {
+            if (!data || !data.points || typeof Chart === 'undefined') return;
+            $('umap-chart-wrap').style.display = '';
+            var ctx = $('umapChart');
+            if (umapChartInstance) umapChartInstance.destroy();
+
+            var colors = ['#0066F5', '#3ABC3F', '#FFA931', '#FF3131', '#9C27B0', '#00BCD4', '#FF9800', '#795548', '#607D8B', '#E91E63'];
+            var datasets = [];
+            var points = data.points;
+            var labels = data.labels;
+            var labelNames = data.label_names;
+            var colorValues = data.color_values;
+            var colorMode = data.color_mode || 'none';
+            var nPoints = points.length;
+
+            if (colorMode === 'classification' && labels && labelNames && labelNames.length > 0) {
+                // ── Classification: scatter points + animated convex hull boundaries ──
+                for (var li = 0; li < labelNames.length; li++) {
+                    var pts = [];
+                    for (var pi = 0; pi < nPoints; pi++) {
+                        if (labels[pi] === li) {
+                            pts.push({ x: points[pi][0], y: points[pi][1] });
+                        }
+                    }
+                    var c = colors[li % colors.length];
+                    // Scatter points
+                    datasets.push({
+                        label: labelNames[li],
+                        data: pts,
+                        type: 'scatter',
+                        backgroundColor: c + '80',
+                        borderColor: c,
+                        borderWidth: 1,
+                        pointRadius: 3.5,
+                        pointHoverRadius: 6,
+                        order: 2
+                    });
+                    // Convex hull boundary line
+                    if (pts.length >= 3) {
+                        var hull = convexHull(pts);
+                        if (hull.length > 0) hull.push(hull[0]); // close the polygon
+                        datasets.push({
+                            label: labelNames[li] + ' boundary',
+                            data: hull,
+                            type: 'line',
+                            borderColor: c,
+                            borderWidth: 2.5,
+                            borderDash: [6, 4],
+                            backgroundColor: c + '18',
+                            fill: true,
+                            pointRadius: 0,
+                            pointHitRadius: 0,
+                            tension: 0.3,
+                            order: 1
+                        });
+                    }
+                }
+            } else if (colorMode === 'regression' && colorValues && colorValues.length > 0) {
+                // ── Regression: gradient-colored points + trend line ──
+                var minVal = colorValues[0], maxVal = colorValues[0];
+                for (var i = 1; i < colorValues.length; i++) {
+                    if (colorValues[i] < minVal) minVal = colorValues[i];
+                    if (colorValues[i] > maxVal) maxVal = colorValues[i];
+                }
+                var range = maxVal - minVal || 1;
+                var gradientLow = '#0066F5', gradientHigh = '#FF3131';
+
+                // Build individual point colors
+                var ptColors = [];
+                var allPts = [];
+                for (var pi = 0; pi < nPoints; pi++) {
+                    var t = (colorValues[pi] - minVal) / range;
+                    ptColors.push(lerpColor(gradientLow, gradientHigh, t));
+                    allPts.push({ x: points[pi][0], y: points[pi][1], v: colorValues[pi] });
+                }
+                datasets.push({
+                    label: 'Data',
+                    data: allPts,
+                    type: 'scatter',
+                    backgroundColor: ptColors,
+                    borderColor: ptColors.map(function(c) { return c; }),
+                    borderWidth: 1,
+                    pointRadius: 3.5,
+                    pointHoverRadius: 6,
+                    order: 2
+                });
+
+                // Regression trend line: sort by UMAP-1, bin, average
+                var sorted = allPts.slice().sort(function(a, b) { return a.x - b.x; });
+                var nBins = Math.min(30, Math.max(8, Math.floor(nPoints / 10)));
+                var binSize = Math.ceil(sorted.length / nBins);
+                var trendPts = [];
+                for (var b = 0; b < nBins; b++) {
+                    var start = b * binSize;
+                    var end = Math.min(start + binSize, sorted.length);
+                    if (start >= sorted.length) break;
+                    var sx = 0, sy = 0, cnt = 0;
+                    for (var j = start; j < end; j++) { sx += sorted[j].x; sy += sorted[j].y; cnt++; }
+                    trendPts.push({ x: sx / cnt, y: sy / cnt });
+                }
+                datasets.push({
+                    label: 'Trend',
+                    data: trendPts,
+                    type: 'line',
+                    borderColor: '#FF313180',
+                    borderWidth: 3,
+                    backgroundColor: 'transparent',
+                    pointRadius: 0,
+                    tension: 0.4,
+                    borderDash: [8, 4],
+                    order: 1
+                });
+            } else {
+                // ── No color: plain scatter ──
+                var allPts = [];
+                for (var pi = 0; pi < nPoints; pi++) {
+                    allPts.push({ x: points[pi][0], y: points[pi][1] });
+                }
+                datasets.push({
+                    label: 'Data',
+                    data: allPts,
+                    backgroundColor: '#0066F580',
+                    borderColor: '#0066F5',
+                    borderWidth: 1,
+                    pointRadius: 3.5,
+                    pointHoverRadius: 6
+                });
+            }
+
+            umapChartInstance = new Chart(ctx, {
+                type: 'scatter',
+                data: { datasets: datasets },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    animation: {
+                        duration: 2000,
+                        easing: 'easeOutQuart',
+                        delay: function(context) {
+                            var idx = context.dataIndex || 0;
+                            var total = context.dataset ? context.dataset.data.length : 1;
+                            return idx * (1500 / Math.max(total, 1));
+                        }
+                    },
+                    scales: {
+                        x: {
+                            title: { display: true, text: 'UMAP-1', font: { size: 11 } },
+                            grid: { color: '#F1F3F4' }
+                        },
+                        y: {
+                            title: { display: true, text: 'UMAP-2', font: { size: 11 } },
+                            grid: { color: '#F1F3F4' }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: colorMode !== 'none',
+                            position: 'top',
+                            labels: {
+                                usePointStyle: true,
+                                pointStyle: 'circle',
+                                boxWidth: 8,
+                                font: { size: 11 },
+                                filter: function(item) {
+                                    // Hide boundary line entries from legend
+                                    return item.text.indexOf(' boundary') === -1 && item.text !== 'Trend';
+                                }
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(ctx) {
+                                    var base = (ctx.dataset.label || '') + ': (' + ctx.parsed.x.toFixed(2) + ', ' + ctx.parsed.y.toFixed(2) + ')';
+                                    if (ctx.raw && ctx.raw.v !== undefined) base += ' val=' + ctx.raw.v.toFixed(3);
+                                    return base;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // ── PCA Visualization ──
+        function runPca(autoColorBy) {
+            var body = {
+                scale: $('pca-scale').value === 'true'
+            };
+            var colorBy = autoColorBy || $('pca-colorby').value;
+            if (colorBy) {
+                body.color_by = colorBy;
+                if (autoColorBy) {
+                    var sel = $('pca-colorby');
+                    for (var i = 0; i < sel.options.length; i++) {
+                        if (sel.options[i].value === autoColorBy) { sel.selectedIndex = i; break; }
+                    }
+                }
+            }
+
+            $('btn-pca').disabled = true;
+            $('pca-empty').style.display = 'none';
+            $('pca-results').innerHTML = '<div class="loading-overlay"><div class="spinner"></div><p class="text-12px regular">Running PCA projection...</p></div>';
+            $('pca-chart-wrap').style.display = 'none';
+            $('pca-variance').textContent = '--';
+
+            fetch('/api/visualization/pca', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            }).then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }).then(function(data) {
+                $('btn-pca').disabled = false;
+                if (!data.success) {
+                    $('pca-results').innerHTML = '<div class="alert alert-error">PCA failed</div>';
+                    return;
+                }
+                var modeLabel = data.color_mode === 'classification' ? 'Classification' : data.color_mode === 'regression' ? 'Regression' : 'Projection';
+                var evr = data.explained_variance_ratio || [];
+                var totalVar = evr.reduce(function(a, b) { return a + b; }, 0);
+                $('pca-variance').textContent = (totalVar * 100).toFixed(1) + '%';
+
+                var html = '<div class="grid-3" style="margin-bottom:16px;">';
+                html += '<div><p class="mono-20px medium">' + (data.n_samples || 0) + '</p><p class="text-12px regular" style="color:var(--color-text-700);">Samples</p></div>';
+                html += '<div><p class="mono-20px medium">' + escHtml(modeLabel) + '</p><p class="text-12px regular" style="color:var(--color-text-700);">Mode</p></div>';
+                html += '<div><p class="mono-20px medium">' + (totalVar * 100).toFixed(1) + '%</p><p class="text-12px regular" style="color:var(--color-text-700);">Variance Explained</p></div>';
+                html += '</div>';
+                if (evr.length >= 2) {
+                    html += '<p class="text-12px regular" style="color:var(--color-text-700); margin-bottom:8px;">PC1: ' + (evr[0] * 100).toFixed(1) + '% &nbsp; PC2: ' + (evr[1] * 100).toFixed(1) + '%</p>';
+                }
+                $('pca-results').innerHTML = html;
+                renderPcaChart(data);
+                notify('PCA complete: ' + (totalVar * 100).toFixed(1) + '% variance explained', 'success');
+            }).catch(function(e) {
+                $('btn-pca').disabled = false;
+                $('pca-results').innerHTML = '';
+                $('pca-empty').style.display = '';
+                notify('PCA failed: ' + e.message, 'error');
+            });
+        }
+
+        function renderPcaChart(data) {
+            if (!data || !data.points || typeof Chart === 'undefined') return;
+            $('pca-chart-wrap').style.display = '';
+            var ctx = $('pcaChart');
+            if (pcaChartInstance) pcaChartInstance.destroy();
+
+            var evr = data.explained_variance_ratio || [];
+            var pc1Label = 'PC1' + (evr[0] ? ' (' + (evr[0] * 100).toFixed(1) + '%)' : '');
+            var pc2Label = 'PC2' + (evr[1] ? ' (' + (evr[1] * 100).toFixed(1) + '%)' : '');
+
+            var colors = ['#0066F5', '#3ABC3F', '#FFA931', '#FF3131', '#9C27B0', '#00BCD4', '#FF9800', '#795548', '#607D8B', '#E91E63'];
+            var datasets = [];
+            var points = data.points;
+            var labels = data.labels;
+            var labelNames = data.label_names;
+            var colorValues = data.color_values;
+            var colorMode = data.color_mode || 'none';
+            var nPoints = points.length;
+
+            if (colorMode === 'classification' && labels && labelNames && labelNames.length > 0) {
+                for (var li = 0; li < labelNames.length; li++) {
+                    var pts = [];
+                    for (var pi = 0; pi < nPoints; pi++) {
+                        if (labels[pi] === li) pts.push({ x: points[pi][0], y: points[pi][1] });
+                    }
+                    var c = colors[li % colors.length];
+                    datasets.push({
+                        label: labelNames[li], data: pts, type: 'scatter',
+                        backgroundColor: c + '80', borderColor: c, borderWidth: 1,
+                        pointRadius: 3.5, pointHoverRadius: 6, order: 2
+                    });
+                    if (pts.length >= 3) {
+                        var hull = convexHull(pts);
+                        if (hull.length > 0) hull.push(hull[0]);
+                        datasets.push({
+                            label: labelNames[li] + ' boundary', data: hull, type: 'line',
+                            borderColor: c, borderWidth: 2.5, borderDash: [6, 4],
+                            backgroundColor: c + '18', fill: true,
+                            pointRadius: 0, pointHitRadius: 0, tension: 0.3, order: 1
+                        });
+                    }
+                }
+            } else if (colorMode === 'regression' && colorValues && colorValues.length > 0) {
+                var minVal = colorValues[0], maxVal = colorValues[0];
+                for (var i = 1; i < colorValues.length; i++) {
+                    if (colorValues[i] < minVal) minVal = colorValues[i];
+                    if (colorValues[i] > maxVal) maxVal = colorValues[i];
+                }
+                var range = maxVal - minVal || 1;
+                var ptColors = []; var allPts = [];
+                for (var pi = 0; pi < nPoints; pi++) {
+                    var t = (colorValues[pi] - minVal) / range;
+                    ptColors.push(lerpColor('#0066F5', '#FF3131', t));
+                    allPts.push({ x: points[pi][0], y: points[pi][1], v: colorValues[pi] });
+                }
+                datasets.push({
+                    label: 'Data', data: allPts, type: 'scatter',
+                    backgroundColor: ptColors, borderColor: ptColors.map(function(c) { return c; }),
+                    borderWidth: 1, pointRadius: 3.5, pointHoverRadius: 6, order: 2
+                });
+            } else {
+                var allPts = [];
+                for (var pi = 0; pi < nPoints; pi++) allPts.push({ x: points[pi][0], y: points[pi][1] });
+                datasets.push({
+                    label: 'Data', data: allPts, backgroundColor: '#0066F580',
+                    borderColor: '#0066F5', borderWidth: 1, pointRadius: 3.5, pointHoverRadius: 6
+                });
+            }
+
+            pcaChartInstance = new Chart(ctx, {
+                type: 'scatter',
+                data: { datasets: datasets },
+                options: {
+                    responsive: true, maintainAspectRatio: true,
+                    animation: {
+                        duration: 1500, easing: 'easeOutQuart',
+                        delay: function(context) {
+                            var idx = context.dataIndex || 0;
+                            var total = context.dataset ? context.dataset.data.length : 1;
+                            return idx * (1000 / Math.max(total, 1));
+                        }
+                    },
+                    scales: {
+                        x: { title: { display: true, text: pc1Label, font: { size: 11 } }, grid: { color: '#F1F3F4' } },
+                        y: { title: { display: true, text: pc2Label, font: { size: 11 } }, grid: { color: '#F1F3F4' } }
+                    },
+                    plugins: {
+                        legend: {
+                            display: colorMode !== 'none', position: 'top',
+                            labels: {
+                                usePointStyle: true, pointStyle: 'circle', boxWidth: 8, font: { size: 11 },
+                                filter: function(item) { return item.text.indexOf(' boundary') === -1; }
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(ctx) {
+                                    var base = (ctx.dataset.label || '') + ': (' + ctx.parsed.x.toFixed(2) + ', ' + ctx.parsed.y.toFixed(2) + ')';
+                                    if (ctx.raw && ctx.raw.v !== undefined) base += ' val=' + ctx.raw.v.toFixed(3);
+                                    return base;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
         // ── Device Info ──
         function loadDeviceInfo() {
             var container = $('device-info');
@@ -3418,6 +4120,7 @@
                     $('btn-ensemble').disabled = ensembleSelectedModels.length < 2 || !this.value;
                     $('btn-anomaly').disabled = !dataInfo;
                     $('btn-clustering').disabled = !dataInfo;
+                    $('btn-umap').disabled = !dataInfo;
                     $('btn-explain').disabled = !this.value;
                 });
 

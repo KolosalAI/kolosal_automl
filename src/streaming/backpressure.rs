@@ -77,7 +77,7 @@ impl BackpressureController {
     
     /// Check if backpressure should be applied
     pub fn should_apply_backpressure(&self) -> bool {
-        let queue_size = self.current_queue_size.load(Ordering::SeqCst);
+        let queue_size = self.current_queue_size.load(Ordering::Relaxed);
         let threshold = (self.config.max_queue_size as f64 * 0.8) as usize;
         
         queue_size >= threshold
@@ -85,14 +85,14 @@ impl BackpressureController {
     
     /// Update the current queue size
     pub fn set_queue_size(&self, size: usize) {
-        self.current_queue_size.store(size, Ordering::SeqCst);
+        self.current_queue_size.store(size, Ordering::Relaxed);
         
         let should_apply = self.should_apply_backpressure();
-        let was_active = self.backpressure_active.swap(should_apply, Ordering::SeqCst);
+        let was_active = self.backpressure_active.swap(should_apply, Ordering::Relaxed);
         
         if should_apply && !was_active {
             // Just activated backpressure
-            self.backpressure_events.fetch_add(1, Ordering::SeqCst);
+            self.backpressure_events.fetch_add(1, Ordering::Relaxed);
             self.reduce_batch_size();
         } else if !should_apply && was_active {
             // Backpressure released
@@ -103,7 +103,7 @@ impl BackpressureController {
     
     /// Increment queue size
     pub fn increment_queue(&self) -> usize {
-        let new_size = self.current_queue_size.fetch_add(1, Ordering::SeqCst) + 1;
+        let new_size = self.current_queue_size.fetch_add(1, Ordering::Relaxed) + 1;
         self.set_queue_size(new_size);
         new_size
     }
@@ -111,12 +111,12 @@ impl BackpressureController {
     /// Decrement queue size (uses CAS loop to prevent underflow)
     pub fn decrement_queue(&self) -> usize {
         loop {
-            let current = self.current_queue_size.load(Ordering::SeqCst);
+            let current = self.current_queue_size.load(Ordering::Relaxed);
             if current == 0 {
                 return 0;
             }
             match self.current_queue_size.compare_exchange(
-                current, current - 1, Ordering::SeqCst, Ordering::SeqCst
+                current, current - 1, Ordering::Relaxed, Ordering::Relaxed
             ) {
                 Ok(_) => {
                     let new_size = current - 1;
@@ -176,10 +176,10 @@ impl BackpressureController {
             return;
         }
         
-        let current = self.current_batch_size.load(Ordering::SeqCst);
+        let current = self.current_batch_size.load(Ordering::Relaxed);
         let new_size = ((current as f64) * self.config.backoff_factor) as usize;
         let new_size = new_size.max(self.config.min_batch_size);
-        self.current_batch_size.store(new_size, Ordering::SeqCst);
+        self.current_batch_size.store(new_size, Ordering::Relaxed);
     }
     
     fn increase_batch_size(&self) {
@@ -187,38 +187,38 @@ impl BackpressureController {
             return;
         }
         
-        let current = self.current_batch_size.load(Ordering::SeqCst);
+        let current = self.current_batch_size.load(Ordering::Relaxed);
         let new_size = ((current as f64) * self.config.recovery_factor) as usize;
         let new_size = new_size.min(self.config.max_batch_size);
-        self.current_batch_size.store(new_size, Ordering::SeqCst);
+        self.current_batch_size.store(new_size, Ordering::Relaxed);
     }
     
     /// Get the current recommended batch size
     pub fn current_batch_size(&self) -> usize {
-        self.current_batch_size.load(Ordering::SeqCst)
+        self.current_batch_size.load(Ordering::Relaxed)
     }
     
     /// Check if backpressure is currently active
     pub fn is_backpressure_active(&self) -> bool {
-        self.backpressure_active.load(Ordering::SeqCst)
+        self.backpressure_active.load(Ordering::Relaxed)
     }
     
     /// Get backpressure statistics
     pub fn stats(&self) -> BackpressureStats {
         BackpressureStats {
-            backpressure_events: self.backpressure_events.load(Ordering::SeqCst),
-            current_queue_size: self.current_queue_size.load(Ordering::SeqCst),
-            current_batch_size: self.current_batch_size.load(Ordering::SeqCst),
-            is_active: self.backpressure_active.load(Ordering::SeqCst),
-            total_wait_time_ms: self.total_wait_time_ms.load(Ordering::SeqCst),
+            backpressure_events: self.backpressure_events.load(Ordering::Relaxed),
+            current_queue_size: self.current_queue_size.load(Ordering::Relaxed),
+            current_batch_size: self.current_batch_size.load(Ordering::Relaxed),
+            is_active: self.backpressure_active.load(Ordering::Relaxed),
+            total_wait_time_ms: self.total_wait_time_ms.load(Ordering::Relaxed),
         }
     }
     
     /// Reset the controller
     pub fn reset(&self) {
-        self.current_queue_size.store(0, Ordering::SeqCst);
-        self.current_batch_size.store(self.config.initial_batch_size, Ordering::SeqCst);
-        self.backpressure_active.store(false, Ordering::SeqCst);
+        self.current_queue_size.store(0, Ordering::Relaxed);
+        self.current_batch_size.store(self.config.initial_batch_size, Ordering::Relaxed);
+        self.backpressure_active.store(false, Ordering::Relaxed);
         self.signal_capacity_available();
     }
 }

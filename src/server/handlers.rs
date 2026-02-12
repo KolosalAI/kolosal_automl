@@ -225,6 +225,15 @@ pub async fn get_data_preview(
 }
 
 /// Get dataset info
+/// Clear the loaded dataset
+pub async fn clear_data(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<serde_json::Value>> {
+    let mut data = state.current_data.write().await;
+    *data = None;
+    Ok(Json(serde_json::json!({ "success": true })))
+}
+
 pub async fn get_data_info(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<serde_json::Value>> {
@@ -3274,6 +3283,249 @@ pub async fn run_clustering(
     Ok(Json(serde_json::json!({
         "success": true,
         "result": result,
+    })))
+}
+
+// ============================================================================
+// UMAP Visualization Handler
+// ============================================================================
+
+#[derive(Deserialize)]
+pub struct UmapRequest {
+    pub n_neighbors: Option<usize>,
+    pub min_dist: Option<f64>,
+    pub color_by: Option<String>,
+}
+
+/// Run UMAP dimensionality reduction on the loaded dataset
+pub async fn generate_umap(
+    State(state): State<Arc<AppState>>,
+    Json(request): Json<UmapRequest>,
+) -> Result<Json<serde_json::Value>> {
+    use crate::visualization::umap::{Umap, UmapConfig};
+
+    let data = state.current_data.read().await;
+    let df = data.as_ref()
+        .ok_or_else(|| ServerError::NotFound("No data loaded".to_string()))?;
+
+    // Extract numeric columns
+    let numeric_cols: Vec<String> = df.get_columns().iter()
+        .filter(|c| matches!(c.dtype(), DataType::Float32 | DataType::Float64 | DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 | DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64))
+        .map(|c| c.name().to_string())
+        .collect();
+
+    if numeric_cols.len() < 2 {
+        return Err(ServerError::BadRequest("UMAP requires at least 2 numeric columns".to_string()));
+    }
+
+    let n_rows = df.height();
+    if n_rows < 3 {
+        return Err(ServerError::BadRequest("UMAP requires at least 3 samples".to_string()));
+    }
+
+    // Build data matrix (Vec<Vec<f64>>)
+    let mut matrix: Vec<Vec<f64>> = Vec::with_capacity(n_rows);
+    for i in 0..n_rows {
+        let mut row = Vec::with_capacity(numeric_cols.len());
+        for col_name in &numeric_cols {
+            let series = df.column(col_name)
+                .map_err(|e| ServerError::BadRequest(format!("Column error: {}", e)))?;
+            let val = series.cast(&DataType::Float64)
+                .map_err(|e| ServerError::BadRequest(format!("Cast error: {}", e)))?;
+            let ca = val.f64()
+                .map_err(|e| ServerError::Internal(format!("Type error: {}", e)))?;
+            row.push(ca.get(i).unwrap_or(0.0));
+        }
+        matrix.push(row);
+    }
+
+    // Extract color labels if requested
+    let (labels, label_names, color_values, color_mode) = if let Some(ref color_col) = request.color_by {
+        let series = df.column(color_col)
+            .map_err(|e| ServerError::BadRequest(format!("Color column not found: {}", e)))?;
+
+        // Determine if column is numeric (regression-like) or categorical (classification-like)
+        let is_numeric = matches!(series.dtype(), DataType::Float32 | DataType::Float64 | DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 | DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64);
+
+        // Count unique values to decide: if numeric with many unique values, treat as regression
+        let str_vals: Vec<String> = (0..n_rows).map(|i| {
+            series.get(i).map(|v| format!("{}", v)).unwrap_or_else(|_| "NA".to_string())
+        }).collect();
+        let unique_count = str_vals.iter().collect::<std::collections::HashSet<_>>().len();
+        let is_regression = is_numeric && unique_count > 20;
+
+        if is_regression {
+            // Regression mode: return raw float values for gradient coloring
+            let float_series = series.cast(&DataType::Float64)
+                .map_err(|e| ServerError::BadRequest(format!("Cast error: {}", e)))?;
+            let ca = float_series.f64()
+                .map_err(|e| ServerError::Internal(format!("Type error: {}", e)))?;
+            let vals: Vec<f64> = (0..n_rows).map(|i| ca.get(i).unwrap_or(0.0)).collect();
+            (None, None, Some(vals), "regression".to_string())
+        } else {
+            // Classification mode: return discrete labels
+            let mut unique: Vec<String> = str_vals.iter().cloned().collect::<std::collections::HashSet<_>>().into_iter().collect();
+            unique.sort();
+            let label_indices: Vec<usize> = str_vals.iter().map(|v| {
+                unique.iter().position(|u| u == v).unwrap_or(0)
+            }).collect();
+            (Some(label_indices), Some(unique), None, "classification".to_string())
+        }
+    } else {
+        (None, None, None, "none".to_string())
+    };
+
+    // Validate parameters
+    let n_neighbors = request.n_neighbors.unwrap_or(15);
+    let min_dist = request.min_dist.unwrap_or(0.1);
+    if n_neighbors < 2 || n_neighbors > 200 {
+        return Err(ServerError::BadRequest("n_neighbors must be between 2 and 200".to_string()));
+    }
+    if min_dist <= 0.0 || min_dist > 1.0 {
+        return Err(ServerError::BadRequest("min_dist must be between 0.0 (exclusive) and 1.0".to_string()));
+    }
+
+    let result = tokio::task::spawn_blocking(move || -> std::result::Result<Vec<[f64; 2]>, String> {
+        let config = UmapConfig {
+            n_neighbors,
+            min_dist,
+            ..Default::default()
+        };
+        let umap = Umap::new(config);
+        umap.fit_transform(&matrix).map_err(|e| e.to_string())
+    }).await
+        .map_err(|e| ServerError::Internal(format!("UMAP panicked: {}", e)))?
+        .map_err(|e| ServerError::BadRequest(e))?;
+
+    let points: Vec<[f64; 2]> = result;
+
+    Ok(Json(serde_json::json!({
+        "success": true,
+        "points": points,
+        "labels": labels,
+        "label_names": label_names,
+        "color_values": color_values,
+        "color_mode": color_mode,
+        "n_samples": n_rows,
+        "params": {
+            "n_neighbors": n_neighbors,
+            "min_dist": min_dist,
+            "color_by": request.color_by,
+        }
+    })))
+}
+
+// ============================================================================
+// PCA Visualization Handler
+// ============================================================================
+
+#[derive(Deserialize)]
+pub struct PcaRequest {
+    pub color_by: Option<String>,
+    pub scale: Option<bool>,
+}
+
+/// Run PCA dimensionality reduction on the loaded dataset
+pub async fn generate_pca(
+    State(state): State<Arc<AppState>>,
+    Json(request): Json<PcaRequest>,
+) -> Result<Json<serde_json::Value>> {
+    use crate::visualization::pca::{Pca, PcaConfig};
+
+    let data = state.current_data.read().await;
+    let df = data.as_ref()
+        .ok_or_else(|| ServerError::NotFound("No data loaded".to_string()))?;
+
+    // Extract numeric columns
+    let numeric_cols: Vec<String> = df.get_columns().iter()
+        .filter(|c| matches!(c.dtype(), DataType::Float32 | DataType::Float64 | DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 | DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64))
+        .map(|c| c.name().to_string())
+        .collect();
+
+    if numeric_cols.len() < 2 {
+        return Err(ServerError::BadRequest("PCA requires at least 2 numeric columns".to_string()));
+    }
+
+    let n_rows = df.height();
+    if n_rows < 2 {
+        return Err(ServerError::BadRequest("PCA requires at least 2 samples".to_string()));
+    }
+
+    // Build data matrix
+    let mut matrix: Vec<Vec<f64>> = Vec::with_capacity(n_rows);
+    for i in 0..n_rows {
+        let mut row = Vec::with_capacity(numeric_cols.len());
+        for col_name in &numeric_cols {
+            let series = df.column(col_name)
+                .map_err(|e| ServerError::BadRequest(format!("Column error: {}", e)))?;
+            let val = series.cast(&DataType::Float64)
+                .map_err(|e| ServerError::BadRequest(format!("Cast error: {}", e)))?;
+            let ca = val.f64()
+                .map_err(|e| ServerError::Internal(format!("Type error: {}", e)))?;
+            row.push(ca.get(i).unwrap_or(0.0));
+        }
+        matrix.push(row);
+    }
+
+    // Extract color info (same logic as UMAP)
+    let (labels, label_names, color_values, color_mode) = if let Some(ref color_col) = request.color_by {
+        let series = df.column(color_col)
+            .map_err(|e| ServerError::BadRequest(format!("Color column not found: {}", e)))?;
+
+        let is_numeric = matches!(series.dtype(), DataType::Float32 | DataType::Float64 | DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 | DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64);
+
+        let str_vals: Vec<String> = (0..n_rows).map(|i| {
+            series.get(i).map(|v| format!("{}", v)).unwrap_or_else(|_| "NA".to_string())
+        }).collect();
+        let unique_count = str_vals.iter().collect::<std::collections::HashSet<_>>().len();
+        let is_regression = is_numeric && unique_count > 20;
+
+        if is_regression {
+            let float_series = series.cast(&DataType::Float64)
+                .map_err(|e| ServerError::BadRequest(format!("Cast error: {}", e)))?;
+            let ca = float_series.f64()
+                .map_err(|e| ServerError::Internal(format!("Type error: {}", e)))?;
+            let vals: Vec<f64> = (0..n_rows).map(|i| ca.get(i).unwrap_or(0.0)).collect();
+            (None, None, Some(vals), "regression".to_string())
+        } else {
+            let mut unique: Vec<String> = str_vals.iter().cloned().collect::<std::collections::HashSet<_>>().into_iter().collect();
+            unique.sort();
+            let label_indices: Vec<usize> = str_vals.iter().map(|v| {
+                unique.iter().position(|u| u == v).unwrap_or(0)
+            }).collect();
+            (Some(label_indices), Some(unique), None, "classification".to_string())
+        }
+    } else {
+        (None, None, None, "none".to_string())
+    };
+
+    let scale = request.scale.unwrap_or(true);
+
+    let result = tokio::task::spawn_blocking(move || -> std::result::Result<crate::visualization::pca::PcaResult, String> {
+        let config = PcaConfig {
+            scale,
+            ..Default::default()
+        };
+        let pca = Pca::new(config);
+        pca.fit_transform(&matrix).map_err(|e| e.to_string())
+    }).await
+        .map_err(|e| ServerError::Internal(format!("PCA panicked: {}", e)))?
+        .map_err(|e| ServerError::BadRequest(e))?;
+
+    Ok(Json(serde_json::json!({
+        "success": true,
+        "points": result.embedding,
+        "explained_variance_ratio": result.explained_variance_ratio,
+        "eigenvalues": result.eigenvalues,
+        "labels": labels,
+        "label_names": label_names,
+        "color_values": color_values,
+        "color_mode": color_mode,
+        "n_samples": n_rows,
+        "params": {
+            "scale": scale,
+            "color_by": request.color_by,
+        }
     })))
 }
 

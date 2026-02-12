@@ -93,8 +93,8 @@ impl BatchStats {
     
     /// Record a batch processing event
     pub fn record_batch(&self, batch_size: usize, processing_time_ms: f64) {
-        self.total_batches.fetch_add(1, Ordering::SeqCst);
-        self.total_items.fetch_add(batch_size as u64, Ordering::SeqCst);
+        self.total_batches.fetch_add(1, Ordering::Relaxed);
+        self.total_items.fetch_add(batch_size as u64, Ordering::Relaxed);
         
         // Record processing time
         if let Ok(mut times) = self.processing_times.write() {
@@ -125,7 +125,7 @@ impl BatchStats {
     
     /// Record an error
     pub fn record_error(&self) {
-        self.total_errors.fetch_add(1, Ordering::SeqCst);
+        self.total_errors.fetch_add(1, Ordering::Relaxed);
     }
     
     /// Get processing time statistics
@@ -170,17 +170,17 @@ impl BatchStats {
     
     /// Get total batches processed
     pub fn total_batches(&self) -> u64 {
-        self.total_batches.load(Ordering::SeqCst)
+        self.total_batches.load(Ordering::Relaxed)
     }
     
     /// Get total items processed
     pub fn total_items(&self) -> u64 {
-        self.total_items.load(Ordering::SeqCst)
+        self.total_items.load(Ordering::Relaxed)
     }
     
     /// Get total errors
     pub fn total_errors(&self) -> u64 {
-        self.total_errors.load(Ordering::SeqCst)
+        self.total_errors.load(Ordering::Relaxed)
     }
     
     /// Get error rate
@@ -250,9 +250,9 @@ impl BatchStats {
             sizes.clear();
         }
         
-        self.total_batches.store(0, Ordering::SeqCst);
-        self.total_items.store(0, Ordering::SeqCst);
-        self.total_errors.store(0, Ordering::SeqCst);
+        self.total_batches.store(0, Ordering::Relaxed);
+        self.total_items.store(0, Ordering::Relaxed);
+        self.total_errors.store(0, Ordering::Relaxed);
     }
 }
 

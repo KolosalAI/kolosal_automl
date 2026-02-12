@@ -263,8 +263,8 @@ impl Quantizer {
     
     /// Quantize an array of values
     pub fn quantize(&self, data: &[f64]) -> QuantizedData {
-        self.quantize_calls.fetch_add(1, Ordering::SeqCst);
-        self.total_values.fetch_add(data.len() as u64, Ordering::SeqCst);
+        self.quantize_calls.fetch_add(1, Ordering::Relaxed);
+        self.total_values.fetch_add(data.len() as u64, Ordering::Relaxed);
         
         // Use calibrated parameters if available, otherwise compute on-the-fly
         let (scale, zero_point) = if self.is_calibrated {
@@ -289,7 +289,7 @@ impl Quantizer {
             clamped
         }).collect();
         
-        self.clipped_values.fetch_add(clipped, Ordering::SeqCst);
+        self.clipped_values.fetch_add(clipped, Ordering::Relaxed);
         
         QuantizedData {
             data: quantized,
@@ -309,18 +309,18 @@ impl Quantizer {
     
     /// Dequantize data back to f64
     pub fn dequantize(&self, quantized: &QuantizedData) -> Vec<f64> {
-        self.dequantize_calls.fetch_add(1, Ordering::SeqCst);
+        self.dequantize_calls.fetch_add(1, Ordering::Relaxed);
         quantized.dequantize()
     }
     
     /// Get quantization statistics
     pub fn stats(&self) -> QuantizationStats {
-        let total = self.total_values.load(Ordering::SeqCst);
-        let clipped = self.clipped_values.load(Ordering::SeqCst);
+        let total = self.total_values.load(Ordering::Relaxed);
+        let clipped = self.clipped_values.load(Ordering::Relaxed);
         
         QuantizationStats {
-            quantize_calls: self.quantize_calls.load(Ordering::SeqCst),
-            dequantize_calls: self.dequantize_calls.load(Ordering::SeqCst),
+            quantize_calls: self.quantize_calls.load(Ordering::Relaxed),
+            dequantize_calls: self.dequantize_calls.load(Ordering::Relaxed),
             total_values: total,
             clipped_values: clipped,
             clip_rate: if total > 0 { clipped as f64 / total as f64 } else { 0.0 },

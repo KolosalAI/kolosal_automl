@@ -196,7 +196,7 @@ impl MemoryPool {
             if let Some(category_pool) = pools.get_mut(&category) {
                 if let Some(buffers) = category_pool.get_mut(&key) {
                     if let Some(data) = buffers.pop() {
-                        self.hits.fetch_add(1, Ordering::SeqCst);
+                        self.hits.fetch_add(1, Ordering::Relaxed);
                         return PooledBuffer::with_pool(data, shape, self);
                     }
                 }
@@ -204,7 +204,7 @@ impl MemoryPool {
         }
 
         // Allocate new buffer
-        self.misses.fetch_add(1, Ordering::SeqCst);
+        self.misses.fetch_add(1, Ordering::Relaxed);
         let data = vec![0.0; size];
         PooledBuffer::with_pool(data, shape, self)
     }
@@ -249,8 +249,8 @@ impl MemoryPool {
     
     /// Get pool statistics
     pub fn stats(&self) -> PoolStats {
-        let hits = self.hits.load(Ordering::SeqCst);
-        let misses = self.misses.load(Ordering::SeqCst);
+        let hits = self.hits.load(Ordering::Relaxed);
+        let misses = self.misses.load(Ordering::Relaxed);
         let total = hits + misses;
         
         let (pooled_buffers, pooled_bytes) = self.pools

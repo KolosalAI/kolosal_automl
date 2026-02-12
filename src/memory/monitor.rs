@@ -18,6 +18,9 @@ pub enum MemoryPressureLevel {
     Critical,
 }
 
+/// Maximum number of memory history entries to retain
+const MAX_MEMORY_HISTORY: usize = 10_000;
+
 /// Monitors process and system memory, tracks history, and detects pressure levels.
 pub struct MemoryMonitor {
     warning_threshold: f64,
@@ -110,8 +113,14 @@ impl MemoryMonitor {
     }
 
     /// Record the current process memory to history and return the value.
+    /// History is bounded to prevent unbounded memory growth.
     pub fn update_memory(&mut self) -> f64 {
         let current = self.get_memory_usage();
+        if self.memory_history.len() >= MAX_MEMORY_HISTORY {
+            // Drop oldest half to amortise the cost of draining
+            let drain_count = MAX_MEMORY_HISTORY / 2;
+            self.memory_history.drain(..drain_count);
+        }
         self.memory_history.push(current);
         current
     }

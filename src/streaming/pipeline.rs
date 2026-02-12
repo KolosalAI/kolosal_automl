@@ -131,17 +131,17 @@ impl<T: Send + 'static> StreamingPipeline<T> {
     
     /// Start the pipeline
     pub fn start(&self) {
-        self.running.store(true, Ordering::SeqCst);
+        self.running.store(true, Ordering::Relaxed);
     }
     
     /// Stop the pipeline
     pub fn stop(&self) {
-        self.running.store(false, Ordering::SeqCst);
+        self.running.store(false, Ordering::Relaxed);
     }
     
     /// Check if the pipeline is running
     pub fn is_running(&self) -> bool {
-        self.running.load(Ordering::SeqCst)
+        self.running.load(Ordering::Relaxed)
     }
     
     /// Push data into the pipeline
@@ -180,7 +180,7 @@ impl<T: Send + 'static> StreamingPipeline<T> {
     {
         let start = Instant::now();
         let row_count = data.len();
-        let chunk_idx = self.chunk_index.fetch_add(1, Ordering::SeqCst);
+        let chunk_idx = self.chunk_index.fetch_add(1, Ordering::Relaxed);
         
         let results: Vec<R> = data.into_iter().map(process_fn).collect();
         
@@ -188,9 +188,9 @@ impl<T: Send + 'static> StreamingPipeline<T> {
         let processing_time_ms = elapsed.as_secs_f64() * 1000.0;
         
         // Update statistics
-        self.chunks_processed.fetch_add(1, Ordering::SeqCst);
-        self.rows_processed.fetch_add(row_count as u64, Ordering::SeqCst);
-        self.total_processing_time_ns.fetch_add(elapsed.as_nanos() as u64, Ordering::SeqCst);
+        self.chunks_processed.fetch_add(1, Ordering::Relaxed);
+        self.rows_processed.fetch_add(row_count as u64, Ordering::Relaxed);
+        self.total_processing_time_ns.fetch_add(elapsed.as_nanos() as u64, Ordering::Relaxed);
         
         Ok(ChunkResult::new(results, processing_time_ms, chunk_idx, row_count))
     }
@@ -225,7 +225,7 @@ impl<T: Send + 'static> StreamingPipeline<T> {
             match self.process_chunk(chunk, process_fn.clone()) {
                 Ok(result) => results.push(result),
                 Err(_) => {
-                    self.errors.fetch_add(1, Ordering::SeqCst);
+                    self.errors.fetch_add(1, Ordering::Relaxed);
                 }
             }
         }
@@ -235,9 +235,9 @@ impl<T: Send + 'static> StreamingPipeline<T> {
     
     /// Get pipeline statistics
     pub fn stats(&self) -> StreamStats {
-        let chunks = self.chunks_processed.load(Ordering::SeqCst);
-        let rows = self.rows_processed.load(Ordering::SeqCst);
-        let total_time_ns = self.total_processing_time_ns.load(Ordering::SeqCst);
+        let chunks = self.chunks_processed.load(Ordering::Relaxed);
+        let rows = self.rows_processed.load(Ordering::Relaxed);
+        let total_time_ns = self.total_processing_time_ns.load(Ordering::Relaxed);
         
         let total_time_ms = total_time_ns as f64 / 1_000_000.0;
         let total_time_sec = total_time_ns as f64 / 1_000_000_000.0;
@@ -261,10 +261,10 @@ impl<T: Send + 'static> StreamingPipeline<T> {
             rows_processed: rows,
             total_processing_time_ms: total_time_ms,
             avg_chunk_size,
-            memory_peak_mb: self.memory_peak_bytes.load(Ordering::SeqCst) as f64 / (1024.0 * 1024.0),
+            memory_peak_mb: self.memory_peak_bytes.load(Ordering::Relaxed) as f64 / (1024.0 * 1024.0),
             throughput,
             backpressure_events: bp_stats.backpressure_events,
-            errors: self.errors.load(Ordering::SeqCst),
+            errors: self.errors.load(Ordering::Relaxed),
         }
     }
     

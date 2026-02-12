@@ -50,6 +50,7 @@ pub fn create_router(state: Arc<AppState>, config: &ServerConfig) -> Router {
         .route("/data/info", get(handlers::get_data_info))
         .route("/data/sample/:name", get(handlers::load_sample_data))
         .route("/data/clean", post(handlers::auto_clean_data))
+        .route("/data/clear", axum::routing::delete(handlers::clear_data))
         .route("/data/import/kaggle", post(handlers::import_kaggle))
         // Preprocessing
         .route("/preprocess", post(handlers::run_preprocessing))
@@ -111,6 +112,9 @@ pub fn create_router(state: Arc<AppState>, config: &ServerConfig) -> Router {
         .route("/anomaly/detect", post(handlers::detect_anomalies))
         // Clustering
         .route("/clustering/run", post(handlers::run_clustering))
+        // Visualization
+        .route("/visualization/umap", post(handlers::generate_umap))
+        .route("/visualization/pca", post(handlers::generate_pca))
         // AutoML pipeline
         .route("/automl/run", post(handlers::run_automl_pipeline))
         .route("/automl/status/:job_id", get(handlers::get_automl_status))

@@ -175,6 +175,12 @@ experiments/
 standard_ml_results/
 temp_data/
 
+# Node / Playwright
+node_modules/
+package-lock.json
+test-results/
+playwright-report/
+
 # Rust
 /target/
 **/*.rs.bk

@@ -106,7 +106,15 @@ lto = "fat"
 codegen-units = 1
 opt-level = 3
 panic = "abort"
+strip = true
+overflow-checks = false
+
+[profile.release-with-debug]
+inherits = "release"
+strip = false
+debug = true
 
 [profile.bench]
 inherits = "release"
+strip = false
 debug = true

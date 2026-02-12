@@ -116,17 +116,17 @@ impl SystemMonitor {
 
     /// Mark the monitor as running
     pub fn start(&self) {
-        self.running.store(true, Ordering::SeqCst);
+        self.running.store(true, Ordering::Relaxed);
     }
 
     /// Signal the monitor to stop
     pub fn stop(&self) {
-        self.running.store(false, Ordering::SeqCst);
+        self.running.store(false, Ordering::Relaxed);
     }
 
     /// Check if the monitor is running
     pub fn is_running(&self) -> bool {
-        self.running.load(Ordering::SeqCst)
+        self.running.load(Ordering::Relaxed)
     }
 
     /// Clear all stored metrics history
