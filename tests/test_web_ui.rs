@@ -172,6 +172,7 @@ async fn test_chart_canvases_present() {
         "columnTypesChart", "trainingMetricsChart", "comparisonChart",
         "convergenceChart", "importanceChart", "anomalyChart",
         "clusteringChart", "cpuGaugeChart", "memGaugeChart",
+        "umapChart", "pcaChart", "trainUmapChart",
     ];
     for canvas in &canvases {
         assert!(
@@ -263,4 +264,83 @@ async fn test_critical_element_ids_present() {
             id
         );
     }
+}
+
+// ============================================================================
+// UMAP Visualization Tests
+// ============================================================================
+
+#[tokio::test]
+async fn test_umap_chart_canvas_present() {
+    let html = get_index_html().await;
+    assert!(html.contains("id=\"umapChart\""), "Missing UMAP chart canvas in Analyze tab");
+    assert!(html.contains("id=\"trainUmapChart\""), "Missing UMAP chart canvas in Train tab");
+}
+
+#[tokio::test]
+async fn test_umap_controls_present() {
+    let html = get_index_html().await;
+    assert!(html.contains("id=\"btn-umap\""), "Missing UMAP run button");
+    assert!(html.contains("id=\"umap-neighbors\""), "Missing UMAP n_neighbors input");
+    assert!(html.contains("id=\"umap-mindist\""), "Missing UMAP min_dist input");
+    assert!(html.contains("id=\"umap-colorby\""), "Missing UMAP color-by select");
+}
+
+#[tokio::test]
+async fn test_umap_result_elements_present() {
+    let html = get_index_html().await;
+    assert!(html.contains("id=\"umap-results\""), "Missing UMAP results container");
+    assert!(html.contains("id=\"umap-chart-wrap\""), "Missing UMAP chart wrapper");
+    assert!(html.contains("id=\"umap-empty\""), "Missing UMAP empty state");
+}
+
+#[tokio::test]
+async fn test_umap_train_card_present() {
+    let html = get_index_html().await;
+    assert!(html.contains("id=\"train-umap-card\""), "Missing live UMAP card in Train tab");
+    assert!(html.contains("id=\"train-umap-badge\""), "Missing live UMAP badge");
+    assert!(html.contains("id=\"train-umap-status\""), "Missing live UMAP status container");
+}
+
+#[tokio::test]
+async fn test_umap_javascript_functions_exist() {
+    let html = get_index_html().await;
+    assert!(html.contains("function runUmap"), "Missing runUmap JS function");
+    assert!(html.contains("function renderUmapChart"), "Missing renderUmapChart JS function");
+    assert!(html.contains("function convexHull"), "Missing convexHull JS function");
+    assert!(html.contains("function lerpColor"), "Missing lerpColor JS function");
+}
+
+// ============================================================================
+// PCA Visualization Tests
+// ============================================================================
+
+#[tokio::test]
+async fn test_pca_chart_canvas_present() {
+    let html = get_index_html().await;
+    assert!(html.contains("id=\"pcaChart\""), "Missing PCA chart canvas in Analyze tab");
+}
+
+#[tokio::test]
+async fn test_pca_controls_present() {
+    let html = get_index_html().await;
+    assert!(html.contains("id=\"btn-pca\""), "Missing PCA run button");
+    assert!(html.contains("id=\"pca-scale\""), "Missing PCA scale select");
+    assert!(html.contains("id=\"pca-colorby\""), "Missing PCA color-by select");
+    assert!(html.contains("id=\"pca-variance\""), "Missing PCA variance display");
+}
+
+#[tokio::test]
+async fn test_pca_result_elements_present() {
+    let html = get_index_html().await;
+    assert!(html.contains("id=\"pca-results\""), "Missing PCA results container");
+    assert!(html.contains("id=\"pca-chart-wrap\""), "Missing PCA chart wrapper");
+    assert!(html.contains("id=\"pca-empty\""), "Missing PCA empty state");
+}
+
+#[tokio::test]
+async fn test_pca_javascript_functions_exist() {
+    let html = get_index_html().await;
+    assert!(html.contains("function runPca"), "Missing runPca JS function");
+    assert!(html.contains("function renderPcaChart"), "Missing renderPcaChart JS function");
 }

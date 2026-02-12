@@ -102,23 +102,32 @@ impl DataPreprocessor {
         }
     }
 
-    /// Fit the preprocessor to the data
-    /// Cast all numeric (integer) columns to Float64 for consistent processing
+    /// Cast all numeric (integer) columns to Float64 for consistent processing.
+    /// Collects casted columns first, then applies them in a single pass to
+    /// avoid redundant full-DataFrame clones per column.
     fn cast_numeric_to_f64(df: &DataFrame) -> Result<DataFrame> {
-        let mut result = df.clone();
-        for col in df.get_columns() {
-            match col.dtype() {
-                DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 |
-                DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64 |
-                DataType::Float32 => {
-                    let casted = col.cast(&DataType::Float64)
-                        .map_err(|e| KolosalError::DataError(e.to_string()))?;
-                    result = result.with_column(casted)
-                        .map_err(|e| KolosalError::DataError(e.to_string()))?
-                        .clone();
+        let columns_to_cast: Vec<Column> = df.get_columns().iter()
+            .filter_map(|col| {
+                match col.dtype() {
+                    DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 |
+                    DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64 |
+                    DataType::Float32 => {
+                        col.cast(&DataType::Float64).ok()
+                    }
+                    _ => None,
                 }
-                _ => {}
-            }
+            })
+            .collect();
+
+        if columns_to_cast.is_empty() {
+            return Ok(df.clone());
+        }
+
+        let mut result = df.clone();
+        for casted in columns_to_cast {
+            result = result.with_column(casted)
+                .map_err(|e| KolosalError::DataError(e.to_string()))?
+                .clone();
         }
         Ok(result)
     }
@@ -367,10 +376,9 @@ impl DataPreprocessor {
         }
         for m in &mut col_means { *m /= n_rows as f64; }
 
-        // Second pass: variance and skewness
+        // Second pass: variance, skewness, and outlier count (merged to avoid third scan)
         let mut col_var = vec![0.0f64; n_cols];
         let mut col_skew_num = vec![0.0f64; n_cols];
-        let mut outlier_count = 0usize;
 
         for row in data {
             for (j, &val) in row.iter().enumerate() {
@@ -382,22 +390,23 @@ impl DataPreprocessor {
         }
 
         let mut avg_abs_skewness = 0.0f64;
+        let mut col_std = vec![0.0f64; n_cols];
         for j in 0..n_cols {
             col_var[j] /= (n_rows - 1).max(1) as f64;
-            let std = col_var[j].sqrt();
-            if std > 1e-12 {
-                let skew = (col_skew_num[j] / n_rows as f64) / (std * std * std);
+            col_std[j] = col_var[j].sqrt();
+            if col_std[j] > 1e-12 {
+                let skew = (col_skew_num[j] / n_rows as f64) / (col_std[j] * col_std[j] * col_std[j]);
                 avg_abs_skewness += skew.abs();
             }
         }
         avg_abs_skewness /= n_cols as f64;
 
-        // Count outliers (> 3 std from mean)
+        // Count outliers (> 3 std from mean) using precomputed col_std
+        let mut outlier_count = 0usize;
         for row in data {
             for (j, &val) in row.iter().enumerate() {
                 if j >= n_cols { break; }
-                let std = col_var[j].sqrt();
-                if std > 1e-12 && (val - col_means[j]).abs() > 3.0 * std {
+                if col_std[j] > 1e-12 && (val - col_means[j]).abs() > 3.0 * col_std[j] {
                     outlier_count += 1;
                 }
             }

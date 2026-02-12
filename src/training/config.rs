@@ -156,14 +156,14 @@ impl Default for TrainingConfig {
             n_jobs: None,
             verbose: false,
             max_depth: Some(6),
-            min_samples_leaf: 1,
+            min_samples_leaf: 5,
             n_estimators: Some(100),
             learning_rate: Some(0.1),
             max_iter: Some(1000),
             n_neighbors: Some(5),
-            subsample: 1.0,
-            colsample_bytree: 1.0,
-            reg_alpha: 0.0,
+            subsample: 0.8,
+            colsample_bytree: 0.8,
+            reg_alpha: 0.01,
             reg_lambda: 1.0,
         }
     }

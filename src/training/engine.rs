@@ -219,53 +219,25 @@ impl TrainEngine {
             .map(|v| v.unwrap_or(0.0))
             .collect();
 
-        // Extract features — build row-major directly to avoid transpose+clone
-        let n_rows = df.height();
-        let n_cols = feature_cols.len();
-        let mut x_data = Vec::with_capacity(n_rows * n_cols);
-
-        // Collect all columns first as contiguous f64 slices
-        let col_data: Vec<Vec<f64>> = feature_cols
-            .iter()
-            .map(|col_name| {
-                let series = df
-                    .column(col_name)
-                    .map_err(|_| KolosalError::FeatureNotFound(col_name.clone()))?;
-                let series_f64 = series.cast(&DataType::Float64)
-                    .map_err(|e| KolosalError::DataError(e.to_string()))?;
-                let values: Vec<f64> = series_f64
-                    .f64()
-                    .map_err(|e| KolosalError::DataError(e.to_string()))?
-                    .into_iter()
-                    .map(|v| v.unwrap_or(0.0))
-                    .collect();
-                Ok(values)
-            })
-            .collect::<Result<Vec<Vec<f64>>>>()?;
-
-        // Interleave columns into row-major order directly
-        for row in 0..n_rows {
-            for col in &col_data {
-                x_data.push(col[row]);
-            }
-        }
-
-        let x = Array2::from_shape_vec((n_rows, n_cols), x_data)
-            .map_err(|e| KolosalError::ShapeError {
-                expected: format!("({}, {})", n_rows, n_cols),
-                actual: e.to_string(),
-            })?;
+        // Extract features using shared helper
+        let x = Self::columns_to_array2(df, &feature_cols)?;
 
         Ok((x, y))
     }
 
     fn extract_features(&self, df: &DataFrame) -> Result<Array2<f64>> {
+        Self::columns_to_array2(df, &self.feature_names)
+    }
+
+    /// Shared helper: extract named columns from a DataFrame into a row-major Array2<f64>.
+    /// Avoids duplicating the column-collection + interleaving logic.
+    fn columns_to_array2(df: &DataFrame, col_names: &[String]) -> Result<Array2<f64>> {
         let n_rows = df.height();
-        let n_cols = self.feature_names.len();
+        let n_cols = col_names.len();
         let mut x_data = Vec::with_capacity(n_rows * n_cols);
 
-        // Collect columns first
-        let col_data: Vec<Vec<f64>> = self.feature_names
+        // Collect all columns as contiguous f64 slices
+        let col_data: Vec<Vec<f64>> = col_names
             .iter()
             .map(|col_name| {
                 let series = df
@@ -283,20 +255,18 @@ impl TrainEngine {
             })
             .collect::<Result<Vec<Vec<f64>>>>()?;
 
-        // Interleave into row-major order
+        // Interleave columns into row-major order
         for row in 0..n_rows {
             for col in &col_data {
                 x_data.push(col[row]);
             }
         }
 
-        let x = Array2::from_shape_vec((n_rows, n_cols), x_data)
+        Array2::from_shape_vec((n_rows, n_cols), x_data)
             .map_err(|e| KolosalError::ShapeError {
                 expected: format!("({}, {})", n_rows, n_cols),
                 actual: e.to_string(),
-            })?;
-
-        Ok(x)
+            })
     }
 
     fn train_val_split(

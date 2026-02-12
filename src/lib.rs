@@ -104,6 +104,9 @@ pub mod adaptive;
 // Security
 pub mod security;
 
+// Visualization
+pub mod visualization;
+
 // ISO Compliance Modules
 pub mod provenance;
 pub mod fairness;

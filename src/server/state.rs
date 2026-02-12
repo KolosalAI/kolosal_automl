@@ -83,23 +83,28 @@ impl ModelRegistry {
         model_id: &str,
         model_path: &str,
     ) -> crate::error::Result<Arc<InferenceEngine>> {
-        // Take write lock immediately to prevent TOCTOU race where multiple
-        // tasks could simultaneously load the same model from disk.
-        let mut engines = self.engines.write().await;
-
-        // Check cache under the same lock
-        if let Some(engine) = engines.get(model_id) {
-            return Ok(Arc::clone(engine));
+        // Fast path: check cache with read lock (no blocking on concurrent reads)
+        {
+            let engines = self.engines.read().await;
+            if let Some(engine) = engines.get(model_id) {
+                return Ok(Arc::clone(engine));
+            }
         }
 
-        // Load from disk (still holding lock — acceptable since load is fast I/O)
+        // Load from disk WITHOUT holding any lock — this is potentially slow I/O
+        // and we don't want to block concurrent cache reads.
         let mut engine = InferenceEngine::load(InferenceConfig::new(), None, model_path)?;
         engine.warmup()?;
         let engine = Arc::new(engine);
 
-        // Evict least-recently-inserted entry if at capacity.
-        // HashMap doesn't track insertion order, so evict the entry with
-        // the fewest total_predictions (least-used heuristic).
+        // Now take write lock and double-check (another task may have loaded
+        // the same model concurrently).
+        let mut engines = self.engines.write().await;
+        if let Some(existing) = engines.get(model_id) {
+            return Ok(Arc::clone(existing));
+        }
+
+        // Evict least-used entry if at capacity
         if engines.len() >= self.max_cached {
             let least_used = engines.iter()
                 .min_by_key(|(_, e)| e.stats().total_predictions)

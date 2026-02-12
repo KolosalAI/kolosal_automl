@@ -170,14 +170,17 @@ impl SimdOps {
         result
     }
 
-    /// Variance using SIMD
+    /// Variance using SIMD for the squared-difference reduction
     pub fn variance_f64(data: &[f64]) -> f64 {
         if data.len() < 2 {
             return 0.0;
         }
 
         let mean = Self::mean_f64(data);
-        let sq_diff_sum: f64 = data.iter().map(|&x| (x - mean).powi(2)).sum();
+        // Build a temporary diff array, then use SIMD dot product (diff . diff)
+        // to compute sum of squares without scalar loop
+        let diffs: Vec<f64> = data.iter().map(|&x| x - mean).collect();
+        let sq_diff_sum = Self::dot_f64(&diffs, &diffs);
         sq_diff_sum / data.len() as f64
     }
 
@@ -270,9 +273,41 @@ impl SimdOps {
         result
     }
 
-    /// Scalar multiplication
+    /// Scalar multiplication using SIMD
+    #[cfg(target_arch = "x86_64")]
+    pub fn scale_f64(data: &[f64], scalar: f64) -> Vec<f64> {
+        if !is_x86_feature_detected!("avx2") || data.len() < 4 {
+            return data.iter().map(|&x| x * scalar).collect();
+        }
+        unsafe { Self::scale_f64_avx(data, scalar) }
+    }
+
+    #[cfg(not(target_arch = "x86_64"))]
     pub fn scale_f64(data: &[f64], scalar: f64) -> Vec<f64> {
         data.iter().map(|&x| x * scalar).collect()
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    #[target_feature(enable = "avx2")]
+    unsafe fn scale_f64_avx(data: &[f64], scalar: f64) -> Vec<f64> {
+        let mut result = vec![0.0; data.len()];
+        let scalar_vec = _mm256_set1_pd(scalar);
+
+        let chunks = data.chunks_exact(4);
+        let chunks_r = result.chunks_exact_mut(4);
+
+        for (chunk, chunk_r) in chunks.zip(chunks_r) {
+            let vec = _mm256_loadu_pd(chunk.as_ptr());
+            let prod = _mm256_mul_pd(vec, scalar_vec);
+            _mm256_storeu_pd(chunk_r.as_mut_ptr(), prod);
+        }
+
+        let remainder_start = (data.len() / 4) * 4;
+        for i in remainder_start..data.len() {
+            result[i] = data[i] * scalar;
+        }
+
+        result
     }
 
     /// Find maximum value
@@ -301,12 +336,16 @@ impl SimdOps {
             .map(|(idx, _)| idx)
     }
 
-    /// Softmax function
+    /// Softmax function — single allocation, in-place normalization
     pub fn softmax_f64(data: &[f64]) -> Vec<f64> {
         let max = Self::max_f64(data).unwrap_or(0.0);
-        let exp_vals: Vec<f64> = data.iter().map(|&x| (x - max).exp()).collect();
-        let sum: f64 = exp_vals.iter().sum();
-        exp_vals.iter().map(|&x| x / sum).collect()
+        let mut result: Vec<f64> = data.iter().map(|&x| (x - max).exp()).collect();
+        let sum = Self::sum_f64(&result);
+        let inv_sum = 1.0 / sum;
+        for v in result.iter_mut() {
+            *v *= inv_sum;
+        }
+        result
     }
 
     /// Log softmax function (more numerically stable)

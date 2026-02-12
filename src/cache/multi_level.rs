@@ -111,32 +111,32 @@ where
     
     /// Get a value from the cache, checking all levels
     pub fn get(&self, key: &K) -> Option<V> {
-        self.total_requests.fetch_add(1, Ordering::SeqCst);
+        self.total_requests.fetch_add(1, Ordering::Relaxed);
         
         // Try L1 first (hot data)
         if let Some(value) = self.l1.get(key) {
-            self.l1_hits.fetch_add(1, Ordering::SeqCst);
+            self.l1_hits.fetch_add(1, Ordering::Relaxed);
             return Some(value);
         }
-        self.l1_misses.fetch_add(1, Ordering::SeqCst);
+        self.l1_misses.fetch_add(1, Ordering::Relaxed);
         
         // Try L2 (warm data)
         if let Some(value) = self.l2.get(key) {
-            self.l2_hits.fetch_add(1, Ordering::SeqCst);
+            self.l2_hits.fetch_add(1, Ordering::Relaxed);
             // Promote to L1
             self.l1.set(key.clone(), value.clone());
             return Some(value);
         }
-        self.l2_misses.fetch_add(1, Ordering::SeqCst);
+        self.l2_misses.fetch_add(1, Ordering::Relaxed);
         
         // Try L3 (cold data)
         if let Some(value) = self.l3.get(key) {
-            self.l3_hits.fetch_add(1, Ordering::SeqCst);
+            self.l3_hits.fetch_add(1, Ordering::Relaxed);
             // Promote to L2
             self.l2.set(key.clone(), value.clone());
             return Some(value);
         }
-        self.l3_misses.fetch_add(1, Ordering::SeqCst);
+        self.l3_misses.fetch_add(1, Ordering::Relaxed);
         
         None
     }
@@ -209,10 +209,10 @@ where
     
     /// Get cache statistics
     pub fn stats(&self) -> CacheStats {
-        let l1_hits = self.l1_hits.load(Ordering::SeqCst);
-        let l2_hits = self.l2_hits.load(Ordering::SeqCst);
-        let l3_hits = self.l3_hits.load(Ordering::SeqCst);
-        let total = self.total_requests.load(Ordering::SeqCst);
+        let l1_hits = self.l1_hits.load(Ordering::Relaxed);
+        let l2_hits = self.l2_hits.load(Ordering::Relaxed);
+        let l3_hits = self.l3_hits.load(Ordering::Relaxed);
+        let total = self.total_requests.load(Ordering::Relaxed);
         
         let total_hits = l1_hits + l2_hits + l3_hits;
         let hit_rate = if total > 0 {
@@ -223,11 +223,11 @@ where
         
         CacheStats {
             l1_hits,
-            l1_misses: self.l1_misses.load(Ordering::SeqCst),
+            l1_misses: self.l1_misses.load(Ordering::Relaxed),
             l2_hits,
-            l2_misses: self.l2_misses.load(Ordering::SeqCst),
+            l2_misses: self.l2_misses.load(Ordering::Relaxed),
             l3_hits,
-            l3_misses: self.l3_misses.load(Ordering::SeqCst),
+            l3_misses: self.l3_misses.load(Ordering::Relaxed),
             total_requests: total,
             hit_rate,
         }

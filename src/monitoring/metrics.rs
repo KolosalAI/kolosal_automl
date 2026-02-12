@@ -1,6 +1,8 @@
 //! Performance Metrics
 //!
 //! Latency, throughput, and resource usage tracking.
+//! Uses a single RwLock for all mutable state to reduce lock
+//! contention and eliminate multi-lock acquisition in hot paths.
 
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -35,32 +37,42 @@ pub struct HistogramBucket {
     pub count: u64,
 }
 
+/// Inner mutable state protected by a single lock
+struct MetricsInner {
+    /// Rolling latency window
+    latencies: VecDeque<f64>,
+    /// Latency histogram buckets
+    latency_histogram: Vec<HistogramBucket>,
+    /// Throughput sample history
+    throughput_samples: VecDeque<(Instant, u64)>,
+    /// Last reset timestamp
+    last_reset: Instant,
+}
+
 /// Performance metrics collector
+///
+/// Groups all mutable collections under a single `RwLock` to avoid
+/// acquiring multiple locks per `record_latency` call. Lock-free
+/// atomics are used for simple counters that don't need coordination.
 pub struct PerformanceMetrics {
     /// Window size for rolling metrics
     window_size: usize,
-    
-    // Latency tracking
-    latencies: RwLock<VecDeque<f64>>,
-    latency_histogram: RwLock<Vec<HistogramBucket>>,
-    
-    // Counters
+
+    /// All mutable state under one lock
+    inner: RwLock<MetricsInner>,
+
+    // Lock-free counters
     total_requests: AtomicU64,
     total_errors: AtomicU64,
     total_items: AtomicU64,
-    
-    // Timing
+
+    // Immutable timing
     start_time: Instant,
-    last_reset: RwLock<Instant>,
-    
-    // Throughput tracking
-    throughput_samples: RwLock<VecDeque<(Instant, u64)>>,
 }
 
 impl PerformanceMetrics {
     /// Create a new metrics collector
     pub fn new(window_size: usize) -> Self {
-        // Default histogram buckets (in milliseconds)
         let histogram_buckets = vec![
             HistogramBucket { le: 1.0, count: 0 },
             HistogramBucket { le: 5.0, count: 0 },
@@ -73,181 +85,181 @@ impl PerformanceMetrics {
             HistogramBucket { le: 1000.0, count: 0 },
             HistogramBucket { le: f64::INFINITY, count: 0 },
         ];
-        
+
         Self {
             window_size,
-            latencies: RwLock::new(VecDeque::with_capacity(window_size)),
-            latency_histogram: RwLock::new(histogram_buckets),
+            inner: RwLock::new(MetricsInner {
+                latencies: VecDeque::with_capacity(window_size),
+                latency_histogram: histogram_buckets,
+                throughput_samples: VecDeque::with_capacity(100),
+                last_reset: Instant::now(),
+            }),
             total_requests: AtomicU64::new(0),
             total_errors: AtomicU64::new(0),
             total_items: AtomicU64::new(0),
             start_time: Instant::now(),
-            last_reset: RwLock::new(Instant::now()),
-            throughput_samples: RwLock::new(VecDeque::with_capacity(100)),
         }
     }
-    
+
     /// Record a latency observation
     pub fn record_latency(&self, latency_ms: f64) {
-        // Add to rolling window
-        if let Ok(mut latencies) = self.latencies.write() {
-            latencies.push_back(latency_ms);
-            if latencies.len() > self.window_size {
-                latencies.pop_front();
+        if let Ok(mut inner) = self.inner.write() {
+            // Add to rolling window
+            inner.latencies.push_back(latency_ms);
+            if inner.latencies.len() > self.window_size {
+                inner.latencies.pop_front();
             }
-        }
-        
-        // Update histogram
-        if let Ok(mut histogram) = self.latency_histogram.write() {
-            for bucket in histogram.iter_mut() {
+
+            // Update histogram
+            for bucket in inner.latency_histogram.iter_mut() {
                 if latency_ms <= bucket.le {
                     bucket.count += 1;
                     break;
                 }
             }
         }
-        
-        self.total_requests.fetch_add(1, Ordering::SeqCst);
+
+        self.total_requests.fetch_add(1, Ordering::Relaxed);
     }
-    
+
     /// Record a batch of items processed
     pub fn record_items(&self, count: u64) {
-        self.total_items.fetch_add(count, Ordering::SeqCst);
-        
-        if let Ok(mut samples) = self.throughput_samples.write() {
-            samples.push_back((Instant::now(), count));
+        self.total_items.fetch_add(count, Ordering::Relaxed);
+
+        if let Ok(mut inner) = self.inner.write() {
+            inner.throughput_samples.push_back((Instant::now(), count));
             // Keep last 100 samples
-            while samples.len() > 100 {
-                samples.pop_front();
+            while inner.throughput_samples.len() > 100 {
+                inner.throughput_samples.pop_front();
             }
         }
     }
-    
+
     /// Record an error
     pub fn record_error(&self) {
-        self.total_errors.fetch_add(1, Ordering::SeqCst);
+        self.total_errors.fetch_add(1, Ordering::Relaxed);
     }
-    
+
     /// Get the average latency
     pub fn avg_latency(&self) -> f64 {
-        self.latencies.read()
-            .map(|l| {
-                if l.is_empty() {
+        self.inner.read()
+            .map(|inner| {
+                if inner.latencies.is_empty() {
                     0.0
                 } else {
-                    l.iter().sum::<f64>() / l.len() as f64
+                    inner.latencies.iter().sum::<f64>() / inner.latencies.len() as f64
                 }
             })
             .unwrap_or(0.0)
     }
-    
+
     /// Get the minimum latency
     pub fn min_latency(&self) -> f64 {
-        self.latencies.read()
-            .map(|l| l.iter().copied().fold(f64::INFINITY, f64::min))
+        self.inner.read()
+            .map(|inner| inner.latencies.iter().copied().fold(f64::INFINITY, f64::min))
             .unwrap_or(0.0)
     }
-    
+
     /// Get the maximum latency
     pub fn max_latency(&self) -> f64 {
-        self.latencies.read()
-            .map(|l| l.iter().copied().fold(0.0, f64::max))
+        self.inner.read()
+            .map(|inner| inner.latencies.iter().copied().fold(0.0, f64::max))
             .unwrap_or(0.0)
     }
-    
+
     /// Get a percentile latency (e.g., p50, p95, p99)
     pub fn percentile_latency(&self, percentile: f64) -> f64 {
-        self.latencies.read()
-            .map(|l| {
-                if l.is_empty() {
+        self.inner.read()
+            .map(|inner| {
+                if inner.latencies.is_empty() {
                     return 0.0;
                 }
-                
-                let mut sorted: Vec<f64> = l.iter().copied().collect();
+
+                let mut sorted: Vec<f64> = inner.latencies.iter().copied().collect();
                 sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-                
+
                 let idx = ((percentile / 100.0) * (sorted.len() - 1) as f64) as usize;
                 sorted[idx]
             })
             .unwrap_or(0.0)
     }
-    
+
     /// Get P50 latency
     pub fn p50_latency(&self) -> f64 {
         self.percentile_latency(50.0)
     }
-    
+
     /// Get P95 latency
     pub fn p95_latency(&self) -> f64 {
         self.percentile_latency(95.0)
     }
-    
+
     /// Get P99 latency
     pub fn p99_latency(&self) -> f64 {
         self.percentile_latency(99.0)
     }
-    
+
     /// Get the current throughput (items per second)
     pub fn throughput(&self) -> f64 {
-        self.throughput_samples.read()
-            .map(|samples| {
-                if samples.len() < 2 {
+        self.inner.read()
+            .map(|inner| {
+                if inner.throughput_samples.len() < 2 {
                     return 0.0;
                 }
-                
-                let first = samples.front().unwrap();
-                let last = samples.back().unwrap();
-                
+
+                let first = inner.throughput_samples.front().unwrap();
+                let last = inner.throughput_samples.back().unwrap();
+
                 let duration = last.0.duration_since(first.0).as_secs_f64();
                 if duration <= 0.0 {
                     return 0.0;
                 }
-                
-                let total_items: u64 = samples.iter().map(|(_, c)| c).sum();
+
+                let total_items: u64 = inner.throughput_samples.iter().map(|(_, c)| c).sum();
                 total_items as f64 / duration
             })
             .unwrap_or(0.0)
     }
-    
+
     /// Get the error rate
     pub fn error_rate(&self) -> f64 {
-        let requests = self.total_requests.load(Ordering::SeqCst);
-        let errors = self.total_errors.load(Ordering::SeqCst);
-        
+        let requests = self.total_requests.load(Ordering::Relaxed);
+        let errors = self.total_errors.load(Ordering::Relaxed);
+
         if requests > 0 {
             errors as f64 / requests as f64
         } else {
             0.0
         }
     }
-    
+
     /// Get the latency histogram
     pub fn histogram(&self) -> Vec<HistogramBucket> {
-        self.latency_histogram.read()
-            .map(|h| h.clone())
+        self.inner.read()
+            .map(|inner| inner.latency_histogram.clone())
             .unwrap_or_default()
     }
-    
+
     /// Get total requests
     pub fn total_requests(&self) -> u64 {
-        self.total_requests.load(Ordering::SeqCst)
+        self.total_requests.load(Ordering::Relaxed)
     }
-    
+
     /// Get total errors
     pub fn total_errors(&self) -> u64 {
-        self.total_errors.load(Ordering::SeqCst)
+        self.total_errors.load(Ordering::Relaxed)
     }
-    
+
     /// Get total items processed
     pub fn total_items(&self) -> u64 {
-        self.total_items.load(Ordering::SeqCst)
+        self.total_items.load(Ordering::Relaxed)
     }
-    
+
     /// Get uptime in seconds
     pub fn uptime_secs(&self) -> f64 {
         self.start_time.elapsed().as_secs_f64()
     }
-    
+
     /// Get a summary of all metrics
     pub fn summary(&self) -> MetricsSummary {
         MetricsSummary {
@@ -265,27 +277,21 @@ impl PerformanceMetrics {
             uptime_secs: self.uptime_secs(),
         }
     }
-    
+
     /// Reset all metrics
     pub fn reset(&self) {
-        if let Ok(mut latencies) = self.latencies.write() {
-            latencies.clear();
-        }
-        if let Ok(mut histogram) = self.latency_histogram.write() {
-            for bucket in histogram.iter_mut() {
+        if let Ok(mut inner) = self.inner.write() {
+            inner.latencies.clear();
+            for bucket in inner.latency_histogram.iter_mut() {
                 bucket.count = 0;
             }
+            inner.throughput_samples.clear();
+            inner.last_reset = Instant::now();
         }
-        if let Ok(mut samples) = self.throughput_samples.write() {
-            samples.clear();
-        }
-        if let Ok(mut last_reset) = self.last_reset.write() {
-            *last_reset = Instant::now();
-        }
-        
-        self.total_requests.store(0, Ordering::SeqCst);
-        self.total_errors.store(0, Ordering::SeqCst);
-        self.total_items.store(0, Ordering::SeqCst);
+
+        self.total_requests.store(0, Ordering::Relaxed);
+        self.total_errors.store(0, Ordering::Relaxed);
+        self.total_items.store(0, Ordering::Relaxed);
     }
 }
 
@@ -327,54 +333,54 @@ pub struct MetricsSummary {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_metrics_basic() {
         let metrics = PerformanceMetrics::new(100);
-        
+
         metrics.record_latency(10.0);
         metrics.record_latency(20.0);
         metrics.record_latency(30.0);
-        
+
         assert_eq!(metrics.total_requests(), 3);
         assert!((metrics.avg_latency() - 20.0).abs() < 0.01);
     }
-    
+
     #[test]
     fn test_percentiles() {
         let metrics = PerformanceMetrics::new(100);
-        
+
         for i in 1..=100 {
             metrics.record_latency(i as f64);
         }
-        
+
         assert!((metrics.p50_latency() - 50.0).abs() < 1.0);
         assert!((metrics.p95_latency() - 95.0).abs() < 1.0);
         assert!((metrics.p99_latency() - 99.0).abs() < 1.0);
     }
-    
+
     #[test]
     fn test_error_rate() {
         let metrics = PerformanceMetrics::new(100);
-        
+
         for _ in 0..100 {
             metrics.record_latency(10.0);
         }
         for _ in 0..10 {
             metrics.record_error();
         }
-        
+
         assert!((metrics.error_rate() - 0.1).abs() < 0.01);
     }
-    
+
     #[test]
     fn test_histogram() {
         let metrics = PerformanceMetrics::new(100);
-        
+
         metrics.record_latency(0.5);   // <= 1ms bucket
         metrics.record_latency(3.0);   // <= 5ms bucket
         metrics.record_latency(100.0); // <= 100ms bucket
-        
+
         let histogram = metrics.histogram();
         assert!(histogram[0].count >= 1); // <= 1ms
         assert!(histogram[1].count >= 1); // <= 5ms

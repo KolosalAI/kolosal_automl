@@ -160,7 +160,7 @@ impl<K: Clone + Eq + std::hash::Hash, V: Clone> LruCache<K, V> {
     /// Get a value from the cache
     pub fn get(&self, key: &K) -> Option<V> {
         let now = Instant::now();
-        
+
         // Check if key exists and is not expired
         {
             let map = self.map.read().unwrap();
@@ -169,21 +169,22 @@ impl<K: Clone + Eq + std::hash::Hash, V: Clone> LruCache<K, V> {
                     if now.duration_since(entry.created_at) > ttl {
                         drop(map);
                         self.remove(key);
-                        self.stats.lock().unwrap().expirations += 1;
-                        self.stats.lock().unwrap().misses += 1;
+                        let mut stats = self.stats.lock().unwrap();
+                        stats.expirations += 1;
+                        stats.misses += 1;
                         return None;
                     }
                 }
-                
+
                 self.stats.lock().unwrap().hits += 1;
-                
+
                 // Update access order
                 let mut order = self.access_order.lock().unwrap();
                 if let Some(pos) = order.iter().position(|k| k == key) {
                     let k = order.remove(pos);
                     order.push(k);
                 }
-                
+
                 return Some(entry.value.clone());
             }
         }
@@ -285,11 +286,13 @@ impl<K: Clone + Eq + std::hash::Hash, V: Clone> LruCache<K, V> {
                 .collect()
         };
 
-        let mut stats = self.stats.lock().unwrap();
+        let count = expired_keys.len();
         for key in expired_keys {
             self.remove(&key);
-            stats.expirations += 1;
         }
+        // Update stats after all removes complete to avoid holding
+        // stats lock while remove() acquires map + access_order locks
+        self.stats.lock().unwrap().expirations += count;
     }
 }
 
