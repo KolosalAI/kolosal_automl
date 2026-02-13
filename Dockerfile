@@ -31,12 +31,10 @@ RUN adduser \
     --uid "${UID}" \
     appuser
 
-# Install PyTorch CPU-only first (much smaller than CUDA version)
-RUN pip install --no-cache-dir torch==2.7.0 --index-url https://download.pytorch.org/whl/cpu
-
-# Install remaining dependencies
+# Install dependencies — use PyTorch CPU-only index as extra source
+# so torch resolves to CPU wheel while other deps resolve from PyPI
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu -r requirements.txt
 
 # Copy the source code into the container.
 COPY . .
