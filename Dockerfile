@@ -46,22 +46,9 @@ RUN mkdir -p /app/logs /app/models /app/temp_data /app/static && \
 # Switch to the non-privileged user to run the application.
 USER appuser
 
-# Environment variables with production defaults
+# Environment variables
 ENV PYTHONPATH="/app" \
-    API_ENV=production \
-    API_DEBUG=false \
-    API_HOST=0.0.0.0 \
-    API_PORT=8000 \
-    API_WORKERS=4 \
-    REQUIRE_API_KEY=true \
-    ENABLE_MONITORING=true \
-    BATCH_MAX_SIZE=128 \
-    BATCH_TIMEOUT=0.02 \
-    RATE_LIMIT_REQUESTS=1000 \
-    RATE_LIMIT_WINDOW=60
+    GRADIO_SERVER_NAME=0.0.0.0
 
-# Expose the port that the application listens on.
-EXPOSE 7860
-
-# Railway sets PORT env var. The Gradio app reads it directly.
+# Railway sets PORT env var. The Gradio app reads it via os.environ.get("PORT").
 CMD python app.py

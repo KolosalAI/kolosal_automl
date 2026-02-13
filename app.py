@@ -3014,7 +3014,6 @@ Available Features:
         server_name=args.host,
         server_port=args.port,
         share=args.share,
-        debug=True,
         show_error=True
     )
 
