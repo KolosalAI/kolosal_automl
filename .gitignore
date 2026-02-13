@@ -160,7 +160,7 @@ cython_debug/
 #.idea/
 
 models/
-catboost_info
+catboost_info/
 experiment_results/
 result/
 configs/
@@ -168,3 +168,24 @@ data/
 mlruns/
 model_registry/
 notebooks/
+
+# Node / Playwright (e2e tests)
+node_modules/
+package-lock.json
+test-results/
+playwright-report/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Runtime / temp
+temp_data/
+logs/
+*.pid
