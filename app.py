@@ -2980,8 +2980,8 @@ def main():
     parser.add_argument(
         "--port",
         type=int,
-        default=7860,
-        help="Port number (default: 7860)"
+        default=int(os.environ.get("PORT", 7860)),
+        help="Port number (default: PORT env var or 7860)"
     )
     parser.add_argument(
         "--share",

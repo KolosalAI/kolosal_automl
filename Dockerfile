@@ -60,13 +60,8 @@ ENV PYTHONPATH="/app" \
     RATE_LIMIT_REQUESTS=1000 \
     RATE_LIMIT_WINDOW=60
 
-# Health check — uses $PORT at runtime (Railway sets it; defaults to 8000)
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:${PORT:-8000}/health || exit 1
-
 # Expose the port that the application listens on.
-EXPOSE 8000
+EXPOSE 7860
 
-# Railway sets PORT env var. Map it to API_PORT so the app picks it up.
-# Shell form allows variable expansion at runtime.
-CMD API_PORT=${PORT:-8000} python -m modules.api.app
+# Railway sets PORT env var. The Gradio app reads it directly.
+CMD python app.py
