@@ -12,7 +12,7 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     gcc \
     g++ \
@@ -31,10 +31,12 @@ RUN adduser \
     --uid "${UID}" \
     appuser
 
-# Download dependencies as a separate step to take advantage of Docker's caching.
-RUN --mount=type=cache,target=/root/.cache/pip \
-    --mount=type=bind,source=requirements.txt,target=requirements.txt \
-    python -m pip install -r requirements.txt
+# Install PyTorch CPU-only first (much smaller than CUDA version)
+RUN pip install --no-cache-dir torch==2.7.0 --index-url https://download.pytorch.org/whl/cpu
+
+# Install remaining dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the source code into the container.
 COPY . .
@@ -60,12 +62,13 @@ ENV PYTHONPATH="/app" \
     RATE_LIMIT_REQUESTS=1000 \
     RATE_LIMIT_WINDOW=60
 
-# Health check
+# Health check — uses $PORT at runtime (Railway sets it; defaults to 8000)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:${API_PORT}/health || exit 1
+    CMD curl -f http://localhost:${PORT:-8000}/health || exit 1
 
 # Expose the port that the application listens on.
 EXPOSE 8000
 
-# Run the application with proper signal handling
-CMD ["python", "-m", "modules.api.app"]
+# Railway sets PORT env var. Map it to API_PORT so the app picks it up.
+# Shell form allows variable expansion at runtime.
+CMD API_PORT=${PORT:-8000} python -m modules.api.app
