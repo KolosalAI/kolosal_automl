@@ -120,10 +120,10 @@ pub async fn upload_data(
     mut multipart: Multipart,
 ) -> Result<Json<serde_json::Value>> {
     while let Some(field) = multipart.next_field().await.map_err(|e| ServerError::BadRequest(e.to_string()))? {
-        let name = field.name().unwrap_or("file").to_string();
+        let _name = field.name().unwrap_or("file").to_string();
         let raw_file_name = field.file_name().unwrap_or("data.csv").to_string();
         let file_name = sanitize_filename(&raw_file_name);
-        let content_type = field.content_type().unwrap_or("text/csv").to_string();
+        let _content_type = field.content_type().unwrap_or("text/csv").to_string();
         let data = field.bytes().await.map_err(|e| ServerError::BadRequest(e.to_string()))?;
 
         // Reject oversized uploads before parsing
@@ -304,6 +304,7 @@ pub async fn load_sample_data(
 // ============================================================================
 
 #[derive(Deserialize)]
+#[allow(dead_code)]
 pub struct PreprocessRequest {
     scaler: Option<String>,
     imputation: Option<String>,
@@ -349,7 +350,7 @@ pub async fn run_preprocessing(
         .map_err(|e| ServerError::Internal(format!("Preprocessing failed: {:?}", e)))?;
 
     // Re-acquire write lock to update state
-    *state.current_data.write().await = Some(processed.clone());
+    *state.current_data.write().await = Some(Arc::new(processed.clone()));
     *state.preprocessor.write().await = Some(preprocessor);
 
     Ok(Json(serde_json::json!({
@@ -373,6 +374,7 @@ pub async fn get_preprocessing_config() -> Json<serde_json::Value> {
 // ============================================================================
 
 #[derive(Deserialize)]
+#[allow(dead_code)]
 pub struct TrainRequest {
     target_column: String,
     task_type: String,
@@ -424,6 +426,7 @@ pub async fn start_training(
         model_path: None,
     };
     state.jobs.write().await.insert(job_id.clone(), job);
+    state.evict_stale_entries().await;
 
     // Run training in background
     let state_clone = state.clone();
@@ -570,6 +573,7 @@ pub async fn get_training_status(
 }
 
 #[derive(Deserialize)]
+#[allow(dead_code)]
 pub struct CompareRequest {
     target_column: String,
     task_type: String,
@@ -620,7 +624,10 @@ pub async fn compare_models(
         let sem = semaphore.clone();
 
         handles.push(tokio::spawn(async move {
-            let _permit = sem.acquire().await.unwrap();
+            let _permit = match sem.acquire().await {
+                Ok(p) => p,
+                Err(_) => return (name, Err(anyhow::anyhow!("Semaphore closed"))),
+            };
             let result = run_training_job(&df, &target, tt, model_type).await;
             (name, result)
         }));
@@ -722,6 +729,8 @@ pub async fn predict(
     State(state): State<Arc<AppState>>,
     Json(request): Json<PredictRequest>,
 ) -> Result<Json<serde_json::Value>> {
+    state.scaling.record_request();
+
     let models = state.models.read().await;
 
     let model_count = models.len();
@@ -751,11 +760,6 @@ pub async fn predict(
         return Err(ServerError::BadRequest("Features array is empty".to_string()));
     }
 
-    // Get or load the model from registry (cached)
-    let engine = state.model_registry.get_or_load(&model_id, &model_path)
-        .await
-        .map_err(|e| ServerError::Internal(format!("Failed to load model: {}", e)))?;
-
     // Convert Vec<Vec<f64>> to Array2
     let n_rows = features.len();
     let n_cols = features[0].len();
@@ -763,16 +767,20 @@ pub async fn predict(
     let x = ndarray::Array2::from_shape_vec((n_rows, n_cols), flat)
         .map_err(|e| ServerError::BadRequest(format!("Invalid feature dimensions: {}", e)))?;
 
-    // Run prediction
-    let predictions = engine.predict_array(&x)
-        .map_err(|e| ServerError::Internal(format!("Prediction failed: {}", e)))?;
+    // Route through inflight batcher for transparent request coalescing
+    let predictions = state.inflight_batcher.predict(model_id.clone(), model_path, x)
+        .await
+        .map_err(|e| ServerError::Internal(e))?;
 
-    let stats = engine.stats();
+    // Fetch stats from the cached engine (best-effort)
+    let avg_latency = state.model_registry.get_model_stats(&model_id).await
+        .map(|s| s.avg_latency_ms)
+        .unwrap_or(0.0);
 
     Ok(Json(serde_json::json!({
         "success": true,
         "predictions": predictions.to_vec(),
-        "latency_ms": stats.avg_latency_ms,
+        "latency_ms": avg_latency,
     })))
 }
 
@@ -786,6 +794,8 @@ pub async fn predict_batch(
     State(state): State<Arc<AppState>>,
     Json(request): Json<BatchPredictRequest>,
 ) -> Result<Json<serde_json::Value>> {
+    state.scaling.record_request();
+
     let models = state.models.read().await;
 
     // Find the model: use provided model_id or most recently created
@@ -814,11 +824,6 @@ pub async fn predict_batch(
         )));
     }
 
-    // Get or load the model from registry (cached)
-    let engine = state.model_registry.get_or_load(&model_id, &model_path)
-        .await
-        .map_err(|e| ServerError::Internal(format!("Failed to load model: {}", e)))?;
-
     // Convert Vec<Vec<f64>> to Array2
     let n_rows = request.data.len();
     let n_cols = request.data[0].len();
@@ -826,17 +831,23 @@ pub async fn predict_batch(
     let x = ndarray::Array2::from_shape_vec((n_rows, n_cols), flat)
         .map_err(|e| ServerError::BadRequest(format!("Invalid data dimensions: {}", e)))?;
 
-    // Run batch prediction
-    let predictions = engine.predict_array(&x)
-        .map_err(|e| ServerError::Internal(format!("Batch prediction failed: {}", e)))?;
+    // Route through inflight batcher for transparent request coalescing
+    let predictions = state.inflight_batcher.predict(model_id.clone(), model_path, x)
+        .await
+        .map_err(|e| ServerError::Internal(e))?;
 
-    let stats = engine.stats();
+    let count = predictions.len();
+
+    // Fetch stats from the cached engine (best-effort)
+    let avg_latency = state.model_registry.get_model_stats(&model_id).await
+        .map(|s| s.avg_latency_ms)
+        .unwrap_or(0.0);
 
     Ok(Json(serde_json::json!({
         "success": true,
         "predictions": predictions.to_vec(),
-        "count": predictions.len(),
-        "avg_latency_ms": stats.avg_latency_ms,
+        "count": count,
+        "avg_latency_ms": avg_latency,
     })))
 }
 
@@ -950,11 +961,61 @@ pub async fn get_system_status(
     }))
 }
 
-pub async fn health_check() -> Json<serde_json::Value> {
+pub async fn health_check(
+    State(state): State<Arc<AppState>>,
+) -> Json<serde_json::Value> {
+    let is_idle = state.scaling.check_idle();
     Json(serde_json::json!({
         "status": "ok",
         "version": env!("CARGO_PKG_VERSION"),
+        "idle": is_idle,
+        "idle_duration_secs": state.scaling.idle_duration_secs(),
+        "draining": state.scaling.is_draining(),
     }))
+}
+
+/// Returns scaling status as JSON for external autoscalers.
+pub async fn scaling_status(
+    State(state): State<Arc<AppState>>,
+) -> Json<serde_json::Value> {
+    let is_idle = state.scaling.check_idle();
+    let inflight = state.inflight_batcher.inflight_count();
+    let queue_depth = state.inflight_batcher.queue_depth();
+    let total = state.scaling.total_requests();
+    let draining = state.scaling.is_draining();
+
+    let status = super::scaling::ScalingStatus {
+        state: if draining {
+            "draining"
+        } else if is_idle {
+            "idle"
+        } else {
+            "active"
+        },
+        idle_duration_secs: state.scaling.idle_duration_secs(),
+        uptime_secs: state.scaling.uptime_secs(),
+        inflight,
+        queue_depth,
+        total_requests: total,
+        should_scale_to_zero: is_idle && inflight == 0 && !draining,
+    };
+
+    Json(serde_json::to_value(status).unwrap_or_default())
+}
+
+/// Returns Prometheus text-format metrics for external scrapers.
+pub async fn scaling_metrics(
+    State(state): State<Arc<AppState>>,
+) -> impl IntoResponse {
+    let inflight = state.inflight_batcher.inflight_count();
+    let queue_depth = state.inflight_batcher.queue_depth();
+    let total = state.scaling.total_requests();
+
+    let body = super::scaling::prometheus_metrics(&state.scaling, inflight, queue_depth, total);
+    (
+        [(axum::http::header::CONTENT_TYPE, "text/plain; version=0.0.4; charset=utf-8")],
+        body,
+    )
 }
 
 // ============================================================================
@@ -1784,6 +1845,7 @@ fn read_excel_bytes(data: &[u8]) -> Result<DataFrame> {
 // ============================================================================
 
 #[derive(Deserialize)]
+#[allow(dead_code)]
 pub struct CleanRequest {
     /// Remove duplicate rows (default: true)
     remove_duplicates: Option<bool>,
@@ -1812,7 +1874,8 @@ pub async fn auto_clean_data(
 
     let original_rows = df.height();
     let original_cols = df.width();
-    let mut cleaned = df.clone();
+    // Unwrap Arc to get owned DataFrame for mutation; clones only if other references exist
+    let mut cleaned = Arc::unwrap_or_clone(df);
     let mut actions: Vec<String> = Vec::new();
 
     info!(rows = original_rows, cols = original_cols, "Starting auto-clean");
@@ -1848,7 +1911,10 @@ pub async fn auto_clean_data(
         let mut filled_count = 0usize;
         let col_names: Vec<String> = cleaned.get_column_names().iter().map(|s| s.to_string()).collect();
         for col_name in &col_names {
-            let col = cleaned.column(col_name).unwrap();
+            let col = match cleaned.column(col_name) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
             if col.null_count() > 0 && col.dtype().is_float() {
                 let filled = col.fill_null(polars::prelude::FillNullStrategy::Mean)
                     .map_err(|e| ServerError::Internal(format!("Fill null failed: {}", e)))?;
@@ -1867,7 +1933,10 @@ pub async fn auto_clean_data(
         let mut filled_count = 0usize;
         let col_names: Vec<String> = cleaned.get_column_names().iter().map(|s| s.to_string()).collect();
         for col_name in &col_names {
-            let col = cleaned.column(col_name).unwrap();
+            let col = match cleaned.column(col_name) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
             if col.null_count() > 0 && col.dtype() == &DataType::String {
                 let filled = col.fill_null(polars::prelude::FillNullStrategy::Forward(None))
                     .unwrap_or_else(|_| col.clone());
@@ -1891,7 +1960,7 @@ pub async fn auto_clean_data(
     );
 
     // Re-acquire write lock to store cleaned data
-    *state.current_data.write().await = Some(cleaned);
+    *state.current_data.write().await = Some(Arc::new(cleaned));
 
     Ok(Json(serde_json::json!({
         "success": true,
@@ -2391,6 +2460,7 @@ pub async fn get_performance_analysis(
 // ============================================================================
 
 #[derive(Deserialize)]
+#[allow(dead_code)]
 pub struct HyperOptRequest {
     target_column: String,
     task_type: String,
@@ -2440,6 +2510,7 @@ pub async fn run_hyperopt(
         model_path: None,
     };
     state.jobs.write().await.insert(job_id.clone(), job);
+    state.evict_stale_entries().await;
 
     let n_trials = request.n_trials.unwrap_or(20).min(500);
     let sampler = match request.sampler.as_deref() {
@@ -2454,7 +2525,7 @@ pub async fn run_hyperopt(
     let timeout_secs = request.timeout_secs;
     let model_type_name = request.model_type.clone();
     let task_type_name = request.task_type.clone();
-    let models_dir = state.config.models_dir.clone();
+    let _models_dir = state.config.models_dir.clone();
     let state_clone = state.clone();
 
     tokio::spawn(async move {
@@ -2628,6 +2699,7 @@ fn build_search_space(model_type: &str) -> crate::optimizer::SearchSpace {
 // ============================================================================
 
 #[derive(Deserialize)]
+#[allow(dead_code)]
 pub struct ExplainRequest {
     model_id: String,
     method: Option<String>,
@@ -2784,6 +2856,7 @@ pub async fn train_ensemble(
         model_path: None,
     };
     state.jobs.write().await.insert(job_id.clone(), job);
+    state.evict_stale_entries().await;
 
     let state_clone = state.clone();
     let target_col = request.target_column.clone();
@@ -2813,7 +2886,10 @@ pub async fn train_ensemble(
             let sem = semaphore.clone();
 
             handles.push(tokio::spawn(async move {
-                let _permit = sem.acquire().await.unwrap();
+                let _permit = match sem.acquire().await {
+                    Ok(p) => p,
+                    Err(_) => return (name, Err(anyhow::anyhow!("Semaphore closed"))),
+                };
                 let result = run_training_job(&df_c, &target_c, tt, model_type).await;
                 (name, result)
             }));
@@ -2899,6 +2975,7 @@ pub async fn train_ensemble(
 // ============================================================================
 
 #[derive(Deserialize)]
+#[allow(dead_code)]
 pub struct DriftRequest {
     reference_data: Vec<Vec<f64>>,
     test_data: Vec<Vec<f64>>,
@@ -3225,7 +3302,9 @@ pub async fn run_clustering(
                 let k = request.n_clusters.unwrap_or(3);
                 let mut model = KMeans::new(k);
                 model.fit(&matrix).map_err(|e| e.to_string())?;
-                let labels = model.labels.as_ref().unwrap().to_vec();
+                let labels = model.labels.as_ref()
+                    .ok_or_else(|| "KMeans fit succeeded but labels not populated".to_string())?
+                    .to_vec();
                 let inertia = model.inertia.unwrap_or(0.0);
                 let centroids = model.centroids().map(|c| {
                     c.rows().into_iter()
@@ -3255,7 +3334,9 @@ pub async fn run_clustering(
                 let min_samples = request.min_samples.unwrap_or(5);
                 let mut model = DBSCAN::new(eps, min_samples);
                 model.fit(&matrix).map_err(|e| e.to_string())?;
-                let labels = model.labels.as_ref().unwrap().to_vec();
+                let labels = model.labels.as_ref()
+                    .ok_or_else(|| "DBSCAN fit succeeded but labels not populated".to_string())?
+                    .to_vec();
 
                 let mut cluster_sizes = std::collections::HashMap::<i64, usize>::new();
                 for &l in &labels {
@@ -3689,6 +3770,7 @@ pub async fn auto_tune(
         model_path: None,
     };
     state.jobs.write().await.insert(job_id.clone(), job);
+    state.evict_stale_entries().await;
 
     let state_clone = state.clone();
     let models_dir = state.config.models_dir.clone();
@@ -3769,7 +3851,15 @@ pub async fn auto_tune(
             let partial_c = partial.clone();
 
             handles.push(tokio::spawn(async move {
-                let _permit = sem.acquire().await.unwrap();
+                let _permit = match sem.acquire().await {
+                    Ok(p) => p,
+                    Err(_) => {
+                        let _done = completed_c.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+                        let entry = serde_json::json!({"model": name_owned, "score": 0.0, "error": "Semaphore closed", "status": "failed"});
+                        partial_c.lock().await.push(entry);
+                        return (name_owned, 0.0, Err(anyhow::anyhow!("Semaphore closed")));
+                    }
+                };
                 let model_start = std::time::Instant::now();
                 let result = run_training_job(&df_c, &target_c, tt.clone(), mt).await;
                 let model_time = model_start.elapsed().as_secs_f64();
@@ -3958,6 +4048,7 @@ pub async fn run_automl_pipeline(
         model_path: None,
     };
     state.jobs.write().await.insert(job_id.clone(), job);
+    state.evict_stale_entries().await;
 
     // ---- Step 1: Auto-detect task type ----
     let task_type = if let Some(ref tt_str) = request.task_type {
@@ -4035,7 +4126,7 @@ pub async fn run_automl_pipeline(
             }
             Err(e) => {
                 warn!(error = %e, "AutoML preprocessing failed, falling back to raw data");
-                df.clone()
+                DataFrame::clone(&df)
             }
         }
     };
@@ -4156,7 +4247,17 @@ pub async fn run_automl_pipeline(
             let partial_c = partial.clone();
 
             let handle = tokio::spawn(async move {
-                let _permit = sem.acquire().await.unwrap();
+                let _permit = match sem.acquire().await {
+                    Ok(p) => p,
+                    Err(_) => {
+                        let _done = completed_ref.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+                        let entry = serde_json::json!({"model": name, "score": null, "error": "Semaphore closed"});
+                        partial_c.lock().await.push(entry);
+                        let err: std::result::Result<std::result::Result<(serde_json::Value, TrainEngine), crate::error::KolosalError>, tokio::task::JoinError> =
+                            Ok(Err(crate::error::KolosalError::TrainingError("Semaphore closed".to_string())));
+                        return (name.to_string(), std::time::Duration::ZERO, err);
+                    }
+                };
                 let model_start = std::time::Instant::now();
 
                 let result = tokio::task::spawn_blocking(move || {
@@ -4522,6 +4623,7 @@ pub async fn apply_best_params(
         model_path: None,
     };
     state.jobs.write().await.insert(job_id.clone(), job);
+    state.evict_stale_entries().await;
 
     let state_clone = state.clone();
     let target_col = request.target_column.clone();
@@ -4730,7 +4832,7 @@ pub async fn get_data_quality(
         let unique_count = series.n_unique().unwrap_or(0);
 
         let (mean, std, min, max) = if let Ok(ca) = series.cast(&DataType::Float64)
-            .and_then(|s| Ok(s.f64().unwrap().clone()))
+            .and_then(|s| s.f64().cloned())
         {
             (ca.mean(), ca.std(1), ca.min(), ca.max())
         } else {
@@ -4799,7 +4901,7 @@ pub async fn get_data_datasheet(
 
 /// Evaluate fairness of model predictions (ISO TR 24027)
 pub async fn evaluate_fairness(
-    State(state): State<Arc<AppState>>,
+    State(_state): State<Arc<AppState>>,
     Json(body): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>> {
     use crate::fairness::{FairnessEvaluator, FairnessConfig, FairnessThresholds};
@@ -4837,7 +4939,7 @@ pub async fn evaluate_fairness(
 
 /// Scan dataset for bias before training (ISO TR 24027)
 pub async fn bias_scan(
-    State(state): State<Arc<AppState>>,
+    State(_state): State<Arc<AppState>>,
     Json(body): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>> {
     use crate::fairness::{FairnessEvaluator, FairnessConfig};
@@ -4942,7 +5044,7 @@ pub async fn verify_audit_integrity(
 
 /// Scan dataset for PII (ISO 27701)
 pub async fn scan_pii(
-    State(state): State<Arc<AppState>>,
+    State(_state): State<Arc<AppState>>,
     Json(body): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>> {
     use crate::privacy::PiiScanner;

@@ -13,6 +13,8 @@ use crate::training::TrainEngine;
 use crate::provenance::ProvenanceTracker;
 use crate::privacy::RetentionManager;
 
+use super::inflight_batcher::{InflightBatcherConfig, InflightBatcherHandle, spawn_inflight_batcher};
+use super::scaling::ScalingState;
 use super::ServerConfig;
 
 /// Training job status
@@ -148,9 +150,13 @@ pub struct AppState {
     pub datasets: RwLock<HashMap<String, DatasetInfo>>,
     pub jobs: RwLock<HashMap<String, TrainingJob>>,
     pub models: RwLock<HashMap<String, ModelInfo>>,
-    pub current_data: RwLock<Option<DataFrame>>,
+    pub current_data: RwLock<Option<Arc<DataFrame>>>,
     pub preprocessor: RwLock<Option<DataPreprocessor>>,
-    pub model_registry: ModelRegistry,
+    pub model_registry: Arc<ModelRegistry>,
+    /// Inflight batcher for coalescing concurrent inference requests
+    pub inflight_batcher: InflightBatcherHandle,
+    /// Scaling state for zero-autoscaling
+    pub scaling: ScalingState,
     /// Store trained engines for post-training analysis (explainability, etc.)
     pub train_engines: RwLock<HashMap<String, TrainEngine>>,
     /// Store completed hyperopt studies for history
@@ -198,6 +204,11 @@ impl AppState {
             ..Default::default()
         };
 
+        let model_registry = Arc::new(ModelRegistry::new(10));
+        let batcher_config = InflightBatcherConfig::default();
+        let inflight_batcher = spawn_inflight_batcher(batcher_config, Arc::clone(&model_registry));
+        let scaling = ScalingState::new();
+
         Self {
             config,
             datasets: RwLock::new(HashMap::new()),
@@ -205,7 +216,9 @@ impl AppState {
             models: RwLock::new(HashMap::new()),
             current_data: RwLock::new(None),
             preprocessor: RwLock::new(None),
-            model_registry: ModelRegistry::new(10),
+            model_registry,
+            inflight_batcher,
+            scaling,
             train_engines: RwLock::new(HashMap::new()),
             completed_studies: RwLock::new(Vec::new()),
             security_manager: Arc::new(SecurityManager::new(security_config)),
@@ -248,8 +261,8 @@ impl AppState {
         // Store info
         self.datasets.write().await.insert(id.clone(), info);
         
-        // Set as current data
-        *self.current_data.write().await = Some(df);
+        // Set as current data (wrapped in Arc for cheap cloning in handlers)
+        *self.current_data.write().await = Some(Arc::new(df));
 
         id
     }
@@ -257,33 +270,53 @@ impl AppState {
     /// Evict completed/failed jobs and old train engines to prevent unbounded memory growth.
     /// Called automatically after adding new entries.
     pub async fn evict_stale_entries(&self) {
-        // Evict oldest completed/failed jobs if over limit
-        let mut jobs = self.jobs.write().await;
-        if jobs.len() > Self::MAX_JOBS {
-            let mut completed_ids: Vec<(String, chrono::DateTime<chrono::Utc>)> = jobs.iter()
-                .filter(|(_, j)| matches!(j.status, JobStatus::Completed { .. } | JobStatus::Failed { .. }))
-                .map(|(id, j)| (id.clone(), j.created_at))
-                .collect();
-            completed_ids.sort_by_key(|(_, t)| *t);
-            let to_remove = jobs.len() - Self::MAX_JOBS;
-            for (id, _) in completed_ids.into_iter().take(to_remove) {
+        // Evict oldest completed/failed jobs if over limit.
+        // Collect keys under read lock, then take write lock only if removal needed.
+        let jobs_to_remove = {
+            let jobs = self.jobs.read().await;
+            if jobs.len() > Self::MAX_JOBS {
+                let mut completed_ids: Vec<(String, chrono::DateTime<chrono::Utc>)> = jobs.iter()
+                    .filter(|(_, j)| matches!(j.status, JobStatus::Completed { .. } | JobStatus::Failed { .. }))
+                    .map(|(id, j)| (id.clone(), j.created_at))
+                    .collect();
+                completed_ids.sort_by_key(|(_, t)| *t);
+                let to_remove = jobs.len() - Self::MAX_JOBS;
+                completed_ids.into_iter().take(to_remove).map(|(id, _)| id).collect::<Vec<_>>()
+            } else {
+                Vec::new()
+            }
+        };
+        if !jobs_to_remove.is_empty() {
+            let mut jobs = self.jobs.write().await;
+            for id in jobs_to_remove {
                 jobs.remove(&id);
             }
         }
-        drop(jobs);
 
         // Evict oldest train engines if over limit
-        let mut engines = self.train_engines.write().await;
-        if engines.len() > Self::MAX_TRAIN_ENGINES {
-            let keys: Vec<String> = engines.keys().cloned().collect();
-            let to_remove = engines.len() - Self::MAX_TRAIN_ENGINES;
-            for key in keys.into_iter().take(to_remove) {
+        let engine_keys_to_remove = {
+            let engines = self.train_engines.read().await;
+            if engines.len() > Self::MAX_TRAIN_ENGINES {
+                let to_remove = engines.len() - Self::MAX_TRAIN_ENGINES;
+                engines.keys().cloned().take(to_remove).collect::<Vec<_>>()
+            } else {
+                Vec::new()
+            }
+        };
+        if !engine_keys_to_remove.is_empty() {
+            let mut engines = self.train_engines.write().await;
+            for key in engine_keys_to_remove {
                 engines.remove(&key);
             }
         }
-        drop(engines);
 
         // Truncate completed studies
+        {
+            let studies = self.completed_studies.read().await;
+            if studies.len() <= Self::MAX_COMPLETED_STUDIES {
+                return;
+            }
+        }
         let mut studies = self.completed_studies.write().await;
         if studies.len() > Self::MAX_COMPLETED_STUDIES {
             let drain_count = studies.len() - Self::MAX_COMPLETED_STUDIES;

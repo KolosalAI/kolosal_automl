@@ -326,6 +326,86 @@
         .sub-tab.active { color: var(--color-text-900); border-bottom-color: var(--color-text-900); }
         .sub-panel { display: none; }
         .sub-panel.active { display: block; }
+
+        /* === Visual Enhancements === */
+
+        /* Card hover lift */
+        .card { transition: transform 0.2s ease, box-shadow 0.2s ease; }
+        .card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+
+        /* Tab fade-in */
+        @keyframes fadeSlideIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+        .tab-panel.active { animation: fadeSlideIn 0.3s ease both; }
+        .sub-panel.active { animation: fadeSlideIn 0.25s ease both; }
+
+        /* Progress bar gradient + pulse */
+        .progress-bar-fill.active {
+            background: linear-gradient(90deg, var(--color-information-500), var(--color-information-300), var(--color-information-500));
+            background-size: 200% 100%;
+            animation: progressPulse 1.5s ease infinite;
+        }
+        @keyframes progressPulse { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+        /* Striped progress bar */
+        .progress-bar-fill.striped {
+            background-image: linear-gradient(
+                45deg,
+                rgba(255,255,255,0.2) 25%, transparent 25%,
+                transparent 50%, rgba(255,255,255,0.2) 50%,
+                rgba(255,255,255,0.2) 75%, transparent 75%, transparent
+            );
+            background-size: 20px 20px;
+            animation: progressStripe 0.6s linear infinite;
+        }
+        @keyframes progressStripe { from { background-position: 20px 0; } to { background-position: 0 0; } }
+
+        /* Table row alternating colors */
+        .data-table tbody tr:nth-child(even) td { background-color: var(--color-grey-500); }
+        .data-table tbody tr:nth-child(even):hover td { background-color: var(--color-grey-600); }
+
+        /* Toast slide-in/out */
+        @keyframes toastSlideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        @keyframes toastSlideOut { from { transform: translateX(0); opacity: 1; } to { transform: translateX(100%); opacity: 0; } }
+        .toast { animation: toastSlideIn 0.3s ease both; }
+        .toast.removing { animation: toastSlideOut 0.25s ease both; }
+
+        /* Badge pulse for Live */
+        .badge-live { animation: badgePulse 1.5s ease-in-out infinite; }
+        @keyframes badgePulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+        /* Empty state floating icon */
+        .empty-state i { animation: emptyFloat 3s ease-in-out infinite; }
+        @keyframes emptyFloat { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+
+        /* Dropzone hover enhancements */
+        .dropzone { transition: all 0.2s ease; }
+        .dropzone:hover { transform: scale(1.01); border-color: var(--color-information-400); background-color: var(--color-information-100); }
+        .dropzone:hover i { transform: translateY(-3px); transition: transform 0.2s ease; }
+
+        /* Button press effect */
+        .btn-primary:active, .btn-secondary:active, .btn-outline:active, .btn-danger:active { transform: scale(0.97); }
+
+        /* Status ring pulse */
+        #status-ring.healthy-pulse { animation: statusPulse 2s ease-in-out infinite; }
+        @keyframes statusPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(58,188,63,0.4); } 50% { box-shadow: 0 0 0 8px rgba(58,188,63,0); } }
+
+        /* Medal colors for leaderboard */
+        .medal-gold { color: #F59E0B; }
+        .medal-silver { color: #9CA3AF; }
+        .medal-bronze { color: #D97706; }
+
+        /* Best model card glassmorphism */
+        .best-model-card {
+            background: linear-gradient(135deg, var(--color-information-500), var(--color-information-600));
+            border-radius: 12px; padding: 20px; color: #fff;
+            position: relative; overflow: hidden;
+        }
+        .best-model-card::before {
+            content: ''; position: absolute; top: -50%; right: -50%;
+            width: 100%; height: 100%;
+            background: radial-gradient(circle, rgba(255,255,255,0.15) 0%, transparent 70%);
+            pointer-events: none;
+        }
     </style>
 </head>
 <body style="background-color:#F8F9F9;color:#0D0E0F;font-family:Inter,system-ui,-apple-system,sans-serif;margin:0;padding:0;min-height:100vh;display:block;visibility:visible;opacity:1;">
@@ -539,7 +619,7 @@
                             <span id="automl-status-text" class="text-14px medium" style="color: var(--color-information-500);">Starting...</span>
                         </div>
                         <div style="background: var(--color-grey-800); border-radius: 8px; height: 8px; overflow: hidden;">
-                            <div id="automl-progress-bar" style="height: 100%; background: var(--color-information-500); border-radius: 8px; transition: width 0.5s ease; width: 0%;"></div>
+                            <div id="automl-progress-bar" class="progress-bar-fill" style="width: 0%;"></div>
                         </div>
                         <span id="automl-progress-pct" class="text-12px regular" style="color: var(--color-text-600);">0%</span>
                     </div>
@@ -549,7 +629,7 @@
                 <div id="automl-results" style="display: none; margin-top: 24px;">
                     <div class="flex-col gap-16">
                         <!-- Best Model Card -->
-                        <div style="background: linear-gradient(135deg, var(--color-information-500), var(--color-information-600)); border-radius: 12px; padding: 20px; color: #fff;">
+                        <div class="best-model-card">
                             <div class="flex items-center gap-8" style="margin-bottom: 8px;">
                                 <i class="ri-trophy-line" style="font-size: 24px;"></i>
                                 <span class="text-16px medium">Best Model</span>
@@ -731,7 +811,7 @@
                 <div id="train-umap-card" class="card" style="margin-top: 16px; display: none;">
                     <div class="card-header">
                         <h2 class="text-16px medium"><i class="ri-scatter-chart-line"></i> Data Projection</h2>
-                        <span id="train-umap-badge" class="badge-sm badge-info" style="display:none;">Live</span>
+                        <span id="train-umap-badge" class="badge-sm badge-info badge-live" style="display:none;">Live</span>
                     </div>
                     <div id="train-umap-status" style="margin-bottom: 8px;"></div>
                     <div style="max-height: 380px;">
@@ -1592,7 +1672,10 @@
             toast.className = 'toast toast-' + type;
             toast.textContent = message;
             container.appendChild(toast);
-            setTimeout(function() { toast.remove(); }, 3000);
+            setTimeout(function() {
+                toast.classList.add('removing');
+                setTimeout(function() { toast.remove(); }, 250);
+            }, 3000);
         }
 
         function escHtml(s) {
@@ -1604,6 +1687,25 @@
             return String(s).replace(/&/g,'&amp;').replace(/'/g,'&#39;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
         }
 
+        function animateCount(el, endValue, duration, suffix, decimals) {
+            if (!el) return;
+            duration = duration || 800;
+            suffix = suffix || '';
+            decimals = decimals || 0;
+            var startValue = parseFloat(el.textContent) || 0;
+            var startTime = null;
+            function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
+            function step(timestamp) {
+                if (!startTime) startTime = timestamp;
+                var progress = Math.min((timestamp - startTime) / duration, 1);
+                var eased = easeOutCubic(progress);
+                var current = startValue + (endValue - startValue) * eased;
+                el.textContent = current.toFixed(decimals) + suffix;
+                if (progress < 1) requestAnimationFrame(step);
+            }
+            requestAnimationFrame(step);
+        }
+
         // ── Tabs ──
         function switchTab(name) {
             var panels = document.querySelectorAll('.tab-panel');
@@ -1612,6 +1714,8 @@
             for (var i = 0; i < tabs.length; i++) tabs[i].classList.remove('active');
             $('tab-' + name).classList.add('active');
             document.querySelector('[data-tab="' + name + '"]').classList.add('active');
+            var appContent = document.querySelector('.app-content');
+            if (appContent) appContent.scrollIntoView({ behavior: 'smooth', block: 'start' });
             if (name === 'serve') loadServeModels();
             if (name === 'system') {
                 refreshSystemStatus();
@@ -1762,7 +1866,7 @@
             if (cols.length === 0) { $('preview-table').style.display = 'none'; return; }
 
             var html = '<div class="table-wrap"><table class="data-table"><thead><tr>';
-            cols.forEach(function(c) { html += '<th>' + escHtml(c.name) + '</th>'; });
+            cols.forEach(function(c) { html += '<th>' + escHtml(c.name) + (c.dtype ? ' <span class="badge-sm badge-information" style="display:inline-flex;vertical-align:middle;margin-left:4px;font-size:10px;height:18px;">' + escHtml(c.dtype) + '</span>' : '') + '</th>'; });
             html += '</tr></thead><tbody>';
             for (var r = 0; r < rows; r++) {
                 html += '<tr>';
@@ -2205,6 +2309,8 @@
                             }
                         },
                         tooltip: {
+                            mode: 'nearest',
+                            intersect: true,
                             callbacks: {
                                 label: function(ctx) {
                                     var base = (ctx.dataset.label || '') + ': (' + ctx.parsed.x.toFixed(2) + ', ' + ctx.parsed.y.toFixed(2) + ')';
@@ -2238,7 +2344,7 @@
                 if (job.status.Running) {
                     var pct = (job.status.Running.progress * 100).toFixed(0);
                     html += '<div class="flex-col gap-6">';
-                    html += '<div class="progress-bar"><div class="progress-bar-fill" style="width:' + pct + '%"></div></div>';
+                    html += '<div class="progress-bar"><div class="progress-bar-fill active" style="width:' + pct + '%"></div></div>';
                     html += '<p class="text-12px regular" style="color:var(--color-text-700);">' + escHtml(job.status.Running.message || '') + '</p>';
                     html += '</div>';
                 }
@@ -2464,6 +2570,10 @@
             var ctx = $('comparisonChart');
             if (!ctx || typeof Chart === 'undefined') return;
             if (comparisonChartInstance) comparisonChartInstance.destroy();
+            var cmpCanvas = ctx.getContext ? ctx : ctx.getContext('2d');
+            var cmpGrad = (cmpCanvas.getContext ? cmpCanvas.getContext('2d') : cmpCanvas).createLinearGradient(0, 0, 0, 300);
+            cmpGrad.addColorStop(0, 'rgba(0, 102, 245, 0.4)');
+            cmpGrad.addColorStop(1, 'rgba(0, 102, 245, 0.05)');
             comparisonChartInstance = new Chart(ctx, {
                 type: 'bar',
                 data: {
@@ -2471,7 +2581,7 @@
                     datasets: [{
                         label: scoreLabel,
                         data: successful.map(function(r) { var m = r.metrics || {}; return m.accuracy || m.r2 || 0; }),
-                        backgroundColor: 'rgba(0, 102, 245, 0.15)',
+                        backgroundColor: cmpGrad,
                         borderColor: '#0066F5',
                         borderWidth: 1,
                         borderRadius: 6
@@ -2515,8 +2625,8 @@
                     $('status-badge').textContent = status;
                     $('status-badge').className = 'badge-sm ' + (status === 'healthy' ? 'badge-success' : 'badge-danger');
                     $('status-dot').className = 'status-dot ' + (status === 'healthy' ? 'healthy' : 'error');
-                    $('mon-cpu').textContent = (sys.cpu_usage || 0).toFixed(1) + '%';
-                    $('mon-mem').textContent = (sys.memory_usage_percent || 0).toFixed(1) + '%';
+                    animateCount($('mon-cpu'), sys.cpu_usage || 0, 800, '%', 1);
+                    animateCount($('mon-mem'), sys.memory_usage_percent || 0, 800, '%', 1);
                     $('mon-mem-detail').textContent = (sys.used_memory_gb || 0).toFixed(1) + ' / ' + (sys.total_memory_gb || 0).toFixed(1) + ' GB';
                     $('mon-status').textContent = status;
                     renderGaugeChart('cpuGaugeChart', sys.cpu_usage || 0, '#0066F5');
@@ -2528,11 +2638,13 @@
                         ring.style.borderColor = sColor;
                         icon.style.color = sColor;
                         icon.className = status === 'healthy' ? 'ri-check-line' : 'ri-close-line';
+                        if (status === 'healthy') ring.classList.add('healthy-pulse');
+                        else ring.classList.remove('healthy-pulse');
                     }
                     $('mon-status').style.color = status === 'healthy' ? 'var(--color-success-500)' : 'var(--color-danger-500)';
-                    $('mon-datasets').textContent = data.datasets_count || 0;
-                    $('mon-jobs').textContent = data.jobs_count || 0;
-                    $('mon-models').textContent = data.models_count || 0;
+                    animateCount($('mon-datasets'), data.datasets_count || 0, 600);
+                    animateCount($('mon-jobs'), data.jobs_count || 0, 600);
+                    animateCount($('mon-models'), data.models_count || 0, 600);
                 })
                 .catch(function() {
                     $('status-badge').textContent = 'error';
@@ -2546,6 +2658,7 @@
                         ring.style.borderColor = 'var(--color-danger-500)';
                         icon.style.color = 'var(--color-danger-500)';
                         icon.className = 'ri-close-line';
+                        ring.classList.remove('healthy-pulse');
                     }
                 });
         }
@@ -2561,7 +2674,7 @@
             var timeout = parseInt($('ho-timeout').value) || 0;
             $('btn-hyperopt').disabled = true;
             $('hyperopt-empty').style.display = 'none';
-            $('hyperopt-results').innerHTML = '<div class="flex-col gap-8"><div class="progress-bar"><div class="progress-bar-fill" style="width:0%"></div></div><p class="text-12px regular" style="color:var(--color-text-700);">Starting optimization...</p></div>';
+            $('hyperopt-results').innerHTML = '<div class="flex-col gap-8"><div class="progress-bar"><div class="progress-bar-fill active" style="width:0%"></div></div><p class="text-12px regular" style="color:var(--color-text-700);">Starting optimization...</p></div>';
 
             fetch('/api/hyperopt', {
                 method: 'POST',
@@ -2630,7 +2743,7 @@
                         hyperoptJobId = null;
                     } else {
                         var p = s.Running ? (s.Running.progress * 100).toFixed(0) : '0';
-                        $('hyperopt-results').innerHTML = '<div class="flex-col gap-8"><div class="progress-bar"><div class="progress-bar-fill" style="width:' + p + '%"></div></div><p class="text-12px regular" style="color:var(--color-text-700);">' + escHtml(s.Running ? s.Running.message || 'Optimizing...' : 'Optimizing...') + '</p></div>';
+                        $('hyperopt-results').innerHTML = '<div class="flex-col gap-8"><div class="progress-bar"><div class="progress-bar-fill active" style="width:' + p + '%"></div></div><p class="text-12px regular" style="color:var(--color-text-700);">' + escHtml(s.Running ? s.Running.message || 'Optimizing...' : 'Optimizing...') + '</p></div>';
                         setTimeout(pollHyperopt, 1500);
                     }
                 })
@@ -2839,7 +2952,7 @@
             if (!cfg.targetColumn) { notify('Select a target column first', 'error'); return; }
             $('btn-autotune').disabled = true;
             $('autotune-empty').style.display = 'none';
-            $('autotune-results').innerHTML = '<div class="flex-col gap-8"><div class="progress-bar"><div class="progress-bar-fill" style="width:0%"></div></div><p class="text-12px regular" style="color:var(--color-text-700);">Starting auto-tune...</p></div>';
+            $('autotune-results').innerHTML = '<div class="flex-col gap-8"><div class="progress-bar"><div class="progress-bar-fill active" style="width:0%"></div></div><p class="text-12px regular" style="color:var(--color-text-700);">Starting auto-tune...</p></div>';
 
             var maxModels = parseInt($('at-max-models').value) || 6;
             fetch('/api/autotune', {
@@ -2884,7 +2997,12 @@
                         if (m.leaderboard && m.leaderboard.length > 0) {
                             html += '<div class="table-wrap"><table class="data-table"><thead><tr><th>#</th><th>Model</th><th>Score</th><th>Time</th><th>Status</th></tr></thead><tbody>';
                             m.leaderboard.forEach(function(r, i) {
-                                html += '<tr><td>' + (i + 1) + '</td>';
+                                var atRank = '';
+                                if (i === 0) atRank = '<i class="ri-medal-fill medal-gold" style="font-size:16px;"></i>';
+                                else if (i === 1) atRank = '<i class="ri-medal-fill medal-silver" style="font-size:16px;"></i>';
+                                else if (i === 2) atRank = '<i class="ri-medal-fill medal-bronze" style="font-size:16px;"></i>';
+                                else atRank = '' + (i + 1);
+                                html += '<tr><td>' + atRank + '</td>';
                                 html += '<td class="text-14px medium">' + escHtml(r.model) + '</td>';
                                 html += '<td class="mono-14px">' + (r.score || 0).toFixed(6) + '</td>';
                                 html += '<td class="mono-12px">' + (r.training_time_secs || 0).toFixed(2) + 's</td>';
@@ -2909,7 +3027,7 @@
                     } else {
                         var p = s.Running ? (s.Running.progress * 100).toFixed(0) : '0';
                         var msg = s.Running ? s.Running.message || 'Auto-tuning...' : 'Auto-tuning...';
-                        $('autotune-results').innerHTML = '<div class="flex-col gap-8"><div class="progress-bar"><div class="progress-bar-fill" style="width:' + p + '%"></div></div><p class="text-12px regular" style="color:var(--color-text-700);">' + escHtml(msg) + '</p></div>';
+                        $('autotune-results').innerHTML = '<div class="flex-col gap-8"><div class="progress-bar"><div class="progress-bar-fill active" style="width:' + p + '%"></div></div><p class="text-12px regular" style="color:var(--color-text-700);">' + escHtml(msg) + '</p></div>';
                         setTimeout(pollAutoTune, 1500);
                     }
                 })
@@ -2946,13 +3064,18 @@
                 if (t.value < best) best = t.value;
                 bestSoFar.push(best);
             });
+            var cvCanvas = ctx.getContext ? ctx : ctx.getContext('2d');
+            var cvCtx2d = cvCanvas.getContext ? cvCanvas.getContext('2d') : cvCanvas;
+            var cvGrad = cvCtx2d.createLinearGradient(0, 0, 0, 200);
+            cvGrad.addColorStop(0, 'rgba(0,102,245,0.25)');
+            cvGrad.addColorStop(1, 'rgba(0,102,245,0)');
             convergenceChartInstance = new Chart(ctx, {
                 type: 'line',
                 data: {
                     labels: trials.map(function(t) { return t.trial_id; }),
                     datasets: [
                         { label: 'Trial Score', data: trials.map(function(t) { return t.value === Infinity ? null : t.value; }), borderColor: '#B4D2FC', backgroundColor: 'rgba(0,102,245,0.05)', pointRadius: 3, tension: 0, fill: false },
-                        { label: 'Best So Far', data: bestSoFar, borderColor: '#0066F5', backgroundColor: 'rgba(0,102,245,0.1)', borderWidth: 2, pointRadius: 0, tension: 0.3, fill: true }
+                        { label: 'Best So Far', data: bestSoFar, borderColor: '#0066F5', backgroundColor: cvGrad, borderWidth: 2, pointRadius: 0, tension: 0.3, fill: true }
                     ]
                 },
                 options: { scales: { x: { title: { display: true, text: 'Trial' } }, y: { title: { display: true, text: 'Score (lower=better)' } } }, plugins: { legend: { position: 'bottom' } } }
@@ -3368,6 +3491,8 @@
                             }
                         },
                         tooltip: {
+                            mode: 'nearest',
+                            intersect: true,
                             callbacks: {
                                 label: function(ctx) {
                                     var base = (ctx.dataset.label || '') + ': (' + ctx.parsed.x.toFixed(2) + ', ' + ctx.parsed.y.toFixed(2) + ')';
@@ -3532,6 +3657,8 @@
                             }
                         },
                         tooltip: {
+                            mode: 'nearest',
+                            intersect: true,
                             callbacks: {
                                 label: function(ctx) {
                                     var base = (ctx.dataset.label || '') + ': (' + ctx.parsed.x.toFixed(2) + ', ' + ctx.parsed.y.toFixed(2) + ')';
@@ -3773,6 +3900,7 @@
             $('automl-results').style.display = 'none';
             $('automl-status-text').textContent = 'Starting AutoML pipeline...';
             $('automl-progress-bar').style.width = '0%';
+            $('automl-progress-bar').className = 'progress-bar-fill active striped';
             $('automl-progress-pct').textContent = '0%';
 
             fetch('/api/automl/run', {
@@ -3812,12 +3940,14 @@
                     if (data.status === 'completed') {
                         clearInterval(automlPollInterval);
                         automlPollInterval = null;
+                        $('automl-progress-bar').className = 'progress-bar-fill';
                         $('automl-progress').style.display = 'none';
                         $('btn-automl-run').disabled = false;
                         displayAutoMLResults(data.result);
                     } else if (data.status === 'failed') {
                         clearInterval(automlPollInterval);
                         automlPollInterval = null;
+                        $('automl-progress-bar').className = 'progress-bar-fill';
                         $('automl-progress').style.display = 'none';
                         $('btn-automl-run').disabled = false;
                         notify('AutoML pipeline failed: ' + data.message, 'error');
@@ -3844,7 +3974,12 @@
                 var score = entry.score != null ? parseFloat(entry.score).toFixed(4) : 'Error';
                 var time = entry.training_time_secs != null ? entry.training_time_secs.toFixed(2) + 's' : '—';
                 var cls = i === 0 ? ' style="background:var(--color-information-100);font-weight:600;"' : '';
-                html += '<tr' + cls + '><td>' + (i + 1) + '</td><td>' + escHtml(entry.model) + '</td><td>' + score + '</td><td>' + time + '</td></tr>';
+                var rank = '';
+                if (i === 0) rank = '<i class="ri-medal-fill medal-gold" style="font-size:16px;"></i> ';
+                else if (i === 1) rank = '<i class="ri-medal-fill medal-silver" style="font-size:16px;"></i> ';
+                else if (i === 2) rank = '<i class="ri-medal-fill medal-bronze" style="font-size:16px;"></i> ';
+                else rank = (i + 1) + '';
+                html += '<tr' + cls + '><td>' + rank + '</td><td>' + escHtml(entry.model) + '</td><td class="mono-12px">' + score + '</td><td class="mono-12px">' + time + '</td></tr>';
             });
             html += '</tbody></table>';
             $('automl-leaderboard').innerHTML = html;
@@ -3881,8 +4016,10 @@
             var statsHtml = '<div class="grid-2" style="gap:8px;">';
             statsHtml += '<div style="padding:12px;background:var(--color-grey-600);border-radius:8px;"><p class="text-12px regular" style="color:var(--color-text-600);">Columns</p><p class="mono-20px medium">' + cols.length + '</p></div>';
             statsHtml += '<div style="padding:12px;background:var(--color-grey-600);border-radius:8px;"><p class="text-12px regular" style="color:var(--color-text-600);">Rows</p><p class="mono-20px medium">' + (dataPreview.rows || 0) + '</p></div>';
+            var typeColors = { 'Float64': '#0066F5', 'Int64': '#3ABC3F', 'Utf8': '#FFA931', 'Boolean': '#FF3131', 'unknown': '#9C9FA1' };
             Object.keys(types).forEach(function(t) {
-                statsHtml += '<div style="padding:12px;background:var(--color-grey-600);border-radius:8px;"><p class="text-12px regular" style="color:var(--color-text-600);">' + escHtml(t) + '</p><p class="mono-20px medium">' + types[t] + '</p></div>';
+                var dotColor = typeColors[t] || '#9C9FA1';
+                statsHtml += '<div style="padding:12px;background:var(--color-grey-600);border-radius:8px;"><p class="text-12px regular" style="color:var(--color-text-600);"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + dotColor + ';margin-right:6px;vertical-align:middle;"></span>' + escHtml(t) + '</p><p class="mono-20px medium">' + types[t] + '</p></div>';
             });
             statsHtml += '</div>';
             $('data-col-stats').innerHTML = statsHtml;
@@ -3892,13 +4029,33 @@
             if (columnTypesChartInstance) columnTypesChartInstance.destroy();
             var labels = Object.keys(types);
             var colors = ['#0066F5', '#3ABC3F', '#FFA931', '#FF3131', '#9C9FA1', '#0052C4', '#2E9632'];
+            var totalCols = cols.length;
+            var doughnutCenter = {
+                id: 'doughnutCenter',
+                afterDraw: function(chart) {
+                    var ctx2 = chart.ctx;
+                    var cx = chart.chartArea.left + (chart.chartArea.right - chart.chartArea.left) / 2;
+                    var cy = chart.chartArea.top + (chart.chartArea.bottom - chart.chartArea.top) / 2;
+                    ctx2.save();
+                    ctx2.font = '500 22px "Geist Mono", monospace';
+                    ctx2.fillStyle = '#0D0E0F';
+                    ctx2.textAlign = 'center';
+                    ctx2.textBaseline = 'middle';
+                    ctx2.fillText(totalCols, cx, cy - 6);
+                    ctx2.font = '400 11px "Inter", sans-serif';
+                    ctx2.fillStyle = '#6A6F73';
+                    ctx2.fillText('columns', cx, cy + 12);
+                    ctx2.restore();
+                }
+            };
             columnTypesChartInstance = new Chart(ctx, {
                 type: 'doughnut',
                 data: {
                     labels: labels,
-                    datasets: [{ data: labels.map(function(l) { return types[l]; }), backgroundColor: colors.slice(0, labels.length), borderWidth: 0 }]
+                    datasets: [{ data: labels.map(function(l) { return types[l]; }), backgroundColor: colors.slice(0, labels.length), borderWidth: 2, borderColor: '#FFFFFF' }]
                 },
-                options: { responsive: true, maintainAspectRatio: true, plugins: { legend: { position: 'bottom', labels: { font: { family: '"Inter", sans-serif', size: 12 }, padding: 12 } } } }
+                options: { responsive: true, maintainAspectRatio: true, cutout: '55%', plugins: { legend: { position: 'bottom', labels: { font: { family: '"Inter", sans-serif', size: 12 }, padding: 12 } } } },
+                plugins: [doughnutCenter]
             });
         }
 
@@ -3927,19 +4084,26 @@
             });
             var hasHo = hoScores.some(function(v) { return v !== null; });
 
+            var canvas = ctx.getContext ? ctx : ctx.getContext('2d');
+            var grad1 = (canvas.getContext ? canvas.getContext('2d') : canvas).createLinearGradient(0, 0, 0, 300);
+            grad1.addColorStop(0, 'rgba(0, 102, 245, 0.4)');
+            grad1.addColorStop(1, 'rgba(0, 102, 245, 0.05)');
             var datasets = [{
                 label: 'Base Score',
                 data: metrics,
-                backgroundColor: 'rgba(0, 102, 245, 0.15)',
+                backgroundColor: grad1,
                 borderColor: '#0066F5',
                 borderWidth: 1.5,
                 borderRadius: 6
             }];
             if (hasHo) {
+                var grad2 = (canvas.getContext ? canvas.getContext('2d') : canvas).createLinearGradient(0, 0, 0, 300);
+                grad2.addColorStop(0, 'rgba(58, 188, 63, 0.4)');
+                grad2.addColorStop(1, 'rgba(58, 188, 63, 0.05)');
                 datasets.push({
                     label: 'After Auto-Tune',
                     data: hoScores,
-                    backgroundColor: 'rgba(58, 188, 63, 0.15)',
+                    backgroundColor: grad2,
                     borderColor: '#3ABC3F',
                     borderWidth: 1.5,
                     borderRadius: 6
@@ -3957,13 +4121,33 @@
             $('anomaly-chart-wrap').style.display = '';
             var ctx = $('anomalyChart');
             if (anomalyChartInstance) anomalyChartInstance.destroy();
+            var anomalyCount = data.anomalies_found;
+            var anomalyCenterPlugin = {
+                id: 'anomalyCenter',
+                afterDraw: function(chart) {
+                    var ctx2 = chart.ctx;
+                    var cx = chart.chartArea.left + (chart.chartArea.right - chart.chartArea.left) / 2;
+                    var cy = chart.chartArea.top + (chart.chartArea.bottom - chart.chartArea.top) / 2;
+                    ctx2.save();
+                    ctx2.font = '500 20px "Geist Mono", monospace';
+                    ctx2.fillStyle = '#FF3131';
+                    ctx2.textAlign = 'center';
+                    ctx2.textBaseline = 'middle';
+                    ctx2.fillText(anomalyCount, cx, cy - 6);
+                    ctx2.font = '400 11px "Inter", sans-serif';
+                    ctx2.fillStyle = '#6A6F73';
+                    ctx2.fillText('anomalies', cx, cy + 12);
+                    ctx2.restore();
+                }
+            };
             anomalyChartInstance = new Chart(ctx, {
                 type: 'doughnut',
                 data: {
                     labels: ['Normal', 'Anomaly'],
                     datasets: [{ data: [data.total_samples - data.anomalies_found, data.anomalies_found], backgroundColor: ['rgba(0, 102, 245, 0.15)', 'rgba(255, 49, 49, 0.2)'], borderColor: ['#0066F5', '#FF3131'], borderWidth: 1.5 }]
                 },
-                options: { responsive: true, maintainAspectRatio: true, plugins: { legend: { position: 'bottom', labels: { font: { family: '"Inter", sans-serif', size: 12 } } } } }
+                options: { responsive: true, maintainAspectRatio: true, cutout: '55%', plugins: { legend: { position: 'bottom', labels: { font: { family: '"Inter", sans-serif', size: 12 } } } } },
+                plugins: [anomalyCenterPlugin]
             });
         }
 
@@ -3976,11 +4160,19 @@
             var labels = keys.map(function(k) { return k === '-1' ? 'Noise' : 'Cluster ' + k; });
             var values = keys.map(function(k) { return result.cluster_sizes[k]; });
             var colors = ['#0066F5', '#3ABC3F', '#FFA931', '#FF3131', '#9C9FA1', '#0052C4', '#2E9632', '#CC8727', '#3C8AF7', '#68CC6C'];
+            var clCanvas = ctx.getContext ? ctx : ctx.getContext('2d');
+            var clCtx2d = clCanvas.getContext ? clCanvas.getContext('2d') : clCanvas;
+            var clGrads = colors.slice(0, labels.length).map(function(c) {
+                var g = clCtx2d.createLinearGradient(0, 0, 0, 250);
+                g.addColorStop(0, c + '66');
+                g.addColorStop(1, c + '0D');
+                return g;
+            });
             clusteringChartInstance = new Chart(ctx, {
                 type: 'bar',
                 data: {
                     labels: labels,
-                    datasets: [{ label: 'Samples', data: values, backgroundColor: colors.slice(0, labels.length).map(function(c) { return c + '26'; }), borderColor: colors.slice(0, labels.length), borderWidth: 1.5, borderRadius: 6 }]
+                    datasets: [{ label: 'Samples', data: values, backgroundColor: clGrads, borderColor: colors.slice(0, labels.length), borderWidth: 1.5, borderRadius: 6 }]
                 },
                 options: { responsive: true, maintainAspectRatio: true, scales: { y: { beginAtZero: true }, x: { grid: { display: false } } }, plugins: { legend: { display: false } } }
             });
@@ -3992,12 +4184,33 @@
             if (!ctx) return;
             var existing = canvasId === 'cpuGaugeChart' ? cpuGaugeInstance : memGaugeInstance;
             if (existing) existing.destroy();
+            var gaugeCenterText = {
+                id: 'gaugeCenterText',
+                afterDraw: function(chart) {
+                    var val = chart.data.datasets[0].data[0];
+                    var ctx2 = chart.ctx;
+                    var cx = chart.chartArea.left + (chart.chartArea.right - chart.chartArea.left) / 2;
+                    var cy = chart.chartArea.bottom - 8;
+                    ctx2.save();
+                    ctx2.font = '500 18px "Geist Mono", monospace';
+                    ctx2.fillStyle = chart.data.datasets[0].backgroundColor[0];
+                    ctx2.textAlign = 'center';
+                    ctx2.textBaseline = 'middle';
+                    ctx2.fillText(Math.round(val) + '%', cx, cy);
+                    ctx2.restore();
+                }
+            };
             var chart = new Chart(ctx, {
                 type: 'doughnut',
                 data: {
                     datasets: [{ data: [value, 100 - value], backgroundColor: [color, '#F1F3F4'], borderWidth: 0 }]
                 },
-                options: { responsive: true, maintainAspectRatio: true, cutout: '75%', rotation: -90, circumference: 180, plugins: { legend: { display: false }, tooltip: { enabled: false } } }
+                options: {
+                    responsive: true, maintainAspectRatio: true, cutout: '75%', rotation: -90, circumference: 180,
+                    animation: { duration: 800, easing: 'easeOutQuart' },
+                    plugins: { legend: { display: false }, tooltip: { enabled: false } }
+                },
+                plugins: [gaugeCenterText]
             });
             if (canvasId === 'cpuGaugeChart') cpuGaugeInstance = chart;
             else memGaugeInstance = chart;
@@ -4095,6 +4308,18 @@
         // ── Init ──
         document.addEventListener('DOMContentLoaded', function() {
             try {
+                // Chart.js global defaults
+                if (typeof Chart !== 'undefined') {
+                    Chart.defaults.animation.duration = 1000;
+                    Chart.defaults.animation.easing = 'easeOutQuart';
+                    Chart.defaults.plugins.tooltip.backgroundColor = 'rgba(13, 14, 15, 0.9)';
+                    Chart.defaults.plugins.tooltip.titleFont = { family: '"Inter", sans-serif', size: 13, weight: '500' };
+                    Chart.defaults.plugins.tooltip.bodyFont = { family: '"Geist Mono", monospace', size: 12 };
+                    Chart.defaults.plugins.tooltip.cornerRadius = 8;
+                    Chart.defaults.plugins.tooltip.padding = 10;
+                    Chart.defaults.scale.grid = Chart.defaults.scale.grid || {};
+                    Chart.defaults.scale.grid.color = 'rgba(221, 225, 227, 0.6)';
+                }
                 setupDropzone();
                 setupSamplePills();
                 setupModelCheckboxes();

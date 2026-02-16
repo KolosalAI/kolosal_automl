@@ -176,7 +176,7 @@ fn matrix_inverse(m: &Array2<f64>) -> Option<Array2<f64>> {
 }
 
 /// Solve least squares via normal equations: (X^T X) w = X^T y
-/// Uses Cholesky decomposition (O(n³/3)) with fallback to Gauss-Jordan
+/// Uses Cholesky decomposition (O(n^3/3)) with fallback to Gauss-Jordan
 fn solve_least_squares(x: &Array2<f64>, y: &Array1<f64>) -> Option<Array1<f64>> {
     let xtx = x.t().dot(x);
     let xty = x.t().dot(y);
@@ -190,6 +190,52 @@ fn solve_least_squares(x: &Array2<f64>, y: &Array1<f64>) -> Option<Array1<f64>> 
     match matrix_inverse(&xtx) {
         Some(inv) => Some(inv.dot(&xty)),
         None => None,
+    }
+}
+
+/// Solve regularized least squares: (X^T X + alpha*I) w = X^T y
+/// Uses Cholesky first (the regularized system is usually positive definite), falls back to inverse.
+fn solve_ridge(x: &Array2<f64>, y: &Array1<f64>, alpha: f64) -> Option<Array1<f64>> {
+    let n_features = x.ncols();
+    let mut xtx = x.t().dot(x);
+    for i in 0..n_features {
+        xtx[[i, i]] += alpha;
+    }
+    let xty = x.t().dot(y);
+
+    if let Some(result) = cholesky_solve(&xtx, &xty) {
+        return Some(result);
+    }
+
+    match matrix_inverse(&xtx) {
+        Some(inv) => Some(inv.dot(&xty)),
+        None => None,
+    }
+}
+
+/// Center X and y for intercept fitting, returning (x_centered, y_centered, x_mean, y_mean).
+/// For fit_intercept=false, returns views of the original data (zero-cost via clone of the view).
+fn center_data(
+    x: &Array2<f64>,
+    y: &Array1<f64>,
+    fit_intercept: bool,
+) -> (Array2<f64>, Array1<f64>, Option<Array1<f64>>, Option<f64>) {
+    if fit_intercept {
+        let x_mean = x.mean_axis(Axis(0)).unwrap();
+        let y_mean = y.mean().unwrap_or(0.0);
+        let x_centered = x - &x_mean.clone().insert_axis(Axis(0));
+        let y_centered = y - y_mean;
+        (x_centered, y_centered, Some(x_mean), Some(y_mean))
+    } else {
+        (x.view().to_owned(), y.view().to_owned(), None, None)
+    }
+}
+
+/// Compute intercept from centered coefficients
+fn compute_intercept(coefficients: &Array1<f64>, x_mean: Option<&Array1<f64>>, y_mean: Option<f64>) -> f64 {
+    match (x_mean, y_mean) {
+        (Some(xm), Some(ym)) => ym - coefficients.dot(xm),
+        _ => 0.0,
     }
 }
 
@@ -241,7 +287,6 @@ impl LinearRegression {
     /// Fit the model to training data
     pub fn fit(&mut self, x: &Array2<f64>, y: &Array1<f64>) -> Result<&mut Self> {
         let n_samples = x.nrows();
-        let n_features = x.ncols();
 
         if n_samples != y.len() {
             return Err(KolosalError::ShapeError {
@@ -250,30 +295,12 @@ impl LinearRegression {
             });
         }
 
-        // Center data if fitting intercept
-        let (x_centered, y_centered, x_mean, y_mean) = if self.fit_intercept {
-            let x_mean = x.mean_axis(Axis(0)).unwrap();
-            let y_mean = y.mean().unwrap_or(0.0);
-            
-            let x_centered = x - &x_mean.clone().insert_axis(Axis(0));
-            let y_centered = y - y_mean;
-            
-            (x_centered, y_centered, Some(x_mean), Some(y_mean))
-        } else {
-            (x.clone(), y.clone(), None, None)
-        };
+        let (x_c, y_c, x_mean, y_mean) = center_data(x, y, self.fit_intercept);
 
-        // Solve normal equations: (X^T X + alpha*I) * w = X^T y
         let coefficients = if self.alpha > 0.0 {
-            // Ridge regression: add regularization
-            let mut xtx = x_centered.t().dot(&x_centered);
-            for i in 0..n_features {
-                xtx[[i, i]] += self.alpha;
-            }
-            let xty = x_centered.t().dot(&y_centered);
-            
-            match matrix_inverse(&xtx) {
-                Some(inv) => inv.dot(&xty),
+            // Ridge regression: use cholesky_solve first, fall back to inverse
+            match solve_ridge(&x_c, &y_c, self.alpha) {
+                Some(coef) => coef,
                 None => {
                     return Err(KolosalError::ComputationError(
                         "Matrix is singular, cannot compute inverse".to_string()
@@ -281,8 +308,7 @@ impl LinearRegression {
                 }
             }
         } else {
-            // OLS
-            match solve_least_squares(&x_centered, &y_centered) {
+            match solve_least_squares(&x_c, &y_c) {
                 Some(coef) => coef,
                 None => {
                     return Err(KolosalError::ComputationError(
@@ -292,17 +318,9 @@ impl LinearRegression {
             }
         };
 
-        // Compute intercept
-        let intercept = if self.fit_intercept {
-            let x_mean = x_mean.unwrap();
-            let y_mean = y_mean.unwrap();
-            Some(y_mean - coefficients.dot(&x_mean))
-        } else {
-            Some(0.0)
-        };
-
+        let intercept = compute_intercept(&coefficients, x_mean.as_ref(), y_mean);
         self.coefficients = Some(coefficients);
-        self.intercept = intercept;
+        self.intercept = Some(intercept);
         self.is_fitted = true;
 
         Ok(self)
@@ -314,7 +332,7 @@ impl LinearRegression {
             return Err(KolosalError::ModelNotFitted);
         }
 
-        let coefficients = self.coefficients.as_ref().unwrap();
+        let coefficients = self.coefficients.as_ref().ok_or(KolosalError::ModelNotFitted)?;
         let intercept = self.intercept.unwrap_or(0.0);
 
         let predictions = x.dot(coefficients) + intercept;
@@ -324,7 +342,7 @@ impl LinearRegression {
     /// Get R² score
     pub fn score(&self, x: &Array2<f64>, y: &Array1<f64>) -> Result<f64> {
         let y_pred = self.predict(x)?;
-        
+
         let y_mean = y.mean().unwrap_or(0.0);
         let ss_res = (&y_pred - y).mapv(|v| v * v).sum();
         let ss_tot = y.mapv(|v| (v - y_mean) * (v - y_mean)).sum();
@@ -456,7 +474,7 @@ impl LogisticRegression {
             return Err(KolosalError::ModelNotFitted);
         }
 
-        let coefficients = self.coefficients.as_ref().unwrap();
+        let coefficients = self.coefficients.as_ref().ok_or(KolosalError::ModelNotFitted)?;
         let intercept = self.intercept.unwrap_or(0.0);
 
         let linear = x.dot(coefficients) + intercept;
@@ -516,7 +534,6 @@ impl RidgeRegression {
 
     pub fn fit(&mut self, x: &Array2<f64>, y: &Array1<f64>) -> Result<&mut Self> {
         let n_samples = x.nrows();
-        let n_features = x.ncols();
         if n_samples != y.len() {
             return Err(KolosalError::ShapeError {
                 expected: format!("y length = {}", n_samples),
@@ -524,34 +541,14 @@ impl RidgeRegression {
             });
         }
 
-        let (x_c, y_c, x_mean, y_mean) = if self.fit_intercept {
-            let xm = x.mean_axis(Axis(0)).unwrap();
-            let ym = y.mean().unwrap_or(0.0);
-            (x - &xm.clone().insert_axis(Axis(0)), y - ym, Some(xm), Some(ym))
-        } else {
-            (x.clone(), y.clone(), None, None)
+        let (x_c, y_c, x_mean, y_mean) = center_data(x, y, self.fit_intercept);
+
+        let coefficients = match solve_ridge(&x_c, &y_c, self.alpha) {
+            Some(coef) => coef,
+            None => return Err(KolosalError::ComputationError("Singular matrix".to_string())),
         };
 
-        let mut xtx = x_c.t().dot(&x_c);
-        for i in 0..n_features {
-            xtx[[i, i]] += self.alpha;
-        }
-        let xty = x_c.t().dot(&y_c);
-
-        let coefficients = if let Some(result) = cholesky_solve(&xtx, &xty) {
-            result
-        } else {
-            match matrix_inverse(&xtx) {
-                Some(inv) => inv.dot(&xty),
-                None => return Err(KolosalError::ComputationError("Singular matrix".to_string())),
-            }
-        };
-
-        self.intercept = if self.fit_intercept {
-            Some(y_mean.unwrap() - coefficients.dot(&x_mean.unwrap()))
-        } else {
-            Some(0.0)
-        };
+        self.intercept = Some(compute_intercept(&coefficients, x_mean.as_ref(), y_mean));
         self.coefficients = Some(coefficients);
         self.is_fitted = true;
         Ok(self)
@@ -561,7 +558,7 @@ impl RidgeRegression {
         if !self.is_fitted {
             return Err(KolosalError::ModelNotFitted);
         }
-        Ok(x.dot(self.coefficients.as_ref().unwrap()) + self.intercept.unwrap_or(0.0))
+        Ok(x.dot(self.coefficients.as_ref().ok_or(KolosalError::ModelNotFitted)?) + self.intercept.unwrap_or(0.0))
     }
 
     pub fn score(&self, x: &Array2<f64>, y: &Array1<f64>) -> Result<f64> {
@@ -636,13 +633,7 @@ impl LassoRegression {
             });
         }
 
-        let (x_c, y_c, x_mean, y_mean) = if self.fit_intercept {
-            let xm = x.mean_axis(Axis(0)).unwrap();
-            let ym = y.mean().unwrap_or(0.0);
-            (x - &xm.clone().insert_axis(Axis(0)), y - ym, Some(xm), Some(ym))
-        } else {
-            (x.clone(), y.clone(), None, None)
-        };
+        let (x_c, y_c, x_mean, y_mean) = center_data(x, y, self.fit_intercept);
 
         // Pre-compute column norms
         let col_norms: Vec<f64> = (0..n_features)
@@ -674,11 +665,7 @@ impl LassoRegression {
             }
         }
 
-        self.intercept = if self.fit_intercept {
-            Some(y_mean.unwrap() - w.dot(&x_mean.unwrap()))
-        } else {
-            Some(0.0)
-        };
+        self.intercept = Some(compute_intercept(&w, x_mean.as_ref(), y_mean));
         self.coefficients = Some(w);
         self.is_fitted = true;
         Ok(self)
@@ -688,7 +675,7 @@ impl LassoRegression {
         if !self.is_fitted {
             return Err(KolosalError::ModelNotFitted);
         }
-        Ok(x.dot(self.coefficients.as_ref().unwrap()) + self.intercept.unwrap_or(0.0))
+        Ok(x.dot(self.coefficients.as_ref().ok_or(KolosalError::ModelNotFitted)?) + self.intercept.unwrap_or(0.0))
     }
 
     pub fn score(&self, x: &Array2<f64>, y: &Array1<f64>) -> Result<f64> {
@@ -760,13 +747,7 @@ impl ElasticNetRegression {
             });
         }
 
-        let (x_c, y_c, x_mean, y_mean) = if self.fit_intercept {
-            let xm = x.mean_axis(Axis(0)).unwrap();
-            let ym = y.mean().unwrap_or(0.0);
-            (x - &xm.clone().insert_axis(Axis(0)), y - ym, Some(xm), Some(ym))
-        } else {
-            (x.clone(), y.clone(), None, None)
-        };
+        let (x_c, y_c, x_mean, y_mean) = center_data(x, y, self.fit_intercept);
 
         let col_norms: Vec<f64> = (0..n_features)
             .map(|j| x_c.column(j).mapv(|v| v * v).sum())
@@ -797,11 +778,7 @@ impl ElasticNetRegression {
             }
         }
 
-        self.intercept = if self.fit_intercept {
-            Some(y_mean.unwrap() - w.dot(&x_mean.unwrap()))
-        } else {
-            Some(0.0)
-        };
+        self.intercept = Some(compute_intercept(&w, x_mean.as_ref(), y_mean));
         self.coefficients = Some(w);
         self.is_fitted = true;
         Ok(self)
@@ -811,7 +788,7 @@ impl ElasticNetRegression {
         if !self.is_fitted {
             return Err(KolosalError::ModelNotFitted);
         }
-        Ok(x.dot(self.coefficients.as_ref().unwrap()) + self.intercept.unwrap_or(0.0))
+        Ok(x.dot(self.coefficients.as_ref().ok_or(KolosalError::ModelNotFitted)?) + self.intercept.unwrap_or(0.0))
     }
 
     pub fn score(&self, x: &Array2<f64>, y: &Array1<f64>) -> Result<f64> {
@@ -969,7 +946,8 @@ impl PolynomialRegression {
         }
     }
 
-    /// Expand features to polynomial terms up to given degree
+    /// Expand features to polynomial terms up to given degree.
+    /// Uses Array2::from_shape_fn to fill directly — no intermediate Vec<Array1> allocation.
     fn expand_features(x: &Array2<f64>, degree: usize) -> Array2<f64> {
         let n = x.nrows();
         let p = x.ncols();
@@ -978,45 +956,57 @@ impl PolynomialRegression {
             return x.clone();
         }
 
-        // Count output features: for degree d, we include x_i^k for k=1..d
-        // plus interaction terms for degree 2+ (x_i * x_j for i <= j)
-        let mut cols: Vec<Array1<f64>> = Vec::new();
-
-        // Degree 1: original features
-        for j in 0..p {
-            cols.push(x.column(j).to_owned());
-        }
-
-        // Degree 2: x_i^2 and x_i * x_j
+        // Count total output columns
+        let mut n_cols = p; // degree 1
         if degree >= 2 {
-            for i in 0..p {
-                for j in i..p {
-                    let col: Array1<f64> = Array1::from_vec(
-                        (0..n).map(|row| x[[row, i]] * x[[row, j]]).collect()
-                    );
-                    cols.push(col);
+            n_cols += p * (p + 1) / 2; // degree 2 interactions
+        }
+        for _d in 3..=degree {
+            n_cols += p; // higher powers
+        }
+
+        // Build a column descriptor: (type, params) for each output column
+        // Instead of materializing columns, we compute on the fly in from_shape_fn
+        // by mapping output column index → source computation.
+        //
+        // Column layout:
+        //   [0..p)                              → x[:,j]
+        //   [p..p+p*(p+1)/2)                    → x[:,i]*x[:,j] for i<=j
+        //   [p+p*(p+1)/2..p+p*(p+1)/2+p)       → x[:,j]^3
+        //   ...and so on for higher degrees
+
+        let deg2_start = p;
+        let deg2_count = if degree >= 2 { p * (p + 1) / 2 } else { 0 };
+        let higher_start = deg2_start + deg2_count;
+
+        Array2::from_shape_fn((n, n_cols), |(row, col)| {
+            if col < p {
+                // Degree 1: original feature
+                x[[row, col]]
+            } else if col < higher_start {
+                // Degree 2: interaction term
+                let offset = col - deg2_start;
+                // Map linear offset → (i, j) pair where i <= j
+                // offset = i*p - i*(i-1)/2 + (j - i)
+                let mut i = 0;
+                let mut remaining = offset;
+                loop {
+                    let row_len = p - i;
+                    if remaining < row_len {
+                        let j = i + remaining;
+                        return x[[row, i]] * x[[row, j]];
+                    }
+                    remaining -= row_len;
+                    i += 1;
                 }
+            } else {
+                // Degree 3+: higher power
+                let offset = col - higher_start;
+                let d = 3 + offset / p;
+                let j = offset % p;
+                x[[row, j]].powi(d as i32)
             }
-        }
-
-        // Degree 3+: x_i^k for higher powers (skip interactions for efficiency)
-        for d in 3..=degree {
-            for j in 0..p {
-                let col: Array1<f64> = Array1::from_vec(
-                    (0..n).map(|row| x[[row, j]].powi(d as i32)).collect()
-                );
-                cols.push(col);
-            }
-        }
-
-        let n_cols = cols.len();
-        let mut result = Array2::zeros((n, n_cols));
-        for (j, col) in cols.into_iter().enumerate() {
-            for i in 0..n {
-                result[[i, j]] = col[i];
-            }
-        }
-        result
+        })
     }
 
     pub fn fit(&mut self, x: &Array2<f64>, y: &Array1<f64>) -> Result<()> {

@@ -190,6 +190,7 @@ impl GradientBoostingRegressor {
         indices
     }
 
+    /// Combined row+column subsampling in a single pass (avoids intermediate allocation)
     fn subsample_data(
         &self,
         x: &Array2<f64>,
@@ -197,11 +198,12 @@ impl GradientBoostingRegressor {
         row_indices: &[usize],
         col_indices: &[usize],
     ) -> (Array2<f64>, Array1<f64>) {
-        let x_rows = x.select(ndarray::Axis(0), row_indices);
-        let x_sub = x_rows.select(ndarray::Axis(1), col_indices);
-        let y_sub: Array1<f64> = Array1::from_vec(
-            row_indices.iter().map(|&i| y[i]).collect()
-        );
+        let n_rows = row_indices.len();
+        let n_cols = col_indices.len();
+        let x_sub = Array2::from_shape_fn((n_rows, n_cols), |(i, j)| {
+            x[[row_indices[i], col_indices[j]]]
+        });
+        let y_sub = Array1::from_shape_fn(n_rows, |i| y[row_indices[i]]);
         (x_sub, y_sub)
     }
 }
@@ -347,6 +349,7 @@ impl GradientBoostingClassifier {
         indices
     }
 
+    /// Combined row+column subsampling in a single pass (avoids intermediate allocation)
     fn subsample_data(
         &self,
         x: &Array2<f64>,
@@ -354,11 +357,12 @@ impl GradientBoostingClassifier {
         row_indices: &[usize],
         col_indices: &[usize],
     ) -> (Array2<f64>, Array1<f64>) {
-        let x_rows = x.select(ndarray::Axis(0), row_indices);
-        let x_sub = x_rows.select(ndarray::Axis(1), col_indices);
-        let y_sub: Array1<f64> = Array1::from_vec(
-            row_indices.iter().map(|&i| y[i]).collect()
-        );
+        let n_rows = row_indices.len();
+        let n_cols = col_indices.len();
+        let x_sub = Array2::from_shape_fn((n_rows, n_cols), |(i, j)| {
+            x[[row_indices[i], col_indices[j]]]
+        });
+        let y_sub = Array1::from_shape_fn(n_rows, |i| y[row_indices[i]]);
         (x_sub, y_sub)
     }
 }

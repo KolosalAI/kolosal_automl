@@ -137,7 +137,7 @@ impl AutoPipeline {
     }
 
     /// Fit preprocessing on data
-    pub fn fit_preprocessing(&mut self, x: &Array2<f64>, y: &Array1<f64>) -> Result<Array2<f64>> {
+    pub fn fit_preprocessing(&mut self, x: &Array2<f64>, _y: &Array1<f64>) -> Result<Array2<f64>> {
         let blueprint = self.blueprint.as_ref().ok_or_else(|| {
             KolosalError::ValidationError("Pipeline not analyzed. Call analyze() first.".to_string())
         })?;

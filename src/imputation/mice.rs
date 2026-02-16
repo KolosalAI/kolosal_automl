@@ -310,7 +310,7 @@ impl Imputer for MICEImputer {
     }
 
     fn transform(&self, x: &Array2<f64>) -> Result<Array2<f64>> {
-        let stats = self.feature_stats.as_ref().ok_or_else(|| {
+        let _stats = self.feature_stats.as_ref().ok_or_else(|| {
             KolosalError::ValidationError("Imputer not fitted".to_string())
         })?;
 

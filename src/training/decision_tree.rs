@@ -252,60 +252,81 @@ impl DecisionTree {
         let parent_impurity = self.compute_impurity(&y_subset);
 
         // Parallelize feature scanning — each feature independently finds its best split
+        // using incremental impurity: sort samples by feature value, then sweep from left
+        // to right moving one sample at a time (O(n) per feature instead of O(n) per threshold).
+        let min_leaf = self.min_samples_leaf;
+        let criterion = self.criterion;
+
         let feature_results: Vec<Option<(usize, f64, f64)>> = (0..n_features_to_try)
             .into_par_iter()
             .map(|feature_idx| {
-                let mut values: Vec<f64> = indices.iter().map(|&i| x[[i, feature_idx]]).collect();
-                values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-                values.dedup();
+                // Sort indices by feature value
+                let mut sorted: Vec<usize> = indices.to_vec();
+                sorted.sort_unstable_by(|&a, &b| {
+                    x[[a, feature_idx]].partial_cmp(&x[[b, feature_idx]])
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                });
+
+                let n = sorted.len();
+
+                // Initialize: all samples in right partition
+                let mut right_count = n;
+                let mut left_count = 0usize;
+                let mut right_sum: f64 = sorted.iter().map(|&i| y[i]).sum();
+                let mut left_sum = 0.0f64;
+                let mut right_sq_sum: f64 = sorted.iter().map(|&i| { let yi = y[i]; yi * yi }).sum();
+                let mut left_sq_sum = 0.0f64;
+                let mut right_class_counts: HashMap<i64, usize> = HashMap::new();
+                let mut left_class_counts: HashMap<i64, usize> = HashMap::new();
+
+                for &idx in &sorted {
+                    *right_class_counts.entry(y[idx] as i64).or_insert(0) += 1;
+                }
 
                 let mut best_gain = 0.0f64;
                 let mut best_threshold = 0.0f64;
 
-                for window in values.windows(2) {
-                    let threshold = (window[0] + window[1]) / 2.0;
+                // Sweep: move samples from right to left one at a time
+                for i in 0..n - 1 {
+                    let idx = sorted[i];
+                    let yi = y[idx];
+                    let yi_class = yi as i64;
 
-                    // Count left/right and accumulate impurity incrementally
-                    let mut left_count = 0usize;
-                    let mut right_count = 0usize;
-                    let mut left_sum = 0.0f64;
-                    let mut right_sum = 0.0f64;
-                    let mut left_sq_sum = 0.0f64;
-                    let mut right_sq_sum = 0.0f64;
-                    // For classification: count class frequencies
-                    let mut left_class_counts: HashMap<i64, usize> = HashMap::new();
-                    let mut right_class_counts: HashMap<i64, usize> = HashMap::new();
-
-                    for &idx in indices {
-                        let yi = y[idx];
-                        if x[[idx, feature_idx]] <= threshold {
-                            left_count += 1;
-                            left_sum += yi;
-                            left_sq_sum += yi * yi;
-                            *left_class_counts.entry(yi as i64).or_insert(0) += 1;
-                        } else {
-                            right_count += 1;
-                            right_sum += yi;
-                            right_sq_sum += yi * yi;
-                            *right_class_counts.entry(yi as i64).or_insert(0) += 1;
+                    // Move sample from right to left
+                    left_count += 1;
+                    right_count -= 1;
+                    left_sum += yi;
+                    right_sum -= yi;
+                    left_sq_sum += yi * yi;
+                    right_sq_sum -= yi * yi;
+                    *left_class_counts.entry(yi_class).or_insert(0) += 1;
+                    if let Some(c) = right_class_counts.get_mut(&yi_class) {
+                        *c -= 1;
+                        if *c == 0 {
+                            right_class_counts.remove(&yi_class);
                         }
                     }
 
-                    if left_count < self.min_samples_leaf || right_count < self.min_samples_leaf {
+                    // Only consider a split when consecutive feature values differ
+                    let val_curr = x[[sorted[i], feature_idx]];
+                    let val_next = x[[sorted[i + 1], feature_idx]];
+                    if (val_next - val_curr).abs() < 1e-12 {
                         continue;
                     }
 
-                    let left_impurity = self.compute_impurity_fast(left_count, left_sum, left_sq_sum, &left_class_counts);
-                    let right_impurity = self.compute_impurity_fast(right_count, right_sum, right_sq_sum, &right_class_counts);
+                    if left_count < min_leaf || right_count < min_leaf {
+                        continue;
+                    }
 
-                    let n = indices.len() as f64;
-                    let weighted_impurity =
-                        (left_count as f64 * left_impurity + right_count as f64 * right_impurity) / n;
+                    let left_imp = Self::impurity_from_stats(criterion, left_count, left_sum, left_sq_sum, &left_class_counts);
+                    let right_imp = Self::impurity_from_stats(criterion, right_count, right_sum, right_sq_sum, &right_class_counts);
 
-                    let gain = parent_impurity - weighted_impurity;
+                    let weighted = (left_count as f64 * left_imp + right_count as f64 * right_imp) / n as f64;
+                    let gain = parent_impurity - weighted;
+
                     if gain > best_gain {
                         best_gain = gain;
-                        best_threshold = threshold;
+                        best_threshold = (val_curr + val_next) / 2.0;
                     }
                 }
 
@@ -322,6 +343,38 @@ impl DecisionTree {
             .into_iter()
             .flatten()
             .max_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal))
+    }
+
+    /// Compute impurity from running statistics (used by incremental split search).
+    /// Static method so it can be called from parallel closures without borrowing `self`.
+    fn impurity_from_stats(criterion: Criterion, count: usize, sum: f64, sq_sum: f64, class_counts: &HashMap<i64, usize>) -> f64 {
+        if count == 0 { return 0.0; }
+        match criterion {
+            Criterion::Gini => {
+                let n = count as f64;
+                let mut gini = 1.0;
+                for &c in class_counts.values() {
+                    let p = c as f64 / n;
+                    gini -= p * p;
+                }
+                gini
+            }
+            Criterion::Entropy => {
+                let n = count as f64;
+                let mut entropy = 0.0;
+                for &c in class_counts.values() {
+                    if c > 0 {
+                        let p = c as f64 / n;
+                        entropy -= p * p.ln();
+                    }
+                }
+                entropy
+            }
+            Criterion::MSE | Criterion::MAE => {
+                let n = count as f64;
+                sq_sum / n - (sum / n).powi(2)
+            }
+        }
     }
 
     /// Fast impurity computation from pre-computed statistics (avoids re-iterating data)

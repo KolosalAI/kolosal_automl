@@ -5,11 +5,10 @@ use super::{
     config::PreprocessingConfig,
     imputer::{Imputer, ImputeStrategy},
     scaler::{Scaler, ScalerType},
-    encoder::{Encoder, EncoderType},
+    encoder::Encoder,
     FeatureStats, ColumnType,
 };
 use polars::prelude::*;
-use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::Instant;
@@ -103,33 +102,35 @@ impl DataPreprocessor {
     }
 
     /// Cast all numeric (integer) columns to Float64 for consistent processing.
-    /// Collects casted columns first, then applies them in a single pass to
-    /// avoid redundant full-DataFrame clones per column.
+    /// Builds all columns at once to avoid cascading DataFrame clones.
     fn cast_numeric_to_f64(df: &DataFrame) -> Result<DataFrame> {
-        let columns_to_cast: Vec<Column> = df.get_columns().iter()
-            .filter_map(|col| {
+        // Build the full column list in one pass: cast numeric types, keep others as-is
+        let needs_cast = df.get_columns().iter().any(|col| matches!(
+            col.dtype(),
+            DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 |
+            DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64 |
+            DataType::Float32
+        ));
+
+        if !needs_cast {
+            return Ok(df.clone());
+        }
+
+        let new_columns: Vec<Column> = df.get_columns().iter()
+            .map(|col| {
                 match col.dtype() {
                     DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 |
                     DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64 |
                     DataType::Float32 => {
-                        col.cast(&DataType::Float64).ok()
+                        col.cast(&DataType::Float64).unwrap_or_else(|_| col.clone())
                     }
-                    _ => None,
+                    _ => col.clone(),
                 }
             })
             .collect();
 
-        if columns_to_cast.is_empty() {
-            return Ok(df.clone());
-        }
-
-        let mut result = df.clone();
-        for casted in columns_to_cast {
-            result = result.with_column(casted)
-                .map_err(|e| KolosalError::DataError(e.to_string()))?
-                .clone();
-        }
-        Ok(result)
+        DataFrame::new(new_columns)
+            .map_err(|e| KolosalError::DataError(e.to_string()))
     }
 
     pub fn fit(&mut self, df: &DataFrame) -> Result<&mut Self> {
@@ -583,6 +584,7 @@ impl Default for DataPreprocessor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::preprocessing::encoder::EncoderType;
 
     fn create_test_dataframe() -> DataFrame {
         DataFrame::new(vec![

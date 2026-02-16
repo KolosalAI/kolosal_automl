@@ -20,7 +20,6 @@ use super::gaussian_process_regression::{GaussianProcessRegressor, GPConfig};
 use super::clustering::{KMeans, DBSCAN};
 use ndarray::{Array1, Array2};
 use polars::prelude::*;
-use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::Instant;
@@ -100,7 +99,6 @@ pub struct TrainEngine {
     config: TrainingConfig,
     feature_names: Vec<String>,
     model: Option<TrainedModel>,
-    model_bytes: Option<Vec<u8>>,
     metrics: Option<ModelMetrics>,
     is_fitted: bool,
     training_history: Vec<ModelComparison>,
@@ -113,7 +111,6 @@ impl TrainEngine {
             config,
             feature_names: Vec::new(),
             model: None,
-            model_bytes: None,
             metrics: None,
             is_fitted: false,
             training_history: Vec::new(),
@@ -230,11 +227,10 @@ impl TrainEngine {
     }
 
     /// Shared helper: extract named columns from a DataFrame into a row-major Array2<f64>.
-    /// Avoids duplicating the column-collection + interleaving logic.
+    /// Uses Array2::from_shape_fn to build directly without intermediate Vec<Vec<f64>> interleaving.
     fn columns_to_array2(df: &DataFrame, col_names: &[String]) -> Result<Array2<f64>> {
         let n_rows = df.height();
         let n_cols = col_names.len();
-        let mut x_data = Vec::with_capacity(n_rows * n_cols);
 
         // Collect all columns as contiguous f64 slices
         let col_data: Vec<Vec<f64>> = col_names
@@ -255,18 +251,10 @@ impl TrainEngine {
             })
             .collect::<Result<Vec<Vec<f64>>>>()?;
 
-        // Interleave columns into row-major order
-        for row in 0..n_rows {
-            for col in &col_data {
-                x_data.push(col[row]);
-            }
-        }
-
-        Array2::from_shape_vec((n_rows, n_cols), x_data)
-            .map_err(|e| KolosalError::ShapeError {
-                expected: format!("({}, {})", n_rows, n_cols),
-                actual: e.to_string(),
-            })
+        // Build array directly in row-major order without extra allocation
+        Ok(Array2::from_shape_fn((n_rows, n_cols), |(row, col)| {
+            col_data[col][row]
+        }))
     }
 
     fn train_val_split(
@@ -718,8 +706,8 @@ impl TrainEngine {
             TrainedModel::RandomForestRegressor(m) => m.predict(x)?,
             TrainedModel::GradientBoostingClassifier(m) => m.predict(x)?,
             TrainedModel::GradientBoostingRegressor(m) => m.predict(x)?,
-            TrainedModel::KNNClassifier(m) => m.predict(x),
-            TrainedModel::KNNRegressor(m) => m.predict(x),
+            TrainedModel::KNNClassifier(m) => m.predict(x)?,
+            TrainedModel::KNNRegressor(m) => m.predict(x)?,
             TrainedModel::MLPClassifier(m) => m.predict(x),
             TrainedModel::MLPRegressor(m) => m.predict(x),
             TrainedModel::GaussianNaiveBayes(m) => m.predict(x),
@@ -780,7 +768,7 @@ impl TrainEngine {
                 }
                 out
             }
-            TrainedModel::KNNClassifier(m) => m.predict_proba(x),
+            TrainedModel::KNNClassifier(m) => m.predict_proba(x)?,
             TrainedModel::MLPClassifier(m) => m.predict_proba(x),
             TrainedModel::DecisionTreeClassifier(m) => {
                 let preds = m.predict(x)?;
@@ -900,7 +888,7 @@ impl TrainEngine {
         x: &Array2<f64>,
         y: &Array1<f64>,
     ) -> Result<(Array2<f64>, Array2<f64>, Array1<f64>, Array1<f64>)> {
-        let _n = x.nrows();
+        let n = x.nrows();
         let val_ratio = self.config.validation_split;
 
         // Group indices by class label
@@ -910,8 +898,9 @@ impl TrainEngine {
             class_indices.entry(key).or_default().push(i);
         }
 
-        let mut train_indices = Vec::new();
-        let mut val_indices = Vec::new();
+        let expected_val = ((n as f64) * val_ratio).ceil() as usize;
+        let mut train_indices = Vec::with_capacity(n - expected_val);
+        let mut val_indices = Vec::with_capacity(expected_val);
 
         for (_class, indices) in &class_indices {
             let class_val_size = ((indices.len() as f64) * val_ratio).max(1.0) as usize;

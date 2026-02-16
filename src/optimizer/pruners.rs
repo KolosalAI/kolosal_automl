@@ -259,7 +259,7 @@ impl HyperbandPruner {
 }
 
 impl Pruner for HyperbandPruner {
-    fn should_prune(&self, trial_id: usize, step: usize, value: f64, _history: &TrialHistory) -> bool {
+    fn should_prune(&self, _trial_id: usize, step: usize, value: f64, _history: &TrialHistory) -> bool {
         let rung = self.compute_rung(step);
         
         // Get all values at this rung
@@ -284,7 +284,7 @@ impl Pruner for HyperbandPruner {
         }
 
         // Check if this trial is in the top trials
-        let top_trials: Vec<usize> = sorted.iter().take(n_keep).map(|(i, _)| *i).collect();
+        let _top_trials: Vec<usize> = sorted.iter().take(n_keep).map(|(i, _)| *i).collect();
         
         // Get rank of current value
         let rank = if self.minimize {

@@ -6,8 +6,6 @@ use super::{
     search_space::{SearchSpace, TrialParams},
     samplers::{Sampler, create_sampler},
 };
-use polars::prelude::*;
-use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
 
@@ -183,7 +181,7 @@ impl HyperOptX {
 
                     trial
                 }
-                Err(e) => {
+                Err(_e) => {
                     // Trial failed - mark as pruned with worst value
                     let worst_val = match self.config.direction {
                         OptimizeDirection::Minimize => f64::INFINITY,

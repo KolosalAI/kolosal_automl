@@ -2,7 +2,6 @@
 
 use crate::error::{KolosalError, Result};
 use polars::prelude::*;
-use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -62,23 +61,31 @@ impl Scaler {
         Ok(self)
     }
 
-    /// Transform the data
+    /// Transform the data.
+    /// Builds all replacement columns first, then applies them in a single pass
+    /// (avoids N DataFrame clones for N columns).
     pub fn transform(&self, df: &DataFrame) -> Result<DataFrame> {
         if !self.is_fitted {
             return Err(KolosalError::ModelNotFitted);
         }
 
-        let mut result = df.clone();
+        // Build all scaled columns first
+        let replacements: Vec<Series> = self.params.iter()
+            .filter_map(|(col_name, params)| {
+                df.column(col_name).ok().map(|column| {
+                    let series = column.as_materialized_series();
+                    self.scale_series(series, params)
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
 
-        for (col_name, params) in &self.params {
-            if let Ok(column) = df.column(col_name) {
-                let series = column.as_materialized_series();
-                let scaled = self.scale_series(series, params)?;
-                result = result
-                    .with_column(scaled)
-                    .map_err(|e| KolosalError::DataError(e.to_string()))?
-                    .clone();
-            }
+        // Apply all at once (single clone + N in-place replacements)
+        let mut result = df.clone();
+        for scaled in replacements {
+            result = result
+                .with_column(scaled)
+                .map_err(|e| KolosalError::DataError(e.to_string()))?
+                .clone();
         }
 
         Ok(result)
@@ -90,23 +97,28 @@ impl Scaler {
         self.transform(df)
     }
 
-    /// Inverse transform the data
+    /// Inverse transform the data.
+    /// Same batch-apply pattern as transform.
     pub fn inverse_transform(&self, df: &DataFrame) -> Result<DataFrame> {
         if !self.is_fitted {
             return Err(KolosalError::ModelNotFitted);
         }
 
-        let mut result = df.clone();
+        let replacements: Vec<Series> = self.params.iter()
+            .filter_map(|(col_name, params)| {
+                df.column(col_name).ok().map(|column| {
+                    let series = column.as_materialized_series();
+                    self.unscale_series(series, params)
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
 
-        for (col_name, params) in &self.params {
-            if let Ok(column) = df.column(col_name) {
-                let series = column.as_materialized_series();
-                let unscaled = self.unscale_series(series, params)?;
-                result = result
-                    .with_column(unscaled)
-                    .map_err(|e| KolosalError::DataError(e.to_string()))?
-                    .clone();
-            }
+        let mut result = df.clone();
+        for unscaled in replacements {
+            result = result
+                .with_column(unscaled)
+                .map_err(|e| KolosalError::DataError(e.to_string()))?
+                .clone();
         }
 
         Ok(result)

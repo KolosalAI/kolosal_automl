@@ -1,7 +1,6 @@
 //! Common neural network layers for tabular architectures
 
 use ndarray::{Array1, Array2, Axis};
-use serde::{Deserialize, Serialize};
 
 /// Ghost Batch Normalization
 /// 
@@ -110,7 +109,7 @@ pub struct Sparsemax;
 impl Sparsemax {
     /// Apply sparsemax to input
     pub fn forward(&self, x: &Array1<f64>) -> Array1<f64> {
-        let n = x.len();
+        let _n = x.len();
         
         // Sort in descending order
         let mut sorted: Vec<f64> = x.iter().cloned().collect();
@@ -320,7 +319,7 @@ impl FeatureAttention {
 
     /// Forward pass with self-attention
     pub fn forward(&self, x: &Array2<f64>) -> Array2<f64> {
-        let batch_size = x.nrows();
+        let _batch_size = x.nrows();
         
         // Project to Q, K, V
         let q = x.dot(&self.query_weights);

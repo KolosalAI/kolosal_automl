@@ -10,5 +10,5 @@ pub use parallel::{ParallelConfig, parallel_map};
 pub use metrics::{Timer, MemoryTracker};
 pub use data_loader::{DataLoader, DataSaver, ChunkedReader, FileInfo, LoadingStrategy, DatasetInfo, LoadingConfig, OptimizedDataLoader, DatasetSize};
 pub use simd::SimdOps;
-pub use memory::{MemoryPool, LruCache, Arena, PoolStats, CacheStats};
+pub use memory::{MemoryPool, LruCache, Arena, PoolStats, PoolStatsSnapshot, CacheStats};
 

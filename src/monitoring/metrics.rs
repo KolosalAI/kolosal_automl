@@ -167,7 +167,8 @@ impl PerformanceMetrics {
             .unwrap_or(0.0)
     }
 
-    /// Get a percentile latency (e.g., p50, p95, p99)
+    /// Get a percentile latency (e.g., p50, p95, p99).
+    /// Uses quickselect (O(n) average) instead of full sort (O(n log n)).
     pub fn percentile_latency(&self, percentile: f64) -> f64 {
         self.inner.read()
             .map(|inner| {
@@ -175,11 +176,13 @@ impl PerformanceMetrics {
                     return 0.0;
                 }
 
-                let mut sorted: Vec<f64> = inner.latencies.iter().copied().collect();
-                sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-
-                let idx = ((percentile / 100.0) * (sorted.len() - 1) as f64) as usize;
-                sorted[idx]
+                let mut data: Vec<f64> = inner.latencies.iter().copied().collect();
+                let idx = ((percentile / 100.0) * (data.len() - 1) as f64) as usize;
+                let idx = idx.min(data.len() - 1);
+                data.select_nth_unstable_by(idx, |a, b| {
+                    a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+                });
+                data[idx]
             })
             .unwrap_or(0.0)
     }

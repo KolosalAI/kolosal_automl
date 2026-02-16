@@ -2,7 +2,6 @@
 
 use crate::error::{KolosalError, Result};
 use polars::prelude::*;
-use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
@@ -265,7 +264,7 @@ impl Encoder {
     fn transform_frequency(&self, df: &DataFrame) -> Result<DataFrame> {
         let mut result = df.clone();
 
-        for (col_name, mapping) in &self.mappings {
+        for (col_name, _mapping) in &self.mappings {
             if let Ok(series) = df.column(col_name) {
                 let ca = series
                     .str()

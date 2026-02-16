@@ -88,7 +88,8 @@ impl LocalOutlierFactor {
             .sqrt()
     }
 
-    /// Find k nearest neighbors and their distances
+    /// Find k nearest neighbors and their distances.
+    /// Uses row views directly — no per-row Vec allocation.
     fn k_nearest_neighbors(
         &self,
         point: &[f64],
@@ -96,15 +97,14 @@ impl LocalOutlierFactor {
         k: usize,
         exclude_self: Option<usize>,
     ) -> Vec<(usize, f64)> {
-        let mut heap: BinaryHeap<OrderedFloat> = BinaryHeap::new();
+        let mut heap: BinaryHeap<OrderedFloat> = BinaryHeap::with_capacity(k + 1);
 
         for (i, row) in data.rows().into_iter().enumerate() {
             if Some(i) == exclude_self {
                 continue;
             }
 
-            let row_vec: Vec<f64> = row.iter().copied().collect();
-            let dist = Self::euclidean_distance(point, &row_vec);
+            let dist = Self::euclidean_distance(point, row.as_slice().unwrap());
 
             if heap.len() < k {
                 heap.push(OrderedFloat(dist, i));
@@ -130,14 +130,14 @@ impl LocalOutlierFactor {
     }
 
     /// Compute reachability distance
-    fn reachability_distance(&self, point_idx: usize, neighbor_idx: usize, dist: f64, k_distances: &Array1<f64>) -> f64 {
+    fn reachability_distance(&self, _point_idx: usize, neighbor_idx: usize, dist: f64, k_distances: &Array1<f64>) -> f64 {
         k_distances[neighbor_idx].max(dist)
     }
 
     /// Compute Local Reachability Density (LRD)
     fn compute_lrd(
         &self,
-        point: &[f64],
+        _point: &[f64],
         neighbors: &[(usize, f64)],
         k_distances: &Array1<f64>,
     ) -> f64 {

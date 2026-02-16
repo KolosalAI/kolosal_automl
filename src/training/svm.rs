@@ -3,7 +3,7 @@
 //! Provides SVM classifier and regressor using SMO (Sequential Minimal Optimization) algorithm.
 
 use crate::error::{KolosalError, Result};
-use ndarray::{Array1, Array2};
+use ndarray::{Array1, Array2, ArrayView1};
 use rayon::prelude::*;
 use rand::prelude::*;
 use rand_xoshiro::Xoshiro256PlusPlus;
@@ -18,11 +18,11 @@ const MAX_KERNEL_MATRIX_SAMPLES: usize = 10_000;
 pub enum KernelType {
     /// Linear kernel: K(x, y) = x · y
     Linear,
-    /// Polynomial kernel: K(x, y) = (γ * x · y + r)^d
+    /// Polynomial kernel: K(x, y) = (gamma * x · y + r)^d
     Polynomial { degree: usize, gamma: f64, coef0: f64 },
-    /// Radial Basis Function (Gaussian): K(x, y) = exp(-γ * ||x - y||²)
+    /// Radial Basis Function (Gaussian): K(x, y) = exp(-gamma * ||x - y||^2)
     RBF { gamma: f64 },
-    /// Sigmoid kernel: K(x, y) = tanh(γ * x · y + r)
+    /// Sigmoid kernel: K(x, y) = tanh(gamma * x · y + r)
     Sigmoid { gamma: f64, coef0: f64 },
 }
 
@@ -58,6 +58,54 @@ impl Default for SVMConfig {
             max_iter: 1000,
             random_state: Some(42),
             epsilon: 0.1,
+        }
+    }
+}
+
+/// Compute kernel between two vector views (no allocation)
+#[inline]
+fn kernel_view(kernel: &KernelType, x1: ArrayView1<f64>, x2: ArrayView1<f64>) -> f64 {
+    match kernel {
+        KernelType::Linear => x1.dot(&x2),
+        KernelType::Polynomial { degree, gamma, coef0 } => {
+            (*gamma * x1.dot(&x2) + coef0).powi((*degree).min(i32::MAX as usize) as i32)
+        }
+        KernelType::RBF { gamma } => {
+            let mut norm_sq = 0.0;
+            for (&a, &b) in x1.iter().zip(x2.iter()) {
+                let d = a - b;
+                norm_sq += d * d;
+            }
+            (-gamma * norm_sq).exp()
+        }
+        KernelType::Sigmoid { gamma, coef0 } => {
+            (*gamma * x1.dot(&x2) + coef0).tanh()
+        }
+    }
+}
+
+/// Compute kernel between two f64 slices (for parallel path, no ndarray overhead)
+#[inline]
+fn kernel_slices(kernel: &KernelType, x1: &[f64], x2: &[f64]) -> f64 {
+    match kernel {
+        KernelType::Linear => {
+            x1.iter().zip(x2.iter()).map(|(&a, &b)| a * b).sum()
+        }
+        KernelType::Polynomial { degree, gamma, coef0 } => {
+            let dot: f64 = x1.iter().zip(x2.iter()).map(|(&a, &b)| a * b).sum();
+            (*gamma * dot + coef0).powi((*degree).min(i32::MAX as usize) as i32)
+        }
+        KernelType::RBF { gamma } => {
+            let mut norm_sq = 0.0;
+            for (&a, &b) in x1.iter().zip(x2.iter()) {
+                let d = a - b;
+                norm_sq += d * d;
+            }
+            (-gamma * norm_sq).exp()
+        }
+        KernelType::Sigmoid { gamma, coef0 } => {
+            let dot: f64 = x1.iter().zip(x2.iter()).map(|(&a, &b)| a * b).sum();
+            (*gamma * dot + coef0).tanh()
         }
     }
 }
@@ -254,12 +302,12 @@ impl SVMClassifier {
                         let j = rng.gen_range(0..n);
                         if j != i { break j; }
                     };
-                    
+
                     let e_j = self.decision_function_cached(&kernel_matrix, &alphas, y, bias, j) - y[j];
-                    
+
                     let alpha_i_old = alphas[i];
                     let alpha_j_old = alphas[j];
-                    
+
                     // Compute bounds
                     let (l, h) = if y[i] != y[j] {
                         (
@@ -272,38 +320,38 @@ impl SVMClassifier {
                             (alphas[i] + alphas[j]).min(self.config.c)
                         )
                     };
-                    
+
                     if (l - h).abs() < 1e-10 {
                         continue;
                     }
-                    
+
                     // Compute eta
                     let eta = 2.0 * kernel_matrix[[i, j]] - kernel_matrix[[i, i]] - kernel_matrix[[j, j]];
-                    
+
                     if eta >= 0.0 {
                         continue;
                     }
-                    
+
                     // Update alpha_j
                     alphas[j] = alphas[j] - y[j] * (e_i - e_j) / eta;
                     alphas[j] = alphas[j].max(l).min(h);
-                    
+
                     if (alphas[j] - alpha_j_old).abs() < 1e-5 {
                         continue;
                     }
-                    
+
                     // Update alpha_i
                     alphas[i] = alphas[i] + y[i] * y[j] * (alpha_j_old - alphas[j]);
-                    
+
                     // Update bias
                     let b1 = bias - e_i
                         - y[i] * (alphas[i] - alpha_i_old) * kernel_matrix[[i, i]]
                         - y[j] * (alphas[j] - alpha_j_old) * kernel_matrix[[i, j]];
-                    
+
                     let b2 = bias - e_j
                         - y[i] * (alphas[i] - alpha_i_old) * kernel_matrix[[i, j]]
                         - y[j] * (alphas[j] - alpha_j_old) * kernel_matrix[[j, j]];
-                    
+
                     bias = if alphas[i] > 0.0 && alphas[i] < self.config.c {
                         b1
                     } else if alphas[j] > 0.0 && alphas[j] < self.config.c {
@@ -311,11 +359,11 @@ impl SVMClassifier {
                     } else {
                         (b1 + b2) / 2.0
                     };
-                    
+
                     num_changed += 1;
                 }
             }
-            
+
             total_iter += 1;
             if num_changed == 0 {
                 passes += 1;
@@ -323,7 +371,7 @@ impl SVMClassifier {
                 passes = 0;
             }
         }
-        
+
         // Find support vectors (alpha > 0)
         let support_indices: Vec<usize> = alphas
             .iter()
@@ -331,11 +379,12 @@ impl SVMClassifier {
             .filter(|(_, &a)| a > 1e-8)
             .map(|(i, _)| i)
             .collect();
-        
+
         Ok((alphas, bias, support_indices))
     }
 
-    /// Compute kernel matrix (parallelized for large datasets)
+    /// Compute kernel matrix (parallelized for large datasets).
+    /// Sequential path uses row views directly; parallel path works on &[f64] slices.
     fn compute_kernel_matrix(&self, x: &Array2<f64>) -> Array2<f64> {
         let n = x.nrows();
 
@@ -344,7 +393,7 @@ impl SVMClassifier {
             let mut k = Array2::zeros((n, n));
             for i in 0..n {
                 for j in i..n {
-                    let val = self.kernel(&x.row(i).to_owned(), &x.row(j).to_owned());
+                    let val = kernel_view(&self.config.kernel, x.row(i), x.row(j));
                     k[[i, j]] = val;
                     k[[j, i]] = val;
                 }
@@ -352,33 +401,22 @@ impl SVMClassifier {
             return k;
         }
 
-        // Parallel: compute upper triangle rows in parallel
-        let config = self.config.clone();
-        let x_data: Vec<Vec<f64>> = (0..n)
-            .map(|i| x.row(i).to_vec())
+        // Parallel: get raw slice of the entire array (contiguous, row-major)
+        // and index into it directly to avoid per-row allocations
+        let kernel_type = self.config.kernel.clone();
+        let n_features = x.ncols();
+        let x_raw = x.as_slice().unwrap();
+        let x_data: Vec<&[f64]> = (0..n)
+            .map(|i| &x_raw[i * n_features..(i + 1) * n_features])
             .collect();
 
         let rows: Vec<Vec<(usize, f64)>> = (0..n)
             .into_par_iter()
             .map(|i| {
-                let row_i = &x_data[i];
-                let a = Array1::from_vec(row_i.clone());
+                let row_i = x_data[i];
                 (i..n)
                     .map(|j| {
-                        let b = Array1::from_vec(x_data[j].clone());
-                        let val = match &config.kernel {
-                            KernelType::Linear => a.dot(&b),
-                            KernelType::Polynomial { degree, gamma, coef0 } => {
-                                (*gamma * a.dot(&b) + coef0).powi((*degree).min(i32::MAX as usize) as i32)
-                            }
-                            KernelType::RBF { gamma } => {
-                                let diff = &a - &b;
-                                (-gamma * diff.dot(&diff)).exp()
-                            }
-                            KernelType::Sigmoid { gamma, coef0 } => {
-                                (*gamma * a.dot(&b) + coef0).tanh()
-                            }
-                        };
+                        let val = kernel_slices(&kernel_type, row_i, x_data[j]);
                         (j, val)
                     })
                     .collect()
@@ -393,24 +431,6 @@ impl SVMClassifier {
             }
         }
         k
-    }
-
-    /// Compute kernel between two vectors
-    fn kernel(&self, x1: &Array1<f64>, x2: &Array1<f64>) -> f64 {
-        match &self.config.kernel {
-            KernelType::Linear => x1.dot(x2),
-            KernelType::Polynomial { degree, gamma, coef0 } => {
-                (*gamma * x1.dot(x2) + coef0).powi((*degree).min(i32::MAX as usize) as i32)
-            }
-            KernelType::RBF { gamma } => {
-                let diff = x1 - x2;
-                let norm_sq = diff.dot(&diff);
-                (-gamma * norm_sq).exp()
-            }
-            KernelType::Sigmoid { gamma, coef0 } => {
-                (*gamma * x1.dot(x2) + coef0).tanh()
-            }
-        }
     }
 
     /// Decision function using cached kernel matrix
@@ -429,10 +449,11 @@ impl SVMClassifier {
         sum + bias
     }
 
-    /// Compute the decision function score for a single sample using given SVM parameters
+    /// Compute the decision function score for a single sample using given SVM parameters.
+    /// Accepts ArrayView1 to avoid .to_owned() at call sites.
     fn score_sample(
         &self,
-        sample: &Array1<f64>,
+        sample: ArrayView1<f64>,
         sv: &Array2<f64>,
         alphas: &Array1<f64>,
         sv_labels: &Array1<f64>,
@@ -440,7 +461,7 @@ impl SVMClassifier {
     ) -> f64 {
         let mut sum = bias;
         for j in 0..sv.nrows() {
-            let k_val = self.kernel(sample, &sv.row(j).to_owned());
+            let k_val = kernel_view(&self.config.kernel, sample, sv.row(j));
             sum += alphas[j] * sv_labels[j] * k_val;
         }
         sum
@@ -456,13 +477,12 @@ impl SVMClassifier {
         let mut predictions = Array1::zeros(n);
 
         if self.classes.len() == 2 {
-            let sv = self.support_vectors.as_ref().unwrap();
-            let sv_labels = self.support_labels.as_ref().unwrap();
-            let alphas = self.alphas.as_ref().unwrap();
+            let sv = self.support_vectors.as_ref().ok_or(KolosalError::ModelNotFitted)?;
+            let sv_labels = self.support_labels.as_ref().ok_or(KolosalError::ModelNotFitted)?;
+            let alphas = self.alphas.as_ref().ok_or(KolosalError::ModelNotFitted)?;
 
             for i in 0..n {
-                let sample = x.row(i).to_owned();
-                let score = self.score_sample(&sample, sv, alphas, sv_labels, self.bias);
+                let score = self.score_sample(x.row(i), sv, alphas, sv_labels, self.bias);
                 predictions[i] = if score >= 0.0 {
                     self.classes[1] as f64
                 } else {
@@ -471,13 +491,13 @@ impl SVMClassifier {
             }
         } else {
             for i in 0..n {
-                let sample = x.row(i).to_owned();
+                let sample = x.row(i);
                 let mut best_score = f64::NEG_INFINITY;
                 let mut best_class = self.classes[0];
 
                 for (k, clf) in self.ovr_classifiers.iter().enumerate() {
                     let score = self.score_sample(
-                        &sample,
+                        sample,
                         &clf.support_vectors,
                         &clf.alphas,
                         &clf.support_labels,
@@ -506,21 +526,20 @@ impl SVMClassifier {
         let mut scores = Array1::zeros(n);
 
         if self.classes.len() == 2 {
-            let sv = self.support_vectors.as_ref().unwrap();
-            let sv_labels = self.support_labels.as_ref().unwrap();
-            let alphas = self.alphas.as_ref().unwrap();
+            let sv = self.support_vectors.as_ref().ok_or(KolosalError::ModelNotFitted)?;
+            let sv_labels = self.support_labels.as_ref().ok_or(KolosalError::ModelNotFitted)?;
+            let alphas = self.alphas.as_ref().ok_or(KolosalError::ModelNotFitted)?;
 
             for i in 0..n {
-                let sample = x.row(i).to_owned();
-                scores[i] = self.score_sample(&sample, sv, alphas, sv_labels, self.bias);
+                scores[i] = self.score_sample(x.row(i), sv, alphas, sv_labels, self.bias);
             }
         } else {
             for i in 0..n {
-                let sample = x.row(i).to_owned();
+                let sample = x.row(i);
                 let mut best_score = f64::NEG_INFINITY;
                 for clf in &self.ovr_classifiers {
                     let score = self.score_sample(
-                        &sample,
+                        sample,
                         &clf.support_vectors,
                         &clf.alphas,
                         &clf.support_labels,
@@ -621,10 +640,10 @@ impl SVMRegressor {
                 break;
             }
         }
-        
+
         // Combine into single alpha vector (alpha - alpha*)
         let combined_alphas = &alphas - &alphas_star;
-        
+
         // Find support vectors
         let support_indices: Vec<usize> = combined_alphas
             .iter()
@@ -632,7 +651,7 @@ impl SVMRegressor {
             .filter(|(_, a): &(usize, &f64)| a.abs() > 1e-8)
             .map(|(i, _)| i)
             .collect();
-        
+
         let sv_count = support_indices.len();
         if sv_count == 0 {
             // Fallback: use all points if no support vectors found
@@ -642,52 +661,36 @@ impl SVMRegressor {
             let n_features = x.ncols();
             let mut support_vectors = Array2::zeros((sv_count, n_features));
             let mut support_alphas = Array1::zeros(sv_count);
-            
+
             for (i, &idx) in support_indices.iter().enumerate() {
                 support_vectors.row_mut(i).assign(&x.row(idx));
                 support_alphas[i] = combined_alphas[idx];
             }
-            
+
             self.support_vectors = Some(support_vectors);
             self.alphas = Some(support_alphas);
         }
-        
+
         self.bias = bias;
         self.is_fitted = true;
-        
+
         Ok(())
     }
 
+    /// Compute kernel matrix using row views (no allocation per pair)
     fn compute_kernel_matrix(&self, x: &Array2<f64>) -> Array2<f64> {
         let n = x.nrows();
         let mut k = Array2::zeros((n, n));
-        
+
         for i in 0..n {
             for j in i..n {
-                let val = self.kernel(&x.row(i).to_owned(), &x.row(j).to_owned());
+                let val = kernel_view(&self.config.kernel, x.row(i), x.row(j));
                 k[[i, j]] = val;
                 k[[j, i]] = val;
             }
         }
-        
-        k
-    }
 
-    fn kernel(&self, x1: &Array1<f64>, x2: &Array1<f64>) -> f64 {
-        match &self.config.kernel {
-            KernelType::Linear => x1.dot(x2),
-            KernelType::Polynomial { degree, gamma, coef0 } => {
-                (*gamma * x1.dot(x2) + coef0).powi((*degree).min(i32::MAX as usize) as i32)
-            }
-            KernelType::RBF { gamma } => {
-                let diff = x1 - x2;
-                let norm_sq = diff.dot(&diff);
-                (-gamma * norm_sq).exp()
-            }
-            KernelType::Sigmoid { gamma, coef0 } => {
-                (*gamma * x1.dot(x2) + coef0).tanh()
-            }
-        }
+        k
     }
 
     /// Predict target values
@@ -695,25 +698,25 @@ impl SVMRegressor {
         if !self.is_fitted {
             return Err(KolosalError::ModelNotFitted);
         }
-        
-        let sv = self.support_vectors.as_ref().unwrap();
-        let alphas = self.alphas.as_ref().unwrap();
-        
+
+        let sv = self.support_vectors.as_ref().ok_or(KolosalError::ModelNotFitted)?;
+        let alphas = self.alphas.as_ref().ok_or(KolosalError::ModelNotFitted)?;
+
         let n = x.nrows();
         let mut predictions = Array1::zeros(n);
-        
+
         for i in 0..n {
-            let sample = x.row(i).to_owned();
+            let sample = x.row(i);
             let mut sum = self.bias;
-            
+
             for j in 0..sv.nrows() {
-                let k_val = self.kernel(&sample, &sv.row(j).to_owned());
+                let k_val = kernel_view(&self.config.kernel, sample, sv.row(j));
                 sum += alphas[j] * k_val;
             }
-            
+
             predictions[i] = sum;
         }
-        
+
         Ok(predictions)
     }
 
@@ -741,34 +744,34 @@ mod tests {
             5.2, 5.8,
             4.8, 5.5,
         ]).unwrap();
-        
+
         let y = Array1::from_vec(vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0]);
-        
+
         (x, y)
     }
 
     #[test]
     fn test_svm_classifier_linear() {
         let (x, y) = create_linear_separable_data();
-        
+
         let config = SVMConfig {
             c: 1.0,
             kernel: KernelType::Linear,
             max_iter: 1000,
             ..Default::default()
         };
-        
+
         let mut svm = SVMClassifier::new(config);
         svm.fit(&x, &y).unwrap();
-        
+
         let predictions = svm.predict(&x).unwrap();
-        
+
         // Should correctly classify most points
         let correct: usize = y.iter()
             .zip(predictions.iter())
             .filter(|(&yi, &pi)| yi == pi)
             .count();
-        
+
         let accuracy = correct as f64 / y.len() as f64;
         assert!(accuracy > 0.8, "Accuracy {} should be > 0.8", accuracy);
     }
@@ -776,17 +779,17 @@ mod tests {
     #[test]
     fn test_svm_classifier_rbf() {
         let (x, y) = create_linear_separable_data();
-        
+
         let config = SVMConfig {
             c: 1.0,
             kernel: KernelType::RBF { gamma: 0.5 },
             max_iter: 1000,
             ..Default::default()
         };
-        
+
         let mut svm = SVMClassifier::new(config);
         svm.fit(&x, &y).unwrap();
-        
+
         let predictions = svm.predict(&x).unwrap();
         assert_eq!(predictions.len(), 10);
     }
@@ -839,9 +842,9 @@ mod tests {
         let x = Array2::from_shape_vec((10, 1), vec![
             1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0
         ]).unwrap();
-        
+
         let y = Array1::from_vec(vec![2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0]);
-        
+
         let config = SVMConfig {
             c: 10.0,
             kernel: KernelType::Linear,
@@ -849,12 +852,12 @@ mod tests {
             max_iter: 500,
             ..Default::default()
         };
-        
+
         let mut svr = SVMRegressor::new(config);
         svr.fit(&x, &y).unwrap();
-        
+
         let predictions = svr.predict(&x).unwrap();
-        
+
         // Check predictions are reasonable (within 20% of actual)
         for (pred, actual) in predictions.iter().zip(y.iter()) {
             let error = (pred - actual).abs() / actual;

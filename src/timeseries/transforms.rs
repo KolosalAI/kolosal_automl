@@ -1,7 +1,7 @@
 //! Time series transformations
 
 use crate::error::{KolosalError, Result};
-use ndarray::{Array1, Array2};
+use ndarray::Array1;
 use serde::{Deserialize, Serialize};
 
 /// Differencing transformer
@@ -71,7 +71,7 @@ impl Differencer {
         }
 
         // Inverse regular differencing
-        for i in (0..self.order).rev() {
+        for _i in (0..self.order).rev() {
             init_idx = init_idx.saturating_sub(1);
             let init_val = initial.get(init_idx).copied().unwrap_or(0.0);
             result = self.cumsum(&result, init_val);

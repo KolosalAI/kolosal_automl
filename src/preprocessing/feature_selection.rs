@@ -8,7 +8,7 @@
 //! - L1-based selection (Lasso)
 
 use crate::error::{KolosalError, Result};
-use ndarray::{Array1, Array2};
+use ndarray::{Array1, Array2, ArrayView1};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
@@ -217,7 +217,7 @@ impl FeatureSelector {
 
         for col_idx in 0..n_features {
             let col = x.column(col_idx);
-            let mi = Self::compute_mutual_information(&col.to_owned(), y);
+            let mi = Self::compute_mutual_information(col, y.view());
             mi_scores.push(mi);
         }
 
@@ -232,8 +232,8 @@ impl FeatureSelector {
         Ok(())
     }
 
-    // Compute mutual information between two variables
-    fn compute_mutual_information(x: &Array1<f64>, y: &Array1<f64>) -> f64 {
+    // Compute mutual information between two variables (accepts views — no allocation)
+    fn compute_mutual_information(x: ArrayView1<f64>, y: ArrayView1<f64>) -> f64 {
         let n = x.len() as f64;
         if n < 2.0 {
             return 0.0;
@@ -273,8 +273,8 @@ impl FeatureSelector {
         mi.max(0.0)
     }
 
-    // Discretize continuous variable into bins
-    fn discretize(x: &Array1<f64>, n_bins: usize) -> Vec<usize> {
+    // Discretize continuous variable into bins (accepts view)
+    fn discretize(x: ArrayView1<f64>, n_bins: usize) -> Vec<usize> {
         let min_val = x.iter().cloned().fold(f64::INFINITY, f64::min);
         let max_val = x.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
         
@@ -357,7 +357,7 @@ impl FeatureSelector {
                 .iter()
                 .map(|&idx| {
                     let col = x.column(idx);
-                    let importance = Self::compute_correlation(&col.to_owned(), y).abs();
+                    let importance = Self::compute_correlation(col, y.view()).abs();
                     (idx, importance)
                 })
                 .collect();
@@ -398,7 +398,7 @@ impl FeatureSelector {
         // Compute correlation-based scores
         for col_idx in 0..n_features {
             let col = x.column(col_idx);
-            let score = Self::compute_correlation(&col.to_owned(), y).abs();
+            let score = Self::compute_correlation(col, y.view()).abs();
             scores.push(score);
         }
 
@@ -434,7 +434,7 @@ impl FeatureSelector {
 
         for col_idx in 0..n_features {
             let col = x.column(col_idx);
-            let score = Self::compute_correlation(&col.to_owned(), y).abs();
+            let score = Self::compute_correlation(col, y.view()).abs();
             scores.push(score);
             if score >= threshold {
                 selected.push(col_idx);
@@ -446,8 +446,8 @@ impl FeatureSelector {
         Ok(())
     }
 
-    // Helper to compute Pearson correlation
-    fn compute_correlation(x: &Array1<f64>, y: &Array1<f64>) -> f64 {
+    // Helper to compute Pearson correlation (accepts views — no allocation)
+    fn compute_correlation(x: ArrayView1<f64>, y: ArrayView1<f64>) -> f64 {
         let n = x.len() as f64;
         if n < 2.0 {
             return 0.0;
@@ -511,7 +511,7 @@ impl CorrelationFilter {
 
                 let col_i = x.column(i);
                 let col_j = x.column(j);
-                let corr = Self::pearson_correlation(&col_i.to_owned(), &col_j.to_owned());
+                let corr = Self::pearson_correlation(col_i, col_j);
 
                 if corr.abs() > self.threshold {
                     // Remove the feature with higher mean correlation to other features
@@ -556,7 +556,7 @@ impl CorrelationFilter {
         self.selected_features.as_deref()
     }
 
-    fn pearson_correlation(x: &Array1<f64>, y: &Array1<f64>) -> f64 {
+    fn pearson_correlation(x: ArrayView1<f64>, y: ArrayView1<f64>) -> f64 {
         let n = x.len() as f64;
         if n < 2.0 {
             return 0.0;
@@ -595,7 +595,7 @@ impl CorrelationFilter {
         for j in 0..n_features {
             if j != idx && !exclude.contains(&j) {
                 let other = x.column(j);
-                total += Self::pearson_correlation(&col.to_owned(), &other.to_owned()).abs();
+                total += Self::pearson_correlation(col, other).abs();
                 count += 1;
             }
         }

@@ -7,6 +7,8 @@
 mod api;
 mod error;
 pub mod import;
+pub mod inflight_batcher;
+pub mod scaling;
 mod state;
 mod handlers;
 
@@ -93,6 +95,7 @@ pub async fn run_server(config: ServerConfig) -> anyhow::Result<()> {
     }
 
     let state = Arc::new(AppState::new(config.clone()));
+    let state_for_shutdown = Arc::clone(&state);
     let app = create_router(state, &config);
 
     let addr: SocketAddr = format!("{}:{}", config.host, config.port).parse()?;
@@ -124,6 +127,25 @@ pub async fn run_server(config: ServerConfig) -> anyhow::Result<()> {
             uptime_secs = uptime.num_seconds(),
             "Shutdown signal received, stopping server gracefully"
         );
+
+        // Signal drain mode so new requests know we're shutting down
+        state_for_shutdown.scaling.begin_drain();
+
+        // Wait for inflight requests to complete (up to 10s)
+        let drain_deadline = tokio::time::Instant::now()
+            + tokio::time::Duration::from_secs(10);
+        loop {
+            let inflight = state_for_shutdown.inflight_batcher.inflight_count();
+            if inflight == 0 {
+                info!("All inflight requests drained");
+                break;
+            }
+            if tokio::time::Instant::now() >= drain_deadline {
+                warn!(inflight = inflight, "Drain timeout reached with requests still inflight");
+                break;
+            }
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        }
 
         // Handle second ctrl+c (force exit) or timeout
         tokio::spawn(async {

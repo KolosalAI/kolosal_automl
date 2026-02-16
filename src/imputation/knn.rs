@@ -71,39 +71,55 @@ impl KNNImputer {
         self
     }
 
-    /// Compute distance between two samples (ignoring NaN positions)
+    /// Compute distance between two samples (ignoring NaN positions).
+    /// Uses iterators directly — no intermediate Vec allocation.
     fn distance(&self, a: &[f64], b: &[f64]) -> f64 {
-        let pairs: Vec<(f64, f64)> = a.iter()
-            .zip(b.iter())
-            .filter(|(&ai, &bi)| !is_missing(ai) && !is_missing(bi))
-            .map(|(&ai, &bi)| (ai, bi))
-            .collect();
+        let mut count = 0usize;
+        let mut accum = 0.0f64;
 
-        if pairs.is_empty() {
+        let is_manhattan = self.metric == "manhattan";
+        for (&ai, &bi) in a.iter().zip(b.iter()) {
+            if is_missing(ai) || is_missing(bi) {
+                continue;
+            }
+            count += 1;
+            if is_manhattan {
+                accum += (ai - bi).abs();
+            } else {
+                let d = ai - bi;
+                accum += d * d;
+            }
+        }
+
+        if count == 0 {
             return f64::INFINITY;
         }
 
-        match self.metric.as_str() {
-            "manhattan" => {
-                let sum: f64 = pairs.iter().map(|(ai, bi)| (ai - bi).abs()).sum();
-                sum / pairs.len() as f64 // Normalize by number of features
-            }
-            _ => {
-                // Euclidean (default)
-                let sum_sq: f64 = pairs.iter().map(|(ai, bi)| (ai - bi).powi(2)).sum();
-                (sum_sq / pairs.len() as f64).sqrt()
-            }
+        if is_manhattan {
+            accum / count as f64
+        } else {
+            (accum / count as f64).sqrt()
         }
     }
 
-    /// Find k nearest neighbors in complete data
+    /// Find k nearest neighbors in complete data.
+    /// Uses row views directly — no per-row Vec allocation.
     fn find_neighbors(&self, sample: &[f64], k: usize) -> Vec<(usize, f64)> {
         let data = self.complete_data.as_ref().unwrap();
-        let mut heap: BinaryHeap<DistanceIdx> = BinaryHeap::new();
+        let mut heap: BinaryHeap<DistanceIdx> = BinaryHeap::with_capacity(k + 1);
 
         for (i, row) in data.rows().into_iter().enumerate() {
-            let row_vec: Vec<f64> = row.iter().copied().collect();
-            let dist = self.distance(sample, &row_vec);
+            let row_slice = row.as_slice().unwrap_or_else(|| {
+                // Non-contiguous layout fallback (shouldn't happen for standard Array2)
+                &[]
+            });
+            // If row_slice is empty due to non-contiguous layout, compute via iterator
+            let dist = if row_slice.is_empty() {
+                let row_vec: Vec<f64> = row.iter().copied().collect();
+                self.distance(sample, &row_vec)
+            } else {
+                self.distance(sample, row_slice)
+            };
 
             if dist.is_finite() {
                 if heap.len() < k {
@@ -213,29 +229,37 @@ impl Imputer for KNNImputer {
         }
 
         let mut result = x.clone();
+
+        // Reusable buffer to avoid per-row allocation for non-contiguous arrays
         let n_features = x.ncols();
+        let mut row_buf: Vec<f64> = Vec::with_capacity(n_features);
 
         for (row_idx, row) in x.rows().into_iter().enumerate() {
-            let row_vec: Vec<f64> = row.iter().copied().collect();
-            
-            // Find missing features in this row
-            let missing_features: Vec<usize> = row_vec.iter()
-                .enumerate()
-                .filter(|(_, &v)| is_missing(v))
-                .map(|(i, _)| i)
-                .collect();
-
-            if missing_features.is_empty() {
+            // Check for any missing values using iterator (no allocation)
+            let has_missing = row.iter().any(|&v| is_missing(v));
+            if !has_missing {
                 continue;
             }
 
+            // Get row as slice (zero-copy) or copy to buffer for non-contiguous
+            let row_slice = match row.as_slice() {
+                Some(s) => s,
+                None => {
+                    row_buf.clear();
+                    row_buf.extend(row.iter().copied());
+                    &row_buf
+                }
+            };
+
             // Find neighbors
-            let neighbors = self.find_neighbors(&row_vec, self.n_neighbors);
+            let neighbors = self.find_neighbors(row_slice, self.n_neighbors);
 
             // Impute each missing feature
-            for &feat_idx in &missing_features {
-                let value = self.impute_value(&neighbors, feat_idx);
-                result[[row_idx, feat_idx]] = value;
+            for j in 0..n_features {
+                if is_missing(row_slice[j]) {
+                    let value = self.impute_value(&neighbors, j);
+                    result[[row_idx, j]] = value;
+                }
             }
         }
 

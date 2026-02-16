@@ -144,6 +144,9 @@ pub fn create_router(state: Arc<AppState>, config: &ServerConfig) -> Router {
         .route("/monitoring/slo", get(handlers::get_slo_status))
         // Feedback loop (ISO 42001, 5338)
         .route("/predict/feedback", post(handlers::submit_prediction_feedback))
+        // Scaling / autoscaling
+        .route("/scaling/status", get(handlers::scaling_status))
+        .route("/scaling/metrics", get(handlers::scaling_metrics))
         .fallback(handle_404)
         .method_not_allowed_fallback(handle_405);
 

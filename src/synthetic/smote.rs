@@ -5,7 +5,26 @@ use crate::synthetic::{Sampler, ResampleResult, class_counts, class_indices};
 use ndarray::{Array1, Array2};
 use rand::prelude::*;
 use serde::{Deserialize, Serialize};
+use std::collections::BinaryHeap;
 use std::collections::HashMap;
+use std::cmp::Ordering;
+
+/// Ordered float for BinaryHeap-based partial sort
+#[derive(Debug, Clone, Copy)]
+struct DistIdx(f64, usize);
+
+impl PartialEq for DistIdx {
+    fn eq(&self, other: &Self) -> bool { self.0 == other.0 }
+}
+impl Eq for DistIdx {}
+impl PartialOrd for DistIdx {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> { Some(self.cmp(other)) }
+}
+impl Ord for DistIdx {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.0.partial_cmp(&other.0).unwrap_or(Ordering::Equal)
+    }
+}
 
 /// SMOTE variant
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -69,16 +88,26 @@ impl SMOTE {
             .sqrt()
     }
 
-    /// Find k nearest neighbors
+    /// Find k nearest neighbors using BinaryHeap (O(n log k) instead of O(n log n))
     fn find_neighbors(&self, point: &[f64], data: &[Vec<f64>], k: usize) -> Vec<usize> {
-        let mut distances: Vec<(usize, f64)> = data.iter()
-            .enumerate()
-            .map(|(i, d)| (i, Self::distance(point, d)))
-            .filter(|&(_, dist)| dist > 0.0) // Exclude self
-            .collect();
+        let mut heap: BinaryHeap<DistIdx> = BinaryHeap::with_capacity(k + 1);
 
-        distances.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
-        distances.into_iter().take(k).map(|(i, _)| i).collect()
+        for (i, d) in data.iter().enumerate() {
+            let dist = Self::distance(point, d);
+            if dist <= 0.0 {
+                continue; // Exclude self
+            }
+            if heap.len() < k {
+                heap.push(DistIdx(dist, i));
+            } else if let Some(&DistIdx(max_dist, _)) = heap.peek() {
+                if dist < max_dist {
+                    heap.pop();
+                    heap.push(DistIdx(dist, i));
+                }
+            }
+        }
+
+        heap.into_iter().map(|DistIdx(_, i)| i).collect()
     }
 
     /// Generate synthetic sample between two points
@@ -98,7 +127,7 @@ impl Default for SMOTE {
 }
 
 impl Sampler for SMOTE {
-    fn fit(&mut self, x: &Array2<f64>, y: &Array1<i64>) -> Result<()> {
+    fn fit(&mut self, _x: &Array2<f64>, y: &Array1<i64>) -> Result<()> {
         let counts = class_counts(y);
         
         if counts.len() < 2 {
@@ -135,12 +164,9 @@ impl Sampler for SMOTE {
         let counts = class_counts(y);
         let n_features = x.ncols();
 
-        // Collect all samples and labels
-        let mut all_x: Vec<Vec<f64>> = x.rows()
-            .into_iter()
-            .map(|row| row.iter().copied().collect())
-            .collect();
-        let mut all_y: Vec<i64> = y.iter().copied().collect();
+        // Collect only synthetic samples (original data reused from x directly)
+        let mut synthetic_x: Vec<Vec<f64>> = Vec::new();
+        let mut synthetic_y: Vec<i64> = Vec::new();
         let mut n_synthetic = Vec::new();
 
         for (&class, &target_count) in targets {
@@ -163,41 +189,39 @@ impl Sampler for SMOTE {
             // Generate synthetic samples
             let mut generated = 0;
             while generated < n_to_generate {
-                // Pick random sample from minority class
                 let idx = rng.gen_range(0..class_samples.len());
                 let sample = &class_samples[idx];
 
-                // Find neighbors
                 let neighbors = self.find_neighbors(sample, &class_samples, k);
-                
+
                 if neighbors.is_empty() {
                     continue;
                 }
 
-                // Pick random neighbor
                 let neighbor_idx = neighbors[rng.gen_range(0..neighbors.len())];
                 let neighbor = &class_samples[neighbor_idx];
 
-                // Generate synthetic sample
-                let synthetic = self.generate_sample(sample, neighbor, &mut rng);
-                
-                all_x.push(synthetic);
-                all_y.push(class);
+                synthetic_x.push(self.generate_sample(sample, neighbor, &mut rng));
+                synthetic_y.push(class);
                 generated += 1;
             }
 
             n_synthetic.push(n_to_generate);
         }
 
-        // Convert to arrays
-        let n_samples = all_x.len();
-        let mut result_x = Array2::zeros((n_samples, n_features));
-        for (i, sample) in all_x.iter().enumerate() {
-            for (j, &val) in sample.iter().enumerate() {
-                result_x[[i, j]] = val;
+        // Build result: original rows + synthetic rows using from_shape_fn
+        let n_original = x.nrows();
+        let n_total = n_original + synthetic_x.len();
+        let result_x = Array2::from_shape_fn((n_total, n_features), |(i, j)| {
+            if i < n_original {
+                x[[i, j]]
+            } else {
+                synthetic_x[i - n_original][j]
             }
-        }
+        });
 
+        let mut all_y: Vec<i64> = y.iter().copied().collect();
+        all_y.extend_from_slice(&synthetic_y);
         let result_y = Array1::from_vec(all_y);
 
         Ok(ResampleResult {
@@ -247,37 +271,38 @@ impl BorderlineSMOTE {
         self
     }
 
-    /// Check if a point is borderline
+    /// Check if a point is borderline.
+    /// Uses BinaryHeap for O(n log m) partial sort instead of O(n log n) full sort.
+    /// Operates on Array2 row views directly — no per-call Vec<Vec<f64>> allocation.
     fn is_borderline(&self, point_idx: usize, x: &Array2<f64>, y: &Array1<i64>) -> bool {
-        let point: Vec<f64> = x.row(point_idx).iter().copied().collect();
+        let point = x.row(point_idx);
+        let point_slice = point.as_slice().unwrap();
         let point_class = y[point_idx];
+        let m = self.m_neighbors;
 
-        // Find m nearest neighbors (including other classes)
-        let all_samples: Vec<Vec<f64>> = x.rows()
-            .into_iter()
-            .map(|row| row.iter().copied().collect())
-            .collect();
-
-        let mut distances: Vec<(usize, f64)> = all_samples.iter()
-            .enumerate()
-            .filter(|&(i, _)| i != point_idx)
-            .map(|(i, d)| (i, SMOTE::distance(&point, d)))
-            .collect();
-
-        distances.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
-
-        let neighbors: Vec<usize> = distances.into_iter()
-            .take(self.m_neighbors)
-            .map(|(i, _)| i)
-            .collect();
+        // Find m nearest neighbors using BinaryHeap
+        let mut heap: BinaryHeap<DistIdx> = BinaryHeap::with_capacity(m + 1);
+        for (i, row) in x.rows().into_iter().enumerate() {
+            if i == point_idx {
+                continue;
+            }
+            let dist = SMOTE::distance(point_slice, row.as_slice().unwrap());
+            if heap.len() < m {
+                heap.push(DistIdx(dist, i));
+            } else if let Some(&DistIdx(max_dist, _)) = heap.peek() {
+                if dist < max_dist {
+                    heap.pop();
+                    heap.push(DistIdx(dist, i));
+                }
+            }
+        }
 
         // Count neighbors from different class
-        let n_different = neighbors.iter()
-            .filter(|&&i| y[i] != point_class)
+        let n_different = heap.into_iter()
+            .filter(|&DistIdx(_, i)| y[i] != point_class)
             .count();
 
-        // Borderline if roughly half of neighbors are from different class
-        let ratio = n_different as f64 / self.m_neighbors as f64;
+        let ratio = n_different as f64 / m as f64;
         ratio > 0.3 && ratio < 0.7
     }
 }
@@ -319,12 +344,9 @@ impl Sampler for BorderlineSMOTE {
             borderline_indices.insert(class, borderline);
         }
 
-        // Collect original samples
-        let mut all_x: Vec<Vec<f64>> = x.rows()
-            .into_iter()
-            .map(|row| row.iter().copied().collect())
-            .collect();
-        let mut all_y: Vec<i64> = y.iter().copied().collect();
+        // Collect only synthetic samples
+        let mut synthetic_x: Vec<Vec<f64>> = Vec::new();
+        let mut synthetic_y: Vec<i64> = Vec::new();
         let mut n_synthetic = Vec::new();
 
         // Generate synthetic samples only from borderline samples
@@ -342,7 +364,6 @@ impl Sampler for BorderlineSMOTE {
                 .map(|v| v.as_slice())
                 .unwrap_or(&[]);
 
-            // Use borderline samples if available, otherwise all samples
             let source_indices = if borderline.is_empty() {
                 class_idx.as_slice()
             } else {
@@ -361,7 +382,7 @@ impl Sampler for BorderlineSMOTE {
                 let sample: Vec<f64> = x.row(idx).iter().copied().collect();
 
                 let neighbors = self.smote.find_neighbors(&sample, &class_samples, k);
-                
+
                 if neighbors.is_empty() {
                     continue;
                 }
@@ -369,24 +390,27 @@ impl Sampler for BorderlineSMOTE {
                 let neighbor_idx = neighbors[rng.gen_range(0..neighbors.len())];
                 let neighbor = &class_samples[neighbor_idx];
 
-                let synthetic = self.smote.generate_sample(&sample, neighbor, &mut rng);
-                
-                all_x.push(synthetic);
-                all_y.push(class);
+                synthetic_x.push(self.smote.generate_sample(&sample, neighbor, &mut rng));
+                synthetic_y.push(class);
                 generated += 1;
             }
 
             n_synthetic.push(n_to_generate);
         }
 
-        // Convert to arrays
-        let n_samples = all_x.len();
-        let mut result_x = Array2::zeros((n_samples, n_features));
-        for (i, sample) in all_x.iter().enumerate() {
-            for (j, &val) in sample.iter().enumerate() {
-                result_x[[i, j]] = val;
+        // Build result: original rows + synthetic rows
+        let n_original = x.nrows();
+        let n_total = n_original + synthetic_x.len();
+        let result_x = Array2::from_shape_fn((n_total, n_features), |(i, j)| {
+            if i < n_original {
+                x[[i, j]]
+            } else {
+                synthetic_x[i - n_original][j]
             }
-        }
+        });
+
+        let mut all_y: Vec<i64> = y.iter().copied().collect();
+        all_y.extend_from_slice(&synthetic_y);
 
         Ok(ResampleResult {
             x: result_x,

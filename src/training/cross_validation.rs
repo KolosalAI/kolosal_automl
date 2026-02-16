@@ -1,11 +1,10 @@
 //! Cross-validation implementations
 
 use crate::error::{KolosalError, Result};
-use ndarray::{Array1, Array2, Axis};
+use ndarray::Array1;
 use rand::seq::SliceRandom;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
-use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 /// Cross-validation strategy
@@ -146,7 +145,7 @@ impl CrossValidator {
 
     fn stratified_k_fold_split(
         &self,
-        n_samples: usize,
+        _n_samples: usize,
         y: &Array1<f64>,
         n_splits: usize,
         shuffle: bool,

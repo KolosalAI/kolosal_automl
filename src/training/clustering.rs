@@ -154,25 +154,65 @@ impl KMeans {
 
             labels = new_labels_arr;
 
-            // Update step: recompute centroids
-            let mut new_centroids = Array2::zeros(centroids.dim());
-            let mut counts = vec![0usize; self.n_clusters];
+            // Update step: recompute centroids using parallel reduction
+            let n_features = x.ncols();
+            let n_clusters = self.n_clusters;
 
-            for i in 0..n_samples {
-                let c = labels[i] as usize;
-                counts[c] += 1;
-                for j in 0..x.ncols() {
-                    new_centroids[[c, j]] += x[[i, j]];
+            let (new_centroids, counts) = if n_samples > 10000 {
+                // Parallel: per-chunk accumulators merged via fold+reduce
+                let chunk_size = (n_samples / rayon::current_num_threads().max(1)).max(256);
+                let (sums, cnts) = (0..n_samples)
+                    .into_par_iter()
+                    .with_min_len(chunk_size)
+                    .fold(
+                        || (vec![0.0f64; n_clusters * n_features], vec![0usize; n_clusters]),
+                        |(mut sums, mut cnts), i| {
+                            let c = labels[i] as usize;
+                            cnts[c] += 1;
+                            let base = c * n_features;
+                            for j in 0..n_features {
+                                sums[base + j] += x[[i, j]];
+                            }
+                            (sums, cnts)
+                        },
+                    )
+                    .reduce(
+                        || (vec![0.0f64; n_clusters * n_features], vec![0usize; n_clusters]),
+                        |(mut sa, mut ca), (sb, cb)| {
+                            for k in 0..sa.len() { sa[k] += sb[k]; }
+                            for k in 0..ca.len() { ca[k] += cb[k]; }
+                            (sa, ca)
+                        },
+                    );
+                let mut nc = Array2::zeros(centroids.dim());
+                for c in 0..n_clusters {
+                    let base = c * n_features;
+                    for j in 0..n_features {
+                        nc[[c, j]] = sums[base + j];
+                    }
                 }
-            }
+                (nc, cnts)
+            } else {
+                // Sequential for small datasets
+                let mut nc = Array2::zeros(centroids.dim());
+                let mut cnts = vec![0usize; n_clusters];
+                for i in 0..n_samples {
+                    let c = labels[i] as usize;
+                    cnts[c] += 1;
+                    for j in 0..n_features {
+                        nc[[c, j]] += x[[i, j]];
+                    }
+                }
+                (nc, cnts)
+            };
 
-            for c in 0..self.n_clusters {
+            let mut new_centroids = new_centroids;
+            for c in 0..n_clusters {
                 if counts[c] > 0 {
-                    for j in 0..x.ncols() {
+                    for j in 0..n_features {
                         new_centroids[[c, j]] /= counts[c] as f64;
                     }
                 } else {
-                    // Empty cluster — reinitialize randomly
                     let idx = (rng.next_u64() as usize) % n_samples;
                     new_centroids.row_mut(c).assign(&x.row(idx));
                 }
