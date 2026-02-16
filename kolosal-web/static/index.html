@@ -253,6 +253,36 @@
         .multiselect-option.selected .ms-check::after { content: '✓'; font-size: 11px; color: var(--color-grey-500); }
         .multiselect-group-label { padding: 6px 8px 2px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--color-text-600); }
 
+        /* Column Select (single-select searchable dropdown) */
+        .column-select { position: relative; width: 100%; }
+        .column-select-trigger { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; height: 36px; padding: 0 12px; background: #FFFFFF; border: 1px solid var(--color-grey-900); border-radius: 10px; cursor: pointer; transition: border-color 0.15s; box-shadow: 0px 3px 4px -4px rgba(0,0,0,0.15); }
+        .column-select-trigger:hover { border-color: var(--color-text-500); box-shadow: none; }
+        .column-select.open .column-select-trigger { border-color: var(--color-text-600); box-shadow: 0px 0px 0px 2px var(--color-grey-800); }
+        .column-select-value { flex: 1; min-width: 0; font-size: 14px; line-height: 20px; color: var(--color-text-900); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .column-select-value.placeholder { color: var(--color-text-600); }
+        .column-select-clear { flex-shrink: 0; width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; border-radius: 50%; font-size: 12px; color: var(--color-text-600); cursor: pointer; transition: all 0.1s; }
+        .column-select-clear:hover { background: var(--color-grey-700); color: var(--color-text-900); }
+        .column-select-arrow { flex-shrink: 0; color: var(--color-text-600); transition: transform 0.15s; font-size: 16px; }
+        .column-select.open .column-select-arrow { transform: rotate(180deg); }
+        .column-select-dropdown { position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: #FFFFFF; border: 1px solid var(--color-grey-800); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.12); z-index: 50; display: none; max-height: 260px; overflow: hidden; flex-direction: column; }
+        .column-select.open .column-select-dropdown { display: flex; }
+        .column-select-search { padding: 8px; border-bottom: 1px solid var(--color-grey-700); }
+        .column-select-search input { width: 100%; padding: 6px 10px; background: var(--color-grey-600); border: 1px solid var(--color-grey-700); border-radius: 8px; color: var(--color-text-900); font-size: 13px; outline: none; }
+        .column-select-search input:focus { border-color: var(--color-text-600); }
+        .column-select-search input::placeholder { color: var(--color-text-600); }
+        .column-select-options { overflow-y: auto; max-height: 200px; padding: 4px; }
+        .column-select-option { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 8px; cursor: pointer; font-size: 13px; color: var(--color-text-800); transition: background 0.1s; }
+        .column-select-option:hover { background: var(--color-grey-600); }
+        .column-select-option.selected { color: var(--color-text-900); font-weight: 500; background: var(--color-grey-600); }
+        .column-select-option .col-dtype { margin-left: auto; font-size: 11px; color: var(--color-text-600); font-family: "Geist Mono", monospace; }
+        .column-select-option .col-icon { font-size: 14px; color: var(--color-text-600); width: 16px; text-align: center; }
+        .column-select-empty { padding: 12px; text-align: center; font-size: 13px; color: var(--color-text-600); }
+
+        /* Feature Columns Multiselect */
+        .feature-select-info { display: flex; align-items: center; justify-content: space-between; margin-top: 4px; }
+        .feature-select-count { font-size: 12px; color: var(--color-text-600); }
+        .feature-select-count strong { color: var(--color-text-800); font-weight: 600; }
+
         /* Stat card */
         .stat-value { font-size: 32px; line-height: 44px; letter-spacing: -0.6px; font-family: "Geist Mono", monospace; font-weight: 500; }
         .stat-value.info { color: var(--color-information-500); }
@@ -539,9 +569,8 @@
                 <!-- Target Column Selection -->
                 <div class="flex-col gap-8" style="margin-bottom: 16px;">
                     <label class="text-14px medium">Target Column *</label>
-                    <select id="automl-target" class="input-text-md">
-                        <option value="">-- Select target column --</option>
-                    </select>
+                    <div id="automl-target-wrap"></div>
+                    <input type="hidden" id="automl-target" value="">
                 </div>
 
                 <!-- One-Click Button -->
@@ -729,9 +758,16 @@
                         </div>
                         <div class="form-group">
                             <label class="form-label">Target Column</label>
-                            <select id="cfg-targetColumn" class="input-text-md">
-                                <option value="">Select target...</option>
-                            </select>
+                            <div id="cfg-targetColumn-wrap"></div>
+                            <input type="hidden" id="cfg-targetColumn" value="">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Feature Columns</label>
+                            <span class="form-hint">Select which columns to use as features. All columns are included by default.</span>
+                            <div id="cfg-featureColumns-wrap"></div>
+                            <div class="feature-select-info">
+                                <span id="cfg-featureColumns-count" class="feature-select-count"></span>
+                            </div>
                         </div>
                         <hr class="separator">
                         <div class="form-group">
@@ -1837,16 +1873,390 @@
             }
         }
 
-        function updateTargetOptions(columns) {
-            var sel = $('cfg-targetColumn');
-            var names = columns || (dataInfo && dataInfo.column_names) || [];
-            sel.innerHTML = '<option value="">Select target...</option>';
-            names.forEach(function(n) {
-                var opt = document.createElement('option');
-                opt.value = n;
-                opt.textContent = n;
-                sel.appendChild(opt);
+        // ── Column Select Components ──
+        var targetColumnSelect = null;
+        var featureColumnSelect = null;
+        var automlTargetSelect = null;
+        var selectedFeatureColumns = [];
+
+        function getColumnDtype(colName) {
+            if (!dataPreview || !dataPreview.columns) return '';
+            var col = dataPreview.columns.find(function(c) { return c.name === colName; });
+            return col ? (col.dtype || '') : '';
+        }
+
+        function getColumnIcon(dtype) {
+            if (!dtype) return 'ri-hashtag';
+            var d = dtype.toLowerCase();
+            if (d.indexOf('int') !== -1 || d.indexOf('float') !== -1 || d.indexOf('num') !== -1) return 'ri-hashtag';
+            if (d.indexOf('bool') !== -1) return 'ri-toggle-line';
+            if (d.indexOf('date') !== -1 || d.indexOf('time') !== -1) return 'ri-calendar-line';
+            return 'ri-text';
+        }
+
+        function createColumnSelect(container, hiddenInput, opts) {
+            var selectedValue = opts.value || '';
+            var placeholder = opts.placeholder || 'Select column...';
+            var columns = opts.columns || [];
+            var onChange = opts.onChange || function() {};
+
+            container.innerHTML = '';
+            var wrap = document.createElement('div');
+            wrap.className = 'column-select';
+
+            var trigger = document.createElement('div');
+            trigger.className = 'column-select-trigger';
+            var valueSpan = document.createElement('span');
+            valueSpan.className = 'column-select-value' + (selectedValue ? '' : ' placeholder');
+            valueSpan.textContent = selectedValue || placeholder;
+            var clearBtn = document.createElement('span');
+            clearBtn.className = 'column-select-clear';
+            clearBtn.innerHTML = '&times;';
+            clearBtn.style.display = selectedValue ? '' : 'none';
+            var arrow = document.createElement('i');
+            arrow.className = 'ri-arrow-down-s-line column-select-arrow';
+            trigger.appendChild(valueSpan);
+            trigger.appendChild(clearBtn);
+            trigger.appendChild(arrow);
+
+            var dropdown = document.createElement('div');
+            dropdown.className = 'column-select-dropdown';
+            var searchWrap = document.createElement('div');
+            searchWrap.className = 'column-select-search';
+            var searchInput = document.createElement('input');
+            searchInput.type = 'text';
+            searchInput.placeholder = 'Search columns...';
+            searchWrap.appendChild(searchInput);
+
+            var optionsDiv = document.createElement('div');
+            optionsDiv.className = 'column-select-options';
+
+            dropdown.appendChild(searchWrap);
+            dropdown.appendChild(optionsDiv);
+            wrap.appendChild(trigger);
+            wrap.appendChild(dropdown);
+            container.appendChild(wrap);
+
+            function setValue(val) {
+                selectedValue = val;
+                hiddenInput.value = val;
+                valueSpan.textContent = val || placeholder;
+                valueSpan.className = 'column-select-value' + (val ? '' : ' placeholder');
+                clearBtn.style.display = val ? '' : 'none';
+                onChange(val);
+            }
+
+            function renderOptions() {
+                var query = searchInput.value.toLowerCase();
+                optionsDiv.innerHTML = '';
+                var filtered = columns.filter(function(n) { return n.toLowerCase().indexOf(query) !== -1; });
+                if (filtered.length === 0) {
+                    var empty = document.createElement('div');
+                    empty.className = 'column-select-empty';
+                    empty.textContent = query ? 'No columns match "' + query + '"' : 'No columns available';
+                    optionsDiv.appendChild(empty);
+                    return;
+                }
+                filtered.forEach(function(colName) {
+                    var opt = document.createElement('div');
+                    opt.className = 'column-select-option' + (colName === selectedValue ? ' selected' : '');
+                    var icon = document.createElement('i');
+                    var dtype = getColumnDtype(colName);
+                    icon.className = getColumnIcon(dtype) + ' col-icon';
+                    var name = document.createElement('span');
+                    name.textContent = colName;
+                    opt.appendChild(icon);
+                    opt.appendChild(name);
+                    if (dtype) {
+                        var dtypeSpan = document.createElement('span');
+                        dtypeSpan.className = 'col-dtype';
+                        dtypeSpan.textContent = dtype;
+                        opt.appendChild(dtypeSpan);
+                    }
+                    opt.onclick = function(e) {
+                        e.stopPropagation();
+                        setValue(colName);
+                        wrap.classList.remove('open');
+                    };
+                    optionsDiv.appendChild(opt);
+                });
+            }
+
+            trigger.onclick = function(e) {
+                e.stopPropagation();
+                var isOpen = wrap.classList.contains('open');
+                closeAllColumnSelects();
+                closeAllMultiselects();
+                if (!isOpen) {
+                    wrap.classList.add('open');
+                    searchInput.value = '';
+                    renderOptions();
+                    searchInput.focus();
+                }
+            };
+
+            clearBtn.onclick = function(e) {
+                e.stopPropagation();
+                setValue('');
+            };
+
+            searchInput.oninput = function() { renderOptions(); };
+            searchInput.onclick = function(e) { e.stopPropagation(); };
+
+            return {
+                setValue: setValue,
+                getValue: function() { return selectedValue; },
+                setColumns: function(cols) {
+                    columns = cols;
+                    if (selectedValue && cols.indexOf(selectedValue) === -1) {
+                        setValue('');
+                    }
+                    renderOptions();
+                }
+            };
+        }
+
+        function closeAllColumnSelects() {
+            document.querySelectorAll('.column-select.open').forEach(function(el) {
+                el.classList.remove('open');
             });
+        }
+
+        function createFeatureColumnSelect(container, opts) {
+            var selected = opts.selected || [];
+            var columns = opts.columns || [];
+            var placeholder = opts.placeholder || 'All columns included';
+            var onChange = opts.onChange || function() {};
+
+            container.innerHTML = '';
+            var wrap = document.createElement('div');
+            wrap.className = 'multiselect';
+
+            var trigger = document.createElement('div');
+            trigger.className = 'multiselect-trigger';
+            var tagsDiv = document.createElement('div');
+            tagsDiv.className = 'multiselect-tags';
+            var arrow = document.createElement('i');
+            arrow.className = 'ri-arrow-down-s-line multiselect-arrow';
+            trigger.appendChild(tagsDiv);
+            trigger.appendChild(arrow);
+
+            var dropdown = document.createElement('div');
+            dropdown.className = 'multiselect-dropdown';
+
+            var searchWrap = document.createElement('div');
+            searchWrap.className = 'multiselect-search';
+            var searchInput = document.createElement('input');
+            searchInput.type = 'text';
+            searchInput.placeholder = 'Search columns...';
+            searchWrap.appendChild(searchInput);
+
+            var actionsWrap = document.createElement('div');
+            actionsWrap.className = 'multiselect-actions';
+            var btnAll = document.createElement('button');
+            btnAll.textContent = 'Select All';
+            btnAll.type = 'button';
+            var btnNone = document.createElement('button');
+            btnNone.textContent = 'Clear';
+            btnNone.type = 'button';
+            actionsWrap.appendChild(btnAll);
+            actionsWrap.appendChild(btnNone);
+
+            var optionsDiv = document.createElement('div');
+            optionsDiv.className = 'multiselect-options';
+
+            dropdown.appendChild(searchWrap);
+            dropdown.appendChild(actionsWrap);
+            dropdown.appendChild(optionsDiv);
+            wrap.appendChild(trigger);
+            wrap.appendChild(dropdown);
+            container.appendChild(wrap);
+
+            function renderTags() {
+                tagsDiv.innerHTML = '';
+                if (selected.length === 0 || selected.length === columns.length) {
+                    var ph = document.createElement('span');
+                    ph.className = 'multiselect-placeholder';
+                    ph.textContent = placeholder;
+                    tagsDiv.appendChild(ph);
+                } else if (selected.length > 3) {
+                    var countTag = document.createElement('span');
+                    countTag.className = 'multiselect-tag';
+                    countTag.textContent = selected.length + ' columns selected';
+                    tagsDiv.appendChild(countTag);
+                } else {
+                    selected.forEach(function(colName) {
+                        var tag = document.createElement('span');
+                        tag.className = 'multiselect-tag';
+                        tag.textContent = colName;
+                        var rm = document.createElement('span');
+                        rm.className = 'multiselect-tag-remove';
+                        rm.innerHTML = '&times;';
+                        rm.onclick = function(e) {
+                            e.stopPropagation();
+                            selected = selected.filter(function(x) { return x !== colName; });
+                            renderTags();
+                            renderOptions();
+                            updateCount();
+                            onChange(selected);
+                        };
+                        tag.appendChild(rm);
+                        tagsDiv.appendChild(tag);
+                    });
+                }
+            }
+
+            function renderOptions() {
+                var query = searchInput.value.toLowerCase();
+                optionsDiv.innerHTML = '';
+                var filtered = columns.filter(function(n) { return n.toLowerCase().indexOf(query) !== -1; });
+                if (filtered.length === 0) {
+                    var empty = document.createElement('div');
+                    empty.className = 'column-select-empty';
+                    empty.textContent = 'No columns match "' + query + '"';
+                    optionsDiv.appendChild(empty);
+                    return;
+                }
+                filtered.forEach(function(colName) {
+                    var opt = document.createElement('div');
+                    opt.className = 'multiselect-option' + (selected.indexOf(colName) !== -1 ? ' selected' : '');
+                    var check = document.createElement('span');
+                    check.className = 'ms-check';
+                    var icon = document.createElement('i');
+                    var dtype = getColumnDtype(colName);
+                    icon.className = getColumnIcon(dtype) + ' col-icon';
+                    icon.style.fontSize = '13px';
+                    icon.style.color = 'var(--color-text-600)';
+                    icon.style.width = '14px';
+                    var name = document.createElement('span');
+                    name.textContent = colName;
+                    name.style.flex = '1';
+                    opt.appendChild(check);
+                    opt.appendChild(icon);
+                    opt.appendChild(name);
+                    if (dtype) {
+                        var dtypeSpan = document.createElement('span');
+                        dtypeSpan.className = 'col-dtype';
+                        dtypeSpan.textContent = dtype;
+                        opt.appendChild(dtypeSpan);
+                    }
+                    opt.onclick = function(e) {
+                        e.stopPropagation();
+                        if (selected.indexOf(colName) !== -1) {
+                            selected = selected.filter(function(x) { return x !== colName; });
+                        } else {
+                            selected.push(colName);
+                        }
+                        renderTags();
+                        renderOptions();
+                        updateCount();
+                        onChange(selected);
+                    };
+                    optionsDiv.appendChild(opt);
+                });
+            }
+
+            function updateCount() {
+                var countEl = $('cfg-featureColumns-count');
+                if (countEl) {
+                    if (selected.length === 0 || selected.length === columns.length) {
+                        countEl.innerHTML = 'Using all <strong>' + columns.length + '</strong> columns as features';
+                    } else {
+                        countEl.innerHTML = '<strong>' + selected.length + '</strong> of <strong>' + columns.length + '</strong> columns selected';
+                    }
+                }
+            }
+
+            trigger.onclick = function(e) {
+                e.stopPropagation();
+                var isOpen = wrap.classList.contains('open');
+                closeAllMultiselects();
+                closeAllColumnSelects();
+                if (!isOpen) {
+                    wrap.classList.add('open');
+                    searchInput.value = '';
+                    renderOptions();
+                    searchInput.focus();
+                }
+            };
+
+            searchInput.oninput = function() { renderOptions(); };
+            searchInput.onclick = function(e) { e.stopPropagation(); };
+
+            btnAll.onclick = function(e) {
+                e.stopPropagation();
+                var query = searchInput.value.toLowerCase();
+                columns.forEach(function(n) {
+                    if (n.toLowerCase().indexOf(query) !== -1 && selected.indexOf(n) === -1) {
+                        selected.push(n);
+                    }
+                });
+                renderTags();
+                renderOptions();
+                updateCount();
+                onChange(selected);
+            };
+
+            btnNone.onclick = function(e) {
+                e.stopPropagation();
+                selected.length = 0;
+                renderTags();
+                renderOptions();
+                updateCount();
+                onChange(selected);
+            };
+
+            renderTags();
+            updateCount();
+
+            return {
+                getSelected: function() { return selected.slice(); },
+                setColumns: function(cols, targetCol) {
+                    columns = cols.filter(function(c) { return c !== targetCol; });
+                    selected = columns.slice();
+                    renderTags();
+                    renderOptions();
+                    updateCount();
+                    onChange(selected);
+                }
+            };
+        }
+
+        function updateTargetOptions(columns) {
+            var names = columns || (dataInfo && dataInfo.column_names) || [];
+            targetColumnSelect = createColumnSelect(
+                $('cfg-targetColumn-wrap'),
+                $('cfg-targetColumn'),
+                {
+                    columns: names,
+                    placeholder: 'Select target...',
+                    onChange: function(val) {
+                        updateTrainButton();
+                        $('btn-compare').disabled = !val;
+                        if ($('btn-hyperopt')) $('btn-hyperopt').disabled = !val;
+                        if ($('btn-autotune')) $('btn-autotune').disabled = !val;
+                        if ($('btn-ensemble')) $('btn-ensemble').disabled = ensembleSelectedModels.length < 2 || !val;
+                        if ($('btn-explain')) $('btn-explain').disabled = !val;
+                        // Update feature columns to exclude target
+                        if (featureColumnSelect) {
+                            featureColumnSelect.setColumns(names, val);
+                        }
+                    }
+                }
+            );
+            // Initialize feature column select
+            featureColumnSelect = createFeatureColumnSelect(
+                $('cfg-featureColumns-wrap'),
+                {
+                    columns: names,
+                    selected: names.slice(),
+                    placeholder: 'All columns included',
+                    onChange: function(sel) {
+                        selectedFeatureColumns = sel;
+                    }
+                }
+            );
+            selectedFeatureColumns = names.slice();
         }
 
         function refreshPreview() {
@@ -1883,9 +2293,14 @@
 
         // ── Config ──
         function getConfig() {
+            var allCols = (dataInfo && dataInfo.column_names) || [];
+            var featureCols = featureColumnSelect ? featureColumnSelect.getSelected() : [];
+            // Only include feature_columns if user has deselected some
+            var includeFeatures = featureCols.length > 0 && featureCols.length < allCols.length;
             return {
                 taskType: $('cfg-taskType').value,
                 targetColumn: $('cfg-targetColumn').value,
+                featureColumns: includeFeatures ? featureCols : null,
                 scaler: $('cfg-scaler').value,
                 imputation: $('cfg-imputation').value,
                 cvFolds: parseInt($('cfg-cvFolds').value)
@@ -2112,7 +2527,10 @@
                 el.classList.remove('open');
             });
         }
-        document.addEventListener('click', closeAllMultiselects);
+        document.addEventListener('click', function() {
+            closeAllMultiselects();
+            closeAllColumnSelects();
+        });
 
         var modelMultiselect = null;
 
@@ -2142,12 +2560,12 @@
                 fetch('/api/train', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
+                    body: JSON.stringify(Object.assign({
                         target_column: cfg.targetColumn,
                         task_type: cfg.taskType,
                         model_type: modelId,
                         cv_folds: cfg.cvFolds
-                    })
+                    }, cfg.featureColumns ? { feature_columns: cfg.featureColumns } : {}))
                 })
                 .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
                 .then(function(data) {
@@ -2463,13 +2881,13 @@
                                 fetch('/api/hyperopt', {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({
+                                    body: JSON.stringify(Object.assign({
                                         target_column: cfg.targetColumn,
                                         task_type: cfg.taskType,
                                         model_type: job.model_type,
                                         n_trials: 15,
                                         sampler: 'tpe'
-                                    })
+                                    }, cfg.featureColumns ? { feature_columns: cfg.featureColumns } : {}))
                                 })
                                 .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
                                 .then(function(hdata) {
@@ -2500,12 +2918,12 @@
             fetch('/api/train/compare', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
+                body: JSON.stringify(Object.assign({
                     target_column: cfg.targetColumn,
                     task_type: cfg.taskType,
                     models: models,
                     cv_folds: cfg.cvFolds
-                })
+                }, cfg.featureColumns ? { feature_columns: cfg.featureColumns } : {}))
             })
             .then(function(r) {
                 if (!r.ok) throw new Error('Server returned ' + r.status);
@@ -2679,14 +3097,14 @@
             fetch('/api/hyperopt', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
+                body: JSON.stringify(Object.assign({
                     target_column: cfg.targetColumn,
                     task_type: cfg.taskType,
                     model_type: $('ho-model').value,
                     n_trials: parseInt($('ho-trials').value),
                     sampler: $('ho-sampler').value,
                     timeout_secs: timeout > 0 ? timeout : null
-                })
+                }, cfg.featureColumns ? { feature_columns: cfg.featureColumns } : {}))
             })
             .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
             .then(function(data) {
@@ -2780,12 +3198,12 @@
             fetch('/api/ensemble/train', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
+                body: JSON.stringify(Object.assign({
                     target_column: cfg.targetColumn,
                     task_type: cfg.taskType,
                     models: ensembleSelectedModels,
                     strategy: $('ens-strategy').value
-                })
+                }, cfg.featureColumns ? { feature_columns: cfg.featureColumns } : {}))
             })
             .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
             .then(function(data) {
@@ -2958,11 +3376,11 @@
             fetch('/api/autotune', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
+                body: JSON.stringify(Object.assign({
                     target_column: cfg.targetColumn,
                     task_type: cfg.taskType,
                     max_models: maxModels
-                })
+                }, cfg.featureColumns ? { feature_columns: cfg.featureColumns } : {}))
             })
             .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
             .then(function(data) {
@@ -3859,16 +4277,19 @@
         }
 
         function updateAutoMLTargetColumns() {
-            var sel = $('automl-target');
-            if (!sel || !dataInfo) return;
+            if (!dataInfo) return;
             var names = dataInfo.column_names || [];
-            sel.innerHTML = '<option value="">-- Select target column --</option>';
-            names.forEach(function(n) {
-                var opt = document.createElement('option');
-                opt.value = n;
-                opt.textContent = n;
-                sel.appendChild(opt);
-            });
+            automlTargetSelect = createColumnSelect(
+                $('automl-target-wrap'),
+                $('automl-target'),
+                {
+                    columns: names,
+                    placeholder: '-- Select target column --',
+                    onChange: function(val) {
+                        $('btn-automl-run').disabled = !val;
+                    }
+                }
+            );
         }
 
         function runAutoML() {
@@ -4325,11 +4746,7 @@
                 setupModelCheckboxes();
                 setupEnsembleCheckboxes();
                 setupAutoMLModelCheckboxes();
-                if ($('automl-target')) {
-                    $('automl-target').addEventListener('change', function() {
-                        $('btn-automl-run').disabled = !this.value;
-                    });
-                }
+                // automl-target change is handled by the column select onChange callback
                 if ($('automl-task-type')) {
                     $('automl-task-type').addEventListener('change', function() {
                         if (automlMultiselect) automlMultiselect.refresh();
@@ -4337,17 +4754,7 @@
                 }
                 setInterval(function() { refreshSystemStatus(); loadAlerts(); loadPerformanceStats(); loadRateLimitStats(); }, 15000);
 
-                $('cfg-targetColumn').addEventListener('change', function() {
-                    updateTrainButton();
-                    $('btn-compare').disabled = !this.value;
-                    $('btn-hyperopt').disabled = !this.value;
-                    $('btn-autotune').disabled = !this.value;
-                    $('btn-ensemble').disabled = ensembleSelectedModels.length < 2 || !this.value;
-                    $('btn-anomaly').disabled = !dataInfo;
-                    $('btn-clustering').disabled = !dataInfo;
-                    $('btn-umap').disabled = !dataInfo;
-                    $('btn-explain').disabled = !this.value;
-                });
+                // cfg-targetColumn change is handled by the column select onChange callback
 
                 $('cfg-taskType').addEventListener('change', function() {
                     if (modelMultiselect) modelMultiselect.refresh();
