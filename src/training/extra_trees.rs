@@ -403,6 +403,31 @@ impl ExtraTrees {
         Ok(proba)
     }
 
+    /// Compute feature importances by counting split usage across all trees
+    pub fn feature_importances(&self) -> Option<Array1<f64>> {
+        if !self.is_fitted || self.n_features == 0 { return None; }
+        let mut counts = vec![0.0f64; self.n_features];
+        for tree in &self.trees {
+            Self::count_splits(tree, &mut counts);
+        }
+        let total: f64 = counts.iter().sum();
+        if total > 0.0 {
+            for c in counts.iter_mut() { *c /= total; }
+        }
+        Some(Array1::from_vec(counts))
+    }
+
+    fn count_splits(node: &ExtraTreeNode, counts: &mut [f64]) {
+        match node {
+            ExtraTreeNode::Leaf { .. } => {}
+            ExtraTreeNode::Split { feature, left, right, .. } => {
+                if *feature < counts.len() { counts[*feature] += 1.0; }
+                Self::count_splits(left, counts);
+                Self::count_splits(right, counts);
+            }
+        }
+    }
+
     pub fn score(&self, x: &Array2<f64>, y: &Array1<f64>) -> Result<f64> {
         let preds = self.predict(x)?;
         if self.is_classification {

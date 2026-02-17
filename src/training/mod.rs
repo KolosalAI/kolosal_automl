@@ -6,7 +6,6 @@
 //! - Linear models (OLS, Ridge, Lasso, ElasticNet, Polynomial)
 //! - K-Nearest Neighbors
 //! - Naive Bayes
-//! - Neural networks (MLP)
 //! - Support Vector Machines
 //! - AdaBoost
 //! - Extra Trees (Extremely Randomized Trees)
@@ -24,7 +23,6 @@ pub mod random_forest;
 pub mod gradient_boosting;
 pub mod knn;
 pub mod naive_bayes;
-pub mod neural_network;
 pub mod svm;
 pub mod adaboost;
 pub mod extra_trees;
@@ -45,7 +43,6 @@ pub use random_forest::{RandomForest, MaxFeatures};
 pub use gradient_boosting::{GradientBoostingRegressor, GradientBoostingClassifier, GradientBoostingConfig};
 pub use knn::{KNNClassifier, KNNRegressor, KNNConfig, DistanceMetric, WeightScheme};
 pub use naive_bayes::{GaussianNaiveBayes, MultinomialNaiveBayes};
-pub use neural_network::{MLPRegressor, MLPClassifier, MLPConfig, Activation};
 pub use svm::{SVMClassifier, SVMRegressor, SVMConfig, KernelType};
 pub use adaboost::AdaBoostClassifier;
 pub use extra_trees::ExtraTrees;

@@ -253,6 +253,24 @@
         .multiselect-option.selected .ms-check::after { content: '✓'; font-size: 11px; color: var(--color-grey-500); }
         .multiselect-group-label { padding: 6px 8px 2px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--color-text-600); }
 
+        /* Custom Select Dropdown */
+        .custom-select { position: relative; width: 100%; }
+        .custom-select-trigger { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-height: 40px; padding: 6px 12px; background: var(--color-grey-600); border: 1px solid var(--color-grey-700); border-radius: 8px; cursor: pointer; transition: border-color 0.15s; font-size: 14px; color: var(--color-text-900); line-height: 1.4; }
+        .custom-select-trigger:hover { border-color: var(--color-grey-800); }
+        .custom-select.open .custom-select-trigger { border-color: var(--color-text-900); }
+        .custom-select-trigger .cs-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .custom-select-trigger .cs-arrow { flex-shrink: 0; color: var(--color-text-600); transition: transform 0.15s; font-size: 16px; }
+        .custom-select.open .custom-select-trigger .cs-arrow { transform: rotate(180deg); }
+        .custom-select-dropdown { position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: var(--color-grey-500); border: 1px solid var(--color-grey-700); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.25); z-index: 50; display: none; max-height: 260px; overflow: hidden; flex-direction: column; }
+        .custom-select.open .custom-select-dropdown { display: flex; }
+        .custom-select-search { padding: 8px; border-bottom: 1px solid var(--color-grey-700); }
+        .custom-select-search input { width: 100%; padding: 6px 8px; background: var(--color-grey-600); border: 1px solid var(--color-grey-700); border-radius: 6px; color: var(--color-text-900); font-size: 13px; outline: none; }
+        .custom-select-search input:focus { border-color: var(--color-text-900); }
+        .custom-select-options { overflow-y: auto; max-height: 200px; padding: 4px; }
+        .custom-select-option { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; cursor: pointer; font-size: 13px; color: var(--color-text-800); transition: background 0.1s; }
+        .custom-select-option:hover { background: var(--color-grey-600); }
+        .custom-select-option.selected { color: var(--color-text-900); font-weight: 500; background: var(--color-grey-700); }
+
         /* Stat card */
         .stat-value { font-size: 32px; line-height: 44px; letter-spacing: -0.6px; font-family: "Geist Mono", monospace; font-weight: 500; }
         .stat-value.info { color: var(--color-information-500); }
@@ -426,21 +444,54 @@
                     </div>
                 </div>
             </div>
-            <div class="card" style="margin-top: 16px; grid-column: 1 / -1;">
-                <div class="card-header">
-                    <h2 class="text-16px medium">Data Summary</h2>
-                </div>
-                <div id="data-summary-chart-wrap" style="display:none;">
-                    <div class="grid-2">
-                        <div style="max-height: 280px;">
-                            <canvas id="columnTypesChart" width="300" height="200"></canvas>
-                        </div>
-                        <div id="data-col-stats" class="flex-col gap-8"></div>
+            <div id="data-analysis-panel" style="margin-top: 16px; grid-column: 1 / -1;">
+                <div id="data-analysis-empty" class="card">
+                    <div class="empty-state" style="padding: 20px;">
+                        <i class="ri-pie-chart-line"></i>
+                        <p class="text-14px regular">Load data to see analysis</p>
                     </div>
                 </div>
-                <div id="data-summary-empty" class="empty-state" style="padding: 20px;">
-                    <i class="ri-pie-chart-line"></i>
-                    <p class="text-14px regular">Load data to see summary</p>
+                <div id="data-analysis-content" style="display:none;">
+                    <!-- Overview row -->
+                    <div class="card" style="margin-bottom:12px;">
+                        <div class="card-header"><h2 class="text-16px medium">Overview</h2></div>
+                        <div id="da-overview" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;margin-top:8px;"></div>
+                    </div>
+                    <!-- Quality Score -->
+                    <div class="card" style="margin-bottom:12px;">
+                        <div class="card-header"><h2 class="text-16px medium">Data Quality</h2></div>
+                        <div id="da-quality" style="margin-top:8px;"></div>
+                    </div>
+                    <!-- Warnings -->
+                    <div id="da-warnings-wrap" class="card" style="margin-bottom:12px;display:none;">
+                        <div class="card-header"><h2 class="text-16px medium">Warnings</h2></div>
+                        <div id="da-warnings" style="margin-top:8px;"></div>
+                    </div>
+                    <!-- Missing Values chart -->
+                    <div id="da-missing-wrap" class="card" style="margin-bottom:12px;display:none;">
+                        <div class="card-header"><h2 class="text-16px medium">Missing Values</h2></div>
+                        <div style="max-height:300px;"><canvas id="da-missing-chart" width="700" height="250" style="width:100%;"></canvas></div>
+                    </div>
+                    <!-- Column Statistics table -->
+                    <div class="card" style="margin-bottom:12px;">
+                        <div class="card-header"><h2 class="text-16px medium">Column Statistics</h2></div>
+                        <div id="da-colstats" class="table-wrap" style="margin-top:8px;max-height:400px;overflow:auto;"></div>
+                    </div>
+                    <!-- Correlation Heatmap -->
+                    <div id="da-corr-wrap" class="card" style="margin-bottom:12px;display:none;">
+                        <div class="card-header"><h2 class="text-16px medium">Correlation Heatmap</h2></div>
+                        <div id="da-corr" style="margin-top:8px;overflow:auto;max-height:500px;"></div>
+                    </div>
+                    <!-- Distributions -->
+                    <div class="card" style="margin-bottom:12px;">
+                        <div class="card-header"><h2 class="text-16px medium">Distributions</h2></div>
+                        <div id="da-distributions" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;margin-top:8px;"></div>
+                    </div>
+                    <!-- Outlier Summary -->
+                    <div id="da-outlier-wrap" class="card" style="margin-bottom:12px;display:none;">
+                        <div class="card-header"><h2 class="text-16px medium">Outlier Summary</h2></div>
+                        <div id="da-outliers" class="table-wrap" style="margin-top:8px;"></div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -755,6 +806,10 @@
                             <div style="max-height: 300px;">
                                 <canvas id="comparisonChart" width="400" height="200"></canvas>
                             </div>
+                            <div id="compare-umap-section" style="display:none;">
+                                <h3 class="text-14px medium" style="margin-bottom:8px;">UMAP Projections per Model</h3>
+                                <div id="compare-umap-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;"></div>
+                            </div>
                         </div>
                     </div>
                     <div id="compare-empty" class="empty-state">
@@ -786,7 +841,6 @@
                                     <option value="svm">SVM</option>
                                     <option value="adaboost">AdaBoost</option>
                                     <option value="sgd">SGD</option>
-                                    <option value="neural_network">Neural Network</option>
                                     <option value="ridge">Ridge Regression</option>
                                     <option value="lasso">Lasso Regression</option>
                                     <option value="elastic_net">Elastic Net</option>
@@ -899,13 +953,13 @@
                         <div class="card-header">
                             <h2 class="text-16px medium">Feature Importance</h2>
                             <button id="btn-explain" onclick="getFeatureImportance()" class="btn-sm btn-primary" disabled>
-                                <i class="ri-lightbulb-line"></i> Analyze
+                                <i class="ri-refresh-line"></i> Refresh
                             </button>
                         </div>
                         <div id="explain-results"></div>
                         <div id="explain-empty" class="empty-state">
                             <i class="ri-lightbulb-line"></i>
-                            <p class="text-14px regular">Train a model first, then analyze feature importance</p>
+                            <p class="text-14px regular">Train a model to see feature importance</p>
                         </div>
                     </div>
                     <div class="card">
@@ -1576,7 +1630,6 @@
             { id: 'sgd', name: 'SGD', task: 'both' },
             { id: 'knn', name: 'K-Nearest Neighbors', task: 'both' },
             { id: 'svm', name: 'SVM', task: 'both' },
-            { id: 'neural_network', name: 'Neural Network', task: 'both' },
             { id: 'gaussian_process', name: 'Gaussian Process', task: 'both' },
             { id: 'kmeans', name: 'KMeans Clustering', task: 'clustering' },
             { id: 'dbscan', name: 'DBSCAN Clustering', task: 'clustering' }
@@ -1665,6 +1718,7 @@
                         dataInfo = data;
                         updateDataUI();
                         refreshPreview();
+                        runDataAnalysis();
                         notify('Data uploaded successfully!', 'success');
                     } else {
                         notify(data.message || 'Upload failed', 'error');
@@ -1693,10 +1747,159 @@
                         dataInfo = data;
                         updateDataUI();
                         refreshPreview();
+                        runDataAnalysis();
                         notify('Loaded ' + name + ' dataset!', 'success');
                     }
                 })
                 .catch(function(e) { notify('Failed to load sample: ' + e.message, 'error'); });
+        }
+
+        // ── Data Analysis ──
+        var daChartInstances = [];
+        function runDataAnalysis() {
+            fetch('/api/data/analyze')
+                .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+                .then(function(d) {
+                    if (!d.success) return;
+                    $('data-analysis-empty').style.display = 'none';
+                    $('data-analysis-content').style.display = '';
+                    // Destroy previous chart instances
+                    daChartInstances.forEach(function(c) { try { c.destroy(); } catch(e){} });
+                    daChartInstances = [];
+
+                    // Overview
+                    var ov = d.overview || {};
+                    var oCards = [
+                        { label: 'Rows', value: (ov.rows || 0).toLocaleString(), color: 'var(--color-information-500)' },
+                        { label: 'Columns', value: ov.columns || 0, color: 'var(--color-information-500)' },
+                        { label: 'Memory', value: (ov.memory_mb || 0) + ' MB', color: 'var(--color-text-800)' },
+                        { label: 'Duplicates', value: ov.duplicates || 0, color: ov.duplicates > 0 ? 'var(--color-warning-500)' : 'var(--color-success-500)' },
+                        { label: 'Missing %', value: (ov.missing_percent || 0) + '%', color: ov.missing_percent > 5 ? 'var(--color-warning-500)' : 'var(--color-success-500)' },
+                    ];
+                    $('da-overview').innerHTML = oCards.map(function(c) {
+                        return '<div style="text-align:center;padding:12px;background:var(--color-grey-600);border-radius:8px;"><p class="mono-14px" style="font-size:20px;color:' + c.color + ';">' + c.value + '</p><p class="text-12px regular" style="color:var(--color-text-600);margin-top:4px;">' + c.label + '</p></div>';
+                    }).join('');
+
+                    // Quality
+                    var q = d.quality || {};
+                    var qs = q.score || 0;
+                    var qColor = qs >= 0.8 ? 'var(--color-success-500)' : qs >= 0.5 ? 'var(--color-warning-500)' : 'var(--color-danger-500)';
+                    var qBg = qs >= 0.8 ? 'var(--color-success-100)' : qs >= 0.5 ? 'var(--color-warning-100)' : 'var(--color-danger-100)';
+                    $('da-quality').innerHTML = '<div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;"><div style="padding:8px 16px;background:' + qBg + ';border-radius:8px;"><span class="mono-14px" style="font-size:24px;color:' + qColor + ';">' + (qs * 100).toFixed(0) + '%</span><p class="text-12px" style="color:' + qColor + ';">Quality Score</p></div>'
+                        + '<div style="display:flex;gap:12px;flex-wrap:wrap;">'
+                        + '<div><span class="mono-12px">' + ((q.completeness || 0) * 100).toFixed(0) + '%</span><p class="text-11px" style="color:var(--color-text-600);">Completeness</p></div>'
+                        + '<div><span class="mono-12px">' + ((q.uniqueness || 0) * 100).toFixed(0) + '%</span><p class="text-11px" style="color:var(--color-text-600);">Uniqueness</p></div>'
+                        + '<div><span class="mono-12px">' + ((q.consistency || 0) * 100).toFixed(0) + '%</span><p class="text-11px" style="color:var(--color-text-600);">Consistency</p></div>'
+                        + '<div><span class="mono-12px">' + ((q.validity || 0) * 100).toFixed(0) + '%</span><p class="text-11px" style="color:var(--color-text-600);">Validity</p></div>'
+                        + '</div></div>';
+
+                    // Warnings
+                    var warns = d.warnings || [];
+                    if (warns.length > 0) {
+                        $('da-warnings-wrap').style.display = '';
+                        $('da-warnings').innerHTML = warns.map(function(w) {
+                            var ic = w.severity === 'warning' ? 'ri-alert-line' : 'ri-information-line';
+                            var bg = w.severity === 'warning' ? 'var(--color-warning-100)' : 'var(--color-grey-600)';
+                            var tc = w.severity === 'warning' ? 'var(--color-warning-600)' : 'var(--color-text-700)';
+                            return '<div style="padding:8px 12px;background:' + bg + ';border-radius:6px;margin-bottom:6px;"><i class="' + ic + '" style="color:' + tc + ';"></i> <span class="text-13px" style="color:' + tc + ';">' + escHtml(w.message) + '</span></div>';
+                        }).join('');
+                    } else {
+                        $('da-warnings-wrap').style.display = 'none';
+                    }
+
+                    // Missing Values chart
+                    var mv = (d.missing_values || []).filter(function(m) { return m.null_count > 0; });
+                    if (mv.length > 0 && typeof Chart !== 'undefined') {
+                        $('da-missing-wrap').style.display = '';
+                        var ctx = $('da-missing-chart');
+                        var ch = new Chart(ctx, {
+                            type: 'bar', data: { labels: mv.map(function(m) { return m.column; }), datasets: [{ label: 'Missing %', data: mv.map(function(m) { return m.null_percent; }), backgroundColor: 'rgba(245,158,11,0.3)', borderColor: '#f59e0b', borderWidth: 1, borderRadius: 4 }] },
+                            options: { indexAxis: 'y', scales: { x: { beginAtZero: true }, y: { grid: { display: false } } }, plugins: { legend: { display: false } } }
+                        });
+                        daChartInstances.push(ch);
+                    } else {
+                        $('da-missing-wrap').style.display = 'none';
+                    }
+
+                    // Column Statistics table
+                    var cs = d.column_stats || [];
+                    if (cs.length > 0) {
+                        var ht = '<table class="data-table"><thead><tr><th>Column</th><th>Type</th><th>Null%</th><th>Unique</th><th>Mean</th><th>Std</th><th>Min</th><th>Max</th><th>Skew</th></tr></thead><tbody>';
+                        cs.forEach(function(c) {
+                            ht += '<tr><td class="text-13px medium">' + escHtml(c.column) + '</td><td class="mono-11px">' + escHtml(c.dtype) + '</td><td class="mono-12px">' + (c.null_percent || 0) + '%</td><td class="mono-12px">' + (c.unique || '-') + '</td>';
+                            if (c.is_numeric) {
+                                ht += '<td class="mono-12px">' + (c.mean != null ? c.mean : '-') + '</td><td class="mono-12px">' + (c.std != null ? c.std : '-') + '</td><td class="mono-12px">' + (c.min != null ? c.min : '-') + '</td><td class="mono-12px">' + (c.max != null ? c.max : '-') + '</td><td class="mono-12px">' + (c.skewness != null ? c.skewness : '-') + '</td>';
+                            } else {
+                                ht += '<td colspan="5" class="text-12px" style="color:var(--color-text-600);">' + ((c.top_categories || []).slice(0,3).map(function(t) { return t.value + '(' + t.count + ')'; }).join(', ') || '-') + '</td>';
+                            }
+                            ht += '</tr>';
+                        });
+                        ht += '</tbody></table>';
+                        $('da-colstats').innerHTML = ht;
+                    }
+
+                    // Correlation Heatmap
+                    if (d.correlation) {
+                        $('da-corr-wrap').style.display = '';
+                        var cols = d.correlation.columns || [];
+                        var mat = d.correlation.matrix || [];
+                        var ch = '<table style="border-collapse:collapse;font-size:11px;"><thead><tr><th></th>';
+                        cols.forEach(function(c) { ch += '<th style="padding:4px;writing-mode:vertical-lr;text-align:left;max-width:30px;overflow:hidden;">' + escHtml(c.substring(0,12)) + '</th>'; });
+                        ch += '</tr></thead><tbody>';
+                        mat.forEach(function(row, i) {
+                            ch += '<tr><td style="padding:4px;font-weight:500;white-space:nowrap;">' + escHtml(cols[i].substring(0,12)) + '</td>';
+                            row.forEach(function(v) {
+                                var r = Math.round(Math.max(0, v) * 200);
+                                var b = Math.round(Math.max(0, -v) * 200);
+                                var bg = 'rgba(' + r + ',0,' + b + ',0.3)';
+                                ch += '<td style="padding:4px;text-align:center;background:' + bg + ';min-width:30px;" title="' + v + '">' + v.toFixed(2) + '</td>';
+                            });
+                            ch += '</tr>';
+                        });
+                        ch += '</tbody></table>';
+                        $('da-corr').innerHTML = ch;
+                    } else {
+                        $('da-corr-wrap').style.display = 'none';
+                    }
+
+                    // Distributions (first 12)
+                    var dists = (d.distributions || []).slice(0, 12);
+                    if (dists.length > 0 && typeof Chart !== 'undefined') {
+                        $('da-distributions').innerHTML = '';
+                        dists.forEach(function(dist, idx) {
+                            var wrap = document.createElement('div');
+                            wrap.style.cssText = 'background:var(--color-grey-600);border-radius:8px;padding:8px;';
+                            wrap.innerHTML = '<p class="text-12px medium" style="margin-bottom:4px;">' + escHtml(dist.column) + '</p><canvas id="da-dist-' + idx + '" width="240" height="140" style="width:100%;"></canvas>';
+                            $('da-distributions').appendChild(wrap);
+                            var canvas = wrap.querySelector('canvas');
+                            if (dist.type === 'numeric' && dist.histogram) {
+                                var h = dist.histogram;
+                                var labels = (h.bin_edges || []).slice(0, -1).map(function(e, i) { return e.toFixed(1); });
+                                var ch2 = new Chart(canvas, { type: 'bar', data: { labels: labels, datasets: [{ data: h.counts, backgroundColor: 'rgba(0,102,245,0.2)', borderColor: '#0066F5', borderWidth: 1, borderRadius: 2 }] }, options: { plugins: { legend: { display: false } }, scales: { x: { display: false }, y: { beginAtZero: true, grid: { display: false } } } } });
+                                daChartInstances.push(ch2);
+                            } else if (dist.type === 'categorical' && dist.value_counts) {
+                                var vc = dist.value_counts.slice(0, 8);
+                                var ch3 = new Chart(canvas, { type: 'bar', data: { labels: vc.map(function(v) { return String(v.value).substring(0,10); }), datasets: [{ data: vc.map(function(v) { return v.count; }), backgroundColor: 'rgba(16,185,129,0.2)', borderColor: '#10b981', borderWidth: 1, borderRadius: 2 }] }, options: { plugins: { legend: { display: false } }, scales: { x: { grid: { display: false } }, y: { beginAtZero: true, grid: { display: false } } } } });
+                                daChartInstances.push(ch3);
+                            }
+                        });
+                    }
+
+                    // Outlier Summary
+                    var outliers = (d.outlier_summary || []).filter(function(o) { return o.outlier_count > 0; });
+                    if (outliers.length > 0) {
+                        $('da-outlier-wrap').style.display = '';
+                        var ot = '<table class="data-table"><thead><tr><th>Column</th><th>Outliers</th><th>%</th><th>Lower</th><th>Upper</th></tr></thead><tbody>';
+                        outliers.forEach(function(o) {
+                            ot += '<tr><td class="text-13px medium">' + escHtml(o.column) + '</td><td class="mono-12px">' + o.outlier_count + '</td><td class="mono-12px">' + o.outlier_percent + '%</td><td class="mono-12px">' + o.lower_bound + '</td><td class="mono-12px">' + o.upper_bound + '</td></tr>';
+                        });
+                        ot += '</tbody></table>';
+                        $('da-outliers').innerHTML = ot;
+                    } else {
+                        $('da-outlier-wrap').style.display = 'none';
+                    }
+                })
+                .catch(function(e) { console.error('Data analysis failed:', e); });
         }
 
         // ── Data UI Updates ──
@@ -1721,6 +1924,8 @@
                         sel.innerHTML += '<option value="' + escAttr(dataInfo.column_names[ci]) + '">' + escHtml(dataInfo.column_names[ci]) + '</option>';
                         selPca.innerHTML += '<option value="' + escAttr(dataInfo.column_names[ci]) + '">' + escHtml(dataInfo.column_names[ci]) + '</option>';
                     }
+                    if (sel._customSelect) sel._customSelect.refresh();
+                    if (selPca._customSelect) selPca._customSelect.refresh();
                 }
                 updateTargetOptions();
                 updateAutoMLTargetColumns();
@@ -1743,6 +1948,7 @@
                 opt.textContent = n;
                 sel.appendChild(opt);
             });
+            if (sel._customSelect) sel._customSelect.refresh();
         }
 
         function refreshPreview() {
@@ -2334,12 +2540,13 @@
                         job.status = data.status;
                         renderJobs();
                         if (data.status.Completed) {
-                            // Fetch latest model ID for explainability
+                            // Fetch latest model ID for explainability, then auto-trigger
                             fetch('/api/models').then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }).then(function(mdata) {
                                 var models = mdata.models || [];
                                 if (models.length > 0) {
                                     lastTrainedModelId = models[models.length - 1].id;
                                     $('btn-explain').disabled = false;
+                                    getFeatureImportance();
                                 }
                             }).catch(function(e) { console.error('Request failed:', e); });
                             // Update training UMAP badge and refresh Analyze tab UMAP
@@ -2409,6 +2616,7 @@
                 $('btn-compare').disabled = false;
                 if (data.success) {
                     comparisonResults = data.comparison || [];
+                    comparisonUmapData = { umap_points: data.umap_points, per_model_predictions: data.per_model_predictions, true_labels: data.true_labels };
                     renderComparison();
                     var failed = comparisonResults.filter(function(r) { return r.error; }).length;
                     if (failed > 0) {
@@ -2486,6 +2694,67 @@
                         legend: { labels: { font: { family: '"Inter", sans-serif' } } }
                     }
                 }
+            });
+
+            // UMAP scatter plots per model
+            renderComparisonUmap();
+        }
+
+        var comparisonUmapCharts = [];
+        var comparisonUmapData = null;
+        function renderComparisonUmap() {
+            // Destroy previous charts
+            comparisonUmapCharts.forEach(function(c) { try { c.destroy(); } catch(e){} });
+            comparisonUmapCharts = [];
+            var wrap = $('compare-umap-grid');
+            if (!wrap) return;
+            wrap.innerHTML = '';
+            if (!comparisonUmapData || !comparisonUmapData.umap_points || comparisonUmapData.umap_points.length === 0) {
+                wrap.parentElement.style.display = 'none';
+                return;
+            }
+            wrap.parentElement.style.display = '';
+            var pts = comparisonUmapData.umap_points;
+            var preds = comparisonUmapData.per_model_predictions || {};
+            var trueLabels = comparisonUmapData.true_labels || [];
+            var classColors = ['#0066F5','#10b981','#f59e0b','#ef4444','#8b5cf6','#ec4899','#06b6d4','#84cc16','#f97316','#6366f1'];
+
+            function makeScatter(title, labels, canvasId) {
+                var div = document.createElement('div');
+                div.style.cssText = 'background:var(--color-grey-600);border-radius:8px;padding:8px;';
+                div.innerHTML = '<p class="text-12px medium" style="margin-bottom:4px;">' + escHtml(title) + '</p><canvas id="' + canvasId + '" width="260" height="200" style="width:100%;"></canvas>';
+                wrap.appendChild(div);
+                var canvas = div.querySelector('canvas');
+                // Determine if classification (few unique) or regression
+                var unique = {};
+                labels.forEach(function(l) { unique[l] = true; });
+                var uniqueKeys = Object.keys(unique);
+                var isClassification = uniqueKeys.length <= 20;
+                var datasets;
+                if (isClassification) {
+                    datasets = uniqueKeys.map(function(k, ci) {
+                        var data = [];
+                        pts.forEach(function(p, i) { if (String(labels[i]) === k) data.push({ x: p[0], y: p[1] }); });
+                        return { label: k, data: data, backgroundColor: classColors[ci % classColors.length] + '80', borderColor: classColors[ci % classColors.length], pointRadius: 2, pointHoverRadius: 4 };
+                    });
+                } else {
+                    var vals = labels.map(Number);
+                    var vmin = Math.min.apply(null, vals);
+                    var vmax = Math.max.apply(null, vals);
+                    var range = vmax - vmin || 1;
+                    datasets = [{ label: title, data: pts.map(function(p, i) { return { x: p[0], y: p[1] }; }), backgroundColor: vals.map(function(v) { var t = (v - vmin) / range; return 'rgba(' + Math.round(t * 245) + ',' + Math.round(80 + (1 - t) * 100) + ',' + Math.round((1 - t) * 245) + ',0.5)'; }), pointRadius: 2, pointHoverRadius: 4 }];
+                }
+                var ch = new Chart(canvas, { type: 'scatter', data: { datasets: datasets }, options: { scales: { x: { display: false }, y: { display: false } }, plugins: { legend: { display: isClassification, labels: { boxWidth: 8, font: { size: 9 } } } }, animation: false } });
+                comparisonUmapCharts.push(ch);
+            }
+
+            // Ground truth
+            if (trueLabels.length > 0) {
+                makeScatter('Ground Truth', trueLabels, 'cmp-umap-truth');
+            }
+            // Per model
+            Object.keys(preds).forEach(function(name) {
+                makeScatter(name, preds[name], 'cmp-umap-' + name.replace(/[^a-z0-9]/gi, '_'));
             });
         }
 
@@ -2818,6 +3087,7 @@
                     $('data-cols').textContent = data.columns;
                     $('data-meta').style.display = '';
                     refreshPreview();
+                    runDataAnalysis();
                     updateTargetOptions(data.column_names);
                     notify('Dataset imported from ' + data.source + '!', 'success');
                 } else if (data.needs_credentials) {
@@ -2865,18 +3135,20 @@
             });
         }
 
+        var autotuneRetryCount = 0;
         function pollAutoTune() {
             if (!autotuneJobId) return;
             fetch('/api/train/status/' + autotuneJobId)
                 .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
                 .then(function(data) {
+                    autotuneRetryCount = 0;
                     var s = data.status;
                     if (s.Completed) {
                         var m = s.Completed.metrics || {};
                         var html = '<div class="flex-col gap-12">';
                         if (m.best) {
                             html += '<div style="padding:12px;background:var(--color-success-100);border-radius:8px;">';
-                            html += '<p class="text-14px medium" style="color:var(--color-success-600);">🏆 Best: ' + escHtml(m.best_model || '') + '</p>';
+                            html += '<p class="text-14px medium" style="color:var(--color-success-600);">Best: ' + escHtml(m.best_model || '') + '</p>';
                             html += '<p class="mono-14px" style="margin-top:4px;">Score: ' + (m.best.score || 0).toFixed(6) + '</p>';
                             html += '<p class="text-12px regular" style="color:var(--color-text-700);margin-top:2px;">Time: ' + (m.total_time_secs || 0).toFixed(2) + 's | Models: ' + (m.successful_models || 0) + '/' + (m.total_models_tested || 0) + '</p>';
                             html += '</div>';
@@ -2900,6 +3172,7 @@
                             var bestModelId = 'autotune_' + m.best_model + '_' + data.job_id;
                             lastTrainedModelId = bestModelId;
                             $('btn-explain').disabled = false;
+                            getFeatureImportance();
                         }
                         notify('Auto-tune complete! Best: ' + (m.best_model || 'N/A'), 'success');
                     } else if (s.Failed) {
@@ -2909,11 +3182,36 @@
                     } else {
                         var p = s.Running ? (s.Running.progress * 100).toFixed(0) : '0';
                         var msg = s.Running ? s.Running.message || 'Auto-tuning...' : 'Auto-tuning...';
-                        $('autotune-results').innerHTML = '<div class="flex-col gap-8"><div class="progress-bar"><div class="progress-bar-fill" style="width:' + p + '%"></div></div><p class="text-12px regular" style="color:var(--color-text-700);">' + escHtml(msg) + '</p></div>';
+                        var pr = s.Running ? s.Running.partial_results : null;
+                        var ph = '<div class="flex-col gap-8"><div class="progress-bar"><div class="progress-bar-fill" style="width:' + p + '%"></div></div><p class="text-12px regular" style="color:var(--color-text-700);">' + escHtml(msg) + '</p>';
+                        if (pr && pr.length > 0) {
+                            pr.sort(function(a, b) { return (b.score || 0) - (a.score || 0); });
+                            ph += '<div class="table-wrap" style="margin-top:8px;"><table class="data-table"><thead><tr><th>#</th><th>Model</th><th>Score</th><th>Time</th><th>Status</th></tr></thead><tbody>';
+                            pr.forEach(function(r, i) {
+                                ph += '<tr><td>' + (i + 1) + '</td>';
+                                ph += '<td class="text-14px medium">' + escHtml(r.model) + '</td>';
+                                ph += '<td class="mono-14px">' + (r.score || 0).toFixed(6) + '</td>';
+                                ph += '<td class="mono-12px">' + (r.training_time_secs || 0).toFixed(2) + 's</td>';
+                                ph += '<td><span class="badge-sm ' + (r.status === 'success' ? 'badge-success' : 'badge-danger') + '">' + escHtml(r.status || 'done') + '</span></td></tr>';
+                            });
+                            ph += '</tbody></table></div>';
+                        }
+                        ph += '</div>';
+                        $('autotune-results').innerHTML = ph;
                         setTimeout(pollAutoTune, 1500);
                     }
                 })
-                .catch(function() { setTimeout(pollAutoTune, 3000); });
+                .catch(function() {
+                    autotuneRetryCount++;
+                    var delay = Math.min(1500 * Math.pow(2, autotuneRetryCount), 30000);
+                    if (autotuneRetryCount > 10) {
+                        $('autotune-results').innerHTML = '<p class="text-14px regular" style="color:var(--color-danger-500);">Connection lost. Auto-tune may still be running on the server.</p>';
+                        $('btn-autotune').disabled = false;
+                        autotuneJobId = null;
+                        return;
+                    }
+                    setTimeout(pollAutoTune, delay);
+                });
         }
 
         // ── Enhanced HyperOpt: Search Space, Convergence, History ──
@@ -3131,6 +3429,7 @@
                     for (var i = 0; i < sel.options.length; i++) {
                         if (sel.options[i].value === autoColorBy) { sel.selectedIndex = i; break; }
                     }
+                    if (sel._customSelect) sel._customSelect.updateLabel();
                 }
             }
 
@@ -3394,6 +3693,7 @@
                     for (var i = 0; i < sel.options.length; i++) {
                         if (sel.options[i].value === autoColorBy) { sel.selectedIndex = i; break; }
                     }
+                    if (sel._customSelect) sel._customSelect.updateLabel();
                 }
             }
 
@@ -3742,6 +4042,7 @@
                 opt.textContent = n;
                 sel.appendChild(opt);
             });
+            if (sel._customSelect) sel._customSelect.refresh();
         }
 
         function runAutoML() {
@@ -4092,6 +4393,207 @@
                 .catch(function() { notify('Failed to evict cache', 'error'); });
         }
 
+        // ── Custom Select Dropdown ──
+        function CustomSelect(selectEl) {
+            if (selectEl._customSelect) return;
+            selectEl._customSelect = this;
+            this.select = selectEl;
+            this.isOpen = false;
+            this.searchable = selectEl.options.length > 6;
+
+            // Build wrapper
+            var wrap = document.createElement('div');
+            wrap.className = 'custom-select';
+            selectEl.parentNode.insertBefore(wrap, selectEl);
+            wrap.appendChild(selectEl);
+            selectEl.style.position = 'absolute';
+            selectEl.style.opacity = '0';
+            selectEl.style.pointerEvents = 'none';
+            selectEl.style.width = '0';
+            selectEl.style.height = '0';
+            selectEl.tabIndex = -1;
+
+            // Trigger
+            var trigger = document.createElement('div');
+            trigger.className = 'custom-select-trigger';
+            trigger.innerHTML = '<span class="cs-text"></span><i class="cs-arrow ri-arrow-down-s-line"></i>';
+            trigger.tabIndex = 0;
+            wrap.insertBefore(trigger, selectEl);
+
+            // Dropdown
+            var dropdown = document.createElement('div');
+            dropdown.className = 'custom-select-dropdown';
+            wrap.appendChild(dropdown);
+
+            // Search box (if searchable)
+            var searchInput = null;
+            if (this.searchable) {
+                var searchWrap = document.createElement('div');
+                searchWrap.className = 'custom-select-search';
+                searchInput = document.createElement('input');
+                searchInput.type = 'text';
+                searchInput.placeholder = 'Search...';
+                searchWrap.appendChild(searchInput);
+                dropdown.appendChild(searchWrap);
+            }
+
+            // Options container
+            var optionsDiv = document.createElement('div');
+            optionsDiv.className = 'custom-select-options';
+            dropdown.appendChild(optionsDiv);
+
+            this.wrap = wrap;
+            this.trigger = trigger;
+            this.dropdown = dropdown;
+            this.searchInput = searchInput;
+            this.optionsDiv = optionsDiv;
+            this.optionEls = [];
+            this.focusedIdx = -1;
+
+            this.buildOptions();
+            this.updateLabel();
+
+            var self = this;
+
+            trigger.addEventListener('click', function(e) {
+                e.stopPropagation();
+                if (self.isOpen) self.close(); else self.open();
+            });
+
+            trigger.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (self.isOpen) self.close(); else self.open(); }
+                else if (e.key === 'ArrowDown') { e.preventDefault(); if (!self.isOpen) self.open(); self.moveFocus(1); }
+                else if (e.key === 'ArrowUp') { e.preventDefault(); if (!self.isOpen) self.open(); self.moveFocus(-1); }
+                else if (e.key === 'Escape') { self.close(); }
+            });
+
+            if (searchInput) {
+                searchInput.addEventListener('input', function() { self.filterOptions(this.value); });
+                searchInput.addEventListener('keydown', function(e) {
+                    if (e.key === 'ArrowDown') { e.preventDefault(); self.moveFocus(1); }
+                    else if (e.key === 'ArrowUp') { e.preventDefault(); self.moveFocus(-1); }
+                    else if (e.key === 'Enter') { e.preventDefault(); self.selectFocused(); }
+                    else if (e.key === 'Escape') { self.close(); }
+                });
+            }
+
+            document.addEventListener('click', function(e) {
+                if (self.isOpen && !wrap.contains(e.target)) self.close();
+            });
+
+            // Observe native select changes (e.g. programmatic updates)
+            var observer = new MutationObserver(function() { self.buildOptions(); self.updateLabel(); });
+            observer.observe(selectEl, { childList: true, subtree: true, attributes: true });
+            selectEl.addEventListener('change', function() { self.updateLabel(); self.highlightSelected(); });
+        }
+
+        CustomSelect.prototype.buildOptions = function() {
+            var self = this;
+            this.optionsDiv.innerHTML = '';
+            this.optionEls = [];
+            var opts = this.select.options;
+            for (var i = 0; i < opts.length; i++) {
+                (function(idx) {
+                    var opt = opts[idx];
+                    var el = document.createElement('div');
+                    el.className = 'custom-select-option' + (opt.selected ? ' selected' : '');
+                    el.textContent = opt.textContent;
+                    el.dataset.value = opt.value;
+                    el.dataset.idx = idx;
+                    el.addEventListener('click', function(e) {
+                        e.stopPropagation();
+                        self.select.selectedIndex = idx;
+                        self.select.dispatchEvent(new Event('change', { bubbles: true }));
+                        self.updateLabel();
+                        self.highlightSelected();
+                        self.close();
+                    });
+                    self.optionsDiv.appendChild(el);
+                    self.optionEls.push(el);
+                })(i);
+            }
+        };
+
+        CustomSelect.prototype.updateLabel = function() {
+            var txt = this.trigger.querySelector('.cs-text');
+            var sel = this.select.options[this.select.selectedIndex];
+            txt.textContent = sel ? sel.textContent : '';
+        };
+
+        CustomSelect.prototype.highlightSelected = function() {
+            var idx = this.select.selectedIndex;
+            for (var i = 0; i < this.optionEls.length; i++) {
+                this.optionEls[i].classList.toggle('selected', parseInt(this.optionEls[i].dataset.idx) === idx);
+            }
+        };
+
+        CustomSelect.prototype.open = function() {
+            this.isOpen = true;
+            this.wrap.classList.add('open');
+            this.focusedIdx = this.select.selectedIndex;
+            this.highlightSelected();
+            if (this.searchInput) { this.searchInput.value = ''; this.filterOptions(''); this.searchInput.focus(); }
+            // Scroll selected into view
+            var selEl = this.optionEls[this.focusedIdx];
+            if (selEl) selEl.scrollIntoView({ block: 'nearest' });
+        };
+
+        CustomSelect.prototype.close = function() {
+            this.isOpen = false;
+            this.wrap.classList.remove('open');
+            this.trigger.focus();
+        };
+
+        CustomSelect.prototype.filterOptions = function(q) {
+            q = q.toLowerCase();
+            for (var i = 0; i < this.optionEls.length; i++) {
+                var match = !q || this.optionEls[i].textContent.toLowerCase().indexOf(q) >= 0;
+                this.optionEls[i].style.display = match ? '' : 'none';
+            }
+            this.focusedIdx = -1;
+        };
+
+        CustomSelect.prototype.moveFocus = function(dir) {
+            var visible = [];
+            for (var i = 0; i < this.optionEls.length; i++) {
+                if (this.optionEls[i].style.display !== 'none') visible.push(i);
+            }
+            if (!visible.length) return;
+            var curPos = visible.indexOf(this.focusedIdx);
+            var nextPos = curPos + dir;
+            if (nextPos < 0) nextPos = visible.length - 1;
+            if (nextPos >= visible.length) nextPos = 0;
+            this.focusedIdx = visible[nextPos];
+            for (var j = 0; j < this.optionEls.length; j++) {
+                this.optionEls[j].style.background = '';
+            }
+            this.optionEls[this.focusedIdx].style.background = 'var(--color-grey-600)';
+            this.optionEls[this.focusedIdx].scrollIntoView({ block: 'nearest' });
+        };
+
+        CustomSelect.prototype.selectFocused = function() {
+            if (this.focusedIdx >= 0 && this.focusedIdx < this.optionEls.length) {
+                this.optionEls[this.focusedIdx].click();
+            }
+        };
+
+        // Refresh a custom select (call after dynamically changing options)
+        CustomSelect.prototype.refresh = function() {
+            this.buildOptions();
+            this.updateLabel();
+        };
+
+        // Helper to get CustomSelect instance from a native select
+        function getCustomSelect(selectEl) {
+            return selectEl ? selectEl._customSelect : null;
+        }
+
+        // Initialize all selects
+        function initCustomSelects() {
+            var selects = document.querySelectorAll('select.input-text-md, select.input-text-sm');
+            selects.forEach(function(sel) { new CustomSelect(sel); });
+        }
+
         // ── Init ──
         document.addEventListener('DOMContentLoaded', function() {
             try {
@@ -4100,6 +4602,7 @@
                 setupModelCheckboxes();
                 setupEnsembleCheckboxes();
                 setupAutoMLModelCheckboxes();
+                initCustomSelects();
                 if ($('automl-target')) {
                     $('automl-target').addEventListener('change', function() {
                         $('btn-automl-run').disabled = !this.value;

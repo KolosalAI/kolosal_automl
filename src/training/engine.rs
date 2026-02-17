@@ -7,7 +7,6 @@ use super::decision_tree::DecisionTree;
 use super::random_forest::RandomForest;
 use super::gradient_boosting::{GradientBoostingRegressor, GradientBoostingClassifier, GradientBoostingConfig};
 use super::knn::{KNNClassifier, KNNRegressor, KNNConfig};
-use super::neural_network::{MLPClassifier, MLPRegressor, MLPConfig};
 use super::naive_bayes::{GaussianNaiveBayes, MultinomialNaiveBayes};
 use super::svm::{SVMClassifier, SVMRegressor, SVMConfig, KernelType};
 use super::adaboost::AdaBoostClassifier;
@@ -41,8 +40,6 @@ pub enum TrainedModel {
     GradientBoostingRegressor(GradientBoostingRegressor),
     KNNClassifier(KNNClassifier),
     KNNRegressor(KNNRegressor),
-    MLPClassifier(MLPClassifier),
-    MLPRegressor(MLPRegressor),
     GaussianNaiveBayes(GaussianNaiveBayes),
     MultinomialNaiveBayes(MultinomialNaiveBayes),
     SVMClassifier(SVMClassifier),
@@ -387,32 +384,6 @@ impl TrainEngine {
                 TrainedModel::KNNClassifier(model)
             }
             
-            // Neural Network models
-            (TaskType::Regression, ModelType::NeuralNetwork) => {
-                let config = MLPConfig {
-                    hidden_layers: vec![100, 50],
-                    max_epochs: self.config.max_iter.unwrap_or(200),
-                    learning_rate: self.config.learning_rate.unwrap_or(0.001),
-                    random_state: self.config.random_seed,
-                    ..Default::default()
-                };
-                let mut model = MLPRegressor::new(config);
-                model.fit(x, y)?;
-                TrainedModel::MLPRegressor(model)
-            }
-            (TaskType::BinaryClassification | TaskType::MultiClassification, ModelType::NeuralNetwork) => {
-                let config = MLPConfig {
-                    hidden_layers: vec![100, 50],
-                    max_epochs: self.config.max_iter.unwrap_or(200),
-                    learning_rate: self.config.learning_rate.unwrap_or(0.001),
-                    random_state: self.config.random_seed,
-                    ..Default::default()
-                };
-                let mut model = MLPClassifier::new(config);
-                model.fit(x, y)?;
-                TrainedModel::MLPClassifier(model)
-            }
-            
             // Naive Bayes (classification only, use Gaussian variant)
             (TaskType::BinaryClassification | TaskType::MultiClassification, ModelType::NaiveBayes) => {
                 let mut model = GaussianNaiveBayes::new();
@@ -720,8 +691,6 @@ impl TrainEngine {
             TrainedModel::GradientBoostingRegressor(m) => m.predict(x)?,
             TrainedModel::KNNClassifier(m) => m.predict(x),
             TrainedModel::KNNRegressor(m) => m.predict(x),
-            TrainedModel::MLPClassifier(m) => m.predict(x),
-            TrainedModel::MLPRegressor(m) => m.predict(x),
             TrainedModel::GaussianNaiveBayes(m) => m.predict(x),
             TrainedModel::MultinomialNaiveBayes(m) => m.predict(x),
             TrainedModel::SVMClassifier(m) => m.predict(x)?,
@@ -781,7 +750,6 @@ impl TrainEngine {
                 out
             }
             TrainedModel::KNNClassifier(m) => m.predict_proba(x),
-            TrainedModel::MLPClassifier(m) => m.predict_proba(x),
             TrainedModel::DecisionTreeClassifier(m) => {
                 let preds = m.predict(x)?;
                 let n = preds.len();
@@ -834,7 +802,6 @@ impl TrainEngine {
             | TrainedModel::RandomForestRegressor(_)
             | TrainedModel::GradientBoostingRegressor(_)
             | TrainedModel::KNNRegressor(_)
-            | TrainedModel::MLPRegressor(_)
             | TrainedModel::SVMRegressor(_)
             | TrainedModel::ExtraTreesRegressor(_)
             | TrainedModel::XGBoostRegressor(_)
@@ -871,7 +838,8 @@ impl TrainEngine {
     /// Get feature importances (if available)
     pub fn feature_importances(&self) -> Option<Array1<f64>> {
         let model = self.model.as_ref()?;
-        
+        let n_feat = self.feature_names.len();
+
         match model {
             TrainedModel::DecisionTreeClassifier(m) | TrainedModel::DecisionTreeRegressor(m) => {
                 m.feature_importances().cloned()
@@ -884,6 +852,51 @@ impl TrainEngine {
             }
             TrainedModel::GradientBoostingClassifier(m) => {
                 Some(Array1::from_vec(m.feature_importances().to_vec()))
+            }
+            TrainedModel::ExtraTreesClassifier(m) | TrainedModel::ExtraTreesRegressor(m) => {
+                m.feature_importances()
+            }
+            TrainedModel::AdaBoostClassifier(m) => {
+                m.feature_importances(n_feat)
+            }
+            TrainedModel::XGBoostRegressor(m) => {
+                m.feature_importances()
+            }
+            TrainedModel::XGBoostClassifier(m) => {
+                m.feature_importances()
+            }
+            TrainedModel::LightGBMRegressor(m) => {
+                m.feature_importances(n_feat)
+            }
+            TrainedModel::LightGBMClassifier(m) => {
+                m.feature_importances(n_feat)
+            }
+            TrainedModel::CatBoostRegressor(m) => {
+                m.feature_importances(n_feat)
+            }
+            TrainedModel::CatBoostClassifier(m) => {
+                m.feature_importances(n_feat)
+            }
+            TrainedModel::LinearRegression(m) => {
+                m.coefficients.as_ref().map(|c| c.mapv(f64::abs))
+            }
+            TrainedModel::LogisticRegression(m) => {
+                m.coefficients.as_ref().map(|c| c.mapv(f64::abs))
+            }
+            TrainedModel::RidgeRegression(m) => {
+                m.coefficients.as_ref().map(|c| c.mapv(f64::abs))
+            }
+            TrainedModel::LassoRegression(m) => {
+                m.coefficients.as_ref().map(|c| c.mapv(f64::abs))
+            }
+            TrainedModel::ElasticNetRegression(m) => {
+                m.coefficients.as_ref().map(|c| c.mapv(f64::abs))
+            }
+            TrainedModel::SGDRegressor(m) => {
+                m.weights.as_ref().map(|w| w.mapv(f64::abs))
+            }
+            TrainedModel::SGDClassifier(m) => {
+                m.weights.as_ref().map(|w| w.mapv(f64::abs))
             }
             _ => None,
         }

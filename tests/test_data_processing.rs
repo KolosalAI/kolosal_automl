@@ -186,16 +186,6 @@ fn test_svm_regression() {
 }
 
 #[test]
-fn test_neural_network_regression() {
-    let df = make_regression_df();
-    let config = TrainingConfig::new(TaskType::Regression, "target")
-        .with_model(ModelType::NeuralNetwork);
-    let mut engine = TrainEngine::new(config);
-    let result = engine.fit(&df);
-    assert!(result.is_ok(), "Neural network regression should succeed: {:?}", result.err());
-}
-
-#[test]
 fn test_predict_returns_correct_length() {
     let df = make_binary_df();
     let config = TrainingConfig::new(TaskType::BinaryClassification, "target")
@@ -233,7 +223,6 @@ fn test_all_regression_models_produce_metrics() {
         ModelType::RandomForest,
         ModelType::GradientBoosting,
         ModelType::KNN,
-        ModelType::NeuralNetwork,
         ModelType::SVM,
     ];
 
@@ -259,7 +248,6 @@ fn test_all_classification_models_produce_metrics() {
         ModelType::GradientBoosting,
         ModelType::KNN,
         ModelType::NaiveBayes,
-        ModelType::NeuralNetwork,
         ModelType::SVM,
     ];
 

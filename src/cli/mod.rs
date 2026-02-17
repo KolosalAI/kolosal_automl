@@ -370,7 +370,6 @@ pub fn cmd_benchmark(
             ("Gradient Boosting", ModelType::GradientBoosting),
             ("KNN", ModelType::KNN),
             ("Naive Bayes", ModelType::NaiveBayes),
-            ("Neural Network", ModelType::NeuralNetwork),
             ("SVM", ModelType::SVM),
         ],
         TaskType::Regression | TaskType::TimeSeries => vec![
@@ -379,7 +378,6 @@ pub fn cmd_benchmark(
             ("Random Forest", ModelType::RandomForest),
             ("Gradient Boosting", ModelType::GradientBoosting),
             ("KNN", ModelType::KNN),
-            ("Neural Network", ModelType::NeuralNetwork),
             ("SVM", ModelType::SVM),
         ],
         TaskType::Clustering => vec![

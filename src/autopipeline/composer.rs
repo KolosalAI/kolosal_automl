@@ -117,8 +117,6 @@ pub enum ModelStep {
     NaiveBayes,
     /// Support vector machine
     SVM,
-    /// Neural network (MLP)
-    NeuralNetwork,
 }
 
 /// Configuration for pipeline composition
@@ -412,20 +410,11 @@ impl PipelineComposer {
                 if n_samples < 10000 {
                     models.push(ModelStep::KNN);
                 }
-
-                // Neural network for larger datasets
-                if n_samples > 5000 {
-                    models.push(ModelStep::NeuralNetwork);
-                }
             }
             TaskType::Regression => {
                 models.push(ModelStep::GradientBoosting);
                 models.push(ModelStep::RandomForest);
                 models.push(ModelStep::LinearModel);
-
-                if n_samples > 5000 {
-                    models.push(ModelStep::NeuralNetwork);
-                }
             }
             _ => {
                 models.push(ModelStep::GradientBoosting);

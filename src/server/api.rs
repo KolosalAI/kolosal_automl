@@ -51,6 +51,7 @@ pub fn create_router(state: Arc<AppState>, config: &ServerConfig) -> Router {
         .route("/data/sample/:name", get(handlers::load_sample_data))
         .route("/data/clean", post(handlers::auto_clean_data))
         .route("/data/clear", axum::routing::delete(handlers::clear_data))
+        .route("/data/analyze", get(handlers::analyze_data))
         .route("/data/import/kaggle", post(handlers::import_kaggle))
         // Preprocessing
         .route("/preprocess", post(handlers::run_preprocessing))

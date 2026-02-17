@@ -326,6 +326,36 @@ impl LightGBMRegressor {
             self.base_prediction + self.trees.iter().map(|t| self.config.learning_rate * t.predict(s)).sum::<f64>()
         }).collect()))
     }
+
+    /// Compute feature importances by counting splits across all trees
+    pub fn feature_importances(&self, n_features: usize) -> Option<Array1<f64>> {
+        if n_features == 0 { return None; }
+        Some(lgb_tree_importances(&self.trees, n_features))
+    }
+}
+
+/// Shared helper: compute split-count importances from LGBNode trees
+fn lgb_tree_importances(trees: &[LGBNode], n_features: usize) -> Array1<f64> {
+    let mut counts = vec![0.0f64; n_features];
+    for tree in trees {
+        lgb_count_splits(tree, &mut counts);
+    }
+    let total: f64 = counts.iter().sum();
+    if total > 0.0 {
+        for c in counts.iter_mut() { *c /= total; }
+    }
+    Array1::from_vec(counts)
+}
+
+fn lgb_count_splits(node: &LGBNode, counts: &mut [f64]) {
+    match node {
+        LGBNode::Leaf { .. } => {}
+        LGBNode::Split { feature, left, right, .. } => {
+            if *feature < counts.len() { counts[*feature] += 1.0; }
+            lgb_count_splits(left, counts);
+            lgb_count_splits(right, counts);
+        }
+    }
 }
 
 // ============ LightGBM Classifier ============
@@ -400,6 +430,12 @@ impl LightGBMClassifier {
             let s = row.as_slice().unwrap();
             self.base_prediction + self.trees.iter().map(|t| self.config.learning_rate * t.predict(s)).sum::<f64>()
         }).collect()))
+    }
+
+    /// Compute feature importances by counting splits across all trees
+    pub fn feature_importances(&self, n_features: usize) -> Option<Array1<f64>> {
+        if n_features == 0 { return None; }
+        Some(lgb_tree_importances(&self.trees, n_features))
     }
 }
 

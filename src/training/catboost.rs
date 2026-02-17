@@ -201,6 +201,27 @@ impl CatBoostRegressor {
             self.base_prediction + self.trees.iter().map(|t| self.config.learning_rate * t.predict(s)).sum::<f64>()
         }).collect()))
     }
+
+    /// Compute feature importances by counting split feature usage
+    pub fn feature_importances(&self, n_features: usize) -> Option<Array1<f64>> {
+        if n_features == 0 { return None; }
+        Some(cat_tree_importances(&self.trees, n_features))
+    }
+}
+
+/// Shared helper: compute split-count importances from SymmetricTree
+fn cat_tree_importances(trees: &[SymmetricTree], n_features: usize) -> Array1<f64> {
+    let mut counts = vec![0.0f64; n_features];
+    for tree in trees {
+        for &(feature, _) in &tree.splits {
+            if feature < n_features { counts[feature] += 1.0; }
+        }
+    }
+    let total: f64 = counts.iter().sum();
+    if total > 0.0 {
+        for c in counts.iter_mut() { *c /= total; }
+    }
+    Array1::from_vec(counts)
 }
 
 // ============ CatBoost Classifier ============
@@ -280,6 +301,12 @@ impl CatBoostClassifier {
             let s = row.as_slice().unwrap();
             self.base_prediction + self.trees.iter().map(|t| self.config.learning_rate * t.predict(s)).sum::<f64>()
         }).collect()))
+    }
+
+    /// Compute feature importances by counting split feature usage
+    pub fn feature_importances(&self, n_features: usize) -> Option<Array1<f64>> {
+        if n_features == 0 { return None; }
+        Some(cat_tree_importances(&self.trees, n_features))
     }
 }
 

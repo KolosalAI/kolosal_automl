@@ -31,7 +31,6 @@ fn main() -> anyhow::Result<()> {
         ("Random Forest", ModelType::RandomForest),
         ("Gradient Boosting", ModelType::GradientBoosting),
         ("KNN", ModelType::KNN),
-        ("Neural Network", ModelType::NeuralNetwork),
     ];
 
     for (name, model_type) in models {

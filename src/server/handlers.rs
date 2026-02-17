@@ -92,7 +92,6 @@ fn parse_model_type(s: &str) -> std::result::Result<ModelType, ServerError> {
         "knn" => Ok(ModelType::KNN),
         "naive_bayes" => Ok(ModelType::NaiveBayes),
         "svm" => Ok(ModelType::SVM),
-        "neural_network" => Ok(ModelType::NeuralNetwork),
         "adaboost" | "ada_boost" => Ok(ModelType::AdaBoost),
         "extra_trees" | "extratrees" => Ok(ModelType::ExtraTrees),
         "xgboost" | "xg_boost" => Ok(ModelType::XGBoost),
@@ -104,7 +103,7 @@ fn parse_model_type(s: &str) -> std::result::Result<ModelType, ServerError> {
         "kmeans" | "k_means" => Ok(ModelType::KMeans),
         "dbscan" => Ok(ModelType::DBSCAN),
         _ => Err(ServerError::BadRequest(format!(
-            "Invalid model type: '{}'. Expected: linear_regression, logistic_regression, ridge, lasso, elastic_net, polynomial, decision_tree, random_forest, gradient_boosting, xgboost, lightgbm, catboost, knn, naive_bayes, svm, neural_network, adaboost, extra_trees, sgd, gaussian_process, kmeans, dbscan",
+            "Invalid model type: '{}'. Expected: linear_regression, logistic_regression, ridge, lasso, elastic_net, polynomial, decision_tree, random_forest, gradient_boosting, xgboost, lightgbm, catboost, knn, naive_bayes, svm, adaboost, extra_trees, sgd, gaussian_process, kmeans, dbscan",
             s
         ))),
     }
@@ -261,6 +260,267 @@ pub async fn get_data_info(
         "columns": df.width(),
         "column_info": columns,
         "memory_usage_bytes": df.estimated_size(),
+    })))
+}
+
+/// Comprehensive automated data analysis
+pub async fn analyze_data(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<serde_json::Value>> {
+    let data = state.current_data.read().await;
+
+    let df = data.as_ref()
+        .ok_or_else(|| ServerError::NotFound("No data loaded".to_string()))?;
+
+    let n_rows = df.height();
+    let n_cols = df.width();
+    let memory_bytes = df.estimated_size();
+
+    // --- Duplicate count ---
+    let dup_count = if n_rows > 0 {
+        let unique_df = df.unique_stable(None, polars::frame::UniqueKeepStrategy::First, None);
+        match unique_df {
+            Ok(udf) => n_rows.saturating_sub(udf.height()),
+            Err(_) => 0,
+        }
+    } else { 0 };
+
+    // --- Per-column stats ---
+    let mut col_stats = Vec::new();
+    let mut missing_values = Vec::new();
+    let mut numeric_col_names = Vec::new();
+    let mut numeric_col_indices = Vec::new();
+    let mut distributions = Vec::new();
+    let mut outlier_summary = Vec::new();
+
+    for (idx, col) in df.get_columns().iter().enumerate() {
+        let col_name = col.name().to_string();
+        let null_count = col.null_count();
+        let null_pct = (null_count as f64 / n_rows.max(1) as f64) * 100.0;
+        let unique_count = col.n_unique().unwrap_or(0);
+        let dtype_str = format!("{:?}", col.dtype());
+
+        missing_values.push(serde_json::json!({
+            "column": col_name,
+            "null_count": null_count,
+            "null_percent": (null_pct * 100.0).round() / 100.0,
+        }));
+
+        let is_numeric = matches!(col.dtype(), DataType::Float64 | DataType::Float32 | DataType::Int64 | DataType::Int32 | DataType::Int16 | DataType::Int8 | DataType::UInt64 | DataType::UInt32 | DataType::UInt16 | DataType::UInt8);
+
+        if is_numeric {
+            numeric_col_names.push(col_name.clone());
+            numeric_col_indices.push(idx);
+            let series = col.cast(&DataType::Float64).unwrap_or_else(|_| col.clone());
+            let ca = series.f64().ok();
+
+            let (mean, std, min, max, median) = if let Some(ca) = ca {
+                (
+                    ca.mean().unwrap_or(0.0),
+                    ca.std(1).unwrap_or(0.0),
+                    ca.min().unwrap_or(0.0),
+                    ca.max().unwrap_or(0.0),
+                    ca.median().unwrap_or(0.0),
+                )
+            } else {
+                (0.0, 0.0, 0.0, 0.0, 0.0)
+            };
+
+            // Quartiles via sorted values
+            let (q25, q75) = if let Some(ca) = ca {
+                let mut vals: Vec<f64> = ca.into_no_null_iter().collect();
+                vals.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                let len = vals.len();
+                if len > 0 {
+                    (vals[len / 4], vals[3 * len / 4])
+                } else { (0.0, 0.0) }
+            } else { (0.0, 0.0) };
+
+            // Skewness
+            let skewness = if let Some(ca) = ca {
+                let n = ca.len() as f64 - ca.null_count() as f64;
+                if n > 2.0 && std > 0.0 {
+                    let sum_cubed: f64 = ca.into_no_null_iter().map(|v| ((v - mean) / std).powi(3)).sum();
+                    sum_cubed * n / ((n - 1.0) * (n - 2.0))
+                } else { 0.0 }
+            } else { 0.0 };
+
+            // IQR outliers
+            let iqr = q75 - q25;
+            let lower = q25 - 1.5 * iqr;
+            let upper = q75 + 1.5 * iqr;
+            let outlier_count = if let Some(ca) = ca {
+                ca.into_no_null_iter().filter(|&v| v < lower || v > upper).count()
+            } else { 0 };
+
+            outlier_summary.push(serde_json::json!({
+                "column": col_name,
+                "outlier_count": outlier_count,
+                "outlier_percent": (outlier_count as f64 / n_rows.max(1) as f64 * 100.0 * 100.0).round() / 100.0,
+                "lower_bound": (lower * 1000.0).round() / 1000.0,
+                "upper_bound": (upper * 1000.0).round() / 1000.0,
+            }));
+
+            // Histogram bins
+            let hist = if let Some(ca) = ca {
+                let vals: Vec<f64> = ca.into_no_null_iter().collect();
+                if !vals.is_empty() && max > min {
+                    let n_bins = 20usize;
+                    let bin_width = (max - min) / n_bins as f64;
+                    let mut counts = vec![0u64; n_bins];
+                    for &v in &vals {
+                        let bin = ((v - min) / bin_width).floor() as usize;
+                        let bin = bin.min(n_bins - 1);
+                        counts[bin] += 1;
+                    }
+                    let bin_edges: Vec<f64> = (0..=n_bins).map(|i| ((min + i as f64 * bin_width) * 1000.0).round() / 1000.0).collect();
+                    Some(serde_json::json!({ "bin_edges": bin_edges, "counts": counts }))
+                } else { None }
+            } else { None };
+
+            distributions.push(serde_json::json!({
+                "column": col_name,
+                "type": "numeric",
+                "histogram": hist,
+            }));
+
+            col_stats.push(serde_json::json!({
+                "column": col_name,
+                "dtype": dtype_str,
+                "null_count": null_count,
+                "null_percent": (null_pct * 100.0).round() / 100.0,
+                "unique": unique_count,
+                "mean": (mean * 10000.0).round() / 10000.0,
+                "std": (std * 10000.0).round() / 10000.0,
+                "min": (min * 10000.0).round() / 10000.0,
+                "q25": (q25 * 10000.0).round() / 10000.0,
+                "median": (median * 10000.0).round() / 10000.0,
+                "q75": (q75 * 10000.0).round() / 10000.0,
+                "max": (max * 10000.0).round() / 10000.0,
+                "skewness": (skewness * 10000.0).round() / 10000.0,
+                "is_numeric": true,
+            }));
+        } else {
+            // Categorical stats
+            let series = col.as_materialized_series();
+            let value_counts = series.value_counts(true, true, "count".into(), false);
+            let top_categories: Vec<serde_json::Value> = match value_counts {
+                Ok(vc) => {
+                    let n = vc.height().min(10);
+                    (0..n).filter_map(|i| {
+                        let val = vc.column(col.name()).ok()?.get(i).ok()?.to_string();
+                        let cnt = vc.column("count").ok()?.get(i).ok()?.to_string().replace('"', "");
+                        Some(serde_json::json!({ "value": val.trim_matches('"'), "count": cnt.parse::<u64>().unwrap_or(0) }))
+                    }).collect()
+                }
+                Err(_) => Vec::new(),
+            };
+
+            distributions.push(serde_json::json!({
+                "column": col_name,
+                "type": "categorical",
+                "value_counts": top_categories.clone(),
+            }));
+
+            col_stats.push(serde_json::json!({
+                "column": col_name,
+                "dtype": dtype_str,
+                "null_count": null_count,
+                "null_percent": (null_pct * 100.0).round() / 100.0,
+                "unique": unique_count,
+                "top_categories": top_categories,
+                "is_numeric": false,
+            }));
+        }
+    }
+
+    // --- Correlation matrix (numeric columns only, max 30 to avoid perf issues) ---
+    let correlation = if numeric_col_names.len() >= 2 && numeric_col_names.len() <= 30 {
+        use ndarray::Array2;
+        let n = n_rows;
+        let nc = numeric_col_indices.len();
+        let mut matrix = Array2::zeros((n, nc));
+        for (j, &col_idx) in numeric_col_indices.iter().enumerate() {
+            let col = &df.get_columns()[col_idx];
+            if let Ok(ca) = col.cast(&DataType::Float64) {
+                if let Ok(ca) = ca.f64() {
+                    for i in 0..n {
+                        matrix[[i, j]] = ca.get(i).unwrap_or(0.0);
+                    }
+                }
+            }
+        }
+        let corr = crate::preprocessing::feature_selection::CorrelationFilter::compute_correlation_matrix(&matrix);
+        let corr_vec: Vec<Vec<f64>> = (0..nc).map(|i| {
+            (0..nc).map(|j| (corr[[i, j]] * 10000.0).round() / 10000.0).collect()
+        }).collect();
+        Some(serde_json::json!({
+            "columns": numeric_col_names,
+            "matrix": corr_vec,
+        }))
+    } else { None };
+
+    // --- Quality report ---
+    let total_cells = n_rows * n_cols;
+    let total_nulls: usize = df.get_columns().iter().map(|c| c.null_count()).sum();
+    let completeness = if total_cells > 0 { 1.0 - (total_nulls as f64 / total_cells as f64) } else { 1.0 };
+    let total_unique: usize = df.get_columns().iter().map(|c| c.n_unique().unwrap_or(0)).sum();
+    let uniqueness = if total_cells > 0 { (total_unique as f64 / total_cells as f64).min(1.0) } else { 1.0 };
+    let consistency = 1.0; // placeholder
+    let validity = completeness; // basic approximation
+    let quality_score = completeness * 0.4 + uniqueness * 0.2 + consistency * 0.2 + validity * 0.2;
+
+    // --- Warnings ---
+    let mut warnings = Vec::new();
+    for col in df.get_columns() {
+        let null_pct = col.null_count() as f64 / n_rows.max(1) as f64;
+        if null_pct > 0.5 {
+            warnings.push(serde_json::json!({
+                "type": "high_missing",
+                "severity": "warning",
+                "message": format!("Column '{}' has {:.1}% missing values", col.name(), null_pct * 100.0),
+            }));
+        }
+        if col.n_unique().unwrap_or(0) == 1 {
+            warnings.push(serde_json::json!({
+                "type": "constant_column",
+                "severity": "info",
+                "message": format!("Column '{}' has only one unique value", col.name()),
+            }));
+        }
+    }
+    if dup_count > n_rows / 10 {
+        warnings.push(serde_json::json!({
+            "type": "high_duplicates",
+            "severity": "warning",
+            "message": format!("{} duplicate rows ({:.1}%)", dup_count, dup_count as f64 / n_rows.max(1) as f64 * 100.0),
+        }));
+    }
+
+    Ok(Json(serde_json::json!({
+        "success": true,
+        "overview": {
+            "rows": n_rows,
+            "columns": n_cols,
+            "memory_bytes": memory_bytes,
+            "memory_mb": ((memory_bytes as f64 / 1024.0 / 1024.0) * 100.0).round() / 100.0,
+            "duplicates": dup_count,
+            "total_missing": total_nulls,
+            "missing_percent": ((total_nulls as f64 / total_cells.max(1) as f64) * 10000.0).round() / 100.0,
+        },
+        "quality": {
+            "score": (quality_score * 1000.0).round() / 1000.0,
+            "completeness": (completeness * 1000.0).round() / 1000.0,
+            "uniqueness": (uniqueness * 1000.0).round() / 1000.0,
+            "consistency": consistency,
+            "validity": (validity * 1000.0).round() / 1000.0,
+        },
+        "warnings": warnings,
+        "column_stats": col_stats,
+        "missing_values": missing_values,
+        "correlation": correlation,
+        "distributions": distributions,
+        "outlier_summary": outlier_summary,
     })))
 }
 
@@ -626,14 +886,17 @@ pub async fn compare_models(
         }));
     }
 
+    let mut trained_engines: Vec<(String, TrainEngine)> = Vec::new();
+
     for handle in handles {
         match handle.await {
-            Ok((name, Ok((metrics, _engine)))) => {
+            Ok((name, Ok((metrics, engine)))) => {
                 info!(model = %name, "Comparison model trained successfully");
                 results.push(serde_json::json!({
                     "model": name,
                     "metrics": metrics,
                 }));
+                trained_engines.push((name, engine));
             }
             Ok((name, Err(e))) => {
                 error!(model = %name, error = %e, "Comparison model training failed");
@@ -650,9 +913,70 @@ pub async fn compare_models(
 
     info!(total = results.len(), "Model comparison completed");
 
+    // --- UMAP projection & per-model predictions ---
+    let mut umap_points: Option<Vec<[f64; 2]>> = None;
+    let mut per_model_preds: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+    let mut true_labels: Option<Vec<f64>> = None;
+
+    // Try UMAP on the dataset (best-effort, don't fail comparison on UMAP errors)
+    let umap_result: std::result::Result<(), Box<dyn std::error::Error + Send + Sync>> = (|| {
+        use crate::visualization::umap::{Umap, UmapConfig};
+
+        let numeric_cols: Vec<String> = df.get_columns().iter()
+            .filter(|c| c.name().as_str() != request.target_column && matches!(c.dtype(), DataType::Float32 | DataType::Float64 | DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 | DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64))
+            .map(|c| c.name().to_string())
+            .collect();
+
+        if numeric_cols.len() < 2 || df.height() < 5 { return Ok(()); }
+
+        // Cap at 2000 rows for speed
+        let max_rows = df.height().min(2000);
+        let mut matrix: Vec<Vec<f64>> = Vec::with_capacity(max_rows);
+        for i in 0..max_rows {
+            let mut row = Vec::with_capacity(numeric_cols.len());
+            for cn in &numeric_cols {
+                let s = df.column(cn).ok().and_then(|c| c.cast(&DataType::Float64).ok());
+                let val = s.as_ref().and_then(|s| s.f64().ok()).and_then(|ca| ca.get(i)).unwrap_or(0.0);
+                row.push(val);
+            }
+            matrix.push(row);
+        }
+
+        let umap = Umap::new(UmapConfig::default());
+        let points = umap.fit_transform(&matrix).map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { Box::new(std::io::Error::new(std::io::ErrorKind::Other, format!("{}", e))) })?;
+
+        // True labels
+        if let Ok(target_col) = df.column(&request.target_column) {
+            if let Ok(casted) = target_col.cast(&DataType::Float64) {
+                if let Ok(ca) = casted.f64() {
+                    let labels: Vec<f64> = (0..max_rows).map(|i| ca.get(i).unwrap_or(0.0)).collect();
+                    true_labels = Some(labels);
+                }
+            }
+        }
+
+        // Per-model predictions
+        for (name, engine) in &trained_engines {
+            if let Ok(preds) = engine.predict(&df) {
+                let pred_vec: Vec<f64> = preds.iter().take(max_rows).cloned().collect();
+                per_model_preds.insert(name.clone(), serde_json::json!(pred_vec));
+            }
+        }
+
+        umap_points = Some(points);
+        Ok(())
+    })();
+
+    if let Err(e) = umap_result {
+        debug!("UMAP for comparison skipped: {}", e);
+    }
+
     Ok(Json(serde_json::json!({
         "success": true,
         "comparison": results,
+        "umap_points": umap_points,
+        "per_model_predictions": per_model_preds,
+        "true_labels": true_labels,
     })))
 }
 
@@ -1117,7 +1441,7 @@ const EMBEDDED_INDEX_HTML: &str = r#"<!DOCTYPE html>
             <div class="card form-stack" style="max-width:500px">
                 <div><label class="form">Target Column</label><select id="e-target"><option value="">Select...</option></select></div>
                 <div><label class="form">Task Type</label><select id="e-task"><option value="classification">Classification</option><option value="regression">Regression</option><option value="clustering">Clustering</option></select></div>
-                <div><label class="form">Model</label><select id="e-model"><option value="random_forest">Random Forest</option><option value="xgboost">XGBoost</option><option value="lightgbm">LightGBM</option><option value="catboost">CatBoost</option><option value="gradient_boosting">Gradient Boosting</option><option value="extra_trees">Extra Trees</option><option value="decision_tree">Decision Tree</option><option value="logistic_regression">Logistic Regression</option><option value="ridge">Ridge</option><option value="lasso">Lasso</option><option value="elastic_net">Elastic Net</option><option value="polynomial">Polynomial</option><option value="adaboost">AdaBoost</option><option value="sgd">SGD</option><option value="knn">KNN</option><option value="naive_bayes">Naive Bayes</option><option value="svm">SVM</option><option value="neural_network">Neural Network</option><option value="gaussian_process">Gaussian Process</option><option value="kmeans">KMeans</option><option value="dbscan">DBSCAN</option></select></div>
+                <div><label class="form">Model</label><select id="e-model"><option value="random_forest">Random Forest</option><option value="xgboost">XGBoost</option><option value="lightgbm">LightGBM</option><option value="catboost">CatBoost</option><option value="gradient_boosting">Gradient Boosting</option><option value="extra_trees">Extra Trees</option><option value="decision_tree">Decision Tree</option><option value="logistic_regression">Logistic Regression</option><option value="ridge">Ridge</option><option value="lasso">Lasso</option><option value="elastic_net">Elastic Net</option><option value="polynomial">Polynomial</option><option value="adaboost">AdaBoost</option><option value="sgd">SGD</option><option value="knn">KNN</option><option value="naive_bayes">Naive Bayes</option><option value="svm">SVM</option><option value="gaussian_process">Gaussian Process</option><option value="kmeans">KMeans</option><option value="dbscan">DBSCAN</option></select></div>
             </div>
         </div>
         <div id="et-train" class="tab-panel">
@@ -2614,8 +2938,6 @@ fn build_search_space(model_type: &str) -> crate::optimizer::SearchSpace {
             .int("n_neighbors", 1, 30),
         "svm" => space
             .log_float("learning_rate", 0.001, 10.0),
-        "neural_network" => space
-            .log_float("learning_rate", 0.0001, 0.1),
         "decision_tree" => space
             .int("max_depth", 1, 30),
         _ => space
@@ -2981,9 +3303,6 @@ pub async fn get_hyperopt_config() -> Json<serde_json::Value> {
             },
             "decision_tree": {
                 "max_depth": {"type": "int", "low": 1, "high": 30},
-            },
-            "neural_network": {
-                "learning_rate": {"type": "log_float", "low": 0.0001, "high": 0.1},
             },
             "svm": {
                 "learning_rate": {"type": "log_float", "low": 0.001, "high": 10.0},
@@ -4078,7 +4397,6 @@ pub async fn run_automl_pipeline(
                     ModelType::LinearRegression => "linear_regression",
                     ModelType::SVM => "svm",
                     ModelType::NaiveBayes => "naive_bayes",
-                    ModelType::NeuralNetwork => "neural_network",
                     ModelType::KMeans => "kmeans",
                     ModelType::DBSCAN => "dbscan",
                     ModelType::Auto => "auto",
@@ -4460,9 +4778,6 @@ fn get_search_space_definition(model_type: &str) -> serde_json::Value {
         ]),
         "svm" => serde_json::json!([
             {"name": "learning_rate", "type": "log_float", "low": 0.001, "high": 10.0, "default": 1.0},
-        ]),
-        "neural_network" => serde_json::json!([
-            {"name": "learning_rate", "type": "log_float", "low": 0.0001, "high": 0.1, "default": 0.001},
         ]),
         _ => serde_json::json!([
             {"name": "learning_rate", "type": "log_float", "low": 0.001, "high": 1.0, "default": 0.1},

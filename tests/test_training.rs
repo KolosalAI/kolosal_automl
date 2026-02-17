@@ -95,16 +95,6 @@ fn test_train_gradient_boosting_classification() {
 }
 
 #[test]
-fn test_train_neural_network_classification() {
-    let df = classification_df();
-    let config = TrainingConfig::new(TaskType::BinaryClassification, "target")
-        .with_model(ModelType::NeuralNetwork);
-    let mut engine = TrainEngine::new(config);
-    let result = engine.fit(&df);
-    assert!(result.is_ok(), "Neural network training should succeed: {:?}", result.err());
-}
-
-#[test]
 fn test_train_decision_tree_regression() {
     let df = regression_df();
     let config = TrainingConfig::new(TaskType::Regression, "target")

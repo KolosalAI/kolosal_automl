@@ -48,8 +48,6 @@ pub enum ModelType {
     SVM,
     /// K-Nearest Neighbors
     KNN,
-    /// Neural Network (MLP)
-    NeuralNetwork,
     /// Naive Bayes classifier
     NaiveBayes,
     /// AdaBoost classifier

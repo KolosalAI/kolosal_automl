@@ -585,6 +585,22 @@ impl CorrelationFilter {
         }
     }
 
+    /// Compute the full NxN Pearson correlation matrix for the given data
+    pub fn compute_correlation_matrix(x: &Array2<f64>) -> Array2<f64> {
+        let n = x.ncols();
+        let mut corr = Array2::eye(n);
+        for i in 0..n {
+            let col_i = x.column(i).to_owned();
+            for j in (i + 1)..n {
+                let col_j = x.column(j).to_owned();
+                let r = Self::pearson_correlation(&col_i, &col_j);
+                corr[[i, j]] = r;
+                corr[[j, i]] = r;
+            }
+        }
+        corr
+    }
+
     fn mean_correlation(&self, x: &Array2<f64>, idx: usize, exclude: &HashSet<usize>) -> f64 {
         let n_features = x.ncols();
         let col = x.column(idx);

@@ -304,6 +304,36 @@ impl XGBoostRegressor {
         let ss_tot = y.mapv(|v| (v - ym).powi(2)).sum();
         Ok(if ss_tot == 0.0 { 1.0 } else { 1.0 - ss_res / ss_tot })
     }
+
+    /// Compute feature importances by counting splits across all trees
+    pub fn feature_importances(&self) -> Option<Array1<f64>> {
+        if self.n_features == 0 { return None; }
+        Some(xgb_tree_importances(&self.trees, self.n_features))
+    }
+}
+
+/// Shared helper: compute split-count importances from XGBNode trees
+fn xgb_tree_importances(trees: &[XGBNode], n_features: usize) -> Array1<f64> {
+    let mut counts = vec![0.0f64; n_features];
+    for tree in trees {
+        xgb_count_splits(tree, &mut counts);
+    }
+    let total: f64 = counts.iter().sum();
+    if total > 0.0 {
+        for c in counts.iter_mut() { *c /= total; }
+    }
+    Array1::from_vec(counts)
+}
+
+fn xgb_count_splits(node: &XGBNode, counts: &mut [f64]) {
+    match node {
+        XGBNode::Leaf { .. } => {}
+        XGBNode::Split { feature, left, right, .. } => {
+            if *feature < counts.len() { counts[*feature] += 1.0; }
+            xgb_count_splits(left, counts);
+            xgb_count_splits(right, counts);
+        }
+    }
 }
 
 // ─── XGBoost Classifier ────────────────────────────────────────────────────
@@ -394,6 +424,12 @@ impl XGBoostClassifier {
             .filter(|(p, a)| (*p - *a).abs() < 0.5)
             .count();
         Ok(correct as f64 / y.len() as f64)
+    }
+
+    /// Compute feature importances by counting splits across all trees
+    pub fn feature_importances(&self) -> Option<Array1<f64>> {
+        if self.n_features == 0 { return None; }
+        Some(xgb_tree_importances(&self.trees, self.n_features))
     }
 }
 

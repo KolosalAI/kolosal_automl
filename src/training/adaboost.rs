@@ -257,6 +257,22 @@ impl AdaBoostClassifier {
             .count();
         Ok(correct as f64 / y.len() as f64)
     }
+
+    /// Compute feature importances from weighted stump feature usage
+    pub fn feature_importances(&self, n_features: usize) -> Option<Array1<f64>> {
+        if !self.is_fitted || n_features == 0 { return None; }
+        let mut importances = vec![0.0f64; n_features];
+        for (stump, &alpha) in self.stumps.iter().zip(self.alphas.iter()) {
+            if stump.feature_index < n_features {
+                importances[stump.feature_index] += alpha.abs();
+            }
+        }
+        let total: f64 = importances.iter().sum();
+        if total > 0.0 {
+            for v in importances.iter_mut() { *v /= total; }
+        }
+        Some(Array1::from_vec(importances))
+    }
 }
 
 #[cfg(test)]
