@@ -271,20 +271,16 @@ impl AttentionTransformer {
 /// Feature Attention Layer
 #[derive(Debug, Clone)]
 pub struct FeatureAttention {
-    /// Number of features
-    num_features: usize,
     /// Attention dimension
     attention_dim: usize,
     /// Query projection
     query_weights: Array2<f64>,
     /// Key projection
     key_weights: Array2<f64>,
-    /// Value projection  
+    /// Value projection
     value_weights: Array2<f64>,
     /// Output projection
     output_weights: Array2<f64>,
-    /// Number of attention heads
-    num_heads: usize,
 }
 
 impl FeatureAttention {
@@ -308,13 +304,11 @@ impl FeatureAttention {
         });
 
         Self {
-            num_features,
             attention_dim,
             query_weights,
             key_weights,
             value_weights,
             output_weights,
-            num_heads,
         }
     }
 
