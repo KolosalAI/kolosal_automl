@@ -227,13 +227,12 @@ impl TrainEngine {
     }
 
     /// Shared helper: extract named columns from a DataFrame into a row-major Array2<f64>.
-    /// Avoids duplicating the column-collection + interleaving logic.
+    /// Uses `Array2::from_shape_fn` for cache-friendly construction from column-major Polars data.
     fn columns_to_array2(df: &DataFrame, col_names: &[String]) -> Result<Array2<f64>> {
         let n_rows = df.height();
         let n_cols = col_names.len();
-        let mut x_data = Vec::with_capacity(n_rows * n_cols);
 
-        // Collect all columns as contiguous f64 slices
+        // Collect all columns as contiguous f64 Vecs
         let col_data: Vec<Vec<f64>> = col_names
             .iter()
             .map(|col_name| {
@@ -252,18 +251,9 @@ impl TrainEngine {
             })
             .collect::<Result<Vec<Vec<f64>>>>()?;
 
-        // Interleave columns into row-major order
-        for row in 0..n_rows {
-            for col in &col_data {
-                x_data.push(col[row]);
-            }
-        }
-
-        Array2::from_shape_vec((n_rows, n_cols), x_data)
-            .map_err(|e| KolosalError::ShapeError {
-                expected: format!("({}, {})", n_rows, n_cols),
-                actual: e.to_string(),
-            })
+        // Build row-major array directly via from_shape_fn (avoids per-element push overhead)
+        let col_refs: Vec<&[f64]> = col_data.iter().map(|c| c.as_slice()).collect();
+        Ok(Array2::from_shape_fn((n_rows, n_cols), |(r, c)| col_refs[c][r]))
     }
 
     fn train_val_split(
@@ -900,6 +890,20 @@ impl TrainEngine {
             }
             _ => None,
         }
+    }
+
+    /// Train on arrays directly and predict on test arrays (for cross-validation)
+    pub(crate) fn fit_predict_arrays(
+        config: &TrainingConfig,
+        x_train: &Array2<f64>,
+        y_train: &Array1<f64>,
+        x_test: &Array2<f64>,
+    ) -> Result<Array1<f64>> {
+        let mut engine = TrainEngine::new(config.clone());
+        engine.feature_names = (0..x_train.ncols()).map(|i| format!("f{}", i)).collect();
+        engine.train_model(x_train, y_train)?;
+        engine.is_fitted = true;
+        engine.predict_internal(x_test)
     }
 
     /// Get the trained model

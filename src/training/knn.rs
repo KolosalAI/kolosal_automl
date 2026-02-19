@@ -73,6 +73,7 @@ pub struct KNNClassifier {
     x_train: Option<Array2<f64>>,
     y_train: Option<Array1<f64>>,
     classes: Vec<i64>,
+    kd_tree: Option<KDTree>,
 }
 
 impl KNNClassifier {
@@ -82,6 +83,7 @@ impl KNNClassifier {
             x_train: None,
             y_train: None,
             classes: Vec::new(),
+            kd_tree: None,
         }
     }
 
@@ -93,11 +95,11 @@ impl KNNClassifier {
         })
     }
 
-    /// Fit the classifier (stores training data)
+    /// Fit the classifier (stores training data and builds KD-tree if applicable)
     pub fn fit(&mut self, x: &Array2<f64>, y: &Array1<f64>) -> Result<()> {
         self.x_train = Some(x.clone());
         self.y_train = Some(y.clone());
-        
+
         // Find unique classes
         let mut class_set: Vec<i64> = y.iter()
             .map(|&v| v as i64)
@@ -105,7 +107,12 @@ impl KNNClassifier {
         class_set.sort();
         class_set.dedup();
         self.classes = class_set;
-        
+
+        // Build KD-tree for compatible metrics
+        if kd_tree_compatible(self.config.metric) {
+            self.kd_tree = Some(KDTree::build(x));
+        }
+
         Ok(())
     }
 
@@ -117,12 +124,19 @@ impl KNNClassifier {
         let metric = self.config.metric;
         let weights = self.config.weights;
         let classes = &self.classes;
+        let kd_tree = &self.kd_tree;
 
         let predictions: Vec<f64> = (0..x.nrows())
             .into_par_iter()
             .map(|i| {
                 let row = x.row(i);
-                let neighbors = find_k_nearest(row.as_slice().unwrap(), x_train, y_train, k, metric);
+                let point = row.as_slice().unwrap();
+                let neighbors = if let Some(tree) = kd_tree {
+                    let kd_results = tree.query_k_nearest(point, x_train, k, metric);
+                    kd_results.into_iter().map(|(d, idx)| (d, y_train[idx])).collect()
+                } else {
+                    find_k_nearest(point, x_train, y_train, k, metric)
+                };
                 vote_classify(&neighbors, classes, weights)
             })
             .collect();
@@ -139,12 +153,19 @@ impl KNNClassifier {
         let metric = self.config.metric;
         let weights = self.config.weights;
         let classes = &self.classes;
+        let kd_tree = &self.kd_tree;
 
         let probs: Vec<Vec<f64>> = (0..x.nrows())
             .into_par_iter()
             .map(|i| {
                 let row = x.row(i);
-                let neighbors = find_k_nearest(row.as_slice().unwrap(), x_train, y_train, k, metric);
+                let point = row.as_slice().unwrap();
+                let neighbors = if let Some(tree) = kd_tree {
+                    let kd_results = tree.query_k_nearest(point, x_train, k, metric);
+                    kd_results.into_iter().map(|(d, idx)| (d, y_train[idx])).collect()
+                } else {
+                    find_k_nearest(point, x_train, y_train, k, metric)
+                };
                 class_probs_from(&neighbors, classes, n_classes, weights)
             })
             .collect();
@@ -164,6 +185,7 @@ pub struct KNNRegressor {
     config: KNNConfig,
     x_train: Option<Array2<f64>>,
     y_train: Option<Array1<f64>>,
+    kd_tree: Option<KDTree>,
 }
 
 impl KNNRegressor {
@@ -172,6 +194,7 @@ impl KNNRegressor {
             config,
             x_train: None,
             y_train: None,
+            kd_tree: None,
         }
     }
 
@@ -183,10 +206,15 @@ impl KNNRegressor {
         })
     }
 
-    /// Fit the regressor (stores training data)
+    /// Fit the regressor (stores training data and builds KD-tree if applicable)
     pub fn fit(&mut self, x: &Array2<f64>, y: &Array1<f64>) -> Result<()> {
         self.x_train = Some(x.clone());
         self.y_train = Some(y.clone());
+
+        if kd_tree_compatible(self.config.metric) {
+            self.kd_tree = Some(KDTree::build(x));
+        }
+
         Ok(())
     }
 
@@ -197,18 +225,174 @@ impl KNNRegressor {
         let k = self.config.n_neighbors;
         let metric = self.config.metric;
         let weights = self.config.weights;
+        let kd_tree = &self.kd_tree;
 
         let predictions: Vec<f64> = (0..x.nrows())
             .into_par_iter()
             .map(|i| {
                 let row = x.row(i);
-                let neighbors = find_k_nearest(row.as_slice().unwrap(), x_train, y_train, k, metric);
+                let point = row.as_slice().unwrap();
+                let neighbors = if let Some(tree) = kd_tree {
+                    let kd_results = tree.query_k_nearest(point, x_train, k, metric);
+                    kd_results.into_iter().map(|(d, idx)| (d, y_train[idx])).collect()
+                } else {
+                    find_k_nearest(point, x_train, y_train, k, metric)
+                };
                 weighted_mean_from(&neighbors, weights)
             })
             .collect();
 
         Array1::from_vec(predictions)
     }
+}
+
+// ============================================================================
+// KD-Tree spatial index for O(log N) nearest-neighbor queries
+// ============================================================================
+
+/// KD-tree node
+#[derive(Debug, Clone, Serialize, Deserialize)]
+enum KDNode {
+    Leaf {
+        indices: Vec<usize>,
+    },
+    Split {
+        dimension: usize,
+        threshold: f64,
+        left: Box<KDNode>,
+        right: Box<KDNode>,
+    },
+}
+
+/// KD-tree for spatial indexing
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct KDTree {
+    root: KDNode,
+    n_dims: usize,
+}
+
+/// Max-heap entry for KD-tree k-nearest query
+#[derive(PartialEq)]
+struct HeapEntry {
+    dist: f64,
+    idx: usize,
+}
+
+impl Eq for HeapEntry {}
+impl PartialOrd for HeapEntry {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.dist.partial_cmp(&other.dist)
+    }
+}
+impl Ord for HeapEntry {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.partial_cmp(other).unwrap_or(Ordering::Equal)
+    }
+}
+
+const KD_LEAF_SIZE: usize = 16;
+
+impl KDTree {
+    /// Build a KD-tree from a dataset
+    fn build(data: &Array2<f64>) -> Self {
+        let n_dims = data.ncols();
+        let indices: Vec<usize> = (0..data.nrows()).collect();
+        let root = Self::build_node(data, indices, 0, n_dims);
+        KDTree { root, n_dims }
+    }
+
+    fn build_node(data: &Array2<f64>, mut indices: Vec<usize>, depth: usize, n_dims: usize) -> KDNode {
+        if indices.len() <= KD_LEAF_SIZE {
+            return KDNode::Leaf { indices };
+        }
+
+        let dim = depth % n_dims;
+
+        // Sort by the splitting dimension
+        indices.sort_by(|&a, &b| {
+            data[[a, dim]].partial_cmp(&data[[b, dim]]).unwrap_or(Ordering::Equal)
+        });
+
+        let mid = indices.len() / 2;
+        let threshold = data[[indices[mid], dim]];
+
+        let right_indices = indices.split_off(mid);
+        let left_indices = indices;
+
+        KDNode::Split {
+            dimension: dim,
+            threshold,
+            left: Box::new(Self::build_node(data, left_indices, depth + 1, n_dims)),
+            right: Box::new(Self::build_node(data, right_indices, depth + 1, n_dims)),
+        }
+    }
+
+    /// Query k nearest neighbors, returns Vec<(distance, index)>
+    fn query_k_nearest(
+        &self,
+        point: &[f64],
+        data: &Array2<f64>,
+        k: usize,
+        metric: DistanceMetric,
+    ) -> Vec<(f64, usize)> {
+        let mut heap = BinaryHeap::with_capacity(k + 1);
+        self.search_node(&self.root, point, data, k, metric, &mut heap);
+        heap.into_iter().map(|e| (e.dist, e.idx)).collect()
+    }
+
+    fn search_node(
+        &self,
+        node: &KDNode,
+        point: &[f64],
+        data: &Array2<f64>,
+        k: usize,
+        metric: DistanceMetric,
+        heap: &mut BinaryHeap<HeapEntry>,
+    ) {
+        match node {
+            KDNode::Leaf { indices } => {
+                for &idx in indices {
+                    let dist = compute_distance(point, data.row(idx).as_slice().unwrap(), metric);
+                    if heap.len() < k {
+                        heap.push(HeapEntry { dist, idx });
+                    } else if let Some(top) = heap.peek() {
+                        if dist < top.dist {
+                            heap.pop();
+                            heap.push(HeapEntry { dist, idx });
+                        }
+                    }
+                }
+            }
+            KDNode::Split { dimension, threshold, left, right } => {
+                let val = point[*dimension];
+                let diff = val - threshold;
+
+                // Visit closer child first
+                let (first, second) = if diff <= 0.0 {
+                    (left.as_ref(), right.as_ref())
+                } else {
+                    (right.as_ref(), left.as_ref())
+                };
+
+                self.search_node(first, point, data, k, metric, heap);
+
+                // Check if we need to visit the far child:
+                // Only prune if heap is full and splitting plane distance >= k-th nearest
+                let plane_dist = diff.abs();
+                let should_visit_far = heap.len() < k
+                    || plane_dist < heap.peek().map(|e| e.dist).unwrap_or(f64::INFINITY);
+
+                if should_visit_far {
+                    self.search_node(second, point, data, k, metric, heap);
+                }
+            }
+        }
+    }
+}
+
+/// Returns true if the metric is compatible with KD-tree pruning
+fn kd_tree_compatible(metric: DistanceMetric) -> bool {
+    matches!(metric, DistanceMetric::Euclidean | DistanceMetric::Manhattan)
 }
 
 // ============================================================================

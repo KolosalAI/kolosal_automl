@@ -358,6 +358,72 @@ impl CVResults {
     }
 }
 
+/// Run cross-validation with parallel fold training.
+///
+/// Trains all folds in parallel using rayon, computes per-fold scores, and
+/// returns aggregated `CVResults`.
+pub fn cross_val_score(
+    config: &super::TrainingConfig,
+    x: &Array2<f64>,
+    y: &Array1<f64>,
+    cv: &CVStrategy,
+    random_state: Option<u64>,
+) -> Result<CVResults> {
+    use super::engine::TrainEngine;
+
+    let validator = match random_state {
+        Some(seed) => CrossValidator::new(cv.clone()).with_random_state(seed),
+        None => CrossValidator::new(cv.clone()),
+    };
+    let splits = validator.split(x.nrows(), Some(y), None)?;
+
+    let is_regression = matches!(
+        config.task_type,
+        super::TaskType::Regression | super::TaskType::TimeSeries
+    );
+
+    // Train all folds in parallel
+    let fold_scores: Vec<Result<f64>> = splits
+        .par_iter()
+        .map(|split| {
+            let n_cols = x.ncols();
+
+            let x_train = Array2::from_shape_fn(
+                (split.train_indices.len(), n_cols),
+                |(i, j)| x[[split.train_indices[i], j]],
+            );
+            let y_train = Array1::from_iter(split.train_indices.iter().map(|&i| y[i]));
+
+            let x_test = Array2::from_shape_fn(
+                (split.test_indices.len(), n_cols),
+                |(i, j)| x[[split.test_indices[i], j]],
+            );
+            let y_test: Array1<f64> = Array1::from_iter(split.test_indices.iter().map(|&i| y[i]));
+
+            let y_pred = TrainEngine::fit_predict_arrays(config, &x_train, &y_train, &x_test)?;
+
+            let score = if is_regression {
+                // R² score
+                let mean = y_test.iter().sum::<f64>() / y_test.len() as f64;
+                let ss_tot: f64 = y_test.iter().map(|&v| (v - mean).powi(2)).sum();
+                let ss_res: f64 = y_test.iter().zip(y_pred.iter()).map(|(&a, &p)| (a - p).powi(2)).sum();
+                if ss_tot > 0.0 { 1.0 - ss_res / ss_tot } else { 0.0 }
+            } else {
+                // Accuracy
+                let correct = y_test.iter().zip(y_pred.iter())
+                    .filter(|(&a, &p)| (a - p).abs() < 0.5)
+                    .count();
+                correct as f64 / y_test.len() as f64
+            };
+
+            Ok(score)
+        })
+        .collect();
+
+    let scores: Vec<f64> = fold_scores.into_iter().collect::<Result<Vec<f64>>>()?;
+    Ok(CVResults::from_scores(scores))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
