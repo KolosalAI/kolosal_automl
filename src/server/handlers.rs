@@ -1091,12 +1091,20 @@ pub async fn predict(
     let predictions = engine.predict_array(&x)
         .map_err(|e| ServerError::Internal(format!("Prediction failed: {}", e)))?;
 
+    let cache_hit = engine.last_prediction_was_cached();
     let stats = engine.stats();
+    let (cache_hits, cache_misses, cache_hit_rate) = engine.cache_stats();
 
     Ok(Json(serde_json::json!({
         "success": true,
         "predictions": predictions.to_vec(),
+        "cache_hit": cache_hit,
         "latency_ms": stats.avg_latency_ms,
+        "cache_stats": {
+            "hits": cache_hits,
+            "misses": cache_misses,
+            "hit_rate": cache_hit_rate,
+        },
     })))
 }
 
@@ -1154,12 +1162,14 @@ pub async fn predict_batch(
     let predictions = engine.predict_array(&x)
         .map_err(|e| ServerError::Internal(format!("Batch prediction failed: {}", e)))?;
 
+    let cache_hit = engine.last_prediction_was_cached();
     let stats = engine.stats();
 
     Ok(Json(serde_json::json!({
         "success": true,
         "predictions": predictions.to_vec(),
         "count": predictions.len(),
+        "cache_hit": cache_hit,
         "avg_latency_ms": stats.avg_latency_ms,
     })))
 }
@@ -1251,6 +1261,33 @@ pub async fn evict_model_cache(
         "success": true,
         "message": format!("Model {} evicted from cache", model_id),
     })))
+}
+
+/// Get prediction cache statistics
+pub async fn get_cache_stats(
+    State(state): State<Arc<AppState>>,
+) -> Json<serde_json::Value> {
+    let (hits, misses, hit_rate) = state.prediction_cache.stats();
+    Json(serde_json::json!({
+        "success": true,
+        "cache_stats": {
+            "size": state.prediction_cache.len(),
+            "hits": hits,
+            "misses": misses,
+            "hit_rate": hit_rate,
+        },
+    }))
+}
+
+/// Clear the prediction cache
+pub async fn clear_prediction_cache(
+    State(state): State<Arc<AppState>>,
+) -> Json<serde_json::Value> {
+    state.prediction_cache.clear();
+    Json(serde_json::json!({
+        "success": true,
+        "cleared": true,
+    }))
 }
 
 // ============================================================================

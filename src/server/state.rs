@@ -6,6 +6,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 use polars::prelude::*;
+use crate::cache::LruTtlCache;
 use crate::inference::{InferenceConfig, InferenceEngine};
 use crate::security::{SecurityManager, SecurityConfig, RateLimiter, RateLimitConfig, AuditTrail};
 use crate::preprocessing::DataPreprocessor;
@@ -67,6 +68,8 @@ pub struct DatasetInfo {
 pub struct ModelRegistry {
     engines: RwLock<HashMap<String, Arc<InferenceEngine>>>,
     max_cached: usize,
+    /// Shared prediction cache across all models
+    prediction_cache: Option<Arc<LruTtlCache<u64, Vec<f64>>>>,
 }
 
 impl ModelRegistry {
@@ -74,7 +77,14 @@ impl ModelRegistry {
         Self {
             engines: RwLock::new(HashMap::new()),
             max_cached,
+            prediction_cache: None,
         }
+    }
+
+    /// Create a new model registry with a shared prediction cache
+    pub fn with_prediction_cache(mut self, cache: Arc<LruTtlCache<u64, Vec<f64>>>) -> Self {
+        self.prediction_cache = Some(cache);
+        self
     }
 
     /// Get a cached inference engine, or load from disk and cache it
@@ -94,6 +104,12 @@ impl ModelRegistry {
         // Load from disk WITHOUT holding any lock — this is potentially slow I/O
         // and we don't want to block concurrent cache reads.
         let mut engine = InferenceEngine::load(InferenceConfig::new(), None, model_path)?;
+
+        // Inject shared prediction cache if available
+        if let Some(ref cache) = self.prediction_cache {
+            engine.set_prediction_cache(Arc::clone(cache));
+        }
+
         engine.warmup()?;
         let engine = Arc::new(engine);
 
@@ -151,6 +167,8 @@ pub struct AppState {
     pub current_data: RwLock<Option<DataFrame>>,
     pub preprocessor: RwLock<Option<DataPreprocessor>>,
     pub model_registry: ModelRegistry,
+    /// Shared prediction cache for all inference engines
+    pub prediction_cache: Arc<LruTtlCache<u64, Vec<f64>>>,
     /// Store trained engines for post-training analysis (explainability, etc.)
     pub train_engines: RwLock<HashMap<String, TrainEngine>>,
     /// Store completed hyperopt studies for history
@@ -198,6 +216,8 @@ impl AppState {
             ..Default::default()
         };
 
+        let prediction_cache = Arc::new(LruTtlCache::new(1000, 300));
+
         Self {
             config,
             datasets: RwLock::new(HashMap::new()),
@@ -205,7 +225,9 @@ impl AppState {
             models: RwLock::new(HashMap::new()),
             current_data: RwLock::new(None),
             preprocessor: RwLock::new(None),
-            model_registry: ModelRegistry::new(10),
+            model_registry: ModelRegistry::new(10)
+                .with_prediction_cache(Arc::clone(&prediction_cache)),
+            prediction_cache,
             train_engines: RwLock::new(HashMap::new()),
             completed_studies: RwLock::new(Vec::new()),
             security_manager: Arc::new(SecurityManager::new(security_config)),
@@ -304,12 +326,20 @@ impl AppState {
 
         let total_memory = sys.total_memory().max(1); // avoid division by zero
 
+        let (cache_hits, cache_misses, cache_hit_rate) = self.prediction_cache.stats();
+
         serde_json::json!({
             "cpu_count": sys.cpus().len(),
             "cpu_usage": cpu_usage,
             "total_memory_gb": total_memory as f64 / 1024.0 / 1024.0 / 1024.0,
             "used_memory_gb": sys.used_memory() as f64 / 1024.0 / 1024.0 / 1024.0,
             "memory_usage_percent": (sys.used_memory() as f64 / total_memory as f64) * 100.0,
+            "prediction_cache": {
+                "size": self.prediction_cache.len(),
+                "hits": cache_hits,
+                "misses": cache_misses,
+                "hit_rate": cache_hit_rate,
+            },
         })
     }
 }

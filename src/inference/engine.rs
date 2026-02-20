@@ -8,6 +8,7 @@
 //! - Model warmup for consistent latency
 //! - Classification probability support
 
+use crate::cache::LruTtlCache;
 use crate::error::{KolosalError, Result};
 use crate::monitoring::PerformanceMetrics;
 use crate::preprocessing::DataPreprocessor;
@@ -18,6 +19,7 @@ use polars::prelude::*;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 /// Inference statistics snapshot
@@ -32,6 +34,9 @@ pub struct InferenceStats {
     pub error_count: u64,
 }
 
+/// Maximum number of rows to cache (larger batches bypass cache)
+const MAX_CACHEABLE_ROWS: usize = 100;
+
 /// High-performance inference engine
 pub struct InferenceEngine {
     config: InferenceConfig,
@@ -40,6 +45,12 @@ pub struct InferenceEngine {
     is_loaded: bool,
     metrics: Arc<PerformanceMetrics>,
     is_warmed_up: bool,
+    /// Cache for prediction results, keyed by hash of input features
+    prediction_cache: Option<Arc<LruTtlCache<u64, Vec<f64>>>>,
+    /// Cache for preprocessed DataFrames, keyed by hash of raw input
+    preprocessing_cache: Option<Arc<LruTtlCache<u64, DataFrame>>>,
+    /// Tracks whether the last prediction was a cache hit
+    last_cache_hit: AtomicBool,
 }
 
 impl std::fmt::Debug for InferenceEngine {
@@ -48,26 +59,76 @@ impl std::fmt::Debug for InferenceEngine {
             .field("config", &self.config)
             .field("is_loaded", &self.is_loaded)
             .field("is_warmed_up", &self.is_warmed_up)
+            .field("prediction_cache_enabled", &self.prediction_cache.is_some())
             .finish()
     }
+}
+
+/// Compute a fast hash of a float slice using XxHash64
+fn hash_f64_slice(data: &[f64]) -> u64 {
+    use xxhash_rust::xxh3::xxh3_64;
+    // Convert f64 slice to bytes via to_bits for deterministic hashing
+    let bytes: Vec<u8> = data.iter()
+        .flat_map(|f| f.to_bits().to_le_bytes())
+        .collect();
+    xxh3_64(&bytes)
+}
+
+/// Compute hash of a DataFrame's numeric content
+fn hash_dataframe(df: &DataFrame) -> u64 {
+    use xxhash_rust::xxh3::xxh3_64;
+    let mut bytes = Vec::with_capacity(df.height() * df.width() * 8);
+    for col in df.get_columns() {
+        if let Ok(ca) = col.f64() {
+            for val in ca.into_no_null_iter() {
+                bytes.extend_from_slice(&val.to_bits().to_le_bytes());
+            }
+        } else {
+            // For non-f64 columns, hash the string representation
+            for i in 0..col.len() {
+                let s = format!("{:?}", col.get(i));
+                bytes.extend_from_slice(s.as_bytes());
+            }
+        }
+    }
+    xxh3_64(&bytes)
 }
 
 impl InferenceEngine {
     /// Create a new inference engine
     pub fn new(config: InferenceConfig) -> Self {
+        let prediction_cache = if config.cache_preprocessing {
+            Some(Arc::new(LruTtlCache::new(
+                config.prediction_cache_size,
+                config.prediction_cache_ttl_secs,
+            )))
+        } else {
+            None
+        };
+
         Self {
+            prediction_cache,
+            preprocessing_cache: None, // initialized lazily when preprocessor is set
             config,
             preprocessor: None,
             model: None,
             is_loaded: false,
             metrics: Arc::new(PerformanceMetrics::new(10000)),
             is_warmed_up: false,
+            last_cache_hit: AtomicBool::new(false),
         }
     }
 
     /// Load a preprocessor
     pub fn with_preprocessor(mut self, preprocessor: DataPreprocessor) -> Self {
         self.preprocessor = Some(Arc::new(preprocessor));
+        // Initialize preprocessing cache when we have a preprocessor and caching is enabled
+        if self.config.cache_preprocessing {
+            self.preprocessing_cache = Some(Arc::new(LruTtlCache::new(
+                self.config.prediction_cache_size,
+                self.config.prediction_cache_ttl_secs,
+            )));
+        }
         self
     }
 
@@ -89,6 +150,13 @@ impl InferenceEngine {
         if let Some(path) = preprocessor_path {
             let preprocessor = DataPreprocessor::load(path)?;
             engine.preprocessor = Some(Arc::new(preprocessor));
+            // Initialize preprocessing cache when preprocessor is loaded
+            if engine.config.cache_preprocessing {
+                engine.preprocessing_cache = Some(Arc::new(LruTtlCache::new(
+                    engine.config.prediction_cache_size,
+                    engine.config.prediction_cache_ttl_secs,
+                )));
+            }
         }
 
         let model = TrainEngine::load(model_path)?;
@@ -168,9 +236,33 @@ impl InferenceEngine {
         self.model.as_deref()
     }
 
+    /// Get prediction cache statistics: (hits, misses, hit_rate)
+    pub fn cache_stats(&self) -> (u64, u64, f64) {
+        match &self.prediction_cache {
+            Some(cache) => cache.stats(),
+            None => (0, 0, 0.0),
+        }
+    }
+
+    /// Check if the last prediction was served from cache
+    pub fn last_prediction_was_cached(&self) -> bool {
+        self.last_cache_hit.load(Ordering::Relaxed)
+    }
+
+    /// Set an external shared prediction cache
+    pub fn set_prediction_cache(&mut self, cache: Arc<LruTtlCache<u64, Vec<f64>>>) {
+        self.prediction_cache = Some(cache);
+    }
+
+    /// Get the prediction cache (if enabled)
+    pub fn prediction_cache(&self) -> Option<&Arc<LruTtlCache<u64, Vec<f64>>>> {
+        self.prediction_cache.as_ref()
+    }
+
     /// Make predictions on a DataFrame
     pub fn predict(&self, df: &DataFrame) -> Result<Array1<f64>> {
         let start = Instant::now();
+        self.last_cache_hit.store(false, Ordering::Relaxed);
 
         if !self.is_loaded {
             self.metrics.record_error();
@@ -178,10 +270,38 @@ impl InferenceEngine {
         }
 
         let model = self.model.as_ref().ok_or(KolosalError::ModelNotFitted)?;
+        let n_rows = df.height();
 
-        // Apply preprocessing if available
+        // Check prediction cache for small inputs
+        let input_hash = if n_rows <= MAX_CACHEABLE_ROWS {
+            let h = hash_dataframe(df);
+            if let Some(ref cache) = self.prediction_cache {
+                if let Some(cached) = cache.get(&h) {
+                    self.last_cache_hit.store(true, Ordering::Relaxed);
+                    let latency_ms = start.elapsed().as_secs_f64() * 1000.0;
+                    self.metrics.record_latency(latency_ms);
+                    self.metrics.record_items(cached.len() as u64);
+                    return Ok(Array1::from_vec(cached));
+                }
+            }
+            Some(h)
+        } else {
+            None
+        };
+
+        // Check preprocessing cache or compute
         let processed = if let Some(ref preprocessor) = self.preprocessor {
-            preprocessor.transform(df)?
+            if let (Some(hash), Some(ref pp_cache)) = (input_hash, &self.preprocessing_cache) {
+                if let Some(cached_df) = pp_cache.get(&hash) {
+                    cached_df
+                } else {
+                    let transformed = preprocessor.transform(df)?;
+                    pp_cache.set(hash, transformed.clone());
+                    transformed
+                }
+            } else {
+                preprocessor.transform(df)?
+            }
         } else {
             df.clone()
         };
@@ -199,6 +319,10 @@ impl InferenceEngine {
             Ok(preds) => {
                 self.metrics.record_latency(latency_ms);
                 self.metrics.record_items(preds.len() as u64);
+                // Store in prediction cache
+                if let (Some(hash), Some(ref cache)) = (input_hash, &self.prediction_cache) {
+                    cache.set(hash, preds.to_vec());
+                }
             }
             Err(_) => self.metrics.record_error(),
         }
@@ -209,6 +333,7 @@ impl InferenceEngine {
     /// Make predictions on raw feature array
     pub fn predict_array(&self, x: &Array2<f64>) -> Result<Array1<f64>> {
         let start = Instant::now();
+        self.last_cache_hit.store(false, Ordering::Relaxed);
 
         if !self.is_loaded {
             self.metrics.record_error();
@@ -228,6 +353,26 @@ impl InferenceEngine {
             });
         }
 
+        let n_rows = x.nrows();
+
+        // Check prediction cache for small inputs
+        let input_hash = if n_rows <= MAX_CACHEABLE_ROWS {
+            let flat: Vec<f64> = x.iter().copied().collect();
+            let h = hash_f64_slice(&flat);
+            if let Some(ref cache) = self.prediction_cache {
+                if let Some(cached) = cache.get(&h) {
+                    self.last_cache_hit.store(true, Ordering::Relaxed);
+                    let latency_ms = start.elapsed().as_secs_f64() * 1000.0;
+                    self.metrics.record_latency(latency_ms);
+                    self.metrics.record_items(cached.len() as u64);
+                    return Ok(Array1::from_vec(cached));
+                }
+            }
+            Some(h)
+        } else {
+            None
+        };
+
         // Convert Array2 to DataFrame
         let df = self.array_to_dataframe(x, feature_names)?;
 
@@ -245,6 +390,10 @@ impl InferenceEngine {
             Ok(preds) => {
                 self.metrics.record_latency(latency_ms);
                 self.metrics.record_items(preds.len() as u64);
+                // Store in prediction cache
+                if let (Some(hash), Some(ref cache)) = (input_hash, &self.prediction_cache) {
+                    cache.set(hash, preds.to_vec());
+                }
             }
             Err(_) => self.metrics.record_error(),
         }
@@ -668,5 +817,115 @@ mod tests {
         let chunks: Vec<_> = engine.predict_streaming(&df).unwrap().collect();
         let total: usize = chunks.iter().filter_map(|r| r.as_ref().ok()).map(|a| a.len()).sum();
         assert_eq!(total, 5);
+    }
+
+    #[test]
+    fn test_prediction_cache_hit_miss() {
+        let df = create_regression_data();
+        let model = train_regression_model();
+
+        let config = InferenceConfig::new();
+        let engine = InferenceEngine::new(config).with_model(model);
+
+        // First call should be a miss
+        let preds1 = engine.predict(&df).unwrap();
+        assert!(!engine.last_prediction_was_cached());
+
+        // Second call with same data should be a hit
+        let preds2 = engine.predict(&df).unwrap();
+        assert!(engine.last_prediction_was_cached());
+
+        // Results should be identical
+        assert_eq!(preds1.to_vec(), preds2.to_vec());
+
+        // Cache stats should reflect 1 hit, 1 miss
+        let (hits, misses, hit_rate) = engine.cache_stats();
+        assert_eq!(hits, 1);
+        assert_eq!(misses, 1);
+        assert!((hit_rate - 0.5).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_prediction_cache_array() {
+        let model = train_regression_model();
+
+        let config = InferenceConfig::new();
+        let engine = InferenceEngine::new(config).with_model(model);
+
+        let x = ndarray::array![[1.0, 1.5], [2.0, 3.1]];
+
+        // First call: miss
+        let preds1 = engine.predict_array(&x).unwrap();
+        assert!(!engine.last_prediction_was_cached());
+
+        // Second call: hit
+        let preds2 = engine.predict_array(&x).unwrap();
+        assert!(engine.last_prediction_was_cached());
+
+        assert_eq!(preds1.to_vec(), preds2.to_vec());
+    }
+
+    #[test]
+    fn test_cache_bypass_for_large_batches() {
+        let model = train_regression_model();
+
+        // Create dataset larger than MAX_CACHEABLE_ROWS (100)
+        let n = 150;
+        let f1: Vec<f64> = (0..n).map(|i| i as f64).collect();
+        let f2: Vec<f64> = (0..n).map(|i| i as f64 * 1.5).collect();
+        let target: Vec<f64> = (0..n).map(|i| i as f64 * 3.0).collect();
+        let df = DataFrame::new(vec![
+            Series::new("feature1".into(), &f1).into(),
+            Series::new("feature2".into(), &f2).into(),
+            Series::new("target".into(), &target).into(),
+        ]).unwrap();
+
+        let config = InferenceConfig::new();
+        let engine = InferenceEngine::new(config).with_model(model);
+
+        engine.predict(&df).unwrap();
+        engine.predict(&df).unwrap();
+
+        // Neither call should hit the cache (batch too large)
+        let (hits, _misses, _hit_rate) = engine.cache_stats();
+        assert_eq!(hits, 0);
+    }
+
+    #[test]
+    fn test_cache_ttl_expiry() {
+        let df = create_regression_data();
+        let model = train_regression_model();
+
+        // 1 second TTL
+        let config = InferenceConfig::new().with_prediction_cache(100, 1);
+        let engine = InferenceEngine::new(config).with_model(model);
+
+        engine.predict(&df).unwrap();
+        assert!(!engine.last_prediction_was_cached());
+
+        // Wait for TTL to expire
+        std::thread::sleep(std::time::Duration::from_secs(2));
+
+        engine.predict(&df).unwrap();
+        assert!(!engine.last_prediction_was_cached()); // expired, so miss
+    }
+
+    #[test]
+    fn test_cache_disabled() {
+        let df = create_regression_data();
+        let model = train_regression_model();
+
+        let mut config = InferenceConfig::new();
+        config.cache_preprocessing = false;
+        let engine = InferenceEngine::new(config).with_model(model);
+
+        engine.predict(&df).unwrap();
+        engine.predict(&df).unwrap();
+
+        // No cache, so always miss
+        assert!(!engine.last_prediction_was_cached());
+        let (hits, misses, _) = engine.cache_stats();
+        assert_eq!(hits, 0);
+        assert_eq!(misses, 0); // no cache means no stats tracked
     }
 }

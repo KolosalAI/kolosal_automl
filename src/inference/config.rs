@@ -42,8 +42,14 @@ pub struct InferenceConfig {
     /// Chunk size for streaming mode
     pub stream_chunk_size: usize,
     
-    /// Whether to cache preprocessed data
+    /// Whether to cache preprocessed data and prediction results
     pub cache_preprocessing: bool,
+
+    /// Maximum number of entries in the prediction cache
+    pub prediction_cache_size: usize,
+
+    /// Time-to-live in seconds for prediction cache entries
+    pub prediction_cache_ttl_secs: u64,
     
     /// Output probability scores (for classification)
     pub output_probabilities: bool,
@@ -64,6 +70,8 @@ impl Default for InferenceConfig {
             streaming: false,
             stream_chunk_size: 10000,
             cache_preprocessing: true,
+            prediction_cache_size: 1000,
+            prediction_cache_ttl_secs: 300,
             output_probabilities: false,
             classification_threshold: 0.5,
         }
@@ -110,6 +118,13 @@ impl InferenceConfig {
     /// Builder method to set classification threshold
     pub fn with_threshold(mut self, threshold: f64) -> Self {
         self.classification_threshold = threshold;
+        self
+    }
+
+    /// Builder method to configure prediction cache
+    pub fn with_prediction_cache(mut self, size: usize, ttl_secs: u64) -> Self {
+        self.prediction_cache_size = size;
+        self.prediction_cache_ttl_secs = ttl_secs;
         self
     }
 

@@ -70,6 +70,9 @@ pub fn create_router(state: Arc<AppState>, config: &ServerConfig) -> Router {
         .route("/predict/proba", post(handlers::predict_proba))
         .route("/predict/stats/:model_id", get(handlers::get_inference_stats))
         .route("/predict/cache/:model_id", axum::routing::delete(handlers::evict_model_cache))
+        // Cache management
+        .route("/cache/stats", get(handlers::get_cache_stats))
+        .route("/cache", axum::routing::delete(handlers::clear_prediction_cache))
         // System
         .route("/system/status", get(handlers::get_system_status))
         .route("/health", get(handlers::health_check))
