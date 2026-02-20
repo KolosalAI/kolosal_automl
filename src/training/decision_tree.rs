@@ -251,7 +251,7 @@ impl DecisionTree {
         }
 
         // Find best split
-        if let Some((best_feature, best_threshold, best_impurity)) = self.find_best_split(x, y, indices) {
+        if let Some((best_feature, best_threshold, best_impurity, parent_imp, weighted_child_imp)) = self.find_best_split(x, y, indices) {
             // Split indices
             let (left_indices, right_indices): (Vec<usize>, Vec<usize>) = indices
                 .iter()
@@ -265,16 +265,7 @@ impl DecisionTree {
             }
 
             // Update feature importance
-            let parent_impurity = self.compute_impurity(&y_subset);
-            let left_y: Vec<f64> = left_indices.iter().map(|&i| y[i]).collect();
-            let right_y: Vec<f64> = right_indices.iter().map(|&i| y[i]).collect();
-            
-            let weighted_child_impurity = 
-                (left_indices.len() as f64 * self.compute_impurity(&left_y)
-                + right_indices.len() as f64 * self.compute_impurity(&right_y))
-                / n_samples as f64;
-            
-            importances[best_feature] += n_samples as f64 * (parent_impurity - weighted_child_impurity);
+            importances[best_feature] += n_samples as f64 * (parent_imp - weighted_child_imp);
 
             // Build children recursively
             let left = Box::new(self.build_tree(x, y, &left_indices, depth + 1, importances));
@@ -296,7 +287,7 @@ impl DecisionTree {
         }
     }
 
-    fn find_best_split(&self, x: &Array2<f64>, y: &Array1<f64>, indices: &[usize]) -> Option<(usize, f64, f64)> {
+    fn find_best_split(&self, x: &Array2<f64>, y: &Array1<f64>, indices: &[usize]) -> Option<(usize, f64, f64, f64, f64)> {
         let n_features = x.ncols();
         let max_features = self.max_features.unwrap_or(n_features);
         let n_features_to_try = max_features.min(n_features);
@@ -327,7 +318,7 @@ impl DecisionTree {
         let class_to_idx = &self.class_to_idx;
 
         // Parallelize feature scanning — each feature independently finds its best split
-        let feature_results: Vec<Option<(usize, f64, f64)>> = (0..n_features_to_try)
+        let feature_results: Vec<Option<(usize, f64, f64, f64, f64)>> = (0..n_features_to_try)
             .into_par_iter()
             .map(|feature_idx| {
                 // Sort indices by feature value once — O(N log N)
@@ -345,6 +336,7 @@ impl DecisionTree {
 
                 let mut best_gain = 0.0f64;
                 let mut best_threshold = 0.0f64;
+                let mut best_weighted_child_impurity = 0.0f64;
 
                 for pos in 0..sorted_indices.len() - 1 {
                     let idx = sorted_indices[pos];
@@ -396,11 +388,12 @@ impl DecisionTree {
                     if gain > best_gain {
                         best_gain = gain;
                         best_threshold = (x[[idx, feature_idx]] + x[[next_idx, feature_idx]]) / 2.0;
+                        best_weighted_child_impurity = weighted_impurity;
                     }
                 }
 
                 if best_gain > 0.0 {
-                    Some((feature_idx, best_threshold, best_gain))
+                    Some((feature_idx, best_threshold, best_gain, parent_impurity, best_weighted_child_impurity))
                 } else {
                     None
                 }
@@ -485,12 +478,18 @@ impl DecisionTree {
             return 0.0;
         }
         let median = {
-            let mut sorted = y.to_vec();
-            sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-            if sorted.len() % 2 == 0 && sorted.len() >= 2 {
-                (sorted[sorted.len() / 2 - 1] + sorted[sorted.len() / 2]) / 2.0
+            let mut vals = y.to_vec();
+            let n = vals.len();
+            if n % 2 == 0 && n >= 2 {
+                let mid = n / 2;
+                vals.select_nth_unstable_by(mid, |a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                let upper = vals[mid];
+                vals.select_nth_unstable_by(mid - 1, |a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                (vals[mid - 1] + upper) / 2.0
             } else {
-                sorted[sorted.len() / 2]
+                let mid = n / 2;
+                vals.select_nth_unstable_by(mid, |a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                vals[mid]
             }
         };
         y.iter().map(|&v| (v - median).abs()).sum::<f64>() / y.len() as f64

@@ -342,33 +342,34 @@ impl ExtraTrees {
         }
 
         let n_samples = x.nrows();
-        let mut predictions = Array1::zeros(n_samples);
+        let predictions: Vec<f64> = (0..n_samples)
+            .into_par_iter()
+            .map(|i| {
+                let sample = x.row(i);
+                let s = sample.as_slice().unwrap();
 
-        for i in 0..n_samples {
-            let sample = x.row(i);
-            let s = sample.as_slice().unwrap();
-
-            if self.is_classification {
-                // Majority vote
-                let mut votes: HashMap<i64, usize> = HashMap::new();
-                for tree in &self.trees {
-                    let pred = tree.predict_sample(s);
-                    let key = pred.to_bits() as i64;
-                    *votes.entry(key).or_insert(0) += 1;
+                if self.is_classification {
+                    // Vec-indexed majority vote
+                    let mut votes = vec![0usize; self.classes.len().max(1)];
+                    for tree in &self.trees {
+                        let pred = tree.predict_sample(s);
+                        if let Some(idx) = self.classes.iter().position(|&c| (c - pred).abs() < 1e-10) {
+                            votes[idx] += 1;
+                        }
+                    }
+                    let best_idx = votes.iter().enumerate()
+                        .max_by_key(|(_, &c)| c)
+                        .map(|(idx, _)| idx)
+                        .unwrap_or(0);
+                    self.classes.get(best_idx).copied().unwrap_or(0.0)
+                } else {
+                    let sum: f64 = self.trees.iter().map(|t| t.predict_sample(s)).sum();
+                    sum / self.trees.len() as f64
                 }
-                let best = votes.into_iter()
-                    .max_by_key(|&(_, c)| c)
-                    .map(|(k, _)| f64::from_bits(k as u64))
-                    .unwrap_or(0.0);
-                predictions[i] = best;
-            } else {
-                // Average
-                let sum: f64 = self.trees.iter().map(|t| t.predict_sample(s)).sum();
-                predictions[i] = sum / self.trees.len() as f64;
-            }
-        }
+            })
+            .collect();
 
-        Ok(predictions)
+        Ok(Array1::from_vec(predictions))
     }
 
     pub fn predict_proba(&self, x: &Array2<f64>) -> Result<Array2<f64>> {

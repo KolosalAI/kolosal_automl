@@ -175,7 +175,11 @@ impl GradientBoostingRegressor {
     fn subsample_indices(&self, n: usize, rng: &mut Xoshiro256PlusPlus) -> Vec<usize> {
         let sample_size = ((n as f64) * self.config.subsample).ceil() as usize;
         let mut indices: Vec<usize> = (0..n).collect();
-        indices.shuffle(rng);
+        // Partial Fisher-Yates: only shuffle first sample_size elements
+        for i in 0..sample_size.min(n) {
+            let j = i + (rng.gen_range(0..n - i));
+            indices.swap(i, j);
+        }
         indices.truncate(sample_size);
         indices.sort();
         indices
@@ -184,7 +188,11 @@ impl GradientBoostingRegressor {
     fn colsample_indices(&self, n: usize, rng: &mut Xoshiro256PlusPlus) -> Vec<usize> {
         let sample_size = ((n as f64) * self.config.colsample_bytree).ceil() as usize;
         let mut indices: Vec<usize> = (0..n).collect();
-        indices.shuffle(rng);
+        // Partial Fisher-Yates: only shuffle first sample_size elements
+        for i in 0..sample_size.min(n) {
+            let j = i + (rng.gen_range(0..n - i));
+            indices.swap(i, j);
+        }
         indices.truncate(sample_size);
         indices.sort();
         indices
@@ -332,7 +340,11 @@ impl GradientBoostingClassifier {
     fn subsample_indices(&self, n: usize, rng: &mut Xoshiro256PlusPlus) -> Vec<usize> {
         let sample_size = ((n as f64) * self.config.subsample).ceil() as usize;
         let mut indices: Vec<usize> = (0..n).collect();
-        indices.shuffle(rng);
+        // Partial Fisher-Yates: only shuffle first sample_size elements
+        for i in 0..sample_size.min(n) {
+            let j = i + (rng.gen_range(0..n - i));
+            indices.swap(i, j);
+        }
         indices.truncate(sample_size);
         indices.sort();
         indices
@@ -341,7 +353,11 @@ impl GradientBoostingClassifier {
     fn colsample_indices(&self, n: usize, rng: &mut Xoshiro256PlusPlus) -> Vec<usize> {
         let sample_size = ((n as f64) * self.config.colsample_bytree).ceil() as usize;
         let mut indices: Vec<usize> = (0..n).collect();
-        indices.shuffle(rng);
+        // Partial Fisher-Yates: only shuffle first sample_size elements
+        for i in 0..sample_size.min(n) {
+            let j = i + (rng.gen_range(0..n - i));
+            indices.swap(i, j);
+        }
         indices.truncate(sample_size);
         indices.sort();
         indices

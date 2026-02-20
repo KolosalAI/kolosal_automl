@@ -272,12 +272,16 @@ impl LinearRegression {
             }
             let xty = x_centered.t().dot(&y_centered);
             
-            match matrix_inverse(&xtx) {
-                Some(inv) => inv.dot(&xty),
-                None => {
-                    return Err(KolosalError::ComputationError(
-                        "Matrix is singular, cannot compute inverse".to_string()
-                    ));
+            if let Some(result) = cholesky_solve(&xtx, &xty) {
+                result
+            } else {
+                match matrix_inverse(&xtx) {
+                    Some(inv) => inv.dot(&xty),
+                    None => {
+                        return Err(KolosalError::ComputationError(
+                            "Matrix is singular, cannot compute inverse".to_string()
+                        ));
+                    }
                 }
             }
         } else {
@@ -655,16 +659,23 @@ impl LassoRegression {
         for _iter in 0..self.max_iter {
             let w_old = w.clone();
 
+            // Compute residual once before coordinate loop
+            let mut r = &y_c - &x_c.dot(&w);
+
             // Coordinate descent
             for j in 0..n_features {
                 if col_norms[j] < 1e-15 {
                     w[j] = 0.0;
                     continue;
                 }
-                // Compute partial residual without feature j
-                let r = &y_c - &x_c.dot(&w) + &(&x_c.column(j) * w[j]);
-                let rho = x_c.column(j).dot(&r);
+                // Incremental residual: rho = x_j^T r + col_norms[j] * w[j]
+                let rho = x_c.column(j).dot(&r) + col_norms[j] * w[j];
+                let old_wj = w[j];
                 w[j] = Self::soft_threshold(rho, lambda) / col_norms[j];
+                // Update residual incrementally
+                if (old_wj - w[j]).abs() > 0.0 {
+                    r = r + &(&x_c.column(j) * (old_wj - w[j]));
+                }
             }
 
             // Check convergence
@@ -780,15 +791,23 @@ impl ElasticNetRegression {
         for _iter in 0..self.max_iter {
             let w_old = w.clone();
 
+            // Compute residual once before coordinate loop
+            let mut r = &y_c - &x_c.dot(&w);
+
             for j in 0..n_features {
                 let denom = col_norms[j] + l2_penalty;
                 if denom < 1e-15 {
                     w[j] = 0.0;
                     continue;
                 }
-                let r = &y_c - &x_c.dot(&w) + &(&x_c.column(j) * w[j]);
-                let rho = x_c.column(j).dot(&r);
+                // Incremental residual: rho = x_j^T r + col_norms[j] * w[j]
+                let rho = x_c.column(j).dot(&r) + col_norms[j] * w[j];
+                let old_wj = w[j];
                 w[j] = LassoRegression::soft_threshold(rho, l1_penalty) / denom;
+                // Update residual incrementally
+                if (old_wj - w[j]).abs() > 0.0 {
+                    r = r + &(&x_c.column(j) * (old_wj - w[j]));
+                }
             }
 
             let diff = (&w - &w_old).mapv(|v| v.abs()).sum();
@@ -1012,9 +1031,7 @@ impl PolynomialRegression {
         let n_cols = cols.len();
         let mut result = Array2::zeros((n, n_cols));
         for (j, col) in cols.into_iter().enumerate() {
-            for i in 0..n {
-                result[[i, j]] = col[i];
-            }
+            result.column_mut(j).assign(&col);
         }
         result
     }

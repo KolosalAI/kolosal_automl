@@ -102,7 +102,7 @@ harness = false
 path = "benches/training.rs"
 
 [profile.release]
-lto = "thin"
+lto = "fat"
 codegen-units = 1
 opt-level = 3
 panic = "abort"

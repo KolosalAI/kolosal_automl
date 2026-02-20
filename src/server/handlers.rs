@@ -4399,6 +4399,7 @@ pub async fn run_automl_pipeline(
                     ModelType::NaiveBayes => "naive_bayes",
                     ModelType::KMeans => "kmeans",
                     ModelType::DBSCAN => "dbscan",
+                    ModelType::SOM => "som",
                     ModelType::Auto => "auto",
                 };
                 (name, mt)

@@ -71,22 +71,23 @@ impl KMeans {
         let first = (rng.next_u64() as usize) % n_samples;
         centroids.row_mut(0).assign(&x.row(first));
 
+        // Maintain running minimum distances for O(k*n) instead of O(k²*n)
+        let mut min_dists = vec![f64::MAX; n_samples];
+
         for c in 1..k {
-            // Compute distances to nearest existing centroid
-            let dists: Vec<f64> = (0..n_samples)
-                .map(|i| {
-                    let row = x.row(i);
-                    (0..c)
-                        .map(|j| {
-                            let diff = &row - &centroids.row(j);
-                            diff.mapv(|v| v * v).sum()
-                        })
-                        .fold(f64::MAX, f64::min)
-                })
-                .collect();
+            // Update min_dists against only the newly added centroid (c-1)
+            let new_centroid = centroids.row(c - 1);
+            for i in 0..n_samples {
+                let row = x.row(i);
+                let diff = &row - &new_centroid;
+                let d = diff.mapv(|v| v * v).sum();
+                if d < min_dists[i] {
+                    min_dists[i] = d;
+                }
+            }
 
             // Weighted random selection proportional to D²
-            let total: f64 = dists.iter().sum();
+            let total: f64 = min_dists.iter().sum();
             if total <= 0.0 {
                 let idx = (rng.next_u64() as usize) % n_samples;
                 centroids.row_mut(c).assign(&x.row(idx));
@@ -96,7 +97,7 @@ impl KMeans {
             let r = (rng.next_u64() as f64 / u64::MAX as f64) * total;
             let mut cumulative = 0.0;
             let mut chosen = 0;
-            for (i, &d) in dists.iter().enumerate() {
+            for (i, &d) in min_dists.iter().enumerate() {
                 cumulative += d;
                 if cumulative >= r {
                     chosen = i;
@@ -125,10 +126,11 @@ impl KMeans {
         let mut rng = ChaCha8Rng::seed_from_u64(self.random_state.unwrap_or(42));
         let mut centroids = Self::kmeans_pp_init(x, self.n_clusters, &mut rng);
         let mut labels = Array1::zeros(n_samples);
+        let mut last_distances = vec![0.0f64; n_samples];
 
         for _iter in 0..self.max_iter {
-            // Assignment step: assign each point to nearest centroid
-            let new_labels: Vec<f64> = (0..n_samples)
+            // Assignment step: assign each point to nearest centroid, reuse distances
+            let new_assignments: Vec<(usize, f64)> = (0..n_samples)
                 .into_par_iter()
                 .map(|i| {
                     let row = x.row(i);
@@ -141,11 +143,14 @@ impl KMeans {
                             best_c = c;
                         }
                     }
-                    best_c as f64
+                    (best_c, best_dist)
                 })
                 .collect();
 
-            let new_labels_arr = Array1::from_vec(new_labels);
+            let new_labels_arr = Array1::from_vec(new_assignments.iter().map(|&(c, _)| c as f64).collect());
+            for (i, &(_, d)) in new_assignments.iter().enumerate() {
+                last_distances[i] = d;
+            }
 
             // Check convergence
             let changed: usize = new_labels_arr.iter().zip(labels.iter())
@@ -191,13 +196,8 @@ impl KMeans {
             }
         }
 
-        // Compute inertia
-        let inertia: f64 = (0..n_samples)
-            .map(|i| {
-                let c = labels[i] as usize;
-                Self::euclidean_sq(&x.row(i), &centroids.row(c))
-            })
-            .sum();
+        // Inertia from last assignment distances (avoids recomputation)
+        let inertia: f64 = last_distances.iter().sum();
 
         self.centroids = Some(centroids);
         self.labels = Some(labels);

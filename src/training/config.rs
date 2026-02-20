@@ -62,6 +62,8 @@ pub enum ModelType {
     KMeans,
     /// DBSCAN Clustering
     DBSCAN,
+    /// Self-Organizing Map
+    SOM,
     /// Auto (automatically select best model)
     Auto,
 }

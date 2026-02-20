@@ -8,7 +8,7 @@ use rand::RngCore;
 use rand_chacha::ChaCha8Rng;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+
 
 /// Random Forest model
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -293,18 +293,21 @@ impl RandomForest {
 
         // Aggregate predictions
         let predictions: Vec<f64> = if self.is_classification {
-            // Majority voting
+            // Majority voting (Vec-indexed for speed)
             (0..n_samples)
                 .map(|i| {
-                    let mut votes: HashMap<i64, usize> = HashMap::new();
+                    let mut votes = vec![0usize; self.classes.len()];
                     for preds in &all_predictions {
                         let class = preds[i].round() as i64;
-                        *votes.entry(class).or_insert(0) += 1;
+                        if let Some(idx) = self.classes.iter().position(|&c| c.round() as i64 == class) {
+                            votes[idx] += 1;
+                        }
                     }
-                    votes.into_iter()
-                        .max_by_key(|(_, count)| *count)
-                        .map(|(class, _)| class as f64)
-                        .unwrap_or(0.0)
+                    let best_idx = votes.iter().enumerate()
+                        .max_by_key(|(_, &count)| count)
+                        .map(|(idx, _)| idx)
+                        .unwrap_or(0);
+                    self.classes.get(best_idx).copied().unwrap_or(0.0)
                 })
                 .collect()
         } else {

@@ -1,0 +1,1210 @@
+{
+  "config": {
+    "configFile": "/Users/evintleovonzko/Documents/Works/Kolosal/kolosal_automl/playwright.comparison.config.ts",
+    "rootDir": "/Users/evintleovonzko/Documents/Works/Kolosal/kolosal_automl/e2e/comparison",
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "/Users/evintleovonzko/Documents/Works/Kolosal/kolosal_automl/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "",
+        "name": "",
+        "testDir": "/Users/evintleovonzko/Documents/Works/Kolosal/kolosal_automl/e2e/comparison",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 180000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "list",
+        null
+      ],
+      [
+        "html",
+        {
+          "outputFolder": "playwright-report-comparison",
+          "open": "never"
+        }
+      ],
+      [
+        "json",
+        {
+          "outputFile": "playwright-report-comparison/results.json"
+        }
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "runAgents": "none",
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.58.2",
+    "workers": 1,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "benchmark-throughput.spec.ts",
+      "file": "benchmark-throughput.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "Throughput Benchmark",
+          "file": "benchmark-throughput.spec.ts",
+          "line": 174,
+          "column": 6,
+          "specs": [],
+          "suites": [
+            {
+              "title": "Throughput: Rust",
+              "file": "benchmark-throughput.spec.ts",
+              "line": 203,
+              "column": 8,
+              "specs": [
+                {
+                  "title": "Rust logistic_regression",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 180000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "",
+                      "projectName": "",
+                      "results": [
+                        {
+                          "workerIndex": 0,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 5863,
+                          "errors": [],
+                          "stdout": [
+                            {
+                              "text": "Rust logistic_regression: train=773ms predict=391ms success=true accuracy=0.6000\n"
+                            }
+                          ],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-02-19T03:22:24.372Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "5825385c9b88be8b5b5e-bd43ce3385934429b413",
+                  "file": "benchmark-throughput.spec.ts",
+                  "line": 205,
+                  "column": 11
+                },
+                {
+                  "title": "Rust decision_tree",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 180000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "",
+                      "projectName": "",
+                      "results": [
+                        {
+                          "workerIndex": 0,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 5627,
+                          "errors": [],
+                          "stdout": [
+                            {
+                              "text": "Rust decision_tree: train=740ms predict=379ms success=true accuracy=1.0000\n"
+                            }
+                          ],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-02-19T03:22:36.943Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "5825385c9b88be8b5b5e-e303f1523f6e8af10fc4",
+                  "file": "benchmark-throughput.spec.ts",
+                  "line": 205,
+                  "column": 11
+                },
+                {
+                  "title": "Rust random_forest",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 180000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "",
+                      "projectName": "",
+                      "results": [
+                        {
+                          "workerIndex": 0,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 5341,
+                          "errors": [],
+                          "stdout": [
+                            {
+                              "text": "Rust random_forest: train=778ms predict=389ms success=true accuracy=1.0000\n"
+                            }
+                          ],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-02-19T03:22:42.573Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "5825385c9b88be8b5b5e-e078a4a1afd10495a051",
+                  "file": "benchmark-throughput.spec.ts",
+                  "line": 205,
+                  "column": 11
+                },
+                {
+                  "title": "Rust gradient_boosting",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 180000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "",
+                      "projectName": "",
+                      "results": [
+                        {
+                          "workerIndex": 0,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 5404,
+                          "errors": [],
+                          "stdout": [
+                            {
+                              "text": "Rust gradient_boosting failed: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mundefined\u001b[39m\n"
+                            },
+                            {
+                              "text": "Rust gradient_boosting: train=797ms predict=0ms success=false accuracy=0.3333\n"
+                            }
+                          ],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-02-19T03:22:47.918Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "5825385c9b88be8b5b5e-61febde32d0755bf318c",
+                  "file": "benchmark-throughput.spec.ts",
+                  "line": 205,
+                  "column": 11
+                },
+                {
+                  "title": "Rust xgboost",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 180000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "",
+                      "projectName": "",
+                      "results": [
+                        {
+                          "workerIndex": 0,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 5729,
+                          "errors": [],
+                          "stdout": [
+                            {
+                              "text": "Rust xgboost: train=756ms predict=390ms success=true accuracy=0.3333\n"
+                            }
+                          ],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-02-19T03:22:53.326Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "5825385c9b88be8b5b5e-599bf5b9b3c83ca291c1",
+                  "file": "benchmark-throughput.spec.ts",
+                  "line": 205,
+                  "column": 11
+                },
+                {
+                  "title": "Rust lightgbm",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 180000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "",
+                      "projectName": "",
+                      "results": [
+                        {
+                          "workerIndex": 0,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 5718,
+                          "errors": [],
+                          "stdout": [
+                            {
+                              "text": "Rust lightgbm: train=770ms predict=383ms success=true accuracy=0.3333\n"
+                            }
+                          ],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-02-19T03:22:59.061Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "5825385c9b88be8b5b5e-b00d525879724756cb69",
+                  "file": "benchmark-throughput.spec.ts",
+                  "line": 205,
+                  "column": 11
+                },
+                {
+                  "title": "Rust knn",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 180000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "",
+                      "projectName": "",
+                      "results": [
+                        {
+                          "workerIndex": 0,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 5730,
+                          "errors": [],
+                          "stdout": [
+                            {
+                              "text": "Rust knn: train=737ms predict=379ms success=true accuracy=1.0000\n"
+                            }
+                          ],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-02-19T03:23:04.783Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "5825385c9b88be8b5b5e-1994facb8e8e88a0100e",
+                  "file": "benchmark-throughput.spec.ts",
+                  "line": 205,
+                  "column": 11
+                },
+                {
+                  "title": "Rust naive_bayes",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 180000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "",
+                      "projectName": "",
+                      "results": [
+                        {
+                          "workerIndex": 0,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 5488,
+                          "errors": [],
+                          "stdout": [
+                            {
+                              "text": "Rust naive_bayes: train=737ms predict=369ms success=true accuracy=1.0000\n"
+                            }
+                          ],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-02-19T03:23:10.517Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "5825385c9b88be8b5b5e-83fa07ec3d39d76d58e6",
+                  "file": "benchmark-throughput.spec.ts",
+                  "line": 205,
+                  "column": 11
+                },
+                {
+                  "title": "Rust svm",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 180000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "",
+                      "projectName": "",
+                      "results": [
+                        {
+                          "workerIndex": 0,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 4978,
+                          "errors": [],
+                          "stdout": [
+                            {
+                              "text": "Rust svm failed: Training failed: Invalid input: SVM classifier requires integer class labels, but sample 0 has label 1.2206555615733703\n"
+                            },
+                            {
+                              "text": "Rust svm: train=0ms predict=0ms success=false accuracy=N/A\n"
+                            }
+                          ],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-02-19T03:23:16.009Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "5825385c9b88be8b5b5e-f0f9011b1417ff90b5b0",
+                  "file": "benchmark-throughput.spec.ts",
+                  "line": 205,
+                  "column": 11
+                },
+                {
+                  "title": "Rust adaboost",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 180000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "",
+                      "projectName": "",
+                      "results": [
+                        {
+                          "workerIndex": 0,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 5344,
+                          "errors": [],
+                          "stdout": [
+                            {
+                              "text": "Rust adaboost: train=726ms predict=369ms success=true accuracy=1.0000\n"
+                            }
+                          ],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-02-19T03:23:20.992Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "5825385c9b88be8b5b5e-caff67ba7b60a7cc3cd7",
+                  "file": "benchmark-throughput.spec.ts",
+                  "line": 205,
+                  "column": 11
+                }
+              ]
+            },
+            {
+              "title": "Throughput: Python",
+              "file": "benchmark-throughput.spec.ts",
+              "line": 330,
+              "column": 8,
+              "specs": [
+                {
+                  "title": "discover available algorithms",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 180000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "",
+                      "projectName": "",
+                      "results": [
+                        {
+                          "workerIndex": 0,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 16107,
+                          "errors": [],
+                          "stdout": [
+                            {
+                              "text": "Discovered 24 Python algorithms: ✓ Boosting - AdaBoost, ✓ Boosting - CatBoost, ✓ Boosting - LightGBM, ✓ Boosting - XGBoost, ✓ Ensemble Methods - Stacking, ✓ Ensemble Methods - Voting Classifier, ✓ Linear Models - Elastic Net, ✓ Linear Models - Lasso, ✓ Linear Models - Logistic Regression, ✓ Linear Models - Ridge, ✓ Linear Models - SGD, ✓ Naive Bayes - Bernoulli NB, ✓ Naive Bayes - Gaussian NB, ✓ Naive Bayes - Multinomial NB, ✓ Nearest Neighbors - K-Nearest Neighbors, ✓ Neural Networks - Multi-layer Perceptron, ✓ Neural Networks - Neural Network, ✓ Support Vector Machines - SVM, ✓ Support Vector Machines - SVM (Linear), ✓ Support Vector Machines - SVM (Polynomial), ✓ Tree-Based - Decision Tree, ✓ Tree-Based - Extra Trees, ✓ Tree-Based - Gradient Boosting, ✓ Tree-Based - Random Forest\n"
+                            }
+                          ],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-02-19T03:23:26.340Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "5825385c9b88be8b5b5e-92a8c13719c01b5ca777",
+                  "file": "benchmark-throughput.spec.ts",
+                  "line": 332,
+                  "column": 9
+                },
+                {
+                  "title": "Python algorithm #0",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 180000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "",
+                      "projectName": "",
+                      "results": [
+                        {
+                          "workerIndex": 0,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 18452,
+                          "errors": [],
+                          "stdout": [
+                            {
+                              "text": "Testing Python algorithm: \"✓ Boosting - AdaBoost\"\n"
+                            },
+                            {
+                              "text": "Python \"✓ Boosting - AdaBoost\": train=933ms predict=41ms success=true\n"
+                            }
+                          ],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-02-19T03:23:42.452Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "5825385c9b88be8b5b5e-54290b97bc46ff0aa69d",
+                  "file": "benchmark-throughput.spec.ts",
+                  "line": 375,
+                  "column": 11
+                },
+                {
+                  "title": "Python algorithm #1",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 180000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "",
+                      "projectName": "",
+                      "results": [
+                        {
+                          "workerIndex": 0,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 19997,
+                          "errors": [],
+                          "stdout": [
+                            {
+                              "text": "Testing Python algorithm: \"✓ Boosting - CatBoost\"\n"
+                            },
+                            {
+                              "text": "Python \"✓ Boosting - CatBoost\": train=934ms predict=49ms success=true\n"
+                            }
+                          ],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-02-19T03:24:00.909Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "5825385c9b88be8b5b5e-4c5b811a4ae0eca70e3d",
+                  "file": "benchmark-throughput.spec.ts",
+                  "line": 375,
+                  "column": 11
+                },
+                {
+                  "title": "Python algorithm #2",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 180000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "",
+                      "projectName": "",
+                      "results": [
+                        {
+                          "workerIndex": 0,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 17662,
+                          "errors": [],
+                          "stdout": [
+                            {
+                              "text": "Testing Python algorithm: \"✓ Boosting - LightGBM\"\n"
+                            },
+                            {
+                              "text": "Python \"✓ Boosting - LightGBM\": train=929ms predict=55ms success=true\n"
+                            }
+                          ],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-02-19T03:24:20.909Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "5825385c9b88be8b5b5e-5a06be0221cb20a43b78",
+                  "file": "benchmark-throughput.spec.ts",
+                  "line": 375,
+                  "column": 11
+                },
+                {
+                  "title": "Python algorithm #3",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 180000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "",
+                      "projectName": "",
+                      "results": [
+                        {
+                          "workerIndex": 0,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 27930,
+                          "errors": [],
+                          "stdout": [
+                            {
+                              "text": "Testing Python algorithm: \"✓ Boosting - XGBoost\"\n"
+                            },
+                            {
+                              "text": "Python \"✓ Boosting - XGBoost\": train=939ms predict=56ms success=true\n"
+                            }
+                          ],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-02-19T03:24:38.575Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "5825385c9b88be8b5b5e-1d7e3945a458ff03a7df",
+                  "file": "benchmark-throughput.spec.ts",
+                  "line": 375,
+                  "column": 11
+                },
+                {
+                  "title": "Python algorithm #4",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 180000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "",
+                      "projectName": "",
+                      "results": [
+                        {
+                          "workerIndex": 0,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 35981,
+                          "errors": [],
+                          "stdout": [
+                            {
+                              "text": "Testing Python algorithm: \"✓ Ensemble Methods - Stacking\"\n"
+                            },
+                            {
+                              "text": "Python \"✓ Ensemble Methods - Stacking\": train=937ms predict=54ms success=true\n"
+                            }
+                          ],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-02-19T03:25:06.508Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "5825385c9b88be8b5b5e-da95021d7248042ae622",
+                  "file": "benchmark-throughput.spec.ts",
+                  "line": 375,
+                  "column": 11
+                },
+                {
+                  "title": "Python algorithm #5",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 180000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "",
+                      "projectName": "",
+                      "results": [
+                        {
+                          "workerIndex": 0,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 20580,
+                          "errors": [],
+                          "stdout": [
+                            {
+                              "text": "Testing Python algorithm: \"✓ Ensemble Methods - Voting Classifier\"\n"
+                            },
+                            {
+                              "text": "Python \"✓ Ensemble Methods - Voting Classifier\": train=50ms predict=51ms success=true\n"
+                            }
+                          ],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-02-19T03:25:42.493Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "5825385c9b88be8b5b5e-e5e4843e90201a39ec99",
+                  "file": "benchmark-throughput.spec.ts",
+                  "line": 375,
+                  "column": 11
+                },
+                {
+                  "title": "Python algorithm #6",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 180000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "",
+                      "projectName": "",
+                      "results": [
+                        {
+                          "workerIndex": 0,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 23179,
+                          "errors": [],
+                          "stdout": [
+                            {
+                              "text": "Testing Python algorithm: \"✓ Linear Models - Elastic Net\"\n"
+                            },
+                            {
+                              "text": "Python \"✓ Linear Models - Elastic Net\": train=935ms predict=55ms success=true\n"
+                            }
+                          ],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-02-19T03:26:03.076Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "5825385c9b88be8b5b5e-5b066ca5f1055b981550",
+                  "file": "benchmark-throughput.spec.ts",
+                  "line": 375,
+                  "column": 11
+                },
+                {
+                  "title": "Python algorithm #7",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 180000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "",
+                      "projectName": "",
+                      "results": [
+                        {
+                          "workerIndex": 0,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 23367,
+                          "errors": [],
+                          "stdout": [
+                            {
+                              "text": "Testing Python algorithm: \"✓ Linear Models - Lasso\"\n"
+                            },
+                            {
+                              "text": "Python \"✓ Linear Models - Lasso\": train=935ms predict=53ms success=true\n"
+                            }
+                          ],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-02-19T03:26:26.258Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "5825385c9b88be8b5b5e-a091b8aa87ac9c5336dd",
+                  "file": "benchmark-throughput.spec.ts",
+                  "line": 375,
+                  "column": 11
+                },
+                {
+                  "title": "Python algorithm #8",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 180000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "",
+                      "projectName": "",
+                      "results": [
+                        {
+                          "workerIndex": 0,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 27041,
+                          "errors": [],
+                          "stdout": [
+                            {
+                              "text": "Testing Python algorithm: \"✓ Linear Models - Logistic Regression\"\n"
+                            },
+                            {
+                              "text": "Python \"✓ Linear Models - Logistic Regression\": train=937ms predict=40ms success=true\n"
+                            }
+                          ],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-02-19T03:26:49.629Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "5825385c9b88be8b5b5e-a07fcd7c61fdcbeac363",
+                  "file": "benchmark-throughput.spec.ts",
+                  "line": 375,
+                  "column": 11
+                },
+                {
+                  "title": "Python algorithm #9",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 180000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "",
+                      "projectName": "",
+                      "results": [
+                        {
+                          "workerIndex": 0,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 22379,
+                          "errors": [],
+                          "stdout": [
+                            {
+                              "text": "Testing Python algorithm: \"✓ Linear Models - Ridge\"\n"
+                            },
+                            {
+                              "text": "Python \"✓ Linear Models - Ridge\": train=932ms predict=52ms success=true\n"
+                            }
+                          ],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-02-19T03:27:16.675Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "5825385c9b88be8b5b5e-7257ac7b0e9810ae194f",
+                  "file": "benchmark-throughput.spec.ts",
+                  "line": 375,
+                  "column": 11
+                },
+                {
+                  "title": "Python algorithm #10",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 180000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "",
+                      "projectName": "",
+                      "results": [
+                        {
+                          "workerIndex": 0,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 32412,
+                          "errors": [],
+                          "stdout": [
+                            {
+                              "text": "Testing Python algorithm: \"✓ Linear Models - SGD\"\n"
+                            },
+                            {
+                              "text": "Python \"✓ Linear Models - SGD\": train=934ms predict=52ms success=true\n"
+                            }
+                          ],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-02-19T03:27:39.058Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "5825385c9b88be8b5b5e-cdd02b4494cfe3fefaff",
+                  "file": "benchmark-throughput.spec.ts",
+                  "line": 375,
+                  "column": 11
+                },
+                {
+                  "title": "Python algorithm #11",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 180000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "",
+                      "projectName": "",
+                      "results": [
+                        {
+                          "workerIndex": 0,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 24550,
+                          "errors": [],
+                          "stdout": [
+                            {
+                              "text": "Testing Python algorithm: \"✓ Naive Bayes - Bernoulli NB\"\n"
+                            },
+                            {
+                              "text": "Python \"✓ Naive Bayes - Bernoulli NB\": train=933ms predict=54ms success=true\n"
+                            }
+                          ],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-02-19T03:28:11.473Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "5825385c9b88be8b5b5e-8d25f6c4cc7442311610",
+                  "file": "benchmark-throughput.spec.ts",
+                  "line": 375,
+                  "column": 11
+                },
+                {
+                  "title": "Python algorithm #12",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 180000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "",
+                      "projectName": "",
+                      "results": [
+                        {
+                          "workerIndex": 0,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 40145,
+                          "errors": [],
+                          "stdout": [
+                            {
+                              "text": "Testing Python algorithm: \"✓ Naive Bayes - Gaussian NB\"\n"
+                            },
+                            {
+                              "text": "Python \"✓ Naive Bayes - Gaussian NB\": train=869ms predict=52ms success=true\n"
+                            }
+                          ],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-02-19T03:28:36.026Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "5825385c9b88be8b5b5e-e266da534ebd13857fc2",
+                  "file": "benchmark-throughput.spec.ts",
+                  "line": 375,
+                  "column": 11
+                },
+                {
+                  "title": "Python algorithm #13",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 180000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "",
+                      "projectName": "",
+                      "results": [
+                        {
+                          "workerIndex": 0,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 29996,
+                          "errors": [],
+                          "stdout": [
+                            {
+                              "text": "Testing Python algorithm: \"✓ Naive Bayes - Multinomial NB\"\n"
+                            },
+                            {
+                              "text": "Python \"✓ Naive Bayes - Multinomial NB\": train=901ms predict=58ms success=true\n"
+                            }
+                          ],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-02-19T03:29:16.175Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "5825385c9b88be8b5b5e-7b97eaad117eeda3a55c",
+                  "file": "benchmark-throughput.spec.ts",
+                  "line": 375,
+                  "column": 11
+                },
+                {
+                  "title": "Python algorithm #14",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 180000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "",
+                      "projectName": "",
+                      "results": [
+                        {
+                          "workerIndex": 0,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 22312,
+                          "errors": [],
+                          "stdout": [
+                            {
+                              "text": "Testing Python algorithm: \"✓ Nearest Neighbors - K-Nearest Neighbors\"\n"
+                            },
+                            {
+                              "text": "Python \"✓ Nearest Neighbors - K-Nearest Neighbors\": train=936ms predict=49ms success=true\n"
+                            }
+                          ],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-02-19T03:29:46.174Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "5825385c9b88be8b5b5e-877f6fa52a035b728712",
+                  "file": "benchmark-throughput.spec.ts",
+                  "line": 375,
+                  "column": 11
+                }
+              ]
+            },
+            {
+              "title": "Throughput: Report",
+              "file": "benchmark-throughput.spec.ts",
+              "line": 484,
+              "column": 8,
+              "specs": [
+                {
+                  "title": "generate throughput report",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 180000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "",
+                      "projectName": "",
+                      "results": [
+                        {
+                          "workerIndex": 0,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 3,
+                          "errors": [],
+                          "stdout": [
+                            {
+                              "text": "Throughput results saved to /Users/evintleovonzko/Documents/Works/Kolosal/kolosal_automl/e2e/comparison/throughput-results.json\n"
+                            },
+                            {
+                              "text": "Throughput report saved to /Users/evintleovonzko/Documents/Works/Kolosal/kolosal_automl/e2e/comparison/throughput-report.html\n"
+                            },
+                            {
+                              "text": "Total results: 25 (rust: 10, python: 15)\n"
+                            },
+                            {
+                              "text": "Shared models for comparison: 6\n"
+                            },
+                            {
+                              "text": "Rust-only models: 2\n"
+                            }
+                          ],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-02-19T03:30:08.490Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "5825385c9b88be8b5b5e-cd4e89ac0b1b0a9d6533",
+                  "file": "benchmark-throughput.spec.ts",
+                  "line": 485,
+                  "column": 9
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-02-19T03:22:23.846Z",
+    "duration": 464712.68200000003,
+    "expected": 27,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}

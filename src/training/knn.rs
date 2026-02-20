@@ -11,6 +11,65 @@ use std::cmp::Ordering;
 
 use crate::error::Result;
 
+/// Dimensionality threshold above which random projection is applied
+const HIGH_DIM_THRESHOLD: usize = 16;
+
+// ============================================================================
+// Random Projection (Johnson-Lindenstrauss) for high-dimensional KNN
+// ============================================================================
+
+/// Random Gaussian projection for dimensionality reduction (JL lemma)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct RandomProjection {
+    projection_matrix: Array2<f64>,
+    target_dim: usize,
+}
+
+impl RandomProjection {
+    /// Build a random projection matrix with entries ~ N(0, 1/target_dim).
+    /// `target_dim = min(n_features, max(k * 4, ceil(5 * ln(n_samples))))` capped at n_features.
+    fn build(n_features: usize, n_samples: usize, k_neighbors: usize, seed: u64) -> Self {
+        let jl_dim = (5.0 * (n_samples as f64).ln()).ceil() as usize;
+        let target_dim = (k_neighbors * 4).max(jl_dim).min(n_features);
+
+        // Simple seeded PRNG (xorshift64) for Gaussian generation via Box-Muller
+        let mut rng_state = seed;
+        let mut next_u64 = || -> u64 {
+            rng_state ^= rng_state << 13;
+            rng_state ^= rng_state >> 7;
+            rng_state ^= rng_state << 17;
+            rng_state
+        };
+
+        let scale = 1.0 / (target_dim as f64).sqrt();
+        let mut data = Vec::with_capacity(n_features * target_dim);
+        for _ in 0..(n_features * target_dim / 2 + 1) {
+            // Box-Muller transform
+            let u1 = (next_u64() as f64) / (u64::MAX as f64);
+            let u2 = (next_u64() as f64) / (u64::MAX as f64);
+            let u1 = u1.max(1e-15); // avoid log(0)
+            let r = (-2.0 * u1.ln()).sqrt();
+            let theta = 2.0 * std::f64::consts::PI * u2;
+            data.push(r * theta.cos() * scale);
+            data.push(r * theta.sin() * scale);
+        }
+        data.truncate(n_features * target_dim);
+
+        let projection_matrix =
+            Array2::from_shape_vec((n_features, target_dim), data).unwrap();
+
+        RandomProjection {
+            projection_matrix,
+            target_dim,
+        }
+    }
+
+    /// Project data: x.dot(&projection_matrix)
+    fn transform(&self, x: &Array2<f64>) -> Array2<f64> {
+        x.dot(&self.projection_matrix)
+    }
+}
+
 /// Distance metric for KNN
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum DistanceMetric {
@@ -74,6 +133,8 @@ pub struct KNNClassifier {
     y_train: Option<Array1<f64>>,
     classes: Vec<i64>,
     kd_tree: Option<KDTree>,
+    projection: Option<RandomProjection>,
+    x_train_projected: Option<Array2<f64>>,
 }
 
 impl KNNClassifier {
@@ -84,6 +145,8 @@ impl KNNClassifier {
             y_train: None,
             classes: Vec::new(),
             kd_tree: None,
+            projection: None,
+            x_train_projected: None,
         }
     }
 
@@ -110,7 +173,19 @@ impl KNNClassifier {
 
         // Build KD-tree for compatible metrics
         if kd_tree_compatible(self.config.metric) {
-            self.kd_tree = Some(KDTree::build(x));
+            if x.ncols() > HIGH_DIM_THRESHOLD {
+                // High-dimensional: apply random projection before building KD-tree
+                let seed = 42u64;
+                let proj = RandomProjection::build(x.ncols(), x.nrows(), self.config.n_neighbors, seed);
+                let x_proj = proj.transform(x);
+                self.kd_tree = Some(KDTree::build(&x_proj));
+                self.x_train_projected = Some(x_proj);
+                self.projection = Some(proj);
+            } else {
+                self.kd_tree = Some(KDTree::build(x));
+                self.projection = None;
+                self.x_train_projected = None;
+            }
         }
 
         Ok(())
@@ -126,13 +201,24 @@ impl KNNClassifier {
         let classes = &self.classes;
         let kd_tree = &self.kd_tree;
 
-        let predictions: Vec<f64> = (0..x.nrows())
+        // If projection is active, project query points and use projected training data for KD-tree
+        let x_query;
+        let kd_data;
+        if let Some(ref proj) = self.projection {
+            x_query = proj.transform(x);
+            kd_data = self.x_train_projected.as_ref().unwrap();
+        } else {
+            x_query = x.to_owned();
+            kd_data = x_train;
+        }
+
+        let predictions: Vec<f64> = (0..x_query.nrows())
             .into_par_iter()
             .map(|i| {
-                let row = x.row(i);
+                let row = x_query.row(i);
                 let point = row.as_slice().unwrap();
                 let neighbors = if let Some(tree) = kd_tree {
-                    let kd_results = tree.query_k_nearest(point, x_train, k, metric);
+                    let kd_results = tree.query_k_nearest(point, kd_data, k, metric);
                     kd_results.into_iter().map(|(d, idx)| (d, y_train[idx])).collect()
                 } else {
                     find_k_nearest(point, x_train, y_train, k, metric)
@@ -155,13 +241,24 @@ impl KNNClassifier {
         let classes = &self.classes;
         let kd_tree = &self.kd_tree;
 
-        let probs: Vec<Vec<f64>> = (0..x.nrows())
+        // If projection is active, project query points and use projected training data for KD-tree
+        let x_query;
+        let kd_data;
+        if let Some(ref proj) = self.projection {
+            x_query = proj.transform(x);
+            kd_data = self.x_train_projected.as_ref().unwrap();
+        } else {
+            x_query = x.to_owned();
+            kd_data = x_train;
+        }
+
+        let probs: Vec<Vec<f64>> = (0..x_query.nrows())
             .into_par_iter()
             .map(|i| {
-                let row = x.row(i);
+                let row = x_query.row(i);
                 let point = row.as_slice().unwrap();
                 let neighbors = if let Some(tree) = kd_tree {
-                    let kd_results = tree.query_k_nearest(point, x_train, k, metric);
+                    let kd_results = tree.query_k_nearest(point, kd_data, k, metric);
                     kd_results.into_iter().map(|(d, idx)| (d, y_train[idx])).collect()
                 } else {
                     find_k_nearest(point, x_train, y_train, k, metric)
@@ -186,6 +283,8 @@ pub struct KNNRegressor {
     x_train: Option<Array2<f64>>,
     y_train: Option<Array1<f64>>,
     kd_tree: Option<KDTree>,
+    projection: Option<RandomProjection>,
+    x_train_projected: Option<Array2<f64>>,
 }
 
 impl KNNRegressor {
@@ -195,6 +294,8 @@ impl KNNRegressor {
             x_train: None,
             y_train: None,
             kd_tree: None,
+            projection: None,
+            x_train_projected: None,
         }
     }
 
@@ -212,7 +313,18 @@ impl KNNRegressor {
         self.y_train = Some(y.clone());
 
         if kd_tree_compatible(self.config.metric) {
-            self.kd_tree = Some(KDTree::build(x));
+            if x.ncols() > HIGH_DIM_THRESHOLD {
+                let seed = 42u64;
+                let proj = RandomProjection::build(x.ncols(), x.nrows(), self.config.n_neighbors, seed);
+                let x_proj = proj.transform(x);
+                self.kd_tree = Some(KDTree::build(&x_proj));
+                self.x_train_projected = Some(x_proj);
+                self.projection = Some(proj);
+            } else {
+                self.kd_tree = Some(KDTree::build(x));
+                self.projection = None;
+                self.x_train_projected = None;
+            }
         }
 
         Ok(())
@@ -227,13 +339,23 @@ impl KNNRegressor {
         let weights = self.config.weights;
         let kd_tree = &self.kd_tree;
 
-        let predictions: Vec<f64> = (0..x.nrows())
+        let x_query;
+        let kd_data;
+        if let Some(ref proj) = self.projection {
+            x_query = proj.transform(x);
+            kd_data = self.x_train_projected.as_ref().unwrap();
+        } else {
+            x_query = x.to_owned();
+            kd_data = x_train;
+        }
+
+        let predictions: Vec<f64> = (0..x_query.nrows())
             .into_par_iter()
             .map(|i| {
-                let row = x.row(i);
+                let row = x_query.row(i);
                 let point = row.as_slice().unwrap();
                 let neighbors = if let Some(tree) = kd_tree {
-                    let kd_results = tree.query_k_nearest(point, x_train, k, metric);
+                    let kd_results = tree.query_k_nearest(point, kd_data, k, metric);
                     kd_results.into_iter().map(|(d, idx)| (d, y_train[idx])).collect()
                 } else {
                     find_k_nearest(point, x_train, y_train, k, metric)
@@ -626,15 +748,59 @@ mod tests {
     #[test]
     fn test_weighted_knn() {
         let (x, y) = create_classification_data();
-        
+
         let mut knn = KNNClassifier::new(KNNConfig {
             n_neighbors: 5,
             weights: WeightScheme::Distance,
             ..Default::default()
         });
         knn.fit(&x, &y).unwrap();
-        
+
         let predictions = knn.predict(&x);
         assert_eq!(predictions.len(), 20);
+    }
+
+    #[test]
+    fn test_knn_high_dimensional_projection() {
+        // Create high-dimensional data (30 features > HIGH_DIM_THRESHOLD=16)
+        let n_samples = 40;
+        let n_features = 30;
+        let mut data = vec![0.0; n_samples * n_features];
+        for i in 0..n_samples {
+            for j in 0..n_features {
+                // Class 0: features centered around 0, Class 1: centered around 5
+                let base = if i < n_samples / 2 { 0.0 } else { 5.0 };
+                data[i * n_features + j] = base + (((i * 7 + j * 13) % 100) as f64) * 0.01;
+            }
+        }
+        let x = Array2::from_shape_vec((n_samples, n_features), data).unwrap();
+        let mut labels = vec![0.0; n_samples / 2];
+        labels.extend(vec![1.0; n_samples / 2]);
+        let y = Array1::from_vec(labels);
+
+        let mut knn = KNNClassifier::with_k(3);
+        knn.fit(&x, &y).unwrap();
+
+        // Projection should be active
+        assert!(knn.projection.is_some());
+        assert!(knn.x_train_projected.is_some());
+
+        let predictions = knn.predict(&x);
+        let correct: usize = y.iter()
+            .zip(predictions.iter())
+            .filter(|(&yi, &pi)| (yi - pi).abs() < 0.5)
+            .count();
+        let accuracy = correct as f64 / y.len() as f64;
+        assert!(accuracy > 0.8, "High-dim KNN accuracy ({}) should be above 80%", accuracy);
+    }
+
+    #[test]
+    fn test_knn_low_dim_no_projection() {
+        let (x, y) = create_classification_data();
+        let mut knn = KNNClassifier::with_k(3);
+        knn.fit(&x, &y).unwrap();
+        // 2D data should NOT trigger projection
+        assert!(knn.projection.is_none());
+        assert!(knn.x_train_projected.is_none());
     }
 }

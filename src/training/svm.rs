@@ -340,7 +340,7 @@ impl SVMClassifier {
         let n = x.nrows();
 
         // For small matrices, sequential is faster due to overhead
-        if n < 100 {
+        if n < 50 {
             let mut k = Array2::zeros((n, n));
             for i in 0..n {
                 for j in i..n {
@@ -453,24 +453,23 @@ impl SVMClassifier {
         }
 
         let n = x.nrows();
-        let mut predictions = Array1::zeros(n);
 
-        if self.classes.len() == 2 {
+        let preds: Vec<f64> = if self.classes.len() == 2 {
             let sv = self.support_vectors.as_ref().unwrap();
             let sv_labels = self.support_labels.as_ref().unwrap();
             let alphas = self.alphas.as_ref().unwrap();
 
-            for i in 0..n {
+            (0..n).into_par_iter().map(|i| {
                 let sample = x.row(i).to_owned();
                 let score = self.score_sample(&sample, sv, alphas, sv_labels, self.bias);
-                predictions[i] = if score >= 0.0 {
+                if score >= 0.0 {
                     self.classes[1] as f64
                 } else {
                     self.classes[0] as f64
-                };
-            }
+                }
+            }).collect()
         } else {
-            for i in 0..n {
+            (0..n).into_par_iter().map(|i| {
                 let sample = x.row(i).to_owned();
                 let mut best_score = f64::NEG_INFINITY;
                 let mut best_class = self.classes[0];
@@ -488,12 +487,11 @@ impl SVMClassifier {
                         best_class = self.classes[k];
                     }
                 }
+                best_class as f64
+            }).collect()
+        };
 
-                predictions[i] = best_class as f64;
-            }
-        }
-
-        Ok(predictions)
+        Ok(Array1::from_vec(preds))
     }
 
     /// Get decision function values (binary: single score, multi-class: max OvR score)
@@ -700,21 +698,18 @@ impl SVMRegressor {
         let alphas = self.alphas.as_ref().unwrap();
         
         let n = x.nrows();
-        let mut predictions = Array1::zeros(n);
         
-        for i in 0..n {
+        let preds: Vec<f64> = (0..n).into_par_iter().map(|i| {
             let sample = x.row(i).to_owned();
             let mut sum = self.bias;
-            
             for j in 0..sv.nrows() {
                 let k_val = self.kernel(&sample, &sv.row(j).to_owned());
                 sum += alphas[j] * k_val;
             }
-            
-            predictions[i] = sum;
-        }
+            sum
+        }).collect();
         
-        Ok(predictions)
+        Ok(Array1::from_vec(preds))
     }
 
     /// Get number of support vectors

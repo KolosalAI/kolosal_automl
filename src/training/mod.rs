@@ -32,6 +32,7 @@ pub mod catboost;
 pub mod sgd;
 pub mod gaussian_process_regression;
 pub mod clustering;
+pub mod som;
 
 pub use config::{TrainingConfig, ModelType, TaskType};
 pub use engine::{TrainEngine, TrainedModel, EnsembleStrategy, EnsembleResult, ModelComparison};
@@ -52,4 +53,5 @@ pub use catboost::{CatBoostRegressor, CatBoostClassifier, CatBoostConfig};
 pub use sgd::{SGDRegressor, SGDClassifier, SGDConfig};
 pub use gaussian_process_regression::{GaussianProcessRegressor, GPConfig};
 pub use clustering::{KMeans, DBSCAN};
+pub use som::SOM;
 

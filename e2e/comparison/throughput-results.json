@@ -1,0 +1,191 @@
+{
+  "timestamp": "2026-02-19T03:30:08.492Z",
+  "results": [
+    {
+      "platform": "rust",
+      "model": "logistic_regression",
+      "trainTime": 773,
+      "predictTime": 391,
+      "success": true,
+      "accuracy": 0.6
+    },
+    {
+      "platform": "rust",
+      "model": "decision_tree",
+      "trainTime": 740,
+      "predictTime": 379,
+      "success": true,
+      "accuracy": 1
+    },
+    {
+      "platform": "rust",
+      "model": "random_forest",
+      "trainTime": 778,
+      "predictTime": 389,
+      "success": true,
+      "accuracy": 1
+    },
+    {
+      "platform": "rust",
+      "model": "gradient_boosting",
+      "trainTime": 797,
+      "predictTime": 0,
+      "success": false,
+      "accuracy": 0.3333333333333333,
+      "error": "\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mundefined\u001b[39m"
+    },
+    {
+      "platform": "rust",
+      "model": "xgboost",
+      "trainTime": 756,
+      "predictTime": 390,
+      "success": true,
+      "accuracy": 0.3333333333333333
+    },
+    {
+      "platform": "rust",
+      "model": "lightgbm",
+      "trainTime": 770,
+      "predictTime": 383,
+      "success": true,
+      "accuracy": 0.3333333333333333
+    },
+    {
+      "platform": "rust",
+      "model": "knn",
+      "trainTime": 737,
+      "predictTime": 379,
+      "success": true,
+      "accuracy": 1
+    },
+    {
+      "platform": "rust",
+      "model": "naive_bayes",
+      "trainTime": 737,
+      "predictTime": 369,
+      "success": true,
+      "accuracy": 1
+    },
+    {
+      "platform": "rust",
+      "model": "svm",
+      "trainTime": 0,
+      "predictTime": 0,
+      "success": false,
+      "error": "Training failed: Invalid input: SVM classifier requires integer class labels, but sample 0 has label 1.2206555615733703"
+    },
+    {
+      "platform": "rust",
+      "model": "adaboost",
+      "trainTime": 726,
+      "predictTime": 369,
+      "success": true,
+      "accuracy": 1
+    },
+    {
+      "platform": "python",
+      "model": "✓ Boosting - AdaBoost",
+      "trainTime": 933,
+      "predictTime": 41,
+      "success": true
+    },
+    {
+      "platform": "python",
+      "model": "✓ Boosting - CatBoost",
+      "trainTime": 934,
+      "predictTime": 49,
+      "success": true
+    },
+    {
+      "platform": "python",
+      "model": "✓ Boosting - LightGBM",
+      "trainTime": 929,
+      "predictTime": 55,
+      "success": true
+    },
+    {
+      "platform": "python",
+      "model": "✓ Boosting - XGBoost",
+      "trainTime": 939,
+      "predictTime": 56,
+      "success": true
+    },
+    {
+      "platform": "python",
+      "model": "✓ Ensemble Methods - Stacking",
+      "trainTime": 937,
+      "predictTime": 54,
+      "success": true
+    },
+    {
+      "platform": "python",
+      "model": "✓ Ensemble Methods - Voting Classifier",
+      "trainTime": 50,
+      "predictTime": 51,
+      "success": true
+    },
+    {
+      "platform": "python",
+      "model": "✓ Linear Models - Elastic Net",
+      "trainTime": 935,
+      "predictTime": 55,
+      "success": true
+    },
+    {
+      "platform": "python",
+      "model": "✓ Linear Models - Lasso",
+      "trainTime": 935,
+      "predictTime": 53,
+      "success": true
+    },
+    {
+      "platform": "python",
+      "model": "✓ Linear Models - Logistic Regression",
+      "trainTime": 937,
+      "predictTime": 40,
+      "success": true
+    },
+    {
+      "platform": "python",
+      "model": "✓ Linear Models - Ridge",
+      "trainTime": 932,
+      "predictTime": 52,
+      "success": true
+    },
+    {
+      "platform": "python",
+      "model": "✓ Linear Models - SGD",
+      "trainTime": 934,
+      "predictTime": 52,
+      "success": true
+    },
+    {
+      "platform": "python",
+      "model": "✓ Naive Bayes - Bernoulli NB",
+      "trainTime": 933,
+      "predictTime": 54,
+      "success": true
+    },
+    {
+      "platform": "python",
+      "model": "✓ Naive Bayes - Gaussian NB",
+      "trainTime": 869,
+      "predictTime": 52,
+      "success": true
+    },
+    {
+      "platform": "python",
+      "model": "✓ Naive Bayes - Multinomial NB",
+      "trainTime": 901,
+      "predictTime": 58,
+      "success": true
+    },
+    {
+      "platform": "python",
+      "model": "✓ Nearest Neighbors - K-Nearest Neighbors",
+      "trainTime": 936,
+      "predictTime": 49,
+      "success": true
+    }
+  ]
+}

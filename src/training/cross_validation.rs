@@ -386,18 +386,10 @@ pub fn cross_val_score(
     let fold_scores: Vec<Result<f64>> = splits
         .par_iter()
         .map(|split| {
-            let n_cols = x.ncols();
-
-            let x_train = Array2::from_shape_fn(
-                (split.train_indices.len(), n_cols),
-                |(i, j)| x[[split.train_indices[i], j]],
-            );
+            let x_train = x.select(Axis(0), &split.train_indices);
             let y_train = Array1::from_iter(split.train_indices.iter().map(|&i| y[i]));
 
-            let x_test = Array2::from_shape_fn(
-                (split.test_indices.len(), n_cols),
-                |(i, j)| x[[split.test_indices[i], j]],
-            );
+            let x_test = x.select(Axis(0), &split.test_indices);
             let y_test: Array1<f64> = Array1::from_iter(split.test_indices.iter().map(|&i| y[i]));
 
             let y_pred = TrainEngine::fit_predict_arrays(config, &x_train, &y_train, &x_test)?;

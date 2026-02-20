@@ -31,12 +31,13 @@ pub struct GaussianProcessRegressor {
     pub config: GPConfig,
     x_train: Option<Array2<f64>>,
     alpha: Option<Array1<f64>>, // K_inv * y
+    cholesky_l: Option<Array2<f64>>, // Cached Cholesky factor L where K = L * L^T
     y_mean: f64,
 }
 
 impl GaussianProcessRegressor {
     pub fn new(config: GPConfig) -> Self {
-        Self { config, x_train: None, alpha: None, y_mean: 0.0 }
+        Self { config, x_train: None, alpha: None, cholesky_l: None, y_mean: 0.0 }
     }
 
     pub fn fit(&mut self, x: &Array2<f64>, y: &Array1<f64>) -> Result<()> {
@@ -58,22 +59,49 @@ impl GaussianProcessRegressor {
         self.y_mean = y_sub.mean().unwrap_or(0.0);
         let y_centered = &y_sub - self.y_mean;
 
-        // Build kernel matrix K + σ²I
-        let mut k = Array2::zeros((n_sub, n_sub));
-        for i in 0..n_sub {
-            for j in i..n_sub {
-                let val = self.rbf_kernel(x_sub.row(i).as_slice().unwrap(), x_sub.row(j).as_slice().unwrap());
-                k[[i, j]] = val;
-                k[[j, i]] = val;
+        // Build kernel matrix K + σ²I (parallel for large n)
+        let k = if n_sub > 100 {
+            use rayon::prelude::*;
+            let signal_var = self.config.signal_variance;
+            let length_scale = self.config.length_scale;
+            let noise_var = self.config.noise_variance;
+            let rows: Vec<Vec<(usize, f64)>> = (0..n_sub).into_par_iter().map(|i| {
+                let row_i = x_sub.row(i);
+                (i..n_sub).map(|j| {
+                    let row_j = x_sub.row(j);
+                    let sq_dist: f64 = row_i.iter().zip(row_j.iter()).map(|(&a, &b)| (a - b).powi(2)).sum();
+                    let mut val = signal_var * (-sq_dist / (2.0 * length_scale.powi(2))).exp();
+                    if i == j { val += noise_var; }
+                    (j, val)
+                }).collect()
+            }).collect();
+            let mut k = Array2::zeros((n_sub, n_sub));
+            for (i, row_vals) in rows.into_iter().enumerate() {
+                for (j, val) in row_vals {
+                    k[[i, j]] = val;
+                    k[[j, i]] = val;
+                }
             }
-            k[[i, i]] += self.config.noise_variance;
-        }
+            k
+        } else {
+            let mut k = Array2::zeros((n_sub, n_sub));
+            for i in 0..n_sub {
+                for j in i..n_sub {
+                    let val = self.rbf_kernel(x_sub.row(i).as_slice().unwrap(), x_sub.row(j).as_slice().unwrap());
+                    k[[i, j]] = val;
+                    k[[j, i]] = val;
+                }
+                k[[i, i]] += self.config.noise_variance;
+            }
+            k
+        };
 
         // Solve K * alpha = y via Cholesky
-        let alpha = cholesky_solve(&k, &y_centered)?;
+        let (alpha, l) = cholesky_solve(&k, &y_centered)?;
 
         self.x_train = Some(x_sub);
         self.alpha = Some(alpha);
+        self.cholesky_l = Some(l);
         Ok(())
     }
 
@@ -112,9 +140,19 @@ impl GaussianProcessRegressor {
             }
 
             // Variance = k(x*, x*) - k_star^T K^{-1} k_star
+            // Compute v = L^{-1} k_star via forward substitution for proper variance
             let k_self = self.config.signal_variance;
-            // Approximate: use the diagonal of the prediction
-            let var = (k_self - k_star.dot(&k_star) / (n_train as f64 * self.config.signal_variance)).max(1e-10);
+            let var = if let Some(ref l) = self.cholesky_l {
+                let nl = l.nrows();
+                let mut v = Array1::zeros(nl);
+                for i in 0..nl {
+                    let sum: f64 = (0..i).map(|j| l[[i, j]] * v[j]).sum();
+                    v[i] = (k_star[i] - sum) / l[[i, i]];
+                }
+                (k_self - v.dot(&v)).max(1e-10)
+            } else {
+                (k_self - k_star.dot(&k_star) / (n_train as f64 * self.config.signal_variance)).max(1e-10)
+            };
 
             means.push(mean + self.y_mean);
             stds.push(var.sqrt());
@@ -130,7 +168,7 @@ impl GaussianProcessRegressor {
 }
 
 /// Solve Ax = b via Cholesky decomposition (A must be positive definite)
-fn cholesky_solve(a: &Array2<f64>, b: &Array1<f64>) -> Result<Array1<f64>> {
+fn cholesky_solve(a: &Array2<f64>, b: &Array1<f64>) -> Result<(Array1<f64>, Array2<f64>)> {
     let n = a.nrows();
 
     // Cholesky factorization: A = L * L^T
@@ -164,7 +202,7 @@ fn cholesky_solve(a: &Array2<f64>, b: &Array1<f64>) -> Result<Array1<f64>> {
         x[i] = (y[i] - sum) / l[[i, i]];
     }
 
-    Ok(x)
+    Ok((x, l))
 }
 
 #[cfg(test)]
@@ -214,7 +252,7 @@ mod tests {
             1.0, 3.0, 6.0,
         ]).unwrap();
         let b = Array1::from_vec(vec![1.0, 2.0, 3.0]);
-        let x = cholesky_solve(&a, &b).unwrap();
+        let (x, _l) = cholesky_solve(&a, &b).unwrap();
         // Verify A*x ≈ b
         let result = a.dot(&x);
         for i in 0..3 {

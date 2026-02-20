@@ -99,20 +99,14 @@ fn build_xgb_tree(
         return XGBNode::Leaf { weight: leaf_weight };
     }
 
-    // Find best split across features (parallelized)
+    // Find best split across features (parallelized), pass pre-computed totals
     let best_split = feature_indices.par_iter().filter_map(|&f| {
-        find_best_split_for_feature(x, grad, hess, indices, f, config)
+        find_best_split_for_feature(x, grad, hess, indices, f, config, g_sum, h_sum)
     }).max_by(|a, b| a.3.partial_cmp(&b.3).unwrap_or(std::cmp::Ordering::Equal));
 
     match best_split {
         Some((feature, threshold, split_pos, gain)) if gain > config.gamma => {
-            // Sort indices by the split feature value for partitioning
-            let mut sorted = indices.to_vec();
-            sorted.sort_by(|&a, &b| {
-                x[[a, feature]].partial_cmp(&x[[b, feature]]).unwrap_or(std::cmp::Ordering::Equal)
-            });
-
-            let (left_idx, right_idx): (Vec<usize>, Vec<usize>) = 
+            let (left_idx, right_idx): (Vec<usize>, Vec<usize>) =
                 indices.iter().partition(|&&i| x[[i, feature]] <= threshold);
 
             if left_idx.is_empty() || right_idx.is_empty() {
@@ -158,15 +152,14 @@ fn find_best_split_for_feature(
     indices: &[usize],
     feature: usize,
     config: &XGBoostConfig,
+    g_total: f64,
+    h_total: f64,
 ) -> Option<(usize, f64, usize, f64)> {
     // Sort indices by feature value
     let mut sorted_indices: Vec<usize> = indices.to_vec();
     sorted_indices.sort_by(|&a, &b| {
         x[[a, feature]].partial_cmp(&x[[b, feature]]).unwrap_or(std::cmp::Ordering::Equal)
     });
-
-    let g_total: f64 = sorted_indices.iter().map(|&i| grad[i]).sum();
-    let h_total: f64 = sorted_indices.iter().map(|&i| hess[i]).sum();
 
     let mut g_left = 0.0;
     let mut h_left = 0.0;

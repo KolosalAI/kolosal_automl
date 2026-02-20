@@ -81,30 +81,26 @@ impl GaussianNaiveBayes {
             
             let n_class = class_indices.len();
             
-            // Compute mean for each feature
+
+            // Single-pass Welford's algorithm for mean and variance
             let mut feature_means = vec![0.0; n_features];
+            let mut feature_m2 = vec![0.0; n_features];
+            let mut count = 0usize;
             for &idx in &class_indices {
+                count += 1;
                 let row = x.row(idx);
                 for (j, &val) in row.iter().enumerate() {
-                    feature_means[j] += val;
+                    let delta = val - feature_means[j];
+                    feature_means[j] += delta / count as f64;
+                    let delta2 = val - feature_means[j];
+                    feature_m2[j] += delta * delta2;
                 }
             }
-            for mean in &mut feature_means {
-                *mean /= n_class as f64;
-            }
-            
-            // Compute variance for each feature
-            let mut feature_vars = vec![0.0; n_features];
-            for &idx in &class_indices {
-                let row = x.row(idx);
-                for (j, &val) in row.iter().enumerate() {
-                    feature_vars[j] += (val - feature_means[j]).powi(2);
-                }
-            }
-            for var in &mut feature_vars {
-                *var = (*var / n_class as f64) + self.var_smoothing;
-            }
-            
+            let feature_vars: Vec<f64> = feature_m2.iter()
+                .map(|&m2| (m2 / n_class as f64) + self.var_smoothing)
+                .collect();
+
+
             self.means.insert(class, feature_means);
             self.variances.insert(class, feature_vars);
         }

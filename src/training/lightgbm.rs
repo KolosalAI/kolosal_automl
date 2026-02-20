@@ -262,10 +262,15 @@ fn build_lgb_tree(
 fn goss_sample(gradients: &[f64], n: usize, top_rate: f64, other_rate: f64, rng: &mut Xoshiro256PlusPlus) -> Vec<usize> {
     let n_top = (n as f64 * top_rate).ceil() as usize;
     let n_other = (n as f64 * other_rate).ceil() as usize;
-    let mut sorted: Vec<usize> = (0..n).collect();
-    sorted.sort_by(|&a, &b| gradients[b].abs().partial_cmp(&gradients[a].abs()).unwrap_or(std::cmp::Ordering::Equal));
-    let mut selected: Vec<usize> = sorted[..n_top.min(n)].to_vec();
-    let mut remaining: Vec<usize> = sorted[n_top.min(n)..].to_vec();
+    let mut indices: Vec<usize> = (0..n).collect();
+    if n_top < n {
+        // Partial sort: partition so top n_top by absolute gradient are at the front
+        indices.select_nth_unstable_by(n_top, |&a, &b| {
+            gradients[b].abs().partial_cmp(&gradients[a].abs()).unwrap_or(std::cmp::Ordering::Equal)
+        });
+    }
+    let mut selected: Vec<usize> = indices[..n_top.min(n)].to_vec();
+    let mut remaining: Vec<usize> = indices[n_top.min(n)..].to_vec();
     remaining.shuffle(rng);
     selected.extend(remaining.iter().take(n_other));
     selected

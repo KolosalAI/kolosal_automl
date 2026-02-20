@@ -17,6 +17,7 @@ use super::catboost::{CatBoostRegressor, CatBoostClassifier, CatBoostConfig};
 use super::sgd::{SGDRegressor, SGDClassifier, SGDConfig};
 use super::gaussian_process_regression::{GaussianProcessRegressor, GPConfig};
 use super::clustering::{KMeans, DBSCAN};
+use super::som::SOM;
 use ndarray::{Array1, Array2};
 use polars::prelude::*;
 use rayon::prelude::*;
@@ -59,6 +60,7 @@ pub enum TrainedModel {
     PolynomialRegression(PolynomialRegression),
     KMeans(KMeans),
     DBSCAN(DBSCAN),
+    SelfOrganizingMap(SOM),
 }
 
 /// Ensemble training strategy
@@ -632,7 +634,20 @@ impl TrainEngine {
                 model.fit(x)?;
                 TrainedModel::DBSCAN(model)
             }
-            
+            (TaskType::Clustering, ModelType::SOM) | (_, ModelType::SOM) => {
+                let side = (x.nrows() as f64).sqrt().ceil() as usize;
+                let side = side.max(2).min(50);
+                let mut model = SOM::new(side, side);
+                if let Some(seed) = self.config.random_seed {
+                    model = model.with_random_state(seed);
+                }
+                if let Some(max_iter) = self.config.max_iter {
+                    model = model.with_max_iter(max_iter);
+                }
+                model.fit(x)?;
+                TrainedModel::SelfOrganizingMap(model)
+            }
+
             // Default cases - use appropriate model based on task type
             (TaskType::Regression, _) => {
                 let mut model = LinearRegression::new();
@@ -703,6 +718,7 @@ impl TrainEngine {
             TrainedModel::PolynomialRegression(m) => m.predict(x)?,
             TrainedModel::KMeans(m) => m.predict(x)?,
             TrainedModel::DBSCAN(m) => m.predict(x)?,
+            TrainedModel::SelfOrganizingMap(m) => m.predict(x)?,
         };
 
         Ok(predictions)
@@ -800,7 +816,8 @@ impl TrainEngine {
             | TrainedModel::SGDRegressor(_)
             | TrainedModel::GaussianProcessRegressor(_)
             | TrainedModel::KMeans(_)
-            | TrainedModel::DBSCAN(_) => {
+            | TrainedModel::DBSCAN(_)
+            | TrainedModel::SelfOrganizingMap(_) => {
                 return Err(KolosalError::TrainingError(
                     "predict_proba is only supported for classification models".to_string(),
                 ));

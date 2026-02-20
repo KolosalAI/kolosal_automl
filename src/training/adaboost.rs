@@ -6,6 +6,7 @@
 use crate::error::{KolosalError, Result};
 use ndarray::{Array1, Array2};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// A single decision stump: splits on one feature at one threshold
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -81,28 +82,52 @@ impl AdaBoostClassifier {
         let mut best_error = f64::MAX;
 
         for f in 0..n_features {
-            let col = x.column(f);
-            let mut vals: Vec<f64> = col.to_vec();
-            vals.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-            vals.dedup();
+            // Sort samples by feature value
+            let mut order: Vec<usize> = (0..n_samples).collect();
+            order.sort_by(|&a, &b| x[[a, f]].partial_cmp(&x[[b, f]]).unwrap_or(std::cmp::Ordering::Equal));
 
-            // Try thresholds between sorted unique values
-            for w in vals.windows(2) {
-                let threshold = (w[0] + w[1]) / 2.0;
+            // Build class-to-index mapping
+            let class_idx: HashMap<u64, usize> = classes.iter()
+                .enumerate()
+                .map(|(i, &c)| (c.to_bits(), i))
+                .collect();
+            let n_classes = classes.len();
 
-                // For each class pair assignment, compute weighted error
-                for &left_label in classes {
-                    for &right_label in classes {
-                        if left_label == right_label && classes.len() > 1 {
+            // Initialize: all samples on the right side
+            let mut left_w = vec![0.0f64; n_classes];
+            let mut right_w = vec![0.0f64; n_classes];
+            for &i in &order {
+                if let Some(&ci) = class_idx.get(&y[i].to_bits()) {
+                    right_w[ci] += weights[i];
+                }
+            }
+
+            // Scan thresholds by moving samples from right to left
+            for pos in 0..n_samples - 1 {
+                let i = order[pos];
+                if let Some(&ci) = class_idx.get(&y[i].to_bits()) {
+                    left_w[ci] += weights[i];
+                    right_w[ci] -= weights[i];
+                }
+
+                // Skip if next sample has same feature value
+                let next_i = order[pos + 1];
+                if (x[[i, f]] - x[[next_i, f]]).abs() < 1e-12 {
+                    continue;
+                }
+                let threshold = (x[[i, f]] + x[[next_i, f]]) / 2.0;
+
+                // For each (left_label, right_label) pair, compute weighted error from counts
+                let left_total: f64 = left_w.iter().sum();
+                let right_total: f64 = right_w.iter().sum();
+
+                for (li, &left_label) in classes.iter().enumerate() {
+                    for (ri, &right_label) in classes.iter().enumerate() {
+                        if left_label == right_label && n_classes > 1 {
                             continue;
                         }
-                        let mut error = 0.0;
-                        for i in 0..n_samples {
-                            let pred = if col[i] <= threshold { left_label } else { right_label };
-                            if (pred - y[i]).abs() > 1e-10 {
-                                error += weights[i];
-                            }
-                        }
+                        // Error = left samples not matching left_label + right samples not matching right_label
+                        let error = (left_total - left_w[li]) + (right_total - right_w[ri]);
                         if error < best_error {
                             best_error = error;
                             best_stump = Stump {
