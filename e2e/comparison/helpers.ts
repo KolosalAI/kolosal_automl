@@ -174,6 +174,39 @@ export function effectSizeLabel(d: number): string {
 }
 
 // ---------------------------------------------------------------------------
+// Rate-limit-aware fetch helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Fetch with automatic retry on 429 (Too Many Requests).
+ * Uses exponential backoff with jitter.
+ */
+export async function fetchWithRetry(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+  maxRetries: number = 5,
+  baseDelay: number = 1000,
+): Promise<Response> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const res = await fetch(input, init);
+    if (res.status !== 429) return res;
+
+    if (attempt === maxRetries) return res; // return the 429 on final attempt
+
+    // Exponential backoff with jitter
+    const delay = baseDelay * Math.pow(2, attempt) + Math.random() * 500;
+    await new Promise(r => setTimeout(r, delay));
+  }
+  // unreachable, but TypeScript needs it
+  return fetch(input, init);
+}
+
+/** Small delay to avoid hitting rate limits between rapid requests */
+export async function rateLimitPause(ms: number = 300): Promise<void> {
+  await new Promise(r => setTimeout(r, ms));
+}
+
+// ---------------------------------------------------------------------------
 // Timing utilities
 // ---------------------------------------------------------------------------
 

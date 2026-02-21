@@ -1,95 +1,95 @@
 {
-  "timestamp": "2026-02-18T18:24:30.300Z",
+  "timestamp": "2026-02-21T01:42:36.624Z",
   "results": [
     {
       "platform": "rust",
       "dataset": "synthetic_100",
       "rows": 100,
-      "uploadTime": 46,
-      "preprocessTime": 33,
-      "trainTime": 64,
-      "predictTime": 38
+      "uploadTime": 39,
+      "preprocessTime": 35,
+      "trainTime": 69,
+      "predictTime": 41
     },
     {
       "platform": "rust",
       "dataset": "synthetic_500",
       "rows": 500,
-      "uploadTime": 41,
-      "preprocessTime": 32,
+      "uploadTime": 52,
+      "preprocessTime": 35,
       "trainTime": 64,
-      "predictTime": 36
+      "predictTime": 40
     },
     {
       "platform": "rust",
       "dataset": "synthetic_1000",
       "rows": 1000,
-      "uploadTime": 132,
-      "preprocessTime": 35,
-      "trainTime": 69,
-      "predictTime": 35
+      "uploadTime": 65,
+      "preprocessTime": 33,
+      "trainTime": 63,
+      "predictTime": 42
     },
     {
       "platform": "rust",
       "dataset": "synthetic_5000",
       "rows": 5000,
-      "uploadTime": 133,
+      "uploadTime": 167,
       "preprocessTime": 36,
-      "trainTime": 599,
-      "predictTime": 37
+      "trainTime": 603,
+      "predictTime": 40
     },
     {
       "platform": "rust",
       "dataset": "synthetic_10000",
       "rows": 10000,
-      "uploadTime": 189,
-      "preprocessTime": 37,
-      "trainTime": 595,
-      "predictTime": 35
+      "uploadTime": 443,
+      "preprocessTime": 38,
+      "trainTime": 603,
+      "predictTime": 39
     },
     {
       "platform": "rust",
       "dataset": "synthetic_50000",
       "rows": 50000,
-      "uploadTime": 1262,
-      "preprocessTime": 46,
-      "trainTime": 1123,
-      "predictTime": 37
+      "uploadTime": 630,
+      "preprocessTime": 52,
+      "trainTime": 1125,
+      "predictTime": 38
     },
     {
       "platform": "python",
       "dataset": "iris",
       "rows": 150,
-      "uploadTime": 1178,
-      "preprocessTime": 1096,
-      "trainTime": 4566,
-      "predictTime": 46
+      "uploadTime": 1352,
+      "preprocessTime": 1176,
+      "trainTime": 7915,
+      "predictTime": 103
     },
     {
       "platform": "python",
       "dataset": "wine",
       "rows": 178,
-      "uploadTime": 1624,
-      "preprocessTime": 1095,
-      "trainTime": 4567,
-      "predictTime": 52
+      "uploadTime": 4194,
+      "preprocessTime": 1175,
+      "trainTime": 4745,
+      "predictTime": 75
     },
     {
       "platform": "python",
       "dataset": "boston",
       "rows": 506,
-      "uploadTime": 1131,
-      "preprocessTime": 1091,
-      "trainTime": 4560,
-      "predictTime": 52
+      "uploadTime": 1304,
+      "preprocessTime": 1172,
+      "trainTime": 4757,
+      "predictTime": 102
     },
     {
       "platform": "python",
       "dataset": "diabetes",
       "rows": 768,
-      "uploadTime": 1127,
-      "preprocessTime": 1089,
-      "trainTime": 4883,
-      "predictTime": 62
+      "uploadTime": 1803,
+      "preprocessTime": 1144,
+      "trainTime": 4737,
+      "predictTime": 86
     }
   ]
 }

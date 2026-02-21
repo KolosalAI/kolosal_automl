@@ -5,6 +5,7 @@ import {
   RUST_PLATFORM,
   PYTHON_PLATFORM,
   measureTime,
+  rateLimitPause,
 } from './helpers';
 
 // ---------------------------------------------------------------------------
@@ -214,17 +215,37 @@ test.describe('Throughput Benchmark', () => {
         let accuracy: number | undefined;
         let error: string | undefined;
 
+        // Inject retry-aware fetch
+        await page.evaluate(() => {
+          if (!(window as any).__retryFetch) {
+            (window as any).__retryFetch = async (input: RequestInfo | URL, init?: RequestInit, maxRetries = 4, baseDelay = 1000) => {
+              for (let attempt = 0; attempt <= maxRetries; attempt++) {
+                const res = await fetch(input, init);
+                if (res.status !== 429) return res;
+                if (attempt === maxRetries) return res;
+                const delay = baseDelay * Math.pow(2, attempt) + Math.random() * 500;
+                await new Promise(r => setTimeout(r, delay));
+              }
+              return fetch(input, init);
+            };
+          }
+        });
+
         try {
           // 1. Load iris sample dataset
           const loadRes = await page.evaluate(async (url: string) => {
-            const r = await fetch(`${url}/api/data/sample/iris`);
+            const rf = (window as any).__retryFetch;
+            const r = await rf(`${url}/api/data/sample/iris`);
             return r.json();
           }, RUST_BASE);
           expect(loadRes.success).toBe(true);
 
+          await new Promise(r => setTimeout(r, 300));
+
           // 2. Preprocess
           const prepRes = await page.evaluate(async (url: string) => {
-            const r = await fetch(`${url}/api/preprocess`, {
+            const rf = (window as any).__retryFetch;
+            const r = await rf(`${url}/api/preprocess`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -239,10 +260,13 @@ test.describe('Throughput Benchmark', () => {
           }, RUST_BASE);
           expect(prepRes.success).toBe(true);
 
+          await new Promise(r => setTimeout(r, 300));
+
           // 3. Train + poll for completion
           const { elapsed: tTime } = await measureTime(async () => {
             const jobId = await page.evaluate(async (args: { url: string; model: string }) => {
-              const res = await fetch(`${args.url}/api/train`, {
+              const rf = (window as any).__retryFetch;
+              const res = await rf(`${args.url}/api/train`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -255,10 +279,11 @@ test.describe('Throughput Benchmark', () => {
               return data.job_id;
             }, { url: RUST_BASE, model });
 
-            // Poll status — check for Completed OR Failed
+            // Poll status — check for Completed OR Failed (rate-limit aware)
             const result = await page.evaluate(async (args: { url: string; jobId: string }) => {
+              const rf = (window as any).__retryFetch;
               for (let i = 0; i < 240; i++) {
-                const res = await fetch(`${args.url}/api/train/status/${args.jobId}`);
+                const res = await rf(`${args.url}/api/train/status/${args.jobId}`);
                 const data = await res.json();
                 if (data.status && data.status.Completed) {
                   return {
@@ -279,11 +304,14 @@ test.describe('Throughput Benchmark', () => {
           });
           trainTime = tTime;
 
+          await new Promise(r => setTimeout(r, 300));
+
           // 4. Batch predict (50 samples)
           const { elapsed: pTime } = await measureTime(async () => {
             const samples = Array.from({ length: 50 }, () => [5.1, 3.5, 1.4, 0.2]);
             const result = await page.evaluate(async (args: { url: string; samples: number[][] }) => {
-              const res = await fetch(`${args.url}/api/predict`, {
+              const rf = (window as any).__retryFetch;
+              const res = await rf(`${args.url}/api/predict`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ data: args.samples }),
@@ -302,7 +330,8 @@ test.describe('Throughput Benchmark', () => {
 
         // 5. Clear data for next test
         await page.evaluate(async (url: string) => {
-          await fetch(`${url}/api/data/clear`, { method: 'DELETE' });
+          const rf = (window as any).__retryFetch || fetch;
+          await rf(`${url}/api/data/clear`, { method: 'DELETE' });
         }, RUST_BASE);
 
         const point: ThroughputResult = {

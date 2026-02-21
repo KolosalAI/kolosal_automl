@@ -14,6 +14,7 @@ import {
   recordComparison,
   printComparisonTable,
   saveReport,
+  rateLimitPause,
 } from './helpers';
 
 const LONG_TIMEOUT = 180_000;
@@ -24,10 +25,34 @@ const PYTHON = PYTHON_PLATFORM.baseURL;
 // Shared setup: ensure Iris data is loaded + preprocessed on Rust server
 // ---------------------------------------------------------------------------
 
+/**
+ * Inject a rate-limit-aware fetch wrapper into the page context.
+ * Call this once per new page before using `page.evaluate` with fetch.
+ */
+async function injectRetryFetch(page: Page) {
+  await page.evaluate(() => {
+    if (!(window as any).__retryFetch) {
+      (window as any).__retryFetch = async (input: RequestInfo | URL, init?: RequestInit, maxRetries = 4, baseDelay = 1000) => {
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
+          const res = await fetch(input, init);
+          if (res.status !== 429) return res;
+          if (attempt === maxRetries) return res;
+          const delay = baseDelay * Math.pow(2, attempt) + Math.random() * 500;
+          await new Promise(r => setTimeout(r, delay));
+        }
+        return fetch(input, init);
+      };
+    }
+  });
+}
+
 async function setupRustPipeline(page: Page) {
+  await injectRetryFetch(page);
   await page.evaluate(async (url: string) => {
-    await fetch(`${url}/api/data/sample/iris`);
-    await fetch(`${url}/api/preprocess`, {
+    const rf = (window as any).__retryFetch;
+    await rf(`${url}/api/data/sample/iris`);
+    await new Promise(r => setTimeout(r, 300));
+    await rf(`${url}/api/preprocess`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ task_type: 'classification', target_column: 'species', scaler: 'standard', imputation: 'mean', cv_folds: 5 }),
@@ -36,8 +61,10 @@ async function setupRustPipeline(page: Page) {
 }
 
 async function trainModelRust(page: Page, modelType: string): Promise<string> {
+  await injectRetryFetch(page);
   const jobId = await page.evaluate(async (args: { url: string; model: string }) => {
-    const res = await fetch(`${args.url}/api/train`, {
+    const rf = (window as any).__retryFetch;
+    const res = await rf(`${args.url}/api/train`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ model_type: args.model, target_column: 'species', task_type: 'classification' }),
@@ -46,10 +73,11 @@ async function trainModelRust(page: Page, modelType: string): Promise<string> {
     return data.job_id;
   }, { url: RUST, model: modelType });
 
-  // Poll until complete
+  // Poll until complete (with rate-limit awareness)
   await page.evaluate(async (args: { url: string; jobId: string }) => {
+    const rf = (window as any).__retryFetch;
     for (let i = 0; i < 120; i++) {
-      const res = await fetch(`${args.url}/api/train/status/${args.jobId}`);
+      const res = await rf(`${args.url}/api/train/status/${args.jobId}`);
       const data = await res.json();
       if (data.status?.Completed || data.status?.Failed) return;
       await new Promise(r => setTimeout(r, 500));
@@ -68,13 +96,16 @@ test.describe('9. Data Analysis & Quality', () => {
     const context = await browser.newContext();
     const page = await context.newPage();
     await page.goto(RUST, { waitUntil: 'load', timeout: LONG_TIMEOUT });
+    await injectRetryFetch(page);
     await setupRustPipeline(page);
 
     const times: number[] = [];
     for (let i = 0; i < 5; i++) {
+      if (i > 0) await new Promise(r => setTimeout(r, 300));
       const { elapsed } = await measureTime(async () => {
         const res = await page.evaluate(async (url: string) => {
-          const r = await fetch(`${url}/api/data/analyze`);
+          const rf = (window as any).__retryFetch;
+          const r = await rf(`${url}/api/data/analyze`);
           return r.json();
         }, RUST);
         expect(res.success).toBe(true);
@@ -92,13 +123,16 @@ test.describe('9. Data Analysis & Quality', () => {
     const context = await browser.newContext();
     const page = await context.newPage();
     await page.goto(RUST, { waitUntil: 'load', timeout: LONG_TIMEOUT });
+    await injectRetryFetch(page);
     await setupRustPipeline(page);
 
     const times: number[] = [];
     for (let i = 0; i < 5; i++) {
+      if (i > 0) await new Promise(r => setTimeout(r, 300));
       const { elapsed } = await measureTime(async () => {
         const res = await page.evaluate(async (url: string) => {
-          const r = await fetch(`${url}/api/data/quality`);
+          const rf = (window as any).__retryFetch;
+          const r = await rf(`${url}/api/data/quality`);
           return r.json();
         }, RUST);
         expect(res.quality_report).toBeDefined();
@@ -115,14 +149,17 @@ test.describe('9. Data Analysis & Quality', () => {
     const context = await browser.newContext();
     const page = await context.newPage();
     await page.goto(RUST, { waitUntil: 'load', timeout: LONG_TIMEOUT });
+    await injectRetryFetch(page);
     await setupRustPipeline(page);
 
     // data/info
     const infoTimes: number[] = [];
     for (let i = 0; i < 5; i++) {
+      if (i > 0) await new Promise(r => setTimeout(r, 300));
       const { elapsed } = await measureTime(async () => {
         const res = await page.evaluate(async (url: string) => {
-          const r = await fetch(`${url}/api/data/info`);
+          const rf = (window as any).__retryFetch;
+          const r = await rf(`${url}/api/data/info`);
           return r.json();
         }, RUST);
         expect(res.rows).toBe(150);
@@ -134,9 +171,11 @@ test.describe('9. Data Analysis & Quality', () => {
     // data/preview
     const previewTimes: number[] = [];
     for (let i = 0; i < 5; i++) {
+      if (i > 0) await new Promise(r => setTimeout(r, 300));
       const { elapsed } = await measureTime(async () => {
         const res = await page.evaluate(async (url: string) => {
-          const r = await fetch(`${url}/api/data/preview`);
+          const rf = (window as any).__retryFetch;
+          const r = await rf(`${url}/api/data/preview`);
           return r.json();
         }, RUST);
         expect(res.rows).toBe(10);
@@ -153,11 +192,13 @@ test.describe('9. Data Analysis & Quality', () => {
     const context = await browser.newContext();
     const page = await context.newPage();
     await page.goto(RUST, { waitUntil: 'load', timeout: LONG_TIMEOUT });
+    await injectRetryFetch(page);
     await setupRustPipeline(page);
 
     const { elapsed: datasheetTime } = await measureTime(async () => {
       const res = await page.evaluate(async (url: string) => {
-        const r = await fetch(`${url}/api/data/datasheet`);
+        const rf = (window as any).__retryFetch;
+        const r = await rf(`${url}/api/data/datasheet`);
         return r.json();
       }, RUST);
       expect(res.datasheet).toBeDefined();
@@ -166,7 +207,8 @@ test.describe('9. Data Analysis & Quality', () => {
 
     const { elapsed: lineageTime } = await measureTime(async () => {
       const res = await page.evaluate(async (url: string) => {
-        const r = await fetch(`${url}/api/data/lineage`);
+        const rf = (window as any).__retryFetch;
+        const r = await rf(`${url}/api/data/lineage`);
         return r.json();
       }, RUST);
       expect(res).toBeDefined();
@@ -187,6 +229,7 @@ test.describe('10. Multi-Model Training', () => {
     const context = await browser.newContext();
     const page = await context.newPage();
     await page.goto(RUST, { waitUntil: 'load', timeout: LONG_TIMEOUT });
+    await injectRetryFetch(page);
     await setupRustPipeline(page);
 
     const models = ['logistic_regression', 'decision_tree', 'random_forest', 'naive_bayes', 'knn'];
@@ -196,7 +239,8 @@ test.describe('10. Multi-Model Training', () => {
       const { elapsed } = await measureTime(async () => {
         const jobId = await trainModelRust(page, model);
         const status = await page.evaluate(async (args: { url: string; jobId: string }) => {
-          const r = await fetch(`${args.url}/api/train/status/${args.jobId}`);
+          const rf = (window as any).__retryFetch;
+          const r = await rf(`${args.url}/api/train/status/${args.jobId}`);
           return r.json();
         }, { url: RUST, jobId });
 
@@ -228,12 +272,15 @@ test.describe('11. Model Management', () => {
     const context = await browser.newContext();
     const page = await context.newPage();
     await page.goto(RUST, { waitUntil: 'load', timeout: LONG_TIMEOUT });
+    await injectRetryFetch(page);
 
     const times: number[] = [];
     for (let i = 0; i < 5; i++) {
+      if (i > 0) await new Promise(r => setTimeout(r, 300));
       const { elapsed } = await measureTime(async () => {
         const res = await page.evaluate(async (url: string) => {
-          const r = await fetch(`${url}/api/models`);
+          const rf = (window as any).__retryFetch;
+          const r = await rf(`${url}/api/models`);
           return r.json();
         }, RUST);
         expect(res.models).toBeDefined();
@@ -251,10 +298,12 @@ test.describe('11. Model Management', () => {
     const context = await browser.newContext();
     const page = await context.newPage();
     await page.goto(RUST, { waitUntil: 'load', timeout: LONG_TIMEOUT });
+    await injectRetryFetch(page);
 
     // Get first model ID
     const modelId = await page.evaluate(async (url: string) => {
-      const r = await fetch(`${url}/api/models`);
+      const rf = (window as any).__retryFetch;
+      const r = await rf(`${url}/api/models`);
       const data = await r.json();
       return data.models[0]?.id;
     }, RUST);
@@ -262,7 +311,8 @@ test.describe('11. Model Management', () => {
 
     const { elapsed: detailTime } = await measureTime(async () => {
       const res = await page.evaluate(async (args: { url: string; id: string }) => {
-        const r = await fetch(`${args.url}/api/models/${args.id}`);
+        const rf = (window as any).__retryFetch;
+        const r = await rf(`${args.url}/api/models/${args.id}`);
         return r.json();
       }, { url: RUST, id: modelId });
       expect(res).toBeDefined();
@@ -270,7 +320,8 @@ test.describe('11. Model Management', () => {
 
     const { elapsed: metricsTime } = await measureTime(async () => {
       const res = await page.evaluate(async (args: { url: string; id: string }) => {
-        const r = await fetch(`${args.url}/api/models/${args.id}/metrics`);
+        const rf = (window as any).__retryFetch;
+        const r = await rf(`${args.url}/api/models/${args.id}/metrics`);
         return r.json();
       }, { url: RUST, id: modelId });
       expect(res).toBeDefined();
@@ -278,7 +329,8 @@ test.describe('11. Model Management', () => {
 
     const { elapsed: cardTime } = await measureTime(async () => {
       const res = await page.evaluate(async (args: { url: string; id: string }) => {
-        const r = await fetch(`${args.url}/api/models/${args.id}/card`);
+        const rf = (window as any).__retryFetch;
+        const r = await rf(`${args.url}/api/models/${args.id}/card`);
         return r.json();
       }, { url: RUST, id: modelId });
       expect(res).toBeDefined();
@@ -300,12 +352,14 @@ test.describe('12. AutoML Pipeline', () => {
     const context = await browser.newContext();
     const page = await context.newPage();
     await page.goto(RUST, { waitUntil: 'load', timeout: LONG_TIMEOUT });
+    await injectRetryFetch(page);
     await setupRustPipeline(page);
 
     const { elapsed } = await measureTime(async () => {
       // Start AutoML
       const jobId = await page.evaluate(async (url: string) => {
-        const res = await fetch(`${url}/api/automl/run`, {
+        const rf = (window as any).__retryFetch;
+        const res = await rf(`${url}/api/automl/run`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ target_column: 'species', task_type: 'classification' }),
@@ -317,8 +371,9 @@ test.describe('12. AutoML Pipeline', () => {
 
       // Poll for completion (up to 120s)
       await page.evaluate(async (args: { url: string; jobId: string }) => {
+        const rf = (window as any).__retryFetch;
         for (let i = 0; i < 240; i++) {
-          const res = await fetch(`${args.url}/api/automl/status/${args.jobId}`);
+          const res = await rf(`${args.url}/api/automl/status/${args.jobId}`);
           const data = await res.json();
           if (data.status === 'completed' || data.status === 'Completed' ||
               data.completed === true || data.phase === 'completed') return;
@@ -341,6 +396,7 @@ test.describe('13. Batch Prediction', () => {
     const context = await browser.newContext();
     const page = await context.newPage();
     await page.goto(RUST, { waitUntil: 'load', timeout: LONG_TIMEOUT });
+    await injectRetryFetch(page);
     await setupRustPipeline(page);
     await trainModelRust(page, 'logistic_regression');
 
@@ -354,9 +410,11 @@ test.describe('13. Batch Prediction', () => {
 
     const times: number[] = [];
     for (let i = 0; i < 3; i++) {
+      if (i > 0) await new Promise(r => setTimeout(r, 300));
       const { elapsed } = await measureTime(async () => {
         const res = await page.evaluate(async (args: { url: string; data: number[][] }) => {
-          const r = await fetch(`${args.url}/api/predict/batch`, {
+          const rf = (window as any).__retryFetch;
+          const r = await rf(`${args.url}/api/predict/batch`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ data: args.data }),
@@ -379,12 +437,15 @@ test.describe('13. Batch Prediction', () => {
     const context = await browser.newContext();
     const page = await context.newPage();
     await page.goto(RUST, { waitUntil: 'load', timeout: LONG_TIMEOUT });
+    await injectRetryFetch(page);
 
     const times: number[] = [];
     for (let i = 0; i < 5; i++) {
+      if (i > 0) await new Promise(r => setTimeout(r, 300));
       const { elapsed } = await measureTime(async () => {
         const res = await page.evaluate(async (url: string) => {
-          const r = await fetch(`${url}/api/predict/proba`, {
+          const rf = (window as any).__retryFetch;
+          const r = await rf(`${url}/api/predict/proba`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ data: [[5.1, 3.5, 1.4, 0.2]] }),
@@ -412,13 +473,16 @@ test.describe('14. Visualization', () => {
     const context = await browser.newContext();
     const page = await context.newPage();
     await page.goto(RUST, { waitUntil: 'load', timeout: LONG_TIMEOUT });
+    await injectRetryFetch(page);
     await setupRustPipeline(page);
 
     const times: number[] = [];
     for (let i = 0; i < 3; i++) {
+      if (i > 0) await new Promise(r => setTimeout(r, 300));
       const { elapsed } = await measureTime(async () => {
         const res = await page.evaluate(async (url: string) => {
-          const r = await fetch(`${url}/api/visualization/umap`, {
+          const rf = (window as any).__retryFetch;
+          const r = await rf(`${url}/api/visualization/umap`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({}),
@@ -440,13 +504,16 @@ test.describe('14. Visualization', () => {
     const context = await browser.newContext();
     const page = await context.newPage();
     await page.goto(RUST, { waitUntil: 'load', timeout: LONG_TIMEOUT });
+    await injectRetryFetch(page);
     await setupRustPipeline(page);
 
     const times: number[] = [];
     for (let i = 0; i < 3; i++) {
+      if (i > 0) await new Promise(r => setTimeout(r, 300));
       const { elapsed } = await measureTime(async () => {
         const res = await page.evaluate(async (url: string) => {
-          const r = await fetch(`${url}/api/visualization/pca`, {
+          const rf = (window as any).__retryFetch;
+          const r = await rf(`${url}/api/visualization/pca`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({}),
@@ -475,13 +542,16 @@ test.describe('15. Clustering', () => {
     const context = await browser.newContext();
     const page = await context.newPage();
     await page.goto(RUST, { waitUntil: 'load', timeout: LONG_TIMEOUT });
+    await injectRetryFetch(page);
     await setupRustPipeline(page);
 
     const times: number[] = [];
     for (let i = 0; i < 3; i++) {
+      if (i > 0) await new Promise(r => setTimeout(r, 300));
       const { elapsed } = await measureTime(async () => {
         const res = await page.evaluate(async (url: string) => {
-          const r = await fetch(`${url}/api/clustering/run`, {
+          const rf = (window as any).__retryFetch;
+          const r = await rf(`${url}/api/clustering/run`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ algorithm: 'kmeans', n_clusters: 3 }),
@@ -510,13 +580,16 @@ test.describe('16. Anomaly Detection', () => {
     const context = await browser.newContext();
     const page = await context.newPage();
     await page.goto(RUST, { waitUntil: 'load', timeout: LONG_TIMEOUT });
+    await injectRetryFetch(page);
     await setupRustPipeline(page);
 
     const times: number[] = [];
     for (let i = 0; i < 3; i++) {
+      if (i > 0) await new Promise(r => setTimeout(r, 300));
       const { elapsed } = await measureTime(async () => {
         const res = await page.evaluate(async (url: string) => {
-          const r = await fetch(`${url}/api/anomaly/detect`, {
+          const rf = (window as any).__retryFetch;
+          const r = await rf(`${url}/api/anomaly/detect`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({}),
@@ -545,11 +618,13 @@ test.describe('17. Hyperparameter Optimization', () => {
     const context = await browser.newContext();
     const page = await context.newPage();
     await page.goto(RUST, { waitUntil: 'load', timeout: LONG_TIMEOUT });
+    await injectRetryFetch(page);
     await setupRustPipeline(page);
 
     const { elapsed } = await measureTime(async () => {
       const jobRes = await page.evaluate(async (url: string) => {
-        const r = await fetch(`${url}/api/hyperopt`, {
+        const rf = (window as any).__retryFetch;
+        const r = await rf(`${url}/api/hyperopt`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -569,7 +644,8 @@ test.describe('17. Hyperparameter Optimization', () => {
     // Also check history endpoint
     const { elapsed: historyTime } = await measureTime(async () => {
       const res = await page.evaluate(async (url: string) => {
-        const r = await fetch(`${url}/api/hyperopt/history`);
+        const rf = (window as any).__retryFetch;
+        const r = await rf(`${url}/api/hyperopt/history`);
         return r.json();
       }, RUST);
       expect(res.studies).toBeDefined();
@@ -581,7 +657,8 @@ test.describe('17. Hyperparameter Optimization', () => {
     // Check search space
     const { elapsed: spaceTime } = await measureTime(async () => {
       const res = await page.evaluate(async (url: string) => {
-        const r = await fetch(`${url}/api/hyperopt/search-space/random_forest`);
+        const rf = (window as any).__retryFetch;
+        const r = await rf(`${url}/api/hyperopt/search-space/random_forest`);
         return r.json();
       }, RUST);
       expect(res).toBeDefined();
@@ -595,10 +672,12 @@ test.describe('17. Hyperparameter Optimization', () => {
     const context = await browser.newContext();
     const page = await context.newPage();
     await page.goto(RUST, { waitUntil: 'load', timeout: LONG_TIMEOUT });
+    await injectRetryFetch(page);
 
     const { elapsed } = await measureTime(async () => {
       const res = await page.evaluate(async (url: string) => {
-        const r = await fetch(`${url}/api/hyperopt/config`);
+        const rf = (window as any).__retryFetch;
+        const r = await rf(`${url}/api/hyperopt/config`);
         return r.json();
       }, RUST);
       expect(res.samplers).toBeDefined();
@@ -619,11 +698,13 @@ test.describe('18. Explainability', () => {
     const context = await browser.newContext();
     const page = await context.newPage();
     await page.goto(RUST, { waitUntil: 'load', timeout: LONG_TIMEOUT });
+    await injectRetryFetch(page);
     await setupRustPipeline(page);
 
     // Get a model ID
     const modelId = await page.evaluate(async (url: string) => {
-      const r = await fetch(`${url}/api/models`);
+      const rf = (window as any).__retryFetch;
+      const r = await rf(`${url}/api/models`);
       const data = await r.json();
       return data.models[0]?.id;
     }, RUST);
@@ -631,7 +712,8 @@ test.describe('18. Explainability', () => {
     if (modelId) {
       const { elapsed } = await measureTime(async () => {
         const res = await page.evaluate(async (args: { url: string; id: string }) => {
-          const r = await fetch(`${args.url}/api/explain/importance`, {
+          const rf = (window as any).__retryFetch;
+          const r = await rf(`${args.url}/api/explain/importance`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ model_id: args.id }),
@@ -657,12 +739,15 @@ test.describe('19. System & Monitoring', () => {
     const context = await browser.newContext();
     const page = await context.newPage();
     await page.goto(RUST, { waitUntil: 'load', timeout: LONG_TIMEOUT });
+    await injectRetryFetch(page);
 
     const times: number[] = [];
     for (let i = 0; i < 5; i++) {
+      if (i > 0) await new Promise(r => setTimeout(r, 300));
       const { elapsed } = await measureTime(async () => {
         const res = await page.evaluate(async (url: string) => {
-          const r = await fetch(`${url}/api/system/status`);
+          const rf = (window as any).__retryFetch;
+          const r = await rf(`${url}/api/system/status`);
           return r.json();
         }, RUST);
         expect(res.status).toBe('healthy');
@@ -681,10 +766,12 @@ test.describe('19. System & Monitoring', () => {
     const context = await browser.newContext();
     const page = await context.newPage();
     await page.goto(RUST, { waitUntil: 'load', timeout: LONG_TIMEOUT });
+    await injectRetryFetch(page);
 
     const { elapsed: alertsTime } = await measureTime(async () => {
       const res = await page.evaluate(async (url: string) => {
-        const r = await fetch(`${url}/api/monitoring/alerts`);
+        const rf = (window as any).__retryFetch;
+        const r = await rf(`${url}/api/monitoring/alerts`);
         return r.json();
       }, RUST);
       expect(res).toBeDefined();
@@ -692,7 +779,8 @@ test.describe('19. System & Monitoring', () => {
 
     const { elapsed: perfTime } = await measureTime(async () => {
       const res = await page.evaluate(async (url: string) => {
-        const r = await fetch(`${url}/api/monitoring/performance`);
+        const rf = (window as any).__retryFetch;
+        const r = await rf(`${url}/api/monitoring/performance`);
         return r.json();
       }, RUST);
       expect(res.models_count).toBeDefined();
@@ -701,7 +789,8 @@ test.describe('19. System & Monitoring', () => {
 
     const { elapsed: sloTime } = await measureTime(async () => {
       const res = await page.evaluate(async (url: string) => {
-        const r = await fetch(`${url}/api/monitoring/slo`);
+        const rf = (window as any).__retryFetch;
+        const r = await rf(`${url}/api/monitoring/slo`);
         return r.json();
       }, RUST);
       expect(res.slo_status).toBeDefined();
@@ -718,10 +807,12 @@ test.describe('19. System & Monitoring', () => {
     const context = await browser.newContext();
     const page = await context.newPage();
     await page.goto(RUST, { waitUntil: 'load', timeout: LONG_TIMEOUT });
+    await injectRetryFetch(page);
 
     const { elapsed: deviceTime } = await measureTime(async () => {
       const res = await page.evaluate(async (url: string) => {
-        const r = await fetch(`${url}/api/device/info`);
+        const rf = (window as any).__retryFetch;
+        const r = await rf(`${url}/api/device/info`);
         return r.json();
       }, RUST);
       expect(res.cpu).toBeDefined();
@@ -730,7 +821,8 @@ test.describe('19. System & Monitoring', () => {
 
     const { elapsed: configTime } = await measureTime(async () => {
       const res = await page.evaluate(async (url: string) => {
-        const r = await fetch(`${url}/api/device/optimal-configs`);
+        const rf = (window as any).__retryFetch;
+        const r = await rf(`${url}/api/device/optimal-configs`);
         return r.json();
       }, RUST);
       expect(res.training).toBeDefined();
@@ -752,10 +844,12 @@ test.describe('20. Security & Compliance', () => {
     const context = await browser.newContext();
     const page = await context.newPage();
     await page.goto(RUST, { waitUntil: 'load', timeout: LONG_TIMEOUT });
+    await injectRetryFetch(page);
 
     const { elapsed: secTime } = await measureTime(async () => {
       const res = await page.evaluate(async (url: string) => {
-        const r = await fetch(`${url}/api/security/status`);
+        const rf = (window as any).__retryFetch;
+        const r = await rf(`${url}/api/security/status`);
         return r.json();
       }, RUST);
       expect(res.security_enabled).toBe(true);
@@ -765,7 +859,8 @@ test.describe('20. Security & Compliance', () => {
 
     const { elapsed: auditTime } = await measureTime(async () => {
       const res = await page.evaluate(async (url: string) => {
-        const r = await fetch(`${url}/api/security/audit-log`);
+        const rf = (window as any).__retryFetch;
+        const r = await rf(`${url}/api/security/audit-log`);
         return r.json();
       }, RUST);
       expect(res).toBeDefined();
@@ -780,10 +875,12 @@ test.describe('20. Security & Compliance', () => {
     const context = await browser.newContext();
     const page = await context.newPage();
     await page.goto(RUST, { waitUntil: 'load', timeout: LONG_TIMEOUT });
+    await injectRetryFetch(page);
 
     const { elapsed } = await measureTime(async () => {
       const res = await page.evaluate(async (url: string) => {
-        const r = await fetch(`${url}/api/compliance/report`);
+        const rf = (window as any).__retryFetch;
+        const r = await rf(`${url}/api/compliance/report`);
         return r.json();
       }, RUST);
       expect(res.compliance_report).toBeDefined();
@@ -799,10 +896,12 @@ test.describe('20. Security & Compliance', () => {
     const context = await browser.newContext();
     const page = await context.newPage();
     await page.goto(RUST, { waitUntil: 'load', timeout: LONG_TIMEOUT });
+    await injectRetryFetch(page);
 
     const { elapsed } = await measureTime(async () => {
       const res = await page.evaluate(async (url: string) => {
-        const r = await fetch(`${url}/api/audit/events`);
+        const rf = (window as any).__retryFetch;
+        const r = await rf(`${url}/api/audit/events`);
         return r.json();
       }, RUST);
       expect(res).toBeDefined();
@@ -822,15 +921,18 @@ test.describe('21. Preprocessing', () => {
     const context = await browser.newContext();
     const page = await context.newPage();
     await page.goto(RUST, { waitUntil: 'load', timeout: LONG_TIMEOUT });
+    await injectRetryFetch(page);
 
     // Load data first
     await page.evaluate(async (url: string) => {
-      await fetch(`${url}/api/data/sample/iris`);
+      const rf = (window as any).__retryFetch;
+      await rf(`${url}/api/data/sample/iris`);
     }, RUST);
 
     const { elapsed: configTime } = await measureTime(async () => {
       const res = await page.evaluate(async (url: string) => {
-        const r = await fetch(`${url}/api/preprocess/config`);
+        const rf = (window as any).__retryFetch;
+        const r = await rf(`${url}/api/preprocess/config`);
         return r.json();
       }, RUST);
       expect(res.scalers).toBeDefined();
@@ -839,9 +941,11 @@ test.describe('21. Preprocessing', () => {
 
     const times: number[] = [];
     for (let i = 0; i < 3; i++) {
+      if (i > 0) await new Promise(r => setTimeout(r, 300));
       const { elapsed } = await measureTime(async () => {
         const res = await page.evaluate(async (url: string) => {
-          const r = await fetch(`${url}/api/preprocess`, {
+          const rf = (window as any).__retryFetch;
+          const r = await rf(`${url}/api/preprocess`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ task_type: 'classification', target_column: 'species', scaler: 'standard', imputation: 'mean', cv_folds: 5 }),
@@ -869,10 +973,12 @@ test.describe('22. Batch Processing', () => {
     const context = await browser.newContext();
     const page = await context.newPage();
     await page.goto(RUST, { waitUntil: 'load', timeout: LONG_TIMEOUT });
+    await injectRetryFetch(page);
 
     const { elapsed } = await measureTime(async () => {
       const res = await page.evaluate(async (url: string) => {
-        const r = await fetch(`${url}/api/batch/stats`);
+        const rf = (window as any).__retryFetch;
+        const r = await rf(`${url}/api/batch/stats`);
         return r.json();
       }, RUST);
       expect(res.total_batches_processed).toBeDefined();
@@ -895,15 +1001,18 @@ test.describe('23. Sample Dataset Loading', () => {
       const context = await browser.newContext();
       const page = await context.newPage();
       await page.goto(RUST, { waitUntil: 'load', timeout: LONG_TIMEOUT });
+      await injectRetryFetch(page);
 
       // Clear any existing data first to avoid conflicts
       await page.evaluate(async (url: string) => {
-        await fetch(`${url}/api/data/clear`, { method: 'DELETE' }).catch(() => {});
+        const rf = (window as any).__retryFetch;
+        await rf(`${url}/api/data/clear`, { method: 'DELETE' }).catch(() => {});
       }, RUST);
 
       const { elapsed } = await measureTime(async () => {
         const res = await page.evaluate(async (args: { url: string; name: string }) => {
-          const r = await fetch(`${args.url}/api/data/sample/${args.name}`);
+          const rf = (window as any).__retryFetch;
+          const r = await rf(`${args.url}/api/data/sample/${args.name}`);
           const text = await r.text();
           try { return JSON.parse(text); } catch { return { status: r.status, body: text }; }
         }, { url: RUST, name: ds });
@@ -926,11 +1035,13 @@ test.describe('24. Multi-Endpoint Stress', () => {
     const context = await browser.newContext();
     const page = await context.newPage();
     await page.goto(RUST, { waitUntil: 'load', timeout: LONG_TIMEOUT });
+    await injectRetryFetch(page);
 
     // Ensure data is loaded for data/* endpoints
     await setupRustPipeline(page);
 
     const result = await page.evaluate(async (baseURL: string) => {
+      const rf = (window as any).__retryFetch;
       const endpoints = [
         '/api/health',
         '/api/system/status',
@@ -948,7 +1059,7 @@ test.describe('24. Multi-Endpoint Stress', () => {
       const results = await Promise.all(
         endpoints.map(async (ep) => {
           const t0 = Date.now();
-          const res = await fetch(`${baseURL}${ep}`);
+          const res = await rf(`${baseURL}${ep}`);
           const t1 = Date.now();
           return { endpoint: ep, status: res.status, time: t1 - t0 };
         }),
@@ -988,10 +1099,12 @@ test.describe('25. Privacy', () => {
     const context = await browser.newContext();
     const page = await context.newPage();
     await page.goto(RUST, { waitUntil: 'load', timeout: LONG_TIMEOUT });
+    await injectRetryFetch(page);
 
     const { elapsed } = await measureTime(async () => {
       const res = await page.evaluate(async (url: string) => {
-        const r = await fetch(`${url}/api/privacy/retention`);
+        const rf = (window as any).__retryFetch;
+        const r = await rf(`${url}/api/privacy/retention`);
         return r.json();
       }, RUST);
       expect(res).toBeDefined();
@@ -1011,13 +1124,15 @@ test.describe('26. E2E Pipeline via API', () => {
     const context = await browser.newContext();
     const page = await context.newPage();
     await page.goto(RUST, { waitUntil: 'load', timeout: LONG_TIMEOUT });
+    await injectRetryFetch(page);
 
     const stepTimes: Record<string, number> = {};
 
     // Step 1: Load data
     const { elapsed: loadTime } = await measureTime(async () => {
       const res = await page.evaluate(async (url: string) => {
-        const r = await fetch(`${url}/api/data/sample/iris`);
+        const rf = (window as any).__retryFetch;
+        const r = await rf(`${url}/api/data/sample/iris`);
         return r.json();
       }, RUST);
       expect(res.success).toBe(true);
@@ -1027,7 +1142,8 @@ test.describe('26. E2E Pipeline via API', () => {
     // Step 2: Preprocess
     const { elapsed: preprocessTime } = await measureTime(async () => {
       const res = await page.evaluate(async (url: string) => {
-        const r = await fetch(`${url}/api/preprocess`, {
+        const rf = (window as any).__retryFetch;
+        const r = await rf(`${url}/api/preprocess`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ task_type: 'classification', target_column: 'species', scaler: 'standard', imputation: 'mean', cv_folds: 5 }),
@@ -1047,7 +1163,8 @@ test.describe('26. E2E Pipeline via API', () => {
     // Step 4: Predict
     const { elapsed: predictTime } = await measureTime(async () => {
       const res = await page.evaluate(async (url: string) => {
-        const r = await fetch(`${url}/api/predict`, {
+        const rf = (window as any).__retryFetch;
+        const r = await rf(`${url}/api/predict`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ data: [[5.1, 3.5, 1.4, 0.2]] }),
@@ -1060,7 +1177,8 @@ test.describe('26. E2E Pipeline via API', () => {
 
     // Step 5: Explain
     const modelId = await page.evaluate(async (url: string) => {
-      const r = await fetch(`${url}/api/models`);
+      const rf = (window as any).__retryFetch;
+      const r = await rf(`${url}/api/models`);
       const data = await r.json();
       return data.models[0]?.id;
     }, RUST);
@@ -1068,7 +1186,8 @@ test.describe('26. E2E Pipeline via API', () => {
     const { elapsed: explainTime } = await measureTime(async () => {
       if (modelId) {
         await page.evaluate(async (args: { url: string; id: string }) => {
-          await fetch(`${args.url}/api/explain/importance`, {
+          const rf = (window as any).__retryFetch;
+          await rf(`${args.url}/api/explain/importance`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ model_id: args.id }),

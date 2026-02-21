@@ -5,6 +5,7 @@ import {
   RUST_PLATFORM,
   PYTHON_PLATFORM,
   measureTime,
+  rateLimitPause,
 } from './helpers';
 
 // ---------------------------------------------------------------------------
@@ -167,22 +168,42 @@ test.describe('Scaling Benchmark', () => {
 
         const csv = generateCSV(size);
 
+        // Inject retry-aware fetch
+        await page.evaluate(() => {
+          if (!(window as any).__retryFetch) {
+            (window as any).__retryFetch = async (input: RequestInfo | URL, init?: RequestInit, maxRetries = 4, baseDelay = 1000) => {
+              for (let attempt = 0; attempt <= maxRetries; attempt++) {
+                const res = await fetch(input, init);
+                if (res.status !== 429) return res;
+                if (attempt === maxRetries) return res;
+                const delay = baseDelay * Math.pow(2, attempt) + Math.random() * 500;
+                await new Promise(r => setTimeout(r, delay));
+              }
+              return fetch(input, init);
+            };
+          }
+        });
+
         // 1. Upload CSV via fetch + FormData
         const { elapsed: uploadTime } = await measureTime(async () => {
           const ok = await page.evaluate(async (args: { url: string; csv: string }) => {
+            const rf = (window as any).__retryFetch;
             const blob = new Blob([args.csv], { type: 'text/csv' });
             const form = new FormData();
             form.append('file', blob, 'synthetic.csv');
-            const res = await fetch(`${args.url}/api/data/upload`, { method: 'POST', body: form });
+            const res = await rf(`${args.url}/api/data/upload`, { method: 'POST', body: form });
             return res.ok;
           }, { url: RUST_BASE, csv });
           expect(ok).toBe(true);
         });
 
+        await new Promise(r => setTimeout(r, 300));
+
         // 2. Preprocess
         const { elapsed: preprocessTime } = await measureTime(async () => {
           const ok = await page.evaluate(async (url: string) => {
-            const res = await fetch(`${url}/api/preprocess`, {
+            const rf = (window as any).__retryFetch;
+            const res = await rf(`${url}/api/preprocess`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -198,10 +219,13 @@ test.describe('Scaling Benchmark', () => {
           expect(ok).toBe(true);
         });
 
+        await new Promise(r => setTimeout(r, 300));
+
         // 3. Train (logistic regression) + poll for completion
         const { elapsed: trainTime } = await measureTime(async () => {
           const jobId = await page.evaluate(async (url: string) => {
-            const res = await fetch(`${url}/api/train`, {
+            const rf = (window as any).__retryFetch;
+            const res = await rf(`${url}/api/train`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -214,10 +238,11 @@ test.describe('Scaling Benchmark', () => {
             return data.job_id;
           }, RUST_BASE);
 
-          // Poll status — check for Completed OR Failed
+          // Poll status — check for Completed OR Failed (with rate-limit awareness)
           const result = await page.evaluate(async (args: { url: string; jobId: string }) => {
+            const rf = (window as any).__retryFetch;
             for (let i = 0; i < 240; i++) {
-              const res = await fetch(`${args.url}/api/train/status/${args.jobId}`);
+              const res = await rf(`${args.url}/api/train/status/${args.jobId}`);
               const data = await res.json();
               if (data.status && data.status.Completed) return { ok: true };
               if (data.status && data.status.Failed) {
@@ -231,11 +256,14 @@ test.describe('Scaling Benchmark', () => {
           if (!result.ok) throw new Error(`Training failed: ${result.error}`);
         });
 
+        await new Promise(r => setTimeout(r, 300));
+
         // 4. Batch predict (100 samples)
         const { elapsed: predictTime } = await measureTime(async () => {
           const samples = Array.from({ length: 100 }, () => [5.1, 3.5, 1.4, 0.2]);
           const result = await page.evaluate(async (args: { url: string; samples: number[][] }) => {
-            const res = await fetch(`${args.url}/api/predict`, {
+            const rf = (window as any).__retryFetch;
+            const res = await rf(`${args.url}/api/predict`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ data: args.samples }),
@@ -247,7 +275,8 @@ test.describe('Scaling Benchmark', () => {
 
         // 5. Clear data for next test
         await page.evaluate(async (url: string) => {
-          await fetch(`${url}/api/data/clear`, { method: 'DELETE' });
+          const rf = (window as any).__retryFetch || fetch;
+          await rf(`${url}/api/data/clear`, { method: 'DELETE' });
         }, RUST_BASE);
 
         // Record to temp file (persists across test blocks)

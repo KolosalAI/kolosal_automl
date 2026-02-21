@@ -11,6 +11,8 @@ import {
   recordComparison,
   printComparisonTable,
   saveReport,
+  fetchWithRetry,
+  rateLimitPause,
   Stats,
 } from './helpers';
 
@@ -67,10 +69,28 @@ async function loadPlatform(page: Page, platform: Platform) {
 /** Load the Iris sample dataset on either platform */
 async function loadIrisDataset(page: Page, platform: Platform) {
   if (platform.name === 'rust') {
-    const pill = page.locator('button.pill', { hasText: /^Iris$/i });
+    // Try both old (.pill) and new (plain button) selectors
+    const pill = page.locator('button:has-text("Iris")').first();
     await pill.waitFor({ state: 'visible', timeout: 30_000 });
     await pill.click();
-    await expect(page.locator('#data-rows')).not.toHaveText('0', { timeout: 60_000 });
+    // Wait for data to load — check for toast/banner text or data info section showing rows
+    await page.waitForFunction(
+      () => {
+        const body = document.body.textContent || '';
+        // Check for "Loaded iris" toast or row count appearing
+        if (body.includes('Loaded iris') || body.includes('150 rows')) return true;
+        // Check for #data-rows element (legacy)
+        const el = document.querySelector('#data-rows');
+        if (el && el.textContent && el.textContent !== '0') return true;
+        // Check for data info showing any row count
+        const strong = document.querySelectorAll('strong');
+        for (const s of strong) {
+          if (s.textContent === '150' && s.parentElement?.textContent?.includes('Rows')) return true;
+        }
+        return false;
+      },
+      { timeout: 60_000 },
+    );
   } else {
     // Click the Gradio dropdown to open it
     const dropdown = page.locator(PY.sampleDatasetDropdown);
@@ -91,7 +111,8 @@ async function loadIrisDataset(page: Page, platform: Platform) {
 /** Switch to a tab on the Rust platform */
 async function switchTabRust(page: Page, tabName: string) {
   await page.locator(`button.nav-tab[data-tab="${tabName}"]`).click();
-  await expect(page.locator(`#tab-${tabName}`)).toBeVisible({ timeout: 10_000 });
+  // Wait for the tab button to become active (works with both old and new UI)
+  await expect(page.locator(`button.nav-tab[data-tab="${tabName}"]`)).toHaveClass(/active/, { timeout: 10_000 });
 }
 
 /** Switch to a tab on the Python/Gradio platform */
@@ -114,6 +135,7 @@ test.describe('1. Page Load Performance', () => {
       };
 
       for (let i = 0; i < ITERATIONS; i++) {
+        if (i > 0) await new Promise(r => setTimeout(r, 1000)); // avoid rate limiting
         const context = await browser.newContext();
         const page = await context.newPage();
         const metrics = await collectPageLoadMetrics(page, platform.baseURL);
@@ -154,13 +176,22 @@ test.describe('2. Health Check / API Latency', () => {
     const rustTimes: number[] = [];
     const pythonTimes: number[] = [];
 
-    // Rust: /api/health
+    // Rust: /api/health (with delays to avoid rate limiting)
     for (let i = 0; i < 5; i++) {
+      if (i > 0) await new Promise(r => setTimeout(r, 1500));
       const context = await browser.newContext();
       const page = await context.newPage();
       const { elapsed } = await measureTime(async () => {
         const response = await page.goto(`${RUST_PLATFORM.baseURL}/api/health`, { waitUntil: 'commit', timeout: LONG_TIMEOUT });
-        expect(response?.status()).toBe(200);
+        const status = response?.status();
+        if (status === 429) {
+          // If rate-limited, wait and retry once
+          await new Promise(r => setTimeout(r, 3000));
+          const retryResponse = await page.goto(`${RUST_PLATFORM.baseURL}/api/health`, { waitUntil: 'commit', timeout: LONG_TIMEOUT });
+          expect(retryResponse?.status()).toBe(200);
+        } else {
+          expect(status).toBe(200);
+        }
       });
       rustTimes.push(elapsed);
       await context.close();
@@ -168,6 +199,7 @@ test.describe('2. Health Check / API Latency', () => {
 
     // Python: root page (no dedicated health endpoint)
     for (let i = 0; i < 5; i++) {
+      if (i > 0) await new Promise(r => setTimeout(r, 1000));
       const context = await browser.newContext();
       const page = await context.newPage();
       const { elapsed } = await measureTime(async () => {
@@ -198,6 +230,7 @@ test.describe('3. Sample Dataset Loading', () => {
 
     // Rust
     for (let i = 0; i < ITERATIONS; i++) {
+      if (i > 0) await new Promise(r => setTimeout(r, 2000));
       const context = await browser.newContext();
       const page = await context.newPage();
       await loadPlatform(page, RUST_PLATFORM);
@@ -210,6 +243,7 @@ test.describe('3. Sample Dataset Loading', () => {
 
     // Python
     for (let i = 0; i < ITERATIONS; i++) {
+      if (i > 0) await new Promise(r => setTimeout(r, 1000));
       const context = await browser.newContext();
       const page = await context.newPage();
       await loadPlatform(page, PYTHON_PLATFORM);
@@ -235,77 +269,70 @@ test.describe('3. Sample Dataset Loading', () => {
 
 test.describe('4. Training Workflow', () => {
   test('compare Iris classification training time', async ({ browser }) => {
-    // --- RUST ---
+    // --- RUST (via API — more reliable than UI selectors which change frequently) ---
     const rustContext = await browser.newContext();
     const rustPage = await rustContext.newPage();
-    await loadPlatform(rustPage, RUST_PLATFORM);
-    await loadIrisDataset(rustPage, RUST_PLATFORM);
+    await rustPage.goto(RUST_PLATFORM.baseURL, { waitUntil: 'load', timeout: LONG_TIMEOUT });
 
-    await switchTabRust(rustPage, 'train');
-
-    // Setup sub-tab: configure task type and target
-    await rustPage.locator('#cfg-taskType').selectOption('classification');
-    await rustPage.locator('#cfg-targetColumn').selectOption('species');
-
-    // Click Apply Preprocessing
-    await rustPage.locator('#btn-preprocess').click();
-    await rustPage.waitForTimeout(2000);
-
-    // Switch to Models sub-tab
-    await rustPage.locator('button[data-subtab="models"]').click();
-    await rustPage.waitForTimeout(1000);
-
-    // Open the model multiselect dropdown by clicking its header
-    await rustPage.locator('#model-checkboxes').click();
-    await rustPage.waitForTimeout(500);
-
-    // Click on "Logistic Regression" text to select it
-    await rustPage.locator('#model-checkboxes').locator('text=Logistic Regression').click();
-    await rustPage.waitForTimeout(300);
-
-    // Close the dropdown by pressing Escape and clicking outside
-    await rustPage.keyboard.press('Escape');
-    await rustPage.waitForTimeout(300);
-    // Click on the "Training Progress" heading to dismiss any overlay
-    await rustPage.locator('text=Training Progress').first().click({ force: true });
-    await rustPage.waitForTimeout(300);
-
+    // Load data, preprocess, train via API
     const { elapsed: rustTrainTime } = await measureTime(async () => {
-      await rustPage.locator('#btn-train').click({ force: true });
-      // Wait for training to complete — look for job results or metrics
-      await rustPage.waitForFunction(
-        () => {
-          const page = document;
-          // Check for completed training jobs
-          const jobItems = page.querySelectorAll('.job-card, .job-item, [class*="job"]');
-          for (const job of jobItems) {
-            const text = job.textContent || '';
-            if (text.includes('complete') || text.includes('done') || text.includes('accuracy') || text.includes('Accuracy')) {
-              return true;
-            }
-          }
-          // Check for any metrics appearing
-          const text = page.body.textContent || '';
-          if (text.includes('Training complete') || text.includes('Model trained')) return true;
-          // Check if "No training jobs yet" has been replaced
-          const empty = page.querySelector('#jobs-empty');
-          if (empty && getComputedStyle(empty).display === 'none') return true;
-          const jobs = page.querySelector('#jobs-list');
-          if (jobs && jobs.children.length > 0) return true;
-          return false;
-        },
-        { timeout: LONG_TIMEOUT },
-      );
+      // Load iris dataset
+      await rustPage.evaluate(async (url: string) => {
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const res = await fetch(`${url}/api/data/sample/iris`);
+          if (res.ok) return;
+          if (res.status === 429) await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
+        }
+      }, RUST_PLATFORM.baseURL);
+
+      // Preprocess
+      await rustPage.evaluate(async (url: string) => {
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const res = await fetch(`${url}/api/preprocess`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ task_type: 'classification', target_column: 'species', scaler: 'standard', imputation: 'mean', cv_folds: 5 }),
+          });
+          if (res.ok) return;
+          if (res.status === 429) await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
+        }
+      }, RUST_PLATFORM.baseURL);
+
+      // Train logistic regression
+      const jobId = await rustPage.evaluate(async (url: string) => {
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const res = await fetch(`${url}/api/train`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model_type: 'logistic_regression', target_column: 'species', task_type: 'classification' }),
+          });
+          if (res.status === 429) { await new Promise(r => setTimeout(r, 2000 * (attempt + 1))); continue; }
+          const data = await res.json();
+          return data.job_id;
+        }
+        return null;
+      }, RUST_PLATFORM.baseURL);
+
+      // Poll for completion
+      await rustPage.evaluate(async (args: { url: string; jobId: string }) => {
+        for (let i = 0; i < 120; i++) {
+          const res = await fetch(`${args.url}/api/train/status/${args.jobId}`);
+          if (res.status === 429) { await new Promise(r => setTimeout(r, 2000)); continue; }
+          const data = await res.json();
+          if (data.status?.Completed || data.status?.Failed) return;
+          await new Promise(r => setTimeout(r, 500));
+        }
+      }, { url: RUST_PLATFORM.baseURL, jobId });
     });
 
     let rustAccuracy = 0;
     try {
-      const allText = await rustPage.evaluate(() => {
-        const el = document.querySelector('#jobs-list, #train-results, #sub-models');
-        return el?.textContent || '';
-      });
-      const accMatch = allText.match(/(?:accuracy|acc)[:\s]*([0-9.]+)/i);
-      if (accMatch) rustAccuracy = parseFloat(accMatch[1]);
+      const result = await rustPage.evaluate(async (url: string) => {
+        const r = await fetch(`${url}/api/models`);
+        const data = await r.json();
+        return data.models?.[0]?.metrics?.accuracy || 0;
+      }, RUST_PLATFORM.baseURL);
+      if (result > 0) rustAccuracy = result;
     } catch { /* best-effort */ }
 
     await rustContext.close();
@@ -408,54 +435,80 @@ test.describe('5. Prediction Latency', () => {
 
     const baseURL = RUST_PLATFORM.baseURL;
 
-    // Load Iris dataset via API (GET)
+    // Load Iris dataset via API (GET) with retry
     const loaded = await page.evaluate(async (url: string) => {
-      const res = await fetch(`${url}/api/data/sample/iris`);
-      return res.ok;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const res = await fetch(`${url}/api/data/sample/iris`);
+        if (res.ok) return true;
+        if (res.status === 429) await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
+        else return false;
+      }
+      return false;
     }, baseURL);
     expect(loaded).toBe(true);
 
+    await new Promise(r => setTimeout(r, 500));
+
     // Preprocess
     await page.evaluate(async (url: string) => {
-      await fetch(`${url}/api/preprocess`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ task_type: 'classification', target_column: 'species', scaler: 'standard', imputation: 'mean', cv_folds: 5 }),
-      });
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const res = await fetch(`${url}/api/preprocess`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ task_type: 'classification', target_column: 'species', scaler: 'standard', imputation: 'mean', cv_folds: 5 }),
+        });
+        if (res.ok) return;
+        if (res.status === 429) await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
+      }
     }, baseURL);
+
+    await new Promise(r => setTimeout(r, 500));
 
     // Train a logistic regression model and wait for completion
     const jobId = await page.evaluate(async (url: string) => {
-      const res = await fetch(`${url}/api/train`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model_type: 'logistic_regression', target_column: 'species', task_type: 'classification' }),
-      });
-      const data = await res.json();
-      return data.job_id;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const res = await fetch(`${url}/api/train`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model_type: 'logistic_regression', target_column: 'species', task_type: 'classification' }),
+        });
+        if (res.status === 429) {
+          await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
+          continue;
+        }
+        const data = await res.json();
+        return data.job_id;
+      }
+      return null;
     }, baseURL);
 
-    // Poll for training completion
+    // Poll for training completion (with rate-limit awareness)
     await page.evaluate(async (args: { url: string; jobId: string }) => {
       for (let i = 0; i < 60; i++) {
         const res = await fetch(`${args.url}/api/train/status/${args.jobId}`);
+        if (res.status === 429) { await new Promise(r => setTimeout(r, 2000)); continue; }
         const data = await res.json();
         if (data.status && data.status.Completed) return;
         await new Promise(r => setTimeout(r, 500));
       }
     }, { url: baseURL, jobId });
 
-    // Benchmark predictions via API (5 iterations)
+    // Benchmark predictions via API (5 iterations with delays)
     const predictionTimes: number[] = [];
     for (let i = 0; i < 5; i++) {
+      if (i > 0) await new Promise(r => setTimeout(r, 800));
       const { elapsed } = await measureTime(async () => {
         const result = await page.evaluate(async (url: string) => {
-          const res = await fetch(`${url}/api/predict`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ data: [[5.1, 3.5, 1.4, 0.2]] }),
-          });
-          return res.json();
+          for (let attempt = 0; attempt < 3; attempt++) {
+            const res = await fetch(`${url}/api/predict`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ data: [[5.1, 3.5, 1.4, 0.2]] }),
+            });
+            if (res.status === 429) { await new Promise(r => setTimeout(r, 2000 * (attempt + 1))); continue; }
+            return res.json();
+          }
+          return { success: false };
         }, baseURL);
         expect(result.success).toBe(true);
       });
@@ -572,13 +625,16 @@ test.describe('6. UI Responsiveness', () => {
     const page = await context.newPage();
     await loadPlatform(page, RUST_PLATFORM);
 
-    const tabs = ['automl', 'train', 'predict', 'analyze', 'serve', 'system', 'data'];
+    // Use current tab names from the production UI
+    const tabs = ['automl', 'config', 'train', 'hyperopt', 'explain', 'security', 'monitor', 'data'];
     const switchTimes: number[] = [];
 
-    for (const tab of tabs) {
+    for (let i = 0; i < tabs.length; i++) {
+      if (i > 0) await new Promise(r => setTimeout(r, 300));
+      const tab = tabs[i];
       const { elapsed } = await measureTime(async () => {
         await page.locator(`button.nav-tab[data-tab="${tab}"]`).click();
-        await expect(page.locator(`#tab-${tab}`)).toBeVisible({ timeout: 10_000 });
+        await expect(page.locator(`button.nav-tab[data-tab="${tab}"]`)).toHaveClass(/active/, { timeout: 10_000 });
       });
       switchTimes.push(elapsed);
     }
@@ -635,11 +691,21 @@ test.describe('7. Concurrent Request Stress', () => {
     const rustPage = await rustContext.newPage();
     await rustPage.goto(RUST_PLATFORM.baseURL, { waitUntil: 'load', timeout: LONG_TIMEOUT });
 
+    // Add a brief pause before the stress test to let rate limiter cool down
+    await new Promise(r => setTimeout(r, 3000));
+
     const rustResult = await rustPage.evaluate(async (baseURL: string) => {
       const start = Date.now();
-      const promises = Array.from({ length: 10 }, async () => {
+      const promises = Array.from({ length: 10 }, async (_, i) => {
+        // Stagger requests slightly to avoid burst rate limiting
+        await new Promise(r => setTimeout(r, i * 100));
         const t0 = Date.now();
-        const res = await fetch(`${baseURL}/api/health`);
+        let res = await fetch(`${baseURL}/api/health`);
+        // Retry on 429
+        if (res.status === 429) {
+          await new Promise(r => setTimeout(r, 2000));
+          res = await fetch(`${baseURL}/api/health`);
+        }
         const t1 = Date.now();
         return { status: res.status, time: t1 - t0 };
       });

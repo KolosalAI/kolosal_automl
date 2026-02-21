@@ -1,34 +1,34 @@
 {
-  "timestamp": "2026-02-19T03:30:08.492Z",
+  "timestamp": "2026-02-21T01:49:25.313Z",
   "results": [
     {
       "platform": "rust",
       "model": "logistic_regression",
-      "trainTime": 773,
-      "predictTime": 391,
+      "trainTime": 74,
+      "predictTime": 41,
       "success": true,
-      "accuracy": 0.6
+      "accuracy": 0.5333333333333333
     },
     {
       "platform": "rust",
       "model": "decision_tree",
-      "trainTime": 740,
-      "predictTime": 379,
+      "trainTime": 67,
+      "predictTime": 37,
       "success": true,
       "accuracy": 1
     },
     {
       "platform": "rust",
       "model": "random_forest",
-      "trainTime": 778,
-      "predictTime": 389,
+      "trainTime": 66,
+      "predictTime": 38,
       "success": true,
-      "accuracy": 1
+      "accuracy": 0.9666666666666667
     },
     {
       "platform": "rust",
       "model": "gradient_boosting",
-      "trainTime": 797,
+      "trainTime": 65,
       "predictTime": 0,
       "success": false,
       "accuracy": 0.3333333333333333,
@@ -37,32 +37,32 @@
     {
       "platform": "rust",
       "model": "xgboost",
-      "trainTime": 756,
-      "predictTime": 390,
+      "trainTime": 67,
+      "predictTime": 38,
       "success": true,
       "accuracy": 0.3333333333333333
     },
     {
       "platform": "rust",
       "model": "lightgbm",
-      "trainTime": 770,
-      "predictTime": 383,
+      "trainTime": 67,
+      "predictTime": 35,
       "success": true,
       "accuracy": 0.3333333333333333
     },
     {
       "platform": "rust",
       "model": "knn",
-      "trainTime": 737,
-      "predictTime": 379,
+      "trainTime": 65,
+      "predictTime": 40,
       "success": true,
       "accuracy": 1
     },
     {
       "platform": "rust",
       "model": "naive_bayes",
-      "trainTime": 737,
-      "predictTime": 369,
+      "trainTime": 66,
+      "predictTime": 37,
       "success": true,
       "accuracy": 1
     },
@@ -72,119 +72,119 @@
       "trainTime": 0,
       "predictTime": 0,
       "success": false,
-      "error": "Training failed: Invalid input: SVM classifier requires integer class labels, but sample 0 has label 1.2206555615733703"
+      "error": "Training failed: Invalid input: SVM classifier requires integer class labels, but sample 40 has label 1.2206555615733703"
     },
     {
       "platform": "rust",
       "model": "adaboost",
-      "trainTime": 726,
-      "predictTime": 369,
+      "trainTime": 66,
+      "predictTime": 37,
       "success": true,
       "accuracy": 1
     },
     {
       "platform": "python",
       "model": "✓ Boosting - AdaBoost",
-      "trainTime": 933,
-      "predictTime": 41,
+      "trainTime": 968,
+      "predictTime": 119,
       "success": true
     },
     {
       "platform": "python",
       "model": "✓ Boosting - CatBoost",
-      "trainTime": 934,
-      "predictTime": 49,
+      "trainTime": 956,
+      "predictTime": 154,
       "success": true
     },
     {
       "platform": "python",
       "model": "✓ Boosting - LightGBM",
-      "trainTime": 929,
-      "predictTime": 55,
+      "trainTime": 1627,
+      "predictTime": 117,
       "success": true
     },
     {
       "platform": "python",
       "model": "✓ Boosting - XGBoost",
-      "trainTime": 939,
-      "predictTime": 56,
+      "trainTime": 984,
+      "predictTime": 112,
       "success": true
     },
     {
       "platform": "python",
       "model": "✓ Ensemble Methods - Stacking",
-      "trainTime": 937,
-      "predictTime": 54,
+      "trainTime": 973,
+      "predictTime": 112,
       "success": true
     },
     {
       "platform": "python",
       "model": "✓ Ensemble Methods - Voting Classifier",
-      "trainTime": 50,
-      "predictTime": 51,
+      "trainTime": 1017,
+      "predictTime": 121,
       "success": true
     },
     {
       "platform": "python",
       "model": "✓ Linear Models - Elastic Net",
-      "trainTime": 935,
-      "predictTime": 55,
+      "trainTime": 990,
+      "predictTime": 92,
       "success": true
     },
     {
       "platform": "python",
       "model": "✓ Linear Models - Lasso",
-      "trainTime": 935,
-      "predictTime": 53,
+      "trainTime": 920,
+      "predictTime": 102,
       "success": true
     },
     {
       "platform": "python",
       "model": "✓ Linear Models - Logistic Regression",
-      "trainTime": 937,
-      "predictTime": 40,
+      "trainTime": 967,
+      "predictTime": 74,
       "success": true
     },
     {
       "platform": "python",
       "model": "✓ Linear Models - Ridge",
-      "trainTime": 932,
-      "predictTime": 52,
+      "trainTime": 960,
+      "predictTime": 124,
       "success": true
     },
     {
       "platform": "python",
       "model": "✓ Linear Models - SGD",
-      "trainTime": 934,
-      "predictTime": 52,
+      "trainTime": 930,
+      "predictTime": 82,
       "success": true
     },
     {
       "platform": "python",
       "model": "✓ Naive Bayes - Bernoulli NB",
-      "trainTime": 933,
-      "predictTime": 54,
+      "trainTime": 927,
+      "predictTime": 83,
       "success": true
     },
     {
       "platform": "python",
       "model": "✓ Naive Bayes - Gaussian NB",
-      "trainTime": 869,
-      "predictTime": 52,
+      "trainTime": 971,
+      "predictTime": 88,
       "success": true
     },
     {
       "platform": "python",
       "model": "✓ Naive Bayes - Multinomial NB",
-      "trainTime": 901,
-      "predictTime": 58,
+      "trainTime": 913,
+      "predictTime": 117,
       "success": true
     },
     {
       "platform": "python",
       "model": "✓ Nearest Neighbors - K-Nearest Neighbors",
-      "trainTime": 936,
-      "predictTime": 49,
+      "trainTime": 939,
+      "predictTime": 119,
       "success": true
     }
   ]

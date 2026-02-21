@@ -69,123 +69,123 @@
       <td>rust</td>
       <td>synthetic_100</td>
       <td>100</td>
-      <td>46</td>
-      <td>33</td>
-      <td>64</td>
-      <td>38</td>
-      <td>181</td>
+      <td>39</td>
+      <td>35</td>
+      <td>69</td>
+      <td>41</td>
+      <td>184</td>
     </tr>
     <tr>
       <td>rust</td>
       <td>synthetic_500</td>
       <td>500</td>
-      <td>41</td>
-      <td>32</td>
+      <td>52</td>
+      <td>35</td>
       <td>64</td>
-      <td>36</td>
-      <td>173</td>
+      <td>40</td>
+      <td>191</td>
     </tr>
     <tr>
       <td>rust</td>
       <td>synthetic_1000</td>
       <td>1,000</td>
-      <td>132</td>
-      <td>35</td>
-      <td>69</td>
-      <td>35</td>
-      <td>271</td>
+      <td>65</td>
+      <td>33</td>
+      <td>63</td>
+      <td>42</td>
+      <td>203</td>
     </tr>
     <tr>
       <td>rust</td>
       <td>synthetic_5000</td>
       <td>5,000</td>
-      <td>133</td>
+      <td>167</td>
       <td>36</td>
-      <td>599</td>
-      <td>37</td>
-      <td>805</td>
+      <td>603</td>
+      <td>40</td>
+      <td>846</td>
     </tr>
     <tr>
       <td>rust</td>
       <td>synthetic_10000</td>
       <td>10,000</td>
-      <td>189</td>
-      <td>37</td>
-      <td>595</td>
-      <td>35</td>
-      <td>856</td>
+      <td>443</td>
+      <td>38</td>
+      <td>603</td>
+      <td>39</td>
+      <td>1123</td>
     </tr>
     <tr>
       <td>rust</td>
       <td>synthetic_50000</td>
       <td>50,000</td>
-      <td>1262</td>
-      <td>46</td>
-      <td>1123</td>
-      <td>37</td>
-      <td>2468</td>
+      <td>630</td>
+      <td>52</td>
+      <td>1125</td>
+      <td>38</td>
+      <td>1845</td>
     </tr>
     <tr>
       <td>python</td>
       <td>iris</td>
       <td>150</td>
-      <td>1178</td>
-      <td>1096</td>
-      <td>4566</td>
-      <td>46</td>
-      <td>6886</td>
+      <td>1352</td>
+      <td>1176</td>
+      <td>7915</td>
+      <td>103</td>
+      <td>10546</td>
     </tr>
     <tr>
       <td>python</td>
       <td>wine</td>
       <td>178</td>
-      <td>1624</td>
-      <td>1095</td>
-      <td>4567</td>
-      <td>52</td>
-      <td>7338</td>
+      <td>4194</td>
+      <td>1175</td>
+      <td>4745</td>
+      <td>75</td>
+      <td>10189</td>
     </tr>
     <tr>
       <td>python</td>
       <td>boston</td>
       <td>506</td>
-      <td>1131</td>
-      <td>1091</td>
-      <td>4560</td>
-      <td>52</td>
-      <td>6834</td>
+      <td>1304</td>
+      <td>1172</td>
+      <td>4757</td>
+      <td>102</td>
+      <td>7335</td>
     </tr>
     <tr>
       <td>python</td>
       <td>diabetes</td>
       <td>768</td>
-      <td>1127</td>
-      <td>1089</td>
-      <td>4883</td>
-      <td>62</td>
-      <td>7161</td>
+      <td>1803</td>
+      <td>1144</td>
+      <td>4737</td>
+      <td>86</td>
+      <td>7770</td>
     </tr>
       </tbody>
     </table>
   </div>
 
-  <p class="timestamp">Generated: 2026-02-18T18:24:30.324Z</p>
+  <p class="timestamp">Generated: 2026-02-21T01:42:36.664Z</p>
 
   <script>
     const rustRows = [100,500,1000,5000,10000,50000];
-    const rustUpload = [46,41,132,133,189,1262];
-    const rustTrain = [64,64,69,599,595,1123];
-    const rustPredict = [38,36,35,37,35,37];
+    const rustUpload = [39,52,65,167,443,630];
+    const rustTrain = [69,64,63,603,603,1125];
+    const rustPredict = [41,40,42,40,39,38];
 
     const pyRows = [150,178,506,768];
-    const pyUpload = [1178,1624,1131,1127];
-    const pyTrain = [4566,4567,4560,4883];
-    const pyPredict = [46,52,52,62];
+    const pyUpload = [1352,4194,1304,1803];
+    const pyTrain = [7915,4745,4757,4737];
+    const pyPredict = [103,75,102,86];
 
     const speedupLabels = ["iris(150) vs Rust(100)","wine(178) vs Rust(100)","boston(506) vs Rust(500)","diabetes(768) vs Rust(1000)"];
-    const speedupUpload = [25.61,35.3,27.59,8.54];
-    const speedupTrain = [71.34,71.36,71.25,70.77];
-    const speedupPredict = [1.21,1.37,1.44,1.77];
+    const speedupUpload = [34.67,107.54,25.08,27.74];
+    const speedupTrain = [114.71,68.77,74.33,75.19];
+    const speedupPredict = [2.51,1.83,2.55,2.05];
 
     const rustColor = 'rgba(96, 165, 250, 1)';
     const rustBg = 'rgba(96, 165, 250, 0.15)';
