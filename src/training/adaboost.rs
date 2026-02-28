@@ -5,6 +5,7 @@
 
 use crate::error::{KolosalError, Result};
 use ndarray::{Array1, Array2};
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -217,30 +218,32 @@ impl AdaBoostClassifier {
         }
 
         let n_samples = x.nrows();
-        let mut predictions = Array1::zeros(n_samples);
+        let stumps = &self.stumps;
+        let alphas_ref = &self.alphas;
 
-        for i in 0..n_samples {
-            let row = x.row(i);
-            let sample = row.as_slice().unwrap();
+        let preds: Vec<f64> = (0..n_samples)
+            .into_par_iter()
+            .map(|i| {
+                let row = x.row(i);
+                let sample = row.as_slice().unwrap();
 
-            // Weighted vote across all stumps
-            let mut class_scores: std::collections::HashMap<u64, f64> = std::collections::HashMap::new();
-            for (stump, &alpha) in self.stumps.iter().zip(self.alphas.iter()) {
-                let pred = stump.predict_sample(sample);
-                let key = pred.to_bits();
-                *class_scores.entry(key).or_insert(0.0) += alpha;
-            }
+                let mut class_scores: std::collections::HashMap<u64, f64> = std::collections::HashMap::new();
+                for (stump, &alpha) in stumps.iter().zip(alphas_ref.iter()) {
+                    let pred = stump.predict_sample(sample);
+                    let key = pred.to_bits();
+                    *class_scores.entry(key).or_insert(0.0) += alpha;
+                }
 
-            // Select class with highest weighted vote
-            let best_class_key = class_scores
-                .iter()
-                .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
-                .map(|(&k, _)| k)
-                .unwrap_or(0);
-            predictions[i] = f64::from_bits(best_class_key);
-        }
+                let best_class_key = class_scores
+                    .iter()
+                    .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
+                    .map(|(&k, _)| k)
+                    .unwrap_or(0);
+                f64::from_bits(best_class_key)
+            })
+            .collect();
 
-        Ok(predictions)
+        Ok(Array1::from_vec(preds))
     }
 
     pub fn predict_proba(&self, x: &Array2<f64>) -> Result<Array2<f64>> {
@@ -250,25 +253,35 @@ impl AdaBoostClassifier {
 
         let n_samples = x.nrows();
         let n_classes = self.classes.len().max(2);
-        let mut proba = Array2::zeros((n_samples, n_classes));
+        let stumps = &self.stumps;
+        let alphas_ref = &self.alphas;
+        let classes = &self.classes;
 
-        for i in 0..n_samples {
-            let row = x.row(i);
-            let sample = row.as_slice().unwrap();
+        let proba_rows: Vec<Vec<f64>> = (0..n_samples)
+            .into_par_iter()
+            .map(|i| {
+                let row = x.row(i);
+                let sample = row.as_slice().unwrap();
 
-            let mut class_scores = vec![0.0f64; n_classes];
-            for (stump, &alpha) in self.stumps.iter().zip(self.alphas.iter()) {
-                let pred = stump.predict_sample(sample);
-                if let Some(idx) = self.classes.iter().position(|&c| (c - pred).abs() < 1e-10) {
-                    class_scores[idx] += alpha;
+                let mut class_scores = vec![0.0f64; n_classes];
+                for (stump, &alpha) in stumps.iter().zip(alphas_ref.iter()) {
+                    let pred = stump.predict_sample(sample);
+                    if let Some(idx) = classes.iter().position(|&c| (c - pred).abs() < 1e-10) {
+                        class_scores[idx] += alpha;
+                    }
                 }
-            }
 
-            // Softmax normalization
-            let max_score = class_scores.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-            let exp_sum: f64 = class_scores.iter().map(|&s| (s - max_score).exp()).sum();
-            for (j, &s) in class_scores.iter().enumerate() {
-                proba[[i, j]] = (s - max_score).exp() / exp_sum;
+                // Softmax normalization
+                let max_score = class_scores.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+                let exp_sum: f64 = class_scores.iter().map(|&s| (s - max_score).exp()).sum();
+                class_scores.iter().map(|&s| (s - max_score).exp() / exp_sum).collect()
+            })
+            .collect();
+
+        let mut proba = Array2::zeros((n_samples, n_classes));
+        for (i, row) in proba_rows.into_iter().enumerate() {
+            for (j, v) in row.into_iter().enumerate() {
+                proba[[i, j]] = v;
             }
         }
 

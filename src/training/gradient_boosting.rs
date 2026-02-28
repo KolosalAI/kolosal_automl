@@ -155,13 +155,12 @@ impl GradientBoostingRegressor {
     pub fn predict(&self, x: &Array2<f64>) -> Result<Array1<f64>> {
         let n = x.nrows();
         let mut predictions = Array1::from_elem(n, self.initial_prediction);
+        let lr = self.config.learning_rate;
 
         for (tree, col_indices) in self.trees.iter().zip(self.col_indices_per_tree.iter()) {
             let x_sub = x.select(ndarray::Axis(1), col_indices);
             let tree_pred = tree.predict(&x_sub)?;
-            for i in 0..n {
-                predictions[i] += self.config.learning_rate * tree_pred[i];
-            }
+            predictions.scaled_add(lr, &tree_pred);
         }
 
         Ok(predictions)
@@ -320,16 +319,15 @@ impl GradientBoostingClassifier {
     pub fn predict_proba(&self, x: &Array2<f64>) -> Result<Array1<f64>> {
         let n = x.nrows();
         let mut log_odds = Array1::from_elem(n, self.initial_log_odds);
+        let lr = self.config.learning_rate;
 
         for (tree, col_indices) in self.trees.iter().zip(self.col_indices_per_tree.iter()) {
             let x_sub = x.select(ndarray::Axis(1), col_indices);
             let tree_pred = tree.predict(&x_sub)?;
-            for i in 0..n {
-                log_odds[i] += self.config.learning_rate * tree_pred[i];
-            }
+            log_odds.scaled_add(lr, &tree_pred);
         }
 
-        Ok(log_odds.iter().map(|&lo| 1.0 / (1.0 + (-lo).exp())).collect())
+        Ok(log_odds.mapv(|lo| 1.0 / (1.0 + (-lo).exp())))
     }
 
     /// Get feature importances

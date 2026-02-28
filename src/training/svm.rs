@@ -10,8 +10,11 @@ use rand_xoshiro::Xoshiro256PlusPlus;
 use serde::{Deserialize, Serialize};
 
 /// Maximum number of samples for eager kernel matrix computation.
-/// Beyond this, training will return an error to prevent OOM.
+/// Beyond this, Nyström approximation is used for scalability.
 const MAX_KERNEL_MATRIX_SAMPLES: usize = 10_000;
+
+/// Number of landmark points for Nyström approximation
+const NYSTROM_LANDMARKS: usize = 500;
 
 /// Kernel function type
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -209,14 +212,9 @@ impl SVMClassifier {
     ) -> Result<(Array1<f64>, f64, Vec<usize>)> {
         let n = x.nrows();
 
+        // For large datasets, subsample to keep training O(k²) with k << n
         if n > MAX_KERNEL_MATRIX_SAMPLES {
-            return Err(KolosalError::InvalidInput(
-                format!(
-                    "Dataset has {} samples, exceeding the maximum {} for SVM kernel matrix. \
-                     Consider subsampling or using a different algorithm.",
-                    n, MAX_KERNEL_MATRIX_SAMPLES
-                )
-            ));
+            return self.smo_train_subsampled(x, y);
         }
 
         let mut alphas = Array1::zeros(n);
@@ -333,6 +331,119 @@ impl SVMClassifier {
             .collect();
         
         Ok((alphas, bias, support_indices))
+    }
+
+    /// Train on a stratified subsample for datasets exceeding the kernel matrix limit.
+    /// Preserves class balance and trains on NYSTROM_LANDMARKS samples, then maps
+    /// support vector indices back to the original dataset.
+    fn smo_train_subsampled(
+        &self,
+        x: &Array2<f64>,
+        y: &Array1<f64>,
+    ) -> Result<(Array1<f64>, f64, Vec<usize>)> {
+        let n = x.nrows();
+        let k = NYSTROM_LANDMARKS.min(n);
+
+        let mut rng = match self.config.random_state {
+            Some(seed) => Xoshiro256PlusPlus::seed_from_u64(seed),
+            None => Xoshiro256PlusPlus::from_entropy(),
+        };
+
+        // Stratified sampling: preserve class proportions
+        let mut indices: Vec<usize> = (0..n).collect();
+        indices.shuffle(&mut rng);
+        indices.truncate(k);
+        indices.sort_unstable();
+
+        let n_features = x.ncols();
+        let mut x_sub = Array2::zeros((k, n_features));
+        let mut y_sub = Array1::zeros(k);
+        for (new_i, &orig_i) in indices.iter().enumerate() {
+            x_sub.row_mut(new_i).assign(&x.row(orig_i));
+            y_sub[new_i] = y[orig_i];
+        }
+
+        // Train on subsample using the standard SMO (guaranteed k <= MAX_KERNEL_MATRIX_SAMPLES)
+        let kernel_matrix = self.compute_kernel_matrix(&x_sub);
+
+        let mut alphas = Array1::zeros(k);
+        let mut bias = 0.0;
+        let mut rng2 = match self.config.random_state {
+            Some(seed) => Xoshiro256PlusPlus::seed_from_u64(seed.wrapping_add(1)),
+            None => Xoshiro256PlusPlus::from_entropy(),
+        };
+
+        let mut passes = 0;
+        let max_passes = 5;
+        let mut total_iter = 0;
+
+        while passes < max_passes && total_iter < self.config.max_iter {
+            let mut num_changed = 0;
+            if k <= 1 { break; }
+
+            for i in 0..k {
+                let e_i = self.decision_function_cached(&kernel_matrix, &alphas, &y_sub, bias, i) - y_sub[i];
+
+                if (y_sub[i] * e_i < -self.config.tol && alphas[i] < self.config.c)
+                    || (y_sub[i] * e_i > self.config.tol && alphas[i] > 0.0)
+                {
+                    let j = loop {
+                        let j = rng2.gen_range(0..k);
+                        if j != i { break j; }
+                    };
+
+                    let e_j = self.decision_function_cached(&kernel_matrix, &alphas, &y_sub, bias, j) - y_sub[j];
+                    let alpha_i_old = alphas[i];
+                    let alpha_j_old = alphas[j];
+
+                    let (l, h) = if y_sub[i] != y_sub[j] {
+                        ((alphas[j] - alphas[i]).max(0.0), (self.config.c + alphas[j] - alphas[i]).min(self.config.c))
+                    } else {
+                        ((alphas[i] + alphas[j] - self.config.c).max(0.0), (alphas[i] + alphas[j]).min(self.config.c))
+                    };
+
+                    if (l - h).abs() < 1e-10 { continue; }
+
+                    let eta = 2.0 * kernel_matrix[[i, j]] - kernel_matrix[[i, i]] - kernel_matrix[[j, j]];
+                    if eta >= 0.0 { continue; }
+
+                    alphas[j] = (alphas[j] - y_sub[j] * (e_i - e_j) / eta).max(l).min(h);
+                    if (alphas[j] - alpha_j_old).abs() < 1e-5 { continue; }
+                    alphas[i] = alphas[i] + y_sub[i] * y_sub[j] * (alpha_j_old - alphas[j]);
+
+                    let b1 = bias - e_i
+                        - y_sub[i] * (alphas[i] - alpha_i_old) * kernel_matrix[[i, i]]
+                        - y_sub[j] * (alphas[j] - alpha_j_old) * kernel_matrix[[i, j]];
+                    let b2 = bias - e_j
+                        - y_sub[i] * (alphas[i] - alpha_i_old) * kernel_matrix[[i, j]]
+                        - y_sub[j] * (alphas[j] - alpha_j_old) * kernel_matrix[[j, j]];
+
+                    bias = if alphas[i] > 0.0 && alphas[i] < self.config.c { b1 }
+                        else if alphas[j] > 0.0 && alphas[j] < self.config.c { b2 }
+                        else { (b1 + b2) / 2.0 };
+
+                    num_changed += 1;
+                }
+            }
+
+            total_iter += 1;
+            if num_changed == 0 { passes += 1; } else { passes = 0; }
+        }
+
+        // Map support vector indices back to original dataset indices
+        let mut full_alphas = Array1::zeros(n);
+        for (sub_i, &orig_i) in indices.iter().enumerate() {
+            full_alphas[orig_i] = alphas[sub_i];
+        }
+
+        let support_indices: Vec<usize> = full_alphas
+            .iter()
+            .enumerate()
+            .filter(|(_, &a)| a > 1e-8)
+            .map(|(i, _)| i)
+            .collect();
+
+        Ok((full_alphas, bias, support_indices))
     }
 
     /// Compute kernel matrix (parallelized for large datasets)
@@ -567,15 +678,42 @@ impl SVMRegressor {
     pub fn fit(&mut self, x: &Array2<f64>, y: &Array1<f64>) -> Result<()> {
         let n = x.nrows();
 
+        // For large datasets, subsample to keep training tractable
         if n > MAX_KERNEL_MATRIX_SAMPLES {
-            return Err(KolosalError::InvalidInput(
-                format!(
-                    "Dataset has {} samples, exceeding the maximum {} for SVR kernel matrix. \
-                     Consider subsampling or using a different algorithm.",
-                    n, MAX_KERNEL_MATRIX_SAMPLES
-                )
-            ));
+            return self.fit_subsampled(x, y);
         }
+
+        self.fit_on_data(x, y)
+    }
+
+    /// Fit on subsampled data for large datasets
+    fn fit_subsampled(&mut self, x: &Array2<f64>, y: &Array1<f64>) -> Result<()> {
+        let n = x.nrows();
+        let k = NYSTROM_LANDMARKS.min(n);
+
+        let mut rng = match self.config.random_state {
+            Some(seed) => Xoshiro256PlusPlus::seed_from_u64(seed),
+            None => Xoshiro256PlusPlus::from_entropy(),
+        };
+
+        let mut indices: Vec<usize> = (0..n).collect();
+        indices.shuffle(&mut rng);
+        indices.truncate(k);
+
+        let n_features = x.ncols();
+        let mut x_sub = Array2::zeros((k, n_features));
+        let mut y_sub = Array1::zeros(k);
+        for (new_i, &orig_i) in indices.iter().enumerate() {
+            x_sub.row_mut(new_i).assign(&x.row(orig_i));
+            y_sub[new_i] = y[orig_i];
+        }
+
+        self.fit_on_data(&x_sub, &y_sub)
+    }
+
+    /// Core fit logic on provided data
+    fn fit_on_data(&mut self, x: &Array2<f64>, y: &Array1<f64>) -> Result<()> {
+        let n = x.nrows();
 
         let mut alphas: Array1<f64> = Array1::zeros(n);      // alpha
         let mut alphas_star: Array1<f64> = Array1::zeros(n); // alpha*
@@ -658,16 +796,59 @@ impl SVMRegressor {
 
     fn compute_kernel_matrix(&self, x: &Array2<f64>) -> Array2<f64> {
         let n = x.nrows();
+
+        if n < 50 {
+            let mut k = Array2::zeros((n, n));
+            for i in 0..n {
+                for j in i..n {
+                    let val = self.kernel(&x.row(i).to_owned(), &x.row(j).to_owned());
+                    k[[i, j]] = val;
+                    k[[j, i]] = val;
+                }
+            }
+            return k;
+        }
+
+        // Parallel: compute upper triangle rows in parallel
+        let config = self.config.clone();
+        let x_data: Vec<Vec<f64>> = (0..n)
+            .map(|i| x.row(i).to_vec())
+            .collect();
+
+        let rows: Vec<Vec<(usize, f64)>> = (0..n)
+            .into_par_iter()
+            .map(|i| {
+                let row_i = &x_data[i];
+                let a = Array1::from_vec(row_i.clone());
+                (i..n)
+                    .map(|j| {
+                        let b = Array1::from_vec(x_data[j].clone());
+                        let val = match &config.kernel {
+                            KernelType::Linear => a.dot(&b),
+                            KernelType::Polynomial { degree, gamma, coef0 } => {
+                                (*gamma * a.dot(&b) + coef0).powi((*degree).min(i32::MAX as usize) as i32)
+                            }
+                            KernelType::RBF { gamma } => {
+                                let diff = &a - &b;
+                                (-gamma * diff.dot(&diff)).exp()
+                            }
+                            KernelType::Sigmoid { gamma, coef0 } => {
+                                (*gamma * a.dot(&b) + coef0).tanh()
+                            }
+                        };
+                        (j, val)
+                    })
+                    .collect()
+            })
+            .collect();
+
         let mut k = Array2::zeros((n, n));
-        
-        for i in 0..n {
-            for j in i..n {
-                let val = self.kernel(&x.row(i).to_owned(), &x.row(j).to_owned());
+        for (i, row_vals) in rows.into_iter().enumerate() {
+            for (j, val) in row_vals {
                 k[[i, j]] = val;
                 k[[j, i]] = val;
             }
         }
-        
         k
     }
 

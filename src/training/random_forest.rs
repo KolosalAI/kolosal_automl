@@ -291,15 +291,17 @@ impl RandomForest {
 
         let n_samples = x.nrows();
 
-        // Aggregate predictions
+        // Aggregate predictions in parallel across samples
         let predictions: Vec<f64> = if self.is_classification {
-            // Majority voting (Vec-indexed for speed)
+            // Majority voting parallelized over samples
+            let classes = &self.classes;
             (0..n_samples)
+                .into_par_iter()
                 .map(|i| {
-                    let mut votes = vec![0usize; self.classes.len()];
+                    let mut votes = vec![0usize; classes.len()];
                     for preds in &all_predictions {
                         let class = preds[i].round() as i64;
-                        if let Some(idx) = self.classes.iter().position(|&c| c.round() as i64 == class) {
+                        if let Some(idx) = classes.iter().position(|&c| c.round() as i64 == class) {
                             votes[idx] += 1;
                         }
                     }
@@ -307,15 +309,17 @@ impl RandomForest {
                         .max_by_key(|(_, &count)| count)
                         .map(|(idx, _)| idx)
                         .unwrap_or(0);
-                    self.classes.get(best_idx).copied().unwrap_or(0.0)
+                    classes.get(best_idx).copied().unwrap_or(0.0)
                 })
                 .collect()
         } else {
-            // Mean prediction
+            // Mean prediction parallelized over samples
+            let n_trees = all_predictions.len() as f64;
             (0..n_samples)
+                .into_par_iter()
                 .map(|i| {
                     let sum: f64 = all_predictions.iter().map(|p| p[i]).sum();
-                    sum / all_predictions.len() as f64
+                    sum / n_trees
                 })
                 .collect()
         };
@@ -344,22 +348,29 @@ impl RandomForest {
         let n_samples = x.nrows();
         let n_classes = self.classes.len();
 
-        // Count votes per class
-        let mut proba = Array2::zeros((n_samples, n_classes));
+        // Count votes per class in parallel across samples
+        let proba_rows: Vec<Vec<f64>> = (0..n_samples)
+            .into_par_iter()
+            .map(|i| {
+                let mut row = vec![0.0f64; n_classes];
+                for preds in &all_predictions {
+                    let class = preds[i].round() as i64;
+                    if let Some(class_idx) = self.classes.iter().position(|&c| c.round() as i64 == class) {
+                        row[class_idx] += 1.0;
+                    }
+                }
+                let row_sum: f64 = row.iter().sum();
+                if row_sum > 0.0 {
+                    for v in &mut row { *v /= row_sum; }
+                }
+                row
+            })
+            .collect();
 
-        for i in 0..n_samples {
-            for preds in &all_predictions {
-                let class = preds[i].round() as i64;
-                if let Some(class_idx) = self.classes.iter().position(|&c| c.round() as i64 == class) {
-                    proba[[i, class_idx]] += 1.0;
-                }
-            }
-            // Normalize to probabilities
-            let row_sum: f64 = proba.row(i).sum();
-            if row_sum > 0.0 {
-                for j in 0..n_classes {
-                    proba[[i, j]] /= row_sum;
-                }
+        let mut proba = Array2::zeros((n_samples, n_classes));
+        for (i, row) in proba_rows.into_iter().enumerate() {
+            for (j, v) in row.into_iter().enumerate() {
+                proba[[i, j]] = v;
             }
         }
 

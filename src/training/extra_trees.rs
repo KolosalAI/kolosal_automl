@@ -381,23 +381,32 @@ impl ExtraTrees {
 
         let n_samples = x.nrows();
         let n_classes = self.classes.len().max(2);
-        let mut proba = Array2::zeros((n_samples, n_classes));
         let n_trees = self.trees.len() as f64;
+        let classes = &self.classes;
+        let trees = &self.trees;
 
-        for i in 0..n_samples {
-            let sample = x.row(i);
-            let s = sample.as_slice().unwrap();
+        let proba_rows: Vec<Vec<f64>> = (0..n_samples)
+            .into_par_iter()
+            .map(|i| {
+                let sample = x.row(i);
+                let s = sample.as_slice().unwrap();
+                let mut row = vec![0.0f64; n_classes];
 
-            for tree in &self.trees {
-                let pred = tree.predict_sample(s);
-                if let Some(idx) = self.classes.iter().position(|&c| (c - pred).abs() < 1e-10) {
-                    proba[[i, idx]] += 1.0;
+                for tree in trees {
+                    let pred = tree.predict_sample(s);
+                    if let Some(idx) = classes.iter().position(|&c| (c - pred).abs() < 1e-10) {
+                        row[idx] += 1.0;
+                    }
                 }
-            }
+                for v in &mut row { *v /= n_trees; }
+                row
+            })
+            .collect();
 
-            // Normalize to probabilities
-            for j in 0..n_classes {
-                proba[[i, j]] /= n_trees;
+        let mut proba = Array2::zeros((n_samples, n_classes));
+        for (i, row) in proba_rows.into_iter().enumerate() {
+            for (j, v) in row.into_iter().enumerate() {
+                proba[[i, j]] = v;
             }
         }
 

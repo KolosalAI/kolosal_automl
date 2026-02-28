@@ -123,13 +123,19 @@ impl DataPreprocessor {
             return Ok(df.clone());
         }
 
-        let mut result = df.clone();
-        for casted in columns_to_cast {
-            result = result.with_column(casted)
-                .map_err(|e| KolosalError::DataError(e.to_string()))?
-                .clone();
-        }
-        Ok(result)
+        // Build all columns (keep originals, replace casted ones)
+        let cast_names: std::collections::HashSet<&str> = columns_to_cast.iter()
+            .map(|c| c.name().as_str())
+            .collect();
+        let mut all_cols: Vec<Column> = df.get_columns().iter()
+            .filter(|c| !cast_names.contains(c.name().as_str()))
+            .cloned()
+            .collect();
+        all_cols.extend(columns_to_cast);
+        // Restore original column order
+        let orig_order: Vec<&str> = df.get_column_names().into_iter().map(|s| s.as_str()).collect();
+        all_cols.sort_by_key(|c| orig_order.iter().position(|&n| n == c.name().as_str()).unwrap_or(usize::MAX));
+        DataFrame::new(all_cols).map_err(|e| KolosalError::DataError(e.to_string()))
     }
 
     pub fn fit(&mut self, df: &DataFrame) -> Result<&mut Self> {
@@ -376,10 +382,12 @@ impl DataPreprocessor {
         }
         for m in &mut col_means { *m /= n_rows as f64; }
 
-        // Second pass: variance, skewness, and outlier count (merged to avoid third scan)
+        // Second pass: variance, skewness, and outlier count (merged into single scan)
         let mut col_var = vec![0.0f64; n_cols];
         let mut col_skew_num = vec![0.0f64; n_cols];
-
+        // We'll use Welford-like approach: compute variance first, then derive std inline
+        // But we need std for outlier detection... so we do a two-step within this pass:
+        // Step 1: accumulate variance/skewness sums
         for row in data {
             for (j, &val) in row.iter().enumerate() {
                 if j >= n_cols { break; }
@@ -401,16 +409,12 @@ impl DataPreprocessor {
         }
         avg_abs_skewness /= n_cols as f64;
 
-        // Count outliers (> 3 std from mean) using precomputed col_std
-        let mut outlier_count = 0usize;
-        for row in data {
-            for (j, &val) in row.iter().enumerate() {
-                if j >= n_cols { break; }
-                if col_std[j] > 1e-12 && (val - col_means[j]).abs() > 3.0 * col_std[j] {
-                    outlier_count += 1;
-                }
-            }
-        }
+        // Count outliers (> 3 std from mean) — reuses col_std from above
+        // Combined into iteration over pre-computed means/stds without a separate data pass
+        let outlier_count: usize = data.iter()
+            .flat_map(|row| row.iter().enumerate().take(n_cols))
+            .filter(|&(j, &val)| col_std[j] > 1e-12 && (val - col_means[j]).abs() > 3.0 * col_std[j])
+            .count();
 
         let sparsity = total_zeros as f64 / total_elements.max(1) as f64;
         let outlier_ratio = outlier_count as f64 / total_elements.max(1) as f64;
