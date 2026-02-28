@@ -95,12 +95,12 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 3244,
+                      "duration": 2169,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-02-21T01:40:13.893Z",
+                      "startTime": "2026-02-28T05:20:47.931Z",
                       "annotations": [],
                       "attachments": []
                     }
@@ -129,12 +129,12 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 2055,
+                      "duration": 1897,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-02-21T01:40:18.276Z",
+                      "startTime": "2026-02-28T05:20:50.399Z",
                       "annotations": [],
                       "attachments": []
                     }
@@ -163,12 +163,12 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 3521,
+                      "duration": 3621,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-02-21T01:40:20.343Z",
+                      "startTime": "2026-02-28T05:20:52.302Z",
                       "annotations": [],
                       "attachments": []
                     }
@@ -197,12 +197,12 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 710,
+                      "duration": 572,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-02-21T01:40:23.875Z",
+                      "startTime": "2026-02-28T05:20:55.928Z",
                       "annotations": [],
                       "attachments": []
                     }
@@ -239,28 +239,28 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 1149,
+                      "duration": 1108,
                       "errors": [],
                       "stdout": [
                         {
-                          "text": "  logistic_regression: 1.88ms server time, accuracy=0.4333\n"
+                          "text": "  logistic_regression: 2.33ms server time, accuracy=0.6000\n"
                         },
                         {
-                          "text": "  decision_tree: 0.85ms server time, accuracy=1.0000\n"
+                          "text": "  decision_tree: 1.42ms server time, accuracy=1.0000\n"
                         },
                         {
-                          "text": "  random_forest: 2.13ms server time, accuracy=1.0000\n"
+                          "text": "  random_forest: 6.19ms server time, accuracy=1.0000\n"
                         },
                         {
-                          "text": "  naive_bayes: 0.10ms server time, accuracy=1.0000\n"
+                          "text": "  naive_bayes: 0.15ms server time, accuracy=1.0000\n"
                         },
                         {
-                          "text": "  knn: 0.43ms server time, accuracy=1.0000\n"
+                          "text": "  knn: 0.82ms server time, accuracy=1.0000\n"
                         }
                       ],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-02-21T01:40:24.593Z",
+                      "startTime": "2026-02-28T05:20:56.507Z",
                       "annotations": [],
                       "attachments": []
                     }
@@ -297,12 +297,12 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 1679,
+                      "duration": 1537,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-02-21T01:40:25.750Z",
+                      "startTime": "2026-02-28T05:20:57.627Z",
                       "annotations": [],
                       "attachments": []
                     }
@@ -331,12 +331,12 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 410,
+                      "duration": 317,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-02-21T01:40:27.439Z",
+                      "startTime": "2026-02-28T05:20:59.169Z",
                       "annotations": [],
                       "attachments": []
                     }
@@ -373,12 +373,12 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 1312,
+                      "duration": 3845,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-02-21T01:40:27.858Z",
+                      "startTime": "2026-02-28T05:20:59.489Z",
                       "annotations": [],
                       "attachments": []
                     }
@@ -415,12 +415,12 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 1509,
+                      "duration": 1347,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-02-21T01:40:29.179Z",
+                      "startTime": "2026-02-28T05:21:03.340Z",
                       "annotations": [],
                       "attachments": []
                     }
@@ -449,12 +449,12 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 1728,
+                      "duration": 1574,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-02-21T01:40:30.698Z",
+                      "startTime": "2026-02-28T05:21:04.695Z",
                       "annotations": [],
                       "attachments": []
                     }
@@ -491,12 +491,12 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 1576,
+                      "duration": 1418,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-02-21T01:40:32.438Z",
+                      "startTime": "2026-02-28T05:21:06.276Z",
                       "annotations": [],
                       "attachments": []
                     }
@@ -525,12 +525,12 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 1359,
+                      "duration": 1261,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-02-21T01:40:34.026Z",
+                      "startTime": "2026-02-28T05:21:07.697Z",
                       "annotations": [],
                       "attachments": []
                     }
@@ -567,12 +567,12 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 1409,
+                      "duration": 1423,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-02-21T01:40:35.394Z",
+                      "startTime": "2026-02-28T05:21:08.962Z",
                       "annotations": [],
                       "attachments": []
                     }
@@ -609,12 +609,12 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 1373,
+                      "duration": 1504,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-02-21T01:40:36.814Z",
+                      "startTime": "2026-02-28T05:21:10.389Z",
                       "annotations": [],
                       "attachments": []
                     }
@@ -651,12 +651,12 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 760,
+                      "duration": 612,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-02-21T01:40:38.196Z",
+                      "startTime": "2026-02-28T05:21:11.897Z",
                       "annotations": [],
                       "attachments": []
                     }
@@ -685,12 +685,12 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 334,
+                      "duration": 189,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-02-21T01:40:38.965Z",
+                      "startTime": "2026-02-28T05:21:12.513Z",
                       "annotations": [],
                       "attachments": []
                     }
@@ -727,12 +727,12 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 710,
+                      "duration": 601,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-02-21T01:40:39.309Z",
+                      "startTime": "2026-02-28T05:21:12.706Z",
                       "annotations": [],
                       "attachments": []
                     }
@@ -769,12 +769,12 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 1784,
+                      "duration": 1778,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-02-21T01:40:40.031Z",
+                      "startTime": "2026-02-28T05:21:13.310Z",
                       "annotations": [],
                       "attachments": []
                     }
@@ -803,12 +803,12 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 448,
+                      "duration": 278,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-02-21T01:40:41.824Z",
+                      "startTime": "2026-02-28T05:21:15.093Z",
                       "annotations": [],
                       "attachments": []
                     }
@@ -837,12 +837,12 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 353,
+                      "duration": 294,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-02-21T01:40:42.281Z",
+                      "startTime": "2026-02-28T05:21:15.375Z",
                       "annotations": [],
                       "attachments": []
                     }
@@ -879,12 +879,12 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 357,
+                      "duration": 266,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-02-21T01:40:42.645Z",
+                      "startTime": "2026-02-28T05:21:15.672Z",
                       "annotations": [],
                       "attachments": []
                     }
@@ -913,12 +913,12 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 304,
+                      "duration": 176,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-02-21T01:40:43.011Z",
+                      "startTime": "2026-02-28T05:21:15.942Z",
                       "annotations": [],
                       "attachments": []
                     }
@@ -947,12 +947,12 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 449,
+                      "duration": 168,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-02-21T01:40:43.325Z",
+                      "startTime": "2026-02-28T05:21:16.121Z",
                       "annotations": [],
                       "attachments": []
                     }
@@ -989,12 +989,12 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 1024,
+                      "duration": 936,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-02-21T01:40:43.783Z",
+                      "startTime": "2026-02-28T05:21:16.294Z",
                       "annotations": [],
                       "attachments": []
                     }
@@ -1031,12 +1031,12 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 364,
+                      "duration": 199,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-02-21T01:40:44.818Z",
+                      "startTime": "2026-02-28T05:21:17.236Z",
                       "annotations": [],
                       "attachments": []
                     }
@@ -1073,12 +1073,12 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 363,
+                      "duration": 335,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-02-21T01:40:45.190Z",
+                      "startTime": "2026-02-28T05:21:17.440Z",
                       "annotations": [],
                       "attachments": []
                     }
@@ -1107,12 +1107,12 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 397,
+                      "duration": 679,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-02-21T01:40:45.564Z",
+                      "startTime": "2026-02-28T05:21:17.779Z",
                       "annotations": [],
                       "attachments": []
                     }
@@ -1141,12 +1141,12 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 365,
+                      "duration": 551,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-02-21T01:40:45.972Z",
+                      "startTime": "2026-02-28T05:21:18.461Z",
                       "annotations": [],
                       "attachments": []
                     }
@@ -1175,12 +1175,12 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 352,
+                      "duration": 223,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-02-21T01:40:46.349Z",
+                      "startTime": "2026-02-28T05:21:19.016Z",
                       "annotations": [],
                       "attachments": []
                     }
@@ -1209,12 +1209,12 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 361,
+                      "duration": 211,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-02-21T01:40:46.710Z",
+                      "startTime": "2026-02-28T05:21:19.243Z",
                       "annotations": [],
                       "attachments": []
                     }
@@ -1251,14 +1251,14 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 711,
+                      "duration": 660,
                       "errors": [],
                       "stdout": [
                         {
-                          "text": "  /api/health: 29ms ✓\n"
+                          "text": "  /api/health: 31ms ✓\n"
                         },
                         {
-                          "text": "  /api/system/status: 54ms ✓\n"
+                          "text": "  /api/system/status: 149ms ✓\n"
                         },
                         {
                           "text": "  /api/models: 30ms ✓\n"
@@ -1267,27 +1267,27 @@
                           "text": "  /api/data/info: 30ms ✓\n"
                         },
                         {
-                          "text": "  /api/data/quality: 30ms ✓\n"
+                          "text": "  /api/data/quality: 64ms ✓\n"
                         },
                         {
-                          "text": "  /api/monitoring/alerts: 59ms ✓\n"
+                          "text": "  /api/monitoring/alerts: 72ms ✓\n"
                         },
                         {
-                          "text": "  /api/monitoring/performance: 30ms ✓\n"
+                          "text": "  /api/monitoring/performance: 33ms ✓\n"
                         },
                         {
-                          "text": "  /api/device/info: 60ms ✓\n"
+                          "text": "  /api/device/info: 155ms ✓\n"
                         },
                         {
-                          "text": "  /api/security/status: 54ms ✓\n"
+                          "text": "  /api/security/status: 71ms ✓\n"
                         },
                         {
-                          "text": "  /api/preprocess/config: 31ms ✓\n"
+                          "text": "  /api/preprocess/config: 71ms ✓\n"
                         }
                       ],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-02-21T01:40:47.082Z",
+                      "startTime": "2026-02-28T05:21:19.457Z",
                       "annotations": [],
                       "attachments": []
                     }
@@ -1324,12 +1324,12 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 324,
+                      "duration": 168,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-02-21T01:40:47.803Z",
+                      "startTime": "2026-02-28T05:21:20.121Z",
                       "annotations": [],
                       "attachments": []
                     }
@@ -1366,34 +1366,34 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 615,
+                      "duration": 350,
                       "errors": [],
                       "stdout": [
                         {
                           "text": "\n  E2E Pipeline Breakdown:\n"
                         },
                         {
-                          "text": "    load: 35ms\n"
+                          "text": "    load: 49ms\n"
                         },
                         {
-                          "text": "    preprocess: 34ms\n"
+                          "text": "    preprocess: 28ms\n"
                         },
                         {
-                          "text": "    train: 67ms\n"
+                          "text": "    train: 48ms\n"
                         },
                         {
-                          "text": "    predict: 35ms\n"
+                          "text": "    predict: 39ms\n"
                         },
                         {
-                          "text": "    explain: 33ms\n"
+                          "text": "    explain: 26ms\n"
                         },
                         {
-                          "text": "    TOTAL: 204ms\n"
+                          "text": "    TOTAL: 190ms\n"
                         }
                       ],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-02-21T01:40:48.139Z",
+                      "startTime": "2026-02-28T05:21:20.292Z",
                       "annotations": [],
                       "attachments": []
                     }
@@ -1430,7 +1430,7 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 12,
+                      "duration": 8,
                       "errors": [],
                       "stdout": [
                         {
@@ -1509,25 +1509,25 @@
                           "text": "  ------------------------------------------------------------------------------------------------------------------------\n"
                         },
                         {
-                          "text": "  Analyze API avg                           51.00      msn=5 avg=51.0 stddev=7.5 CV=14.8% p50=48.0 p95=60.0\n"
+                          "text": "  Analyze API avg                           40.20      msn=5 avg=40.2 stddev=4.3 CV=10.8% p50=41.0 p95=44.0\n"
                         },
                         {
-                          "text": "  Analyze API p50                           48.00      ms                                                 —\n"
+                          "text": "  Analyze API p50                           41.00      ms                                                 —\n"
                         },
                         {
-                          "text": "  Quality API avg                           37.40      ms n=5 avg=37.4 stddev=3.1 CV=8.4% p50=36.0 p95=43.0\n"
+                          "text": "  Quality API avg                           28.20      ms n=5 avg=28.2 stddev=1.9 CV=6.8% p50=28.0 p95=31.0\n"
                         },
                         {
-                          "text": "  Data Info API avg                         34.60      ms n=5 avg=34.6 stddev=1.1 CV=3.3% p50=35.0 p95=36.0\n"
+                          "text": "  Data Info API avg                         57.40      msn=5 avg=57.4 stddev=34.5 CV=60.1% p50=42.0 p95=114.0\n"
                         },
                         {
-                          "text": "  Data Preview API avg                      38.00      ms n=5 avg=38.0 stddev=2.3 CV=6.2% p50=37.0 p95=41.0\n"
+                          "text": "  Data Preview API avg                      74.40      msn=5 avg=74.4 stddev=45.8 CV=61.6% p50=66.0 p95=146.0\n"
                         },
                         {
-                          "text": "  Datasheet API                             46.00      ms                                                 —\n"
+                          "text": "  Datasheet API                             45.00      ms                                                 —\n"
                         },
                         {
-                          "text": "  Lineage API                               35.00      ms                                                 —\n"
+                          "text": "  Lineage API                               27.00      ms                                                 —\n"
                         },
                         {
                           "text": "\n  [MULTI-MODEL TRAINING]\n"
@@ -1542,19 +1542,19 @@
                           "text": "  ------------------------------------------------------------------------------------------------------------------------\n"
                         },
                         {
-                          "text": "  logistic_regression total roundtrip      103.00      ms                                                 —\n"
+                          "text": "  logistic_regression total roundtrip      145.00      ms                                                 —\n"
                         },
                         {
-                          "text": "  decision_tree total roundtrip            100.00      ms                                                 —\n"
+                          "text": "  decision_tree total roundtrip             80.00      ms                                                 —\n"
                         },
                         {
-                          "text": "  random_forest total roundtrip            100.00      ms                                                 —\n"
+                          "text": "  random_forest total roundtrip             88.00      ms                                                 —\n"
                         },
                         {
-                          "text": "  naive_bayes total roundtrip              101.00      ms                                                 —\n"
+                          "text": "  naive_bayes total roundtrip               83.00      ms                                                 —\n"
                         },
                         {
-                          "text": "  knn total roundtrip                      104.00      ms                                                 —\n"
+                          "text": "  knn total roundtrip                       88.00      ms                                                 —\n"
                         },
                         {
                           "text": "\n  [MODEL MANAGEMENT]\n"
@@ -1569,16 +1569,16 @@
                           "text": "  ------------------------------------------------------------------------------------------------------------------------\n"
                         },
                         {
-                          "text": "  List Models avg                           39.00      ms n=5 avg=39.0 stddev=1.9 CV=4.8% p50=39.0 p95=42.0\n"
+                          "text": "  List Models avg                           33.60      msn=5 avg=33.6 stddev=10.1 CV=30.2% p50=27.0 p95=50.0\n"
                         },
                         {
-                          "text": "  Model Detail API                          34.00      ms                                                 —\n"
+                          "text": "  Model Detail API                          30.00      ms                                                 —\n"
                         },
                         {
-                          "text": "  Model Metrics API                         34.00      ms                                                 —\n"
+                          "text": "  Model Metrics API                         41.00      ms                                                 —\n"
                         },
                         {
-                          "text": "  Model Card API                            35.00      ms                                                 —\n"
+                          "text": "  Model Card API                            31.00      ms                                                 —\n"
                         },
                         {
                           "text": "\n  [AUTOML PIPELINE]\n"
@@ -1593,7 +1593,7 @@
                           "text": "  ------------------------------------------------------------------------------------------------------------------------\n"
                         },
                         {
-                          "text": "  Full AutoML Run                          595.00      ms                                                 —\n"
+                          "text": "  Full AutoML Run                         3288.00      ms                                                 —\n"
                         },
                         {
                           "text": "\n  [BATCH PREDICTION]\n"
@@ -1608,13 +1608,13 @@
                           "text": "  ------------------------------------------------------------------------------------------------------------------------\n"
                         },
                         {
-                          "text": "  Batch 100 samples avg                     46.00      msn=3 avg=46.0 stddev=9.5 CV=20.7% p50=41.0 p95=57.0\n"
+                          "text": "  Batch 100 samples avg                     37.33      msn=3 avg=37.3 stddev=4.0 CV=10.8% p50=38.0 p95=41.0\n"
                         },
                         {
-                          "text": "  Batch 100 samples p50                     41.00      ms                                                 —\n"
+                          "text": "  Batch 100 samples p50                     38.00      ms                                                 —\n"
                         },
                         {
-                          "text": "  Predict Proba avg                         39.00      ms n=5 avg=39.0 stddev=2.3 CV=6.0% p50=40.0 p95=41.0\n"
+                          "text": "  Predict Proba avg                         38.80      msn=5 avg=38.8 stddev=11.0 CV=28.3% p50=34.0 p95=57.0\n"
                         },
                         {
                           "text": "\n  [VISUALIZATION]\n"
@@ -1629,10 +1629,10 @@
                           "text": "  ------------------------------------------------------------------------------------------------------------------------\n"
                         },
                         {
-                          "text": "  UMAP Generation avg                       84.33      ms n=3 avg=84.3 stddev=4.5 CV=5.3% p50=84.0 p95=89.0\n"
+                          "text": "  UMAP Generation avg                       99.33      msn=3 avg=99.3 stddev=33.7 CV=34.0% p50=84.0 p95=138.0\n"
                         },
                         {
-                          "text": "  PCA Generation avg                        40.00      ms n=3 avg=40.0 stddev=1.7 CV=4.3% p50=39.0 p95=42.0\n"
+                          "text": "  PCA Generation avg                        35.00      ms n=3 avg=35.0 stddev=1.0 CV=2.9% p50=35.0 p95=36.0\n"
                         },
                         {
                           "text": "\n  [CLUSTERING]\n"
@@ -1647,7 +1647,7 @@
                           "text": "  ------------------------------------------------------------------------------------------------------------------------\n"
                         },
                         {
-                          "text": "  K-Means (k=3) avg                         39.67      ms n=3 avg=39.7 stddev=1.5 CV=3.9% p50=40.0 p95=41.0\n"
+                          "text": "  K-Means (k=3) avg                        102.33      msn=3 avg=102.3 stddev=51.1 CV=49.9% p50=119.0 p95=143.0\n"
                         },
                         {
                           "text": "\n  [ANOMALY DETECTION]\n"
@@ -1662,7 +1662,7 @@
                           "text": "  ------------------------------------------------------------------------------------------------------------------------\n"
                         },
                         {
-                          "text": "  Isolation Forest avg                      45.00      msn=3 avg=45.0 stddev=5.6 CV=12.4% p50=44.0 p95=51.0\n"
+                          "text": "  Isolation Forest avg                      42.67      ms n=3 avg=42.7 stddev=3.5 CV=8.2% p50=43.0 p95=46.0\n"
                         },
                         {
                           "text": "\n  [HYPEROPT]\n"
@@ -1677,16 +1677,16 @@
                           "text": "  ------------------------------------------------------------------------------------------------------------------------\n"
                         },
                         {
-                          "text": "  LogReg 3 trials                           34.00      ms                                                 —\n"
+                          "text": "  LogReg 3 trials                           27.00      ms                                                 —\n"
                         },
                         {
-                          "text": "  History API                               34.00      ms                                                 —\n"
+                          "text": "  History API                               28.00      ms                                                 —\n"
                         },
                         {
-                          "text": "  Search Space API                          33.00      ms                                                 —\n"
+                          "text": "  Search Space API                          27.00      ms                                                 —\n"
                         },
                         {
-                          "text": "  Config API                                52.00      ms                                                 —\n"
+                          "text": "  Config API                                50.00      ms                                                 —\n"
                         },
                         {
                           "text": "\n  [EXPLAINABILITY]\n"
@@ -1701,7 +1701,7 @@
                           "text": "  ------------------------------------------------------------------------------------------------------------------------\n"
                         },
                         {
-                          "text": "  Feature Importance API                    33.00      ms                                                 —\n"
+                          "text": "  Feature Importance API                    29.00      ms                                                 —\n"
                         },
                         {
                           "text": "\n  [SYSTEM & MONITORING]\n"
@@ -1716,22 +1716,22 @@
                           "text": "  ------------------------------------------------------------------------------------------------------------------------\n"
                         },
                         {
-                          "text": "  System Status avg                         59.40      msn=5 avg=59.4 stddev=11.3 CV=19.0% p50=60.0 p95=77.0\n"
+                          "text": "  System Status avg                         83.00      msn=5 avg=83.0 stddev=28.3 CV=34.1% p50=78.0 p95=132.0\n"
                         },
                         {
-                          "text": "  Alerts API                                52.00      ms                                                 —\n"
+                          "text": "  Alerts API                                82.00      ms                                                 —\n"
                         },
                         {
-                          "text": "  Performance API                           33.00      ms                                                 —\n"
+                          "text": "  Performance API                           27.00      ms                                                 —\n"
                         },
                         {
-                          "text": "  SLO Status API                            35.00      ms                                                 —\n"
+                          "text": "  SLO Status API                            26.00      ms                                                 —\n"
                         },
                         {
-                          "text": "  Device Info API                           54.00      ms                                                 —\n"
+                          "text": "  Device Info API                           89.00      ms                                                 —\n"
                         },
                         {
-                          "text": "  Optimal Configs API                       54.00      ms                                                 —\n"
+                          "text": "  Optimal Configs API                       72.00      ms                                                 —\n"
                         },
                         {
                           "text": "\n  [SECURITY & COMPLIANCE]\n"
@@ -1746,16 +1746,16 @@
                           "text": "  ------------------------------------------------------------------------------------------------------------------------\n"
                         },
                         {
-                          "text": "  Security Status API                       48.00      ms                                                 —\n"
+                          "text": "  Security Status API                       67.00      ms                                                 —\n"
                         },
                         {
-                          "text": "  Audit Log API                             39.00      ms                                                 —\n"
+                          "text": "  Audit Log API                             69.00      ms                                                 —\n"
                         },
                         {
-                          "text": "  Compliance Report API                     41.00      ms                                                 —\n"
+                          "text": "  Compliance Report API                     37.00      ms                                                 —\n"
                         },
                         {
-                          "text": "  Audit Events API                          53.00      ms                                                 —\n"
+                          "text": "  Audit Events API                          29.00      ms                                                 —\n"
                         },
                         {
                           "text": "\n  [PREPROCESSING]\n"
@@ -1770,10 +1770,10 @@
                           "text": "  ------------------------------------------------------------------------------------------------------------------------\n"
                         },
                         {
-                          "text": "  Config API                                34.00      ms                                                 —\n"
+                          "text": "  Config API                                27.00      ms                                                 —\n"
                         },
                         {
-                          "text": "  Pipeline Run avg                          33.67      ms n=3 avg=33.7 stddev=0.6 CV=1.7% p50=34.0 p95=34.0\n"
+                          "text": "  Pipeline Run avg                          31.67      msn=3 avg=31.7 stddev=5.8 CV=18.2% p50=35.0 p95=35.0\n"
                         },
                         {
                           "text": "\n  [BATCH PROCESSING]\n"
@@ -1788,7 +1788,7 @@
                           "text": "  ------------------------------------------------------------------------------------------------------------------------\n"
                         },
                         {
-                          "text": "  Batch Stats API                           37.00      ms                                                 —\n"
+                          "text": "  Batch Stats API                           31.00      ms                                                 —\n"
                         },
                         {
                           "text": "\n  [SAMPLE DATASETS]\n"
@@ -1806,16 +1806,16 @@
                           "text": "  Load iris                                 33.00      ms                                                 —\n"
                         },
                         {
-                          "text": "  Load diabetes                             37.00      ms                                                 —\n"
+                          "text": "  Load diabetes                            157.00      ms                                                 —\n"
                         },
                         {
-                          "text": "  Load boston                               36.00      ms                                                 —\n"
+                          "text": "  Load boston                              107.00      ms                                                 —\n"
                         },
                         {
-                          "text": "  Load wine                                 39.00      ms                                                 —\n"
+                          "text": "  Load wine                                 31.00      ms                                                 —\n"
                         },
                         {
-                          "text": "  Load breast_cancer                        33.00      ms                                                 —\n"
+                          "text": "  Load breast_cancer                        25.00      ms                                                 —\n"
                         },
                         {
                           "text": "\n  [MULTI-ENDPOINT STRESS]\n"
@@ -1830,13 +1830,13 @@
                           "text": "  ------------------------------------------------------------------------------------------------------------------------\n"
                         },
                         {
-                          "text": "  Total (10 mixed)                          61.00      ms                                                 —\n"
+                          "text": "  Total (10 mixed)                         156.00      ms                                                 —\n"
                         },
                         {
-                          "text": "  Avg per endpoint                          40.70      ms                                                 —\n"
+                          "text": "  Avg per endpoint                          70.60      ms                                                 —\n"
                         },
                         {
-                          "text": "  P95 per endpoint                          60.00      ms                                                 —\n"
+                          "text": "  P95 per endpoint                         155.00      ms                                                 —\n"
                         },
                         {
                           "text": "\n  [PRIVACY]\n"
@@ -1851,7 +1851,7 @@
                           "text": "  ------------------------------------------------------------------------------------------------------------------------\n"
                         },
                         {
-                          "text": "  Retention Status API                      46.00      ms                                                 —\n"
+                          "text": "  Retention Status API                      25.00      ms                                                 —\n"
                         },
                         {
                           "text": "\n  [E2E PIPELINE]\n"
@@ -1866,67 +1866,67 @@
                           "text": "  ------------------------------------------------------------------------------------------------------------------------\n"
                         },
                         {
-                          "text": "  Load Data                                 35.00      ms                                                 —\n"
+                          "text": "  Load Data                                 49.00      ms                                                 —\n"
                         },
                         {
-                          "text": "  Preprocess                                34.00      ms                                                 —\n"
+                          "text": "  Preprocess                                28.00      ms                                                 —\n"
                         },
                         {
-                          "text": "  Train (Random Forest)                     67.00      ms                                                 —\n"
+                          "text": "  Train (Random Forest)                     48.00      ms                                                 —\n"
                         },
                         {
-                          "text": "  Predict                                   35.00      ms                                                 —\n"
+                          "text": "  Predict                                   39.00      ms                                                 —\n"
                         },
                         {
-                          "text": "  Explain                                   33.00      ms                                                 —\n"
+                          "text": "  Explain                                   26.00      ms                                                 —\n"
                         },
                         {
-                          "text": "  Total Pipeline                           204.00      ms                                                 —\n"
+                          "text": "  Total Pipeline                           190.00      ms                                                 —\n"
                         },
                         {
                           "text": "\n  Rust-only API Aggregate (57 endpoints):\n"
                         },
                         {
-                          "text": "    Avg latency:     60.0 ms\n"
+                          "text": "    Avg latency:     115.5 ms\n"
                         },
                         {
-                          "text": "    Median (p50):    39.7 ms\n"
+                          "text": "    Median (p50):    41.0 ms\n"
                         },
                         {
-                          "text": "    p95:             104.0 ms\n"
+                          "text": "    p95:             157.0 ms\n"
                         },
                         {
-                          "text": "    p99:             595.0 ms\n"
+                          "text": "    p99:             3288.0 ms\n"
                         },
                         {
-                          "text": "    Fastest:         33.0 ms\n"
+                          "text": "    Fastest:         25.0 ms\n"
                         },
                         {
-                          "text": "    Slowest:         595.0 ms\n"
+                          "text": "    Slowest:         3288.0 ms\n"
                         },
                         {
-                          "text": "    Stddev:          77.6 ms\n"
+                          "text": "    Stddev:          429.5 ms\n"
                         },
                         {
                           "text": "\n    Latency Distribution:\n"
                         },
                         {
-                          "text": "      <50ms:         39 endpoints  (68%)\n"
+                          "text": "      <50ms:         34 endpoints  (60%)\n"
                         },
                         {
-                          "text": "      50-100ms:      11 endpoints  (19%)\n"
+                          "text": "      50-100ms:      15 endpoints  (26%)\n"
                         },
                         {
-                          "text": "      100-200ms:     5 endpoints  (9%)\n"
+                          "text": "      100-200ms:     7 endpoints  (12%)\n"
                         },
                         {
-                          "text": "      200-500ms:     1 endpoints  (2%)\n"
+                          "text": "      200-500ms:     0 endpoints  (0%)\n"
                         },
                         {
-                          "text": "      500ms-1s:      1 endpoints  (2%)\n"
+                          "text": "      500ms-1s:      0 endpoints  (0%)\n"
                         },
                         {
-                          "text": "      >1s:           0 endpoints  (0%)\n"
+                          "text": "      >1s:           1 endpoints  (2%)\n"
                         },
                         {
                           "text": "\n========================================================================================================================\n\n"
@@ -1940,7 +1940,7 @@
                       ],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-02-21T01:40:48.762Z",
+                      "startTime": "2026-02-28T05:21:20.647Z",
                       "annotations": [],
                       "attachments": []
                     }
@@ -1993,16 +1993,16 @@
                           "workerIndex": 0,
                           "parallelIndex": 0,
                           "status": "passed",
-                          "duration": 1914,
+                          "duration": 1900,
                           "errors": [],
                           "stdout": [
                             {
-                              "text": "Rust 100 rows: upload=39ms preprocess=35ms train=69ms predict=41ms\n"
+                              "text": "Rust 100 rows: upload=33ms preprocess=35ms train=66ms predict=132ms\n"
                             }
                           ],
                           "stderr": [],
                           "retry": 0,
-                          "startTime": "2026-02-21T01:40:48.803Z",
+                          "startTime": "2026-02-28T05:21:20.665Z",
                           "annotations": [],
                           "attachments": []
                         }
@@ -2031,16 +2031,16 @@
                           "workerIndex": 0,
                           "parallelIndex": 0,
                           "status": "passed",
-                          "duration": 1973,
+                          "duration": 1847,
                           "errors": [],
                           "stdout": [
                             {
-                              "text": "Rust 500 rows: upload=52ms preprocess=35ms train=64ms predict=40ms\n"
+                              "text": "Rust 500 rows: upload=39ms preprocess=26ms train=69ms predict=67ms\n"
                             }
                           ],
                           "stderr": [],
                           "retry": 0,
-                          "startTime": "2026-02-21T01:41:01.159Z",
+                          "startTime": "2026-02-28T05:21:23.444Z",
                           "annotations": [],
                           "attachments": []
                         }
@@ -2069,16 +2069,16 @@
                           "workerIndex": 0,
                           "parallelIndex": 0,
                           "status": "passed",
-                          "duration": 1942,
+                          "duration": 2080,
                           "errors": [],
                           "stdout": [
                             {
-                              "text": "Rust 1000 rows: upload=65ms preprocess=33ms train=63ms predict=42ms\n"
+                              "text": "Rust 1000 rows: upload=201ms preprocess=75ms train=98ms predict=39ms\n"
                             }
                           ],
                           "stderr": [],
                           "retry": 0,
-                          "startTime": "2026-02-21T01:41:03.141Z",
+                          "startTime": "2026-02-28T05:21:25.295Z",
                           "annotations": [],
                           "attachments": []
                         }
@@ -2107,16 +2107,16 @@
                           "workerIndex": 0,
                           "parallelIndex": 0,
                           "status": "passed",
-                          "duration": 2573,
+                          "duration": 2442,
                           "errors": [],
                           "stdout": [
                             {
-                              "text": "Rust 5000 rows: upload=167ms preprocess=36ms train=603ms predict=40ms\n"
+                              "text": "Rust 5000 rows: upload=102ms preprocess=32ms train=601ms predict=35ms\n"
                             }
                           ],
                           "stderr": [],
                           "retry": 0,
-                          "startTime": "2026-02-21T01:41:05.092Z",
+                          "startTime": "2026-02-28T05:21:27.379Z",
                           "annotations": [],
                           "attachments": []
                         }
@@ -2145,16 +2145,16 @@
                           "workerIndex": 0,
                           "parallelIndex": 0,
                           "status": "passed",
-                          "duration": 2896,
+                          "duration": 2498,
                           "errors": [],
                           "stdout": [
                             {
-                              "text": "Rust 10000 rows: upload=443ms preprocess=38ms train=603ms predict=39ms\n"
+                              "text": "Rust 10000 rows: upload=120ms preprocess=47ms train=596ms predict=30ms\n"
                             }
                           ],
                           "stderr": [],
                           "retry": 0,
-                          "startTime": "2026-02-21T01:41:07.675Z",
+                          "startTime": "2026-02-28T05:21:29.824Z",
                           "annotations": [],
                           "attachments": []
                         }
@@ -2183,16 +2183,16 @@
                           "workerIndex": 0,
                           "parallelIndex": 0,
                           "status": "passed",
-                          "duration": 3818,
+                          "duration": 3327,
                           "errors": [],
                           "stdout": [
                             {
-                              "text": "Rust 50000 rows: upload=630ms preprocess=52ms train=1125ms predict=38ms\n"
+                              "text": "Rust 50000 rows: upload=263ms preprocess=80ms train=1263ms predict=28ms\n"
                             }
                           ],
                           "stderr": [],
                           "retry": 0,
-                          "startTime": "2026-02-21T01:41:10.580Z",
+                          "startTime": "2026-02-28T05:21:32.326Z",
                           "annotations": [],
                           "attachments": []
                         }
@@ -2229,16 +2229,16 @@
                           "workerIndex": 0,
                           "parallelIndex": 0,
                           "status": "passed",
-                          "duration": 24372,
+                          "duration": 10820,
                           "errors": [],
                           "stdout": [
                             {
-                              "text": "Python iris (150): load=1352ms config=1176ms train=7915ms predict=103ms\n"
+                              "text": "Python iris (150): load=1171ms config=1145ms train=4593ms predict=45ms\n"
                             }
                           ],
                           "stderr": [],
                           "retry": 0,
-                          "startTime": "2026-02-21T01:41:14.407Z",
+                          "startTime": "2026-02-28T05:21:35.656Z",
                           "annotations": [],
                           "attachments": []
                         }
@@ -2267,16 +2267,16 @@
                           "workerIndex": 0,
                           "parallelIndex": 0,
                           "status": "passed",
-                          "duration": 17304,
+                          "duration": 11294,
                           "errors": [],
                           "stdout": [
                             {
-                              "text": "Python wine (178): load=4194ms config=1175ms train=4745ms predict=75ms\n"
+                              "text": "Python wine (178): load=1164ms config=1088ms train=4598ms predict=66ms\n"
                             }
                           ],
                           "stderr": [],
                           "retry": 0,
-                          "startTime": "2026-02-21T01:41:38.790Z",
+                          "startTime": "2026-02-28T05:21:46.480Z",
                           "annotations": [],
                           "attachments": []
                         }
@@ -2305,16 +2305,16 @@
                           "workerIndex": 0,
                           "parallelIndex": 0,
                           "status": "passed",
-                          "duration": 19306,
+                          "duration": 11110,
                           "errors": [],
                           "stdout": [
                             {
-                              "text": "Python boston (506): load=1304ms config=1172ms train=4757ms predict=102ms\n"
+                              "text": "Python boston (506): load=939ms config=1125ms train=4593ms predict=51ms\n"
                             }
                           ],
                           "stderr": [],
                           "retry": 0,
-                          "startTime": "2026-02-21T01:41:56.108Z",
+                          "startTime": "2026-02-28T05:21:57.781Z",
                           "annotations": [],
                           "attachments": []
                         }
@@ -2343,16 +2343,16 @@
                           "workerIndex": 0,
                           "parallelIndex": 0,
                           "status": "passed",
-                          "duration": 21165,
+                          "duration": 10346,
                           "errors": [],
                           "stdout": [
                             {
-                              "text": "Python diabetes (768): load=1803ms config=1144ms train=4737ms predict=86ms\n"
+                              "text": "Python diabetes (768): load=934ms config=1118ms train=4623ms predict=59ms\n"
                             }
                           ],
                           "stderr": [],
                           "retry": 0,
-                          "startTime": "2026-02-21T01:42:15.440Z",
+                          "startTime": "2026-02-28T05:22:08.895Z",
                           "annotations": [],
                           "attachments": []
                         }
@@ -2389,7 +2389,7 @@
                           "workerIndex": 0,
                           "parallelIndex": 0,
                           "status": "passed",
-                          "duration": 43,
+                          "duration": 11,
                           "errors": [],
                           "stdout": [
                             {
@@ -2404,7 +2404,7 @@
                           ],
                           "stderr": [],
                           "retry": 0,
-                          "startTime": "2026-02-21T01:42:36.619Z",
+                          "startTime": "2026-02-28T05:22:19.246Z",
                           "annotations": [],
                           "attachments": []
                         }
@@ -2459,16 +2459,16 @@
                           "workerIndex": 0,
                           "parallelIndex": 0,
                           "status": "passed",
-                          "duration": 2010,
+                          "duration": 2059,
                           "errors": [],
                           "stdout": [
                             {
-                              "text": "Rust logistic_regression: train=74ms predict=41ms success=true accuracy=0.5333\n"
+                              "text": "Rust logistic_regression: train=210ms predict=37ms success=true accuracy=0.6667\n"
                             }
                           ],
                           "stderr": [],
                           "retry": 0,
-                          "startTime": "2026-02-21T01:42:36.692Z",
+                          "startTime": "2026-02-28T05:22:19.271Z",
                           "annotations": [],
                           "attachments": []
                         }
@@ -2497,16 +2497,16 @@
                           "workerIndex": 0,
                           "parallelIndex": 0,
                           "status": "passed",
-                          "duration": 1963,
+                          "duration": 2043,
                           "errors": [],
                           "stdout": [
                             {
-                              "text": "Rust decision_tree: train=67ms predict=37ms success=true accuracy=1.0000\n"
+                              "text": "Rust decision_tree: train=54ms predict=36ms success=true accuracy=1.0000\n"
                             }
                           ],
                           "stderr": [],
                           "retry": 0,
-                          "startTime": "2026-02-21T01:42:46.888Z",
+                          "startTime": "2026-02-28T05:22:21.816Z",
                           "annotations": [],
                           "attachments": []
                         }
@@ -2535,16 +2535,16 @@
                           "workerIndex": 0,
                           "parallelIndex": 0,
                           "status": "passed",
-                          "duration": 2039,
+                          "duration": 1786,
                           "errors": [],
                           "stdout": [
                             {
-                              "text": "Rust random_forest: train=66ms predict=38ms success=true accuracy=0.9667\n"
+                              "text": "Rust random_forest: train=52ms predict=38ms success=true accuracy=0.9667\n"
                             }
                           ],
                           "stderr": [],
                           "retry": 0,
-                          "startTime": "2026-02-21T01:42:48.861Z",
+                          "startTime": "2026-02-28T05:22:23.863Z",
                           "annotations": [],
                           "attachments": []
                         }
@@ -2573,19 +2573,19 @@
                           "workerIndex": 0,
                           "parallelIndex": 0,
                           "status": "passed",
-                          "duration": 1931,
+                          "duration": 2303,
                           "errors": [],
                           "stdout": [
                             {
                               "text": "Rust gradient_boosting failed: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mundefined\u001b[39m\n"
                             },
                             {
-                              "text": "Rust gradient_boosting: train=65ms predict=0ms success=false accuracy=0.3333\n"
+                              "text": "Rust gradient_boosting: train=590ms predict=0ms success=false accuracy=0.3333\n"
                             }
                           ],
                           "stderr": [],
                           "retry": 0,
-                          "startTime": "2026-02-21T01:42:50.909Z",
+                          "startTime": "2026-02-28T05:22:25.656Z",
                           "annotations": [],
                           "attachments": []
                         }
@@ -2614,16 +2614,16 @@
                           "workerIndex": 0,
                           "parallelIndex": 0,
                           "status": "passed",
-                          "duration": 1942,
+                          "duration": 2089,
                           "errors": [],
                           "stdout": [
                             {
-                              "text": "Rust xgboost: train=67ms predict=38ms success=true accuracy=0.3333\n"
+                              "text": "Rust xgboost: train=211ms predict=79ms success=true accuracy=0.3333\n"
                             }
                           ],
                           "stderr": [],
                           "retry": 0,
-                          "startTime": "2026-02-21T01:42:52.850Z",
+                          "startTime": "2026-02-28T05:22:27.962Z",
                           "annotations": [],
                           "attachments": []
                         }
@@ -2652,16 +2652,16 @@
                           "workerIndex": 0,
                           "parallelIndex": 0,
                           "status": "passed",
-                          "duration": 1919,
+                          "duration": 1940,
                           "errors": [],
                           "stdout": [
                             {
-                              "text": "Rust lightgbm: train=67ms predict=35ms success=true accuracy=0.3333\n"
+                              "text": "Rust lightgbm: train=87ms predict=34ms success=true accuracy=0.3333\n"
                             }
                           ],
                           "stderr": [],
                           "retry": 0,
-                          "startTime": "2026-02-21T01:42:54.807Z",
+                          "startTime": "2026-02-28T05:22:30.055Z",
                           "annotations": [],
                           "attachments": []
                         }
@@ -2690,16 +2690,16 @@
                           "workerIndex": 0,
                           "parallelIndex": 0,
                           "status": "passed",
-                          "duration": 2059,
+                          "duration": 1826,
                           "errors": [],
                           "stdout": [
                             {
-                              "text": "Rust knn: train=65ms predict=40ms success=true accuracy=1.0000\n"
+                              "text": "Rust knn: train=73ms predict=34ms success=true accuracy=1.0000\n"
                             }
                           ],
                           "stderr": [],
                           "retry": 0,
-                          "startTime": "2026-02-21T01:42:56.745Z",
+                          "startTime": "2026-02-28T05:22:31.999Z",
                           "annotations": [],
                           "attachments": []
                         }
@@ -2728,16 +2728,16 @@
                           "workerIndex": 0,
                           "parallelIndex": 0,
                           "status": "passed",
-                          "duration": 1988,
+                          "duration": 1819,
                           "errors": [],
                           "stdout": [
                             {
-                              "text": "Rust naive_bayes: train=66ms predict=37ms success=true accuracy=1.0000\n"
+                              "text": "Rust naive_bayes: train=55ms predict=36ms success=true accuracy=1.0000\n"
                             }
                           ],
                           "stderr": [],
                           "retry": 0,
-                          "startTime": "2026-02-21T01:42:58.815Z",
+                          "startTime": "2026-02-28T05:22:33.829Z",
                           "annotations": [],
                           "attachments": []
                         }
@@ -2766,7 +2766,7 @@
                           "workerIndex": 0,
                           "parallelIndex": 0,
                           "status": "passed",
-                          "duration": 1575,
+                          "duration": 1690,
                           "errors": [],
                           "stdout": [
                             {
@@ -2778,7 +2778,7 @@
                           ],
                           "stderr": [],
                           "retry": 0,
-                          "startTime": "2026-02-21T01:43:00.811Z",
+                          "startTime": "2026-02-28T05:22:35.654Z",
                           "annotations": [],
                           "attachments": []
                         }
@@ -2807,16 +2807,16 @@
                           "workerIndex": 0,
                           "parallelIndex": 0,
                           "status": "passed",
-                          "duration": 1981,
+                          "duration": 2097,
                           "errors": [],
                           "stdout": [
                             {
-                              "text": "Rust adaboost: train=66ms predict=37ms success=true accuracy=1.0000\n"
+                              "text": "Rust adaboost: train=63ms predict=29ms success=true accuracy=1.0000\n"
                             }
                           ],
                           "stderr": [],
                           "retry": 0,
-                          "startTime": "2026-02-21T01:43:02.395Z",
+                          "startTime": "2026-02-28T05:22:37.348Z",
                           "annotations": [],
                           "attachments": []
                         }
@@ -2853,7 +2853,7 @@
                           "workerIndex": 0,
                           "parallelIndex": 0,
                           "status": "passed",
-                          "duration": 12595,
+                          "duration": 7832,
                           "errors": [],
                           "stdout": [
                             {
@@ -2862,7 +2862,7 @@
                           ],
                           "stderr": [],
                           "retry": 0,
-                          "startTime": "2026-02-21T01:43:04.389Z",
+                          "startTime": "2026-02-28T05:22:39.449Z",
                           "annotations": [],
                           "attachments": []
                         }
@@ -2891,19 +2891,19 @@
                           "workerIndex": 0,
                           "parallelIndex": 0,
                           "status": "passed",
-                          "duration": 23766,
+                          "duration": 9922,
                           "errors": [],
                           "stdout": [
                             {
                               "text": "Testing Python algorithm: \"✓ Boosting - AdaBoost\"\n"
                             },
                             {
-                              "text": "Python \"✓ Boosting - AdaBoost\": train=968ms predict=119ms success=true\n"
+                              "text": "Python \"✓ Boosting - AdaBoost\": train=926ms predict=45ms success=true\n"
                             }
                           ],
                           "stderr": [],
                           "retry": 0,
-                          "startTime": "2026-02-21T01:43:16.993Z",
+                          "startTime": "2026-02-28T05:22:47.285Z",
                           "annotations": [],
                           "attachments": []
                         }
@@ -2932,19 +2932,19 @@
                           "workerIndex": 0,
                           "parallelIndex": 0,
                           "status": "passed",
-                          "duration": 22961,
+                          "duration": 10913,
                           "errors": [],
                           "stdout": [
                             {
                               "text": "Testing Python algorithm: \"✓ Boosting - CatBoost\"\n"
                             },
                             {
-                              "text": "Python \"✓ Boosting - CatBoost\": train=956ms predict=154ms success=true\n"
+                              "text": "Python \"✓ Boosting - CatBoost\": train=927ms predict=44ms success=true\n"
                             }
                           ],
                           "stderr": [],
                           "retry": 0,
-                          "startTime": "2026-02-21T01:43:40.773Z",
+                          "startTime": "2026-02-28T05:22:57.211Z",
                           "annotations": [],
                           "attachments": []
                         }
@@ -2973,19 +2973,19 @@
                           "workerIndex": 0,
                           "parallelIndex": 0,
                           "status": "passed",
-                          "duration": 23015,
+                          "duration": 11582,
                           "errors": [],
                           "stdout": [
                             {
                               "text": "Testing Python algorithm: \"✓ Boosting - LightGBM\"\n"
                             },
                             {
-                              "text": "Python \"✓ Boosting - LightGBM\": train=1627ms predict=117ms success=true\n"
+                              "text": "Python \"✓ Boosting - LightGBM\": train=919ms predict=49ms success=true\n"
                             }
                           ],
                           "stderr": [],
                           "retry": 0,
-                          "startTime": "2026-02-21T01:44:03.746Z",
+                          "startTime": "2026-02-28T05:23:08.127Z",
                           "annotations": [],
                           "attachments": []
                         }
@@ -3014,19 +3014,19 @@
                           "workerIndex": 0,
                           "parallelIndex": 0,
                           "status": "passed",
-                          "duration": 22316,
+                          "duration": 10445,
                           "errors": [],
                           "stdout": [
                             {
                               "text": "Testing Python algorithm: \"✓ Boosting - XGBoost\"\n"
                             },
                             {
-                              "text": "Python \"✓ Boosting - XGBoost\": train=984ms predict=112ms success=true\n"
+                              "text": "Python \"✓ Boosting - XGBoost\": train=918ms predict=58ms success=true\n"
                             }
                           ],
                           "stderr": [],
                           "retry": 0,
-                          "startTime": "2026-02-21T01:44:26.810Z",
+                          "startTime": "2026-02-28T05:23:19.713Z",
                           "annotations": [],
                           "attachments": []
                         }
@@ -3055,19 +3055,19 @@
                           "workerIndex": 0,
                           "parallelIndex": 0,
                           "status": "passed",
-                          "duration": 30023,
+                          "duration": 10749,
                           "errors": [],
                           "stdout": [
                             {
                               "text": "Testing Python algorithm: \"✓ Ensemble Methods - Stacking\"\n"
                             },
                             {
-                              "text": "Python \"✓ Ensemble Methods - Stacking\": train=973ms predict=112ms success=true\n"
+                              "text": "Python \"✓ Ensemble Methods - Stacking\": train=940ms predict=49ms success=true\n"
                             }
                           ],
                           "stderr": [],
                           "retry": 0,
-                          "startTime": "2026-02-21T01:44:49.136Z",
+                          "startTime": "2026-02-28T05:23:30.161Z",
                           "annotations": [],
                           "attachments": []
                         }
@@ -3096,19 +3096,19 @@
                           "workerIndex": 0,
                           "parallelIndex": 0,
                           "status": "passed",
-                          "duration": 21309,
+                          "duration": 10878,
                           "errors": [],
                           "stdout": [
                             {
                               "text": "Testing Python algorithm: \"✓ Ensemble Methods - Voting Classifier\"\n"
                             },
                             {
-                              "text": "Python \"✓ Ensemble Methods - Voting Classifier\": train=1017ms predict=121ms success=true\n"
+                              "text": "Python \"✓ Ensemble Methods - Voting Classifier\": train=950ms predict=52ms success=true\n"
                             }
                           ],
                           "stderr": [],
                           "retry": 0,
-                          "startTime": "2026-02-21T01:45:19.169Z",
+                          "startTime": "2026-02-28T05:23:40.913Z",
                           "annotations": [],
                           "attachments": []
                         }
@@ -3137,19 +3137,19 @@
                           "workerIndex": 0,
                           "parallelIndex": 0,
                           "status": "passed",
-                          "duration": 23649,
+                          "duration": 11278,
                           "errors": [],
                           "stdout": [
                             {
                               "text": "Testing Python algorithm: \"✓ Linear Models - Elastic Net\"\n"
                             },
                             {
-                              "text": "Python \"✓ Linear Models - Elastic Net\": train=990ms predict=92ms success=true\n"
+                              "text": "Python \"✓ Linear Models - Elastic Net\": train=959ms predict=48ms success=true\n"
                             }
                           ],
                           "stderr": [],
                           "retry": 0,
-                          "startTime": "2026-02-21T01:45:40.491Z",
+                          "startTime": "2026-02-28T05:23:51.796Z",
                           "annotations": [],
                           "attachments": []
                         }
@@ -3178,19 +3178,19 @@
                           "workerIndex": 0,
                           "parallelIndex": 0,
                           "status": "passed",
-                          "duration": 23728,
+                          "duration": 12038,
                           "errors": [],
                           "stdout": [
                             {
                               "text": "Testing Python algorithm: \"✓ Linear Models - Lasso\"\n"
                             },
                             {
-                              "text": "Python \"✓ Linear Models - Lasso\": train=920ms predict=102ms success=true\n"
+                              "text": "Python \"✓ Linear Models - Lasso\": train=896ms predict=51ms success=true\n"
                             }
                           ],
                           "stderr": [],
                           "retry": 0,
-                          "startTime": "2026-02-21T01:46:04.150Z",
+                          "startTime": "2026-02-28T05:24:03.076Z",
                           "annotations": [],
                           "attachments": []
                         }
@@ -3219,19 +3219,19 @@
                           "workerIndex": 0,
                           "parallelIndex": 0,
                           "status": "passed",
-                          "duration": 25793,
+                          "duration": 10593,
                           "errors": [],
                           "stdout": [
                             {
                               "text": "Testing Python algorithm: \"✓ Linear Models - Logistic Regression\"\n"
                             },
                             {
-                              "text": "Python \"✓ Linear Models - Logistic Regression\": train=967ms predict=74ms success=true\n"
+                              "text": "Python \"✓ Linear Models - Logistic Regression\": train=917ms predict=56ms success=true\n"
                             }
                           ],
                           "stderr": [],
                           "retry": 0,
-                          "startTime": "2026-02-21T01:46:27.888Z",
+                          "startTime": "2026-02-28T05:24:15.115Z",
                           "annotations": [],
                           "attachments": []
                         }
@@ -3260,19 +3260,19 @@
                           "workerIndex": 0,
                           "parallelIndex": 0,
                           "status": "passed",
-                          "duration": 24463,
+                          "duration": 10774,
                           "errors": [],
                           "stdout": [
                             {
                               "text": "Testing Python algorithm: \"✓ Linear Models - Ridge\"\n"
                             },
                             {
-                              "text": "Python \"✓ Linear Models - Ridge\": train=960ms predict=124ms success=true\n"
+                              "text": "Python \"✓ Linear Models - Ridge\": train=929ms predict=48ms success=true\n"
                             }
                           ],
                           "stderr": [],
                           "retry": 0,
-                          "startTime": "2026-02-21T01:46:53.695Z",
+                          "startTime": "2026-02-28T05:24:25.710Z",
                           "annotations": [],
                           "attachments": []
                         }
@@ -3301,19 +3301,19 @@
                           "workerIndex": 0,
                           "parallelIndex": 0,
                           "status": "passed",
-                          "duration": 24745,
+                          "duration": 12099,
                           "errors": [],
                           "stdout": [
                             {
                               "text": "Testing Python algorithm: \"✓ Linear Models - SGD\"\n"
                             },
                             {
-                              "text": "Python \"✓ Linear Models - SGD\": train=930ms predict=82ms success=true\n"
+                              "text": "Python \"✓ Linear Models - SGD\": train=937ms predict=52ms success=true\n"
                             }
                           ],
                           "stderr": [],
                           "retry": 0,
-                          "startTime": "2026-02-21T01:47:18.172Z",
+                          "startTime": "2026-02-28T05:24:36.487Z",
                           "annotations": [],
                           "attachments": []
                         }
@@ -3342,19 +3342,19 @@
                           "workerIndex": 0,
                           "parallelIndex": 0,
                           "status": "passed",
-                          "duration": 25057,
+                          "duration": 10063,
                           "errors": [],
                           "stdout": [
                             {
                               "text": "Testing Python algorithm: \"✓ Naive Bayes - Bernoulli NB\"\n"
                             },
                             {
-                              "text": "Python \"✓ Naive Bayes - Bernoulli NB\": train=927ms predict=83ms success=true\n"
+                              "text": "Python \"✓ Naive Bayes - Bernoulli NB\": train=921ms predict=54ms success=true\n"
                             }
                           ],
                           "stderr": [],
                           "retry": 0,
-                          "startTime": "2026-02-21T01:47:42.937Z",
+                          "startTime": "2026-02-28T05:24:48.588Z",
                           "annotations": [],
                           "attachments": []
                         }
@@ -3383,19 +3383,19 @@
                           "workerIndex": 0,
                           "parallelIndex": 0,
                           "status": "passed",
-                          "duration": 26436,
+                          "duration": 11028,
                           "errors": [],
                           "stdout": [
                             {
                               "text": "Testing Python algorithm: \"✓ Naive Bayes - Gaussian NB\"\n"
                             },
                             {
-                              "text": "Python \"✓ Naive Bayes - Gaussian NB\": train=971ms predict=88ms success=true\n"
+                              "text": "Python \"✓ Naive Bayes - Gaussian NB\": train=933ms predict=53ms success=true\n"
                             }
                           ],
                           "stderr": [],
                           "retry": 0,
-                          "startTime": "2026-02-21T01:48:08.008Z",
+                          "startTime": "2026-02-28T05:24:58.655Z",
                           "annotations": [],
                           "attachments": []
                         }
@@ -3424,19 +3424,19 @@
                           "workerIndex": 0,
                           "parallelIndex": 0,
                           "status": "passed",
-                          "duration": 30189,
+                          "duration": 10879,
                           "errors": [],
                           "stdout": [
                             {
                               "text": "Testing Python algorithm: \"✓ Naive Bayes - Multinomial NB\"\n"
                             },
                             {
-                              "text": "Python \"✓ Naive Bayes - Multinomial NB\": train=913ms predict=117ms success=true\n"
+                              "text": "Python \"✓ Naive Bayes - Multinomial NB\": train=946ms predict=59ms success=true\n"
                             }
                           ],
                           "stderr": [],
                           "retry": 0,
-                          "startTime": "2026-02-21T01:48:34.456Z",
+                          "startTime": "2026-02-28T05:25:09.686Z",
                           "annotations": [],
                           "attachments": []
                         }
@@ -3465,19 +3465,19 @@
                           "workerIndex": 0,
                           "parallelIndex": 0,
                           "status": "passed",
-                          "duration": 20641,
+                          "duration": 11063,
                           "errors": [],
                           "stdout": [
                             {
                               "text": "Testing Python algorithm: \"✓ Nearest Neighbors - K-Nearest Neighbors\"\n"
                             },
                             {
-                              "text": "Python \"✓ Nearest Neighbors - K-Nearest Neighbors\": train=939ms predict=119ms success=true\n"
+                              "text": "Python \"✓ Nearest Neighbors - K-Nearest Neighbors\": train=921ms predict=59ms success=true\n"
                             }
                           ],
                           "stderr": [],
                           "retry": 0,
-                          "startTime": "2026-02-21T01:49:04.654Z",
+                          "startTime": "2026-02-28T05:25:20.569Z",
                           "annotations": [],
                           "attachments": []
                         }
@@ -3514,7 +3514,7 @@
                           "workerIndex": 0,
                           "parallelIndex": 0,
                           "status": "passed",
-                          "duration": 7,
+                          "duration": 2,
                           "errors": [],
                           "stdout": [
                             {
@@ -3535,7 +3535,7 @@
                           ],
                           "stderr": [],
                           "retry": 0,
-                          "startTime": "2026-02-21T01:49:25.307Z",
+                          "startTime": "2026-02-28T05:25:31.635Z",
                           "annotations": [],
                           "attachments": []
                         }
@@ -3583,12 +3583,12 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 20037,
+                      "duration": 7296,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-02-21T01:49:25.348Z",
+                      "startTime": "2026-02-28T05:25:31.648Z",
                       "annotations": [],
                       "attachments": []
                     }
@@ -3625,12 +3625,12 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 43802,
+                      "duration": 14527,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-02-21T01:49:45.397Z",
+                      "startTime": "2026-02-28T05:25:38.949Z",
                       "annotations": [],
                       "attachments": []
                     }
@@ -3667,12 +3667,12 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 132864,
+                      "duration": 21127,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-02-21T01:50:29.213Z",
+                      "startTime": "2026-02-28T05:25:53.480Z",
                       "annotations": [],
                       "attachments": []
                     }
@@ -3709,12 +3709,12 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 41442,
+                      "duration": 11059,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-02-21T01:52:42.129Z",
+                      "startTime": "2026-02-28T05:26:14.611Z",
                       "annotations": [],
                       "attachments": []
                     }
@@ -3751,12 +3751,12 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 4943,
+                      "duration": 4806,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-02-21T01:53:23.599Z",
+                      "startTime": "2026-02-28T05:26:25.673Z",
                       "annotations": [],
                       "attachments": []
                     }
@@ -3785,12 +3785,12 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 27576,
+                      "duration": 12198,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-02-21T01:53:28.574Z",
+                      "startTime": "2026-02-28T05:26:30.483Z",
                       "annotations": [],
                       "attachments": []
                     }
@@ -3827,12 +3827,12 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 3832,
+                      "duration": 3165,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-02-21T01:53:56.165Z",
+                      "startTime": "2026-02-28T05:26:42.684Z",
                       "annotations": [],
                       "attachments": []
                     }
@@ -3861,12 +3861,12 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 27334,
+                      "duration": 5054,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-02-21T01:54:00.008Z",
+                      "startTime": "2026-02-28T05:26:45.852Z",
                       "annotations": [],
                       "attachments": []
                     }
@@ -3903,12 +3903,12 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 42847,
+                      "duration": 6245,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-02-21T01:54:27.354Z",
+                      "startTime": "2026-02-28T05:26:50.909Z",
                       "annotations": [],
                       "attachments": []
                     }
@@ -3945,7 +3945,7 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 17,
+                      "duration": 5,
                       "errors": [],
                       "stdout": [
                         {
@@ -3976,10 +3976,10 @@
                           "text": "  ------------------------------------------------------------------------------------------------------------------------\n"
                         },
                         {
-                          "text": "  Rust wins:                   18 / 18  (100.0%)\n"
+                          "text": "  Rust wins:                   17 / 18  (94.4%)\n"
                         },
                         {
-                          "text": "  Python wins:                 0 / 18  (0.0%)\n"
+                          "text": "  Python wins:                 1 / 18  (5.6%)\n"
                         },
                         {
                           "text": "  Ties:                        0\n"
@@ -3988,16 +3988,16 @@
                           "text": "  ------------------------------------------------------------------------------------------------------------------------\n"
                         },
                         {
-                          "text": "  Average speedup factor:      132.95x  (Rust faster)\n"
+                          "text": "  Average speedup factor:      9.89x  (Rust faster)\n"
                         },
                         {
-                          "text": "  Median speedup factor:       27.10x\n"
+                          "text": "  Median speedup factor:       6.54x\n"
                         },
                         {
-                          "text": "  Max speedup:                 680.4x\n"
+                          "text": "  Max speedup:                 36.7x\n"
                         },
                         {
-                          "text": "  Min speedup:                 2.35x\n"
+                          "text": "  Min speedup:                 0.64x\n"
                         },
                         {
                           "text": "\n\n  HEAD-TO-HEAD COMPARISON (Rust vs Python)\n"
@@ -4018,49 +4018,49 @@
                           "text": "  ------------------------------------------------------------------------------------------------------------------------\n"
                         },
                         {
-                          "text": "  TTFB (avg)                           29.30      511.97      ms    17.47xvery large (-1.49)          17.5x faster\n"
+                          "text": "  TTFB (avg)                           80.60      362.10      ms     4.49x large (-0.87)           4.5x faster\n"
                         },
                         {
-                          "text": "    Rust  :  n=3  avg=29.3  stddev=2.2  CI95=[25.3, 33.3]  CV=7.4%  p50=29.0  p95=31.6  range=[27.3, 31.6]\n"
+                          "text": "    Rust  :  n=3  avg=80.6  stddev=52.0  CI95=[-14.8, 176.0]  CV=64.5%  p50=87.6  p95=128.7  range=[25.5, 128.7]\n"
                         },
                         {
-                          "text": "    Python:  n=3  avg=512.0  stddev=458.9  CI95=[-331.0, 1354.9]  CV=89.6%  p50=329.4  p95=1034.0  range=[172.5, 1034.0]\n"
+                          "text": "    Python:  n=3  avg=362.1  stddev=455.9  CI95=[-475.4, 1199.6]  CV=125.9%  p50=148.1  p95=885.6  range=[52.6, 885.6]\n"
                         },
                         {
-                          "text": "  DOM Content Loaded (avg)             46.20     3675.90      ms    79.56xvery large (-1.97)          79.6x faster\n"
+                          "text": "  DOM Content Loaded (avg)             94.10      615.73      ms     6.54xvery large (-1.31)           6.5x faster\n"
                         },
                         {
-                          "text": "    Rust  :  n=3  avg=46.2  stddev=7.4  CI95=[32.6, 59.8]  CV=16.0%  p50=44.2  p95=54.4  range=[40.0, 54.4]\n"
+                          "text": "    Rust  :  n=3  avg=94.1  stddev=54.9  CI95=[-6.7, 194.9]  CV=58.3%  p50=112.8  p95=137.2  range=[32.3, 137.2]\n"
                         },
                         {
-                          "text": "    Python:  n=3  avg=3675.9  stddev=2606.6  CI95=[-1112.8, 8464.6]  CV=70.9%  p50=4987.0  p95=5366.7  range=[674.0, 5366.7]\n"
+                          "text": "    Python:  n=3  avg=615.7  stddev=561.1  CI95=[-415.0, 1646.5]  CV=91.1%  p50=308.9  p95=1263.3  range=[275.0, 1263.3]\n"
                         },
                         {
-                          "text": "  Full Load (avg)                      49.73     4775.60      ms    96.02xvery large (-1.78)          96.0x faster\n"
+                          "text": "  Full Load (avg)                      96.23      715.47      ms     7.43xvery large (-1.61)           7.4x faster\n"
                         },
                         {
-                          "text": "    Rust  :  n=3  avg=49.7  stddev=4.9  CI95=[40.7, 58.7]  CV=9.9%  p50=49.8  p95=54.6  range=[44.8, 54.6]\n"
+                          "text": "    Rust  :  n=3  avg=96.2  stddev=54.7  CI95=[-4.3, 196.7]  CV=56.9%  p50=113.0  p95=140.6  range=[35.1, 140.6]\n"
                         },
                         {
-                          "text": "    Python:  n=3  avg=4775.6  stddev=3757.7  CI95=[-2127.8, 11679.0]  CV=78.7%  p50=5408.1  p95=8176.9  range=[741.8, 8176.9]\n"
+                          "text": "    Python:  n=3  avg=715.5  stddev=539.6  CI95=[-275.9, 1706.9]  CV=75.4%  p50=423.1  p95=1338.2  range=[385.1, 1338.2]\n"
                         },
                         {
-                          "text": "  Transfer Size (avg)                   0.00   783507.00   bytes       N/Anegligible (0.00)      Infinityx faster\n"
+                          "text": "  Transfer Size (avg)                   0.00   886365.67   bytes       N/Avery large (-6.33)      Infinityx faster\n"
                         },
                         {
                           "text": "    Rust  :  n=3  avg=0.0  stddev=0.0  CI95=[0.0, 0.0]  CV=0.0%  p50=0.0  p95=0.0  range=[0.0, 0.0]\n"
                         },
                         {
-                          "text": "    Python:  n=3  avg=783507.0  stddev=0.0  CI95=[783507.0, 783507.0]  CV=0.0%  p50=783507.0  p95=783507.0  range=[783507.0, 783507.0]\n"
+                          "text": "    Python:  n=3  avg=886365.7  stddev=197887.6  CI95=[522820.7, 1249910.6]  CV=22.3%  p50=783503.0  p95=1114500.0  range=[761094.0, 1114500.0]\n"
                         },
                         {
-                          "text": "  Request Count (avg)                   2.33       18.00    reqs     7.71xvery large (-19.19)           7.7x faster\n"
+                          "text": "  Request Count (avg)                   1.00       17.67    reqs    17.67xvery large (-15.43)          17.7x faster\n"
                         },
                         {
-                          "text": "    Rust  :  n=3  avg=2.3  stddev=1.2  CI95=[0.2, 4.5]  CV=49.5%  p50=3.0  p95=3.0  range=[1.0, 3.0]\n"
+                          "text": "    Rust  :  n=3  avg=1.0  stddev=0.0  CI95=[1.0, 1.0]  CV=0.0%  p50=1.0  p95=1.0  range=[1.0, 1.0]\n"
                         },
                         {
-                          "text": "    Python:  n=3  avg=18.0  stddev=0.0  CI95=[18.0, 18.0]  CV=0.0%  p50=18.0  p95=18.0  range=[18.0, 18.0]\n"
+                          "text": "    Python:  n=3  avg=17.7  stddev=1.5  CI95=[14.9, 20.5]  CV=8.6%  p50=18.0  p95=19.0  range=[16.0, 19.0]\n"
                         },
                         {
                           "text": "\n  [API LATENCY]\n"
@@ -4075,19 +4075,19 @@
                           "text": "  ------------------------------------------------------------------------------------------------------------------------\n"
                         },
                         {
-                          "text": "  Health Check avg                    135.40     1427.60      ms    10.54xvery large (-1.60)          10.5x faster\n"
+                          "text": "  Health Check avg                    117.60      204.20      ms     1.74x large (-0.85)          42.4% faster\n"
                         },
                         {
-                          "text": "    Rust  :  n=5  avg=135.4  stddev=43.8  CI95=[85.1, 185.7]  CV=32.3%  p50=111.0  p95=195.0  range=[98.0, 195.0]\n"
+                          "text": "    Rust  :  n=5  avg=117.6  stddev=56.6  CI95=[52.6, 182.6]  CV=48.1%  p50=79.0  p95=189.0  range=[72.0, 189.0]\n"
                         },
                         {
-                          "text": "    Python:  n=5  avg=1427.6  stddev=1142.5  CI95=[114.0, 2741.2]  CV=80.0%  p50=909.0  p95=2727.0  range=[160.0, 2727.0]\n"
+                          "text": "    Python:  n=5  avg=204.2  stddev=132.8  CI95=[51.5, 356.9]  CV=65.0%  p50=146.0  p95=439.0  range=[124.0, 439.0]\n"
                         },
                         {
-                          "text": "  Health Check p50                    111.00      909.00      ms     8.19x             —           8.2x faster\n"
+                          "text": "  Health Check p50                     79.00      146.00      ms     1.85x             —          45.9% faster\n"
                         },
                         {
-                          "text": "  Health Check p95                    195.00     2727.00      ms    13.98x             —          14.0x faster\n"
+                          "text": "  Health Check p95                    189.00      439.00      ms     2.32x             —           2.3x faster\n"
                         },
                         {
                           "text": "\n  [DATASET LOADING]\n"
@@ -4102,19 +4102,19 @@
                           "text": "  ------------------------------------------------------------------------------------------------------------------------\n"
                         },
                         {
-                          "text": "  Iris Load avg                       113.00    26807.67      ms   237.24xvery large (-32.30)         237.2x faster\n"
+                          "text": "  Iris Load avg                        79.67     1182.67      ms    14.85xvery large (-2.27)          14.8x faster\n"
                         },
                         {
-                          "text": "    Rust  :  n=3  avg=113.0  stddev=8.0  CI95=[98.3, 127.7]  CV=7.1%  p50=113.0  p95=121.0  range=[105.0, 121.0]\n"
+                          "text": "    Rust  :  n=3  avg=79.7  stddev=8.5  CI95=[64.0, 95.3]  CV=10.7%  p50=83.0  p95=86.0  range=[70.0, 86.0]\n"
                         },
                         {
-                          "text": "    Python:  n=3  avg=26807.7  stddev=1168.8  CI95=[24660.4, 28955.0]  CV=4.4%  p50=26948.0  p95=27900.0  range=[25575.0, 27900.0]\n"
+                          "text": "    Python:  n=3  avg=1182.7  stddev=687.5  CI95=[-80.4, 2445.8]  CV=58.1%  p50=1424.0  p95=1717.0  range=[407.0, 1717.0]\n"
                         },
                         {
-                          "text": "  Iris Load p50                       113.00    26948.00      ms   238.48x             —         238.5x faster\n"
+                          "text": "  Iris Load p50                        83.00     1424.00      ms    17.16x             —          17.2x faster\n"
                         },
                         {
-                          "text": "  Iris Load p95                       121.00    27900.00      ms   230.58x             —         230.6x faster\n"
+                          "text": "  Iris Load p95                        86.00     1717.00      ms    19.97x             —          20.0x faster\n"
                         },
                         {
                           "text": "\n  [TRAINING]\n"
@@ -4129,7 +4129,7 @@
                           "text": "  ------------------------------------------------------------------------------------------------------------------------\n"
                         },
                         {
-                          "text": "  Iris Classification Time            446.00     1047.00      ms     2.35x             —           2.3x faster\n"
+                          "text": "  Iris Classification Time            149.00      907.00      ms     6.09x             —           6.1x faster\n"
                         },
                         {
                           "text": "\n  [PREDICTION]\n"
@@ -4144,10 +4144,10 @@
                           "text": "  ------------------------------------------------------------------------------------------------------------------------\n"
                         },
                         {
-                          "text": "  Single Prediction avg                43.40      138.00      ms     3.18x             —           3.2x faster\n"
+                          "text": "  Single Prediction avg                63.00       40.33      ms     0.64x             —          56.2% slower\n"
                         },
                         {
-                          "text": "  Single Prediction p50                41.00      100.00      ms     2.44x             —           2.4x faster\n"
+                          "text": "  Single Prediction p50                37.00       39.00      ms     1.05x             —           5.1% faster\n"
                         },
                         {
                           "text": "\n  [UI RESPONSIVENESS]\n"
@@ -4162,7 +4162,7 @@
                           "text": "  ------------------------------------------------------------------------------------------------------------------------\n"
                         },
                         {
-                          "text": "  Tab Switch avg                      100.63     4100.60      ms    40.75x             —          40.8x faster\n"
+                          "text": "  Tab Switch avg                       46.50      355.40      ms     7.64x             —           7.6x faster\n"
                         },
                         {
                           "text": "\n  [CONCURRENT STRESS]\n"
@@ -4177,19 +4177,19 @@
                           "text": "  ------------------------------------------------------------------------------------------------------------------------\n"
                         },
                         {
-                          "text": "  Total Time (10 reqs)                929.00    25174.00      ms    27.10x             —          27.1x faster\n"
+                          "text": "  Total Time (10 reqs)                937.00     1435.00      ms     1.53x             —          34.7% faster\n"
                         },
                         {
-                          "text": "  Avg Individual Latency               29.30    16531.00      ms   564.20xvery large (-2.42)         564.2x faster\n"
+                          "text": "  Avg Individual Latency               28.30      576.50      ms    20.37xvery large (-1.92)          20.4x faster\n"
                         },
                         {
-                          "text": "    Rust  :  n=10  avg=29.3  stddev=2.9  CI95=[27.3, 31.3]  CV=9.8%  p50=29.0  p95=37.0  range=[27.0, 37.0]\n"
+                          "text": "    Rust  :  n=10  avg=28.3  stddev=5.4  CI95=[24.5, 32.1]  CV=19.1%  p50=25.0  p95=39.0  range=[24.0, 39.0]\n"
                         },
                         {
-                          "text": "    Python:  n=10  avg=16531.0  stddev=9646.1  CI95=[9734.8, 23327.2]  CV=58.4%  p50=23543.0  p95=25173.0  range=[1014.0, 25173.0]\n"
+                          "text": "    Python:  n=10  avg=576.5  stddev=404.2  CI95=[291.7, 861.3]  CV=70.1%  p50=568.0  p95=1433.0  range=[58.0, 1433.0]\n"
                         },
                         {
-                          "text": "  P95 Individual Latency               37.00    25173.00      ms   680.35x             —         680.4x faster\n"
+                          "text": "  P95 Individual Latency               39.00     1433.00      ms    36.74x             —          36.7x faster\n"
                         },
                         {
                           "text": "\n\n  RUST-ONLY FEATURES (no Python equivalent)\n"
@@ -4210,25 +4210,25 @@
                           "text": "  ------------------------------------------------------------------------------------------------------------------------\n"
                         },
                         {
-                          "text": "  Analyze API avg                           51.00      msn=5 avg=51.0 stddev=7.5 CV=14.8% p50=48.0 p95=60.0\n"
+                          "text": "  Analyze API avg                           40.20      msn=5 avg=40.2 stddev=4.3 CV=10.8% p50=41.0 p95=44.0\n"
                         },
                         {
-                          "text": "  Analyze API p50                           48.00      ms                                                 —\n"
+                          "text": "  Analyze API p50                           41.00      ms                                                 —\n"
                         },
                         {
-                          "text": "  Quality API avg                           37.40      ms n=5 avg=37.4 stddev=3.1 CV=8.4% p50=36.0 p95=43.0\n"
+                          "text": "  Quality API avg                           28.20      ms n=5 avg=28.2 stddev=1.9 CV=6.8% p50=28.0 p95=31.0\n"
                         },
                         {
-                          "text": "  Data Info API avg                         34.60      ms n=5 avg=34.6 stddev=1.1 CV=3.3% p50=35.0 p95=36.0\n"
+                          "text": "  Data Info API avg                         57.40      msn=5 avg=57.4 stddev=34.5 CV=60.1% p50=42.0 p95=114.0\n"
                         },
                         {
-                          "text": "  Data Preview API avg                      38.00      ms n=5 avg=38.0 stddev=2.3 CV=6.2% p50=37.0 p95=41.0\n"
+                          "text": "  Data Preview API avg                      74.40      msn=5 avg=74.4 stddev=45.8 CV=61.6% p50=66.0 p95=146.0\n"
                         },
                         {
-                          "text": "  Datasheet API                             46.00      ms                                                 —\n"
+                          "text": "  Datasheet API                             45.00      ms                                                 —\n"
                         },
                         {
-                          "text": "  Lineage API                               35.00      ms                                                 —\n"
+                          "text": "  Lineage API                               27.00      ms                                                 —\n"
                         },
                         {
                           "text": "\n  [MULTI-MODEL TRAINING]\n"
@@ -4243,19 +4243,19 @@
                           "text": "  ------------------------------------------------------------------------------------------------------------------------\n"
                         },
                         {
-                          "text": "  logistic_regression total roundtrip      103.00      ms                                                 —\n"
+                          "text": "  logistic_regression total roundtrip      145.00      ms                                                 —\n"
                         },
                         {
-                          "text": "  decision_tree total roundtrip            100.00      ms                                                 —\n"
+                          "text": "  decision_tree total roundtrip             80.00      ms                                                 —\n"
                         },
                         {
-                          "text": "  random_forest total roundtrip            100.00      ms                                                 —\n"
+                          "text": "  random_forest total roundtrip             88.00      ms                                                 —\n"
                         },
                         {
-                          "text": "  naive_bayes total roundtrip              101.00      ms                                                 —\n"
+                          "text": "  naive_bayes total roundtrip               83.00      ms                                                 —\n"
                         },
                         {
-                          "text": "  knn total roundtrip                      104.00      ms                                                 —\n"
+                          "text": "  knn total roundtrip                       88.00      ms                                                 —\n"
                         },
                         {
                           "text": "\n  [MODEL MANAGEMENT]\n"
@@ -4270,16 +4270,16 @@
                           "text": "  ------------------------------------------------------------------------------------------------------------------------\n"
                         },
                         {
-                          "text": "  List Models avg                           39.00      ms n=5 avg=39.0 stddev=1.9 CV=4.8% p50=39.0 p95=42.0\n"
+                          "text": "  List Models avg                           33.60      msn=5 avg=33.6 stddev=10.1 CV=30.2% p50=27.0 p95=50.0\n"
                         },
                         {
-                          "text": "  Model Detail API                          34.00      ms                                                 —\n"
+                          "text": "  Model Detail API                          30.00      ms                                                 —\n"
                         },
                         {
-                          "text": "  Model Metrics API                         34.00      ms                                                 —\n"
+                          "text": "  Model Metrics API                         41.00      ms                                                 —\n"
                         },
                         {
-                          "text": "  Model Card API                            35.00      ms                                                 —\n"
+                          "text": "  Model Card API                            31.00      ms                                                 —\n"
                         },
                         {
                           "text": "\n  [AUTOML PIPELINE]\n"
@@ -4294,7 +4294,7 @@
                           "text": "  ------------------------------------------------------------------------------------------------------------------------\n"
                         },
                         {
-                          "text": "  Full AutoML Run                          595.00      ms                                                 —\n"
+                          "text": "  Full AutoML Run                         3288.00      ms                                                 —\n"
                         },
                         {
                           "text": "\n  [BATCH PREDICTION]\n"
@@ -4309,13 +4309,13 @@
                           "text": "  ------------------------------------------------------------------------------------------------------------------------\n"
                         },
                         {
-                          "text": "  Batch 100 samples avg                     46.00      msn=3 avg=46.0 stddev=9.5 CV=20.7% p50=41.0 p95=57.0\n"
+                          "text": "  Batch 100 samples avg                     37.33      msn=3 avg=37.3 stddev=4.0 CV=10.8% p50=38.0 p95=41.0\n"
                         },
                         {
-                          "text": "  Batch 100 samples p50                     41.00      ms                                                 —\n"
+                          "text": "  Batch 100 samples p50                     38.00      ms                                                 —\n"
                         },
                         {
-                          "text": "  Predict Proba avg                         39.00      ms n=5 avg=39.0 stddev=2.3 CV=6.0% p50=40.0 p95=41.0\n"
+                          "text": "  Predict Proba avg                         38.80      msn=5 avg=38.8 stddev=11.0 CV=28.3% p50=34.0 p95=57.0\n"
                         },
                         {
                           "text": "\n  [VISUALIZATION]\n"
@@ -4330,10 +4330,10 @@
                           "text": "  ------------------------------------------------------------------------------------------------------------------------\n"
                         },
                         {
-                          "text": "  UMAP Generation avg                       84.33      ms n=3 avg=84.3 stddev=4.5 CV=5.3% p50=84.0 p95=89.0\n"
+                          "text": "  UMAP Generation avg                       99.33      msn=3 avg=99.3 stddev=33.7 CV=34.0% p50=84.0 p95=138.0\n"
                         },
                         {
-                          "text": "  PCA Generation avg                        40.00      ms n=3 avg=40.0 stddev=1.7 CV=4.3% p50=39.0 p95=42.0\n"
+                          "text": "  PCA Generation avg                        35.00      ms n=3 avg=35.0 stddev=1.0 CV=2.9% p50=35.0 p95=36.0\n"
                         },
                         {
                           "text": "\n  [CLUSTERING]\n"
@@ -4348,7 +4348,7 @@
                           "text": "  ------------------------------------------------------------------------------------------------------------------------\n"
                         },
                         {
-                          "text": "  K-Means (k=3) avg                         39.67      ms n=3 avg=39.7 stddev=1.5 CV=3.9% p50=40.0 p95=41.0\n"
+                          "text": "  K-Means (k=3) avg                        102.33      msn=3 avg=102.3 stddev=51.1 CV=49.9% p50=119.0 p95=143.0\n"
                         },
                         {
                           "text": "\n  [ANOMALY DETECTION]\n"
@@ -4363,7 +4363,7 @@
                           "text": "  ------------------------------------------------------------------------------------------------------------------------\n"
                         },
                         {
-                          "text": "  Isolation Forest avg                      45.00      msn=3 avg=45.0 stddev=5.6 CV=12.4% p50=44.0 p95=51.0\n"
+                          "text": "  Isolation Forest avg                      42.67      ms n=3 avg=42.7 stddev=3.5 CV=8.2% p50=43.0 p95=46.0\n"
                         },
                         {
                           "text": "\n  [HYPEROPT]\n"
@@ -4378,16 +4378,16 @@
                           "text": "  ------------------------------------------------------------------------------------------------------------------------\n"
                         },
                         {
-                          "text": "  LogReg 3 trials                           34.00      ms                                                 —\n"
+                          "text": "  LogReg 3 trials                           27.00      ms                                                 —\n"
                         },
                         {
-                          "text": "  History API                               34.00      ms                                                 —\n"
+                          "text": "  History API                               28.00      ms                                                 —\n"
                         },
                         {
-                          "text": "  Search Space API                          33.00      ms                                                 —\n"
+                          "text": "  Search Space API                          27.00      ms                                                 —\n"
                         },
                         {
-                          "text": "  Config API                                52.00      ms                                                 —\n"
+                          "text": "  Config API                                50.00      ms                                                 —\n"
                         },
                         {
                           "text": "\n  [EXPLAINABILITY]\n"
@@ -4402,7 +4402,7 @@
                           "text": "  ------------------------------------------------------------------------------------------------------------------------\n"
                         },
                         {
-                          "text": "  Feature Importance API                    33.00      ms                                                 —\n"
+                          "text": "  Feature Importance API                    29.00      ms                                                 —\n"
                         },
                         {
                           "text": "\n  [SYSTEM & MONITORING]\n"
@@ -4417,22 +4417,22 @@
                           "text": "  ------------------------------------------------------------------------------------------------------------------------\n"
                         },
                         {
-                          "text": "  System Status avg                         59.40      msn=5 avg=59.4 stddev=11.3 CV=19.0% p50=60.0 p95=77.0\n"
+                          "text": "  System Status avg                         83.00      msn=5 avg=83.0 stddev=28.3 CV=34.1% p50=78.0 p95=132.0\n"
                         },
                         {
-                          "text": "  Alerts API                                52.00      ms                                                 —\n"
+                          "text": "  Alerts API                                82.00      ms                                                 —\n"
                         },
                         {
-                          "text": "  Performance API                           33.00      ms                                                 —\n"
+                          "text": "  Performance API                           27.00      ms                                                 —\n"
                         },
                         {
-                          "text": "  SLO Status API                            35.00      ms                                                 —\n"
+                          "text": "  SLO Status API                            26.00      ms                                                 —\n"
                         },
                         {
-                          "text": "  Device Info API                           54.00      ms                                                 —\n"
+                          "text": "  Device Info API                           89.00      ms                                                 —\n"
                         },
                         {
-                          "text": "  Optimal Configs API                       54.00      ms                                                 —\n"
+                          "text": "  Optimal Configs API                       72.00      ms                                                 —\n"
                         },
                         {
                           "text": "\n  [SECURITY & COMPLIANCE]\n"
@@ -4447,16 +4447,16 @@
                           "text": "  ------------------------------------------------------------------------------------------------------------------------\n"
                         },
                         {
-                          "text": "  Security Status API                       48.00      ms                                                 —\n"
+                          "text": "  Security Status API                       67.00      ms                                                 —\n"
                         },
                         {
-                          "text": "  Audit Log API                             39.00      ms                                                 —\n"
+                          "text": "  Audit Log API                             69.00      ms                                                 —\n"
                         },
                         {
-                          "text": "  Compliance Report API                     41.00      ms                                                 —\n"
+                          "text": "  Compliance Report API                     37.00      ms                                                 —\n"
                         },
                         {
-                          "text": "  Audit Events API                          53.00      ms                                                 —\n"
+                          "text": "  Audit Events API                          29.00      ms                                                 —\n"
                         },
                         {
                           "text": "\n  [PREPROCESSING]\n"
@@ -4471,10 +4471,10 @@
                           "text": "  ------------------------------------------------------------------------------------------------------------------------\n"
                         },
                         {
-                          "text": "  Config API                                34.00      ms                                                 —\n"
+                          "text": "  Config API                                27.00      ms                                                 —\n"
                         },
                         {
-                          "text": "  Pipeline Run avg                          33.67      ms n=3 avg=33.7 stddev=0.6 CV=1.7% p50=34.0 p95=34.0\n"
+                          "text": "  Pipeline Run avg                          31.67      msn=3 avg=31.7 stddev=5.8 CV=18.2% p50=35.0 p95=35.0\n"
                         },
                         {
                           "text": "\n  [BATCH PROCESSING]\n"
@@ -4489,7 +4489,7 @@
                           "text": "  ------------------------------------------------------------------------------------------------------------------------\n"
                         },
                         {
-                          "text": "  Batch Stats API                           37.00      ms                                                 —\n"
+                          "text": "  Batch Stats API                           31.00      ms                                                 —\n"
                         },
                         {
                           "text": "\n  [SAMPLE DATASETS]\n"
@@ -4507,16 +4507,16 @@
                           "text": "  Load iris                                 33.00      ms                                                 —\n"
                         },
                         {
-                          "text": "  Load diabetes                             37.00      ms                                                 —\n"
+                          "text": "  Load diabetes                            157.00      ms                                                 —\n"
                         },
                         {
-                          "text": "  Load boston                               36.00      ms                                                 —\n"
+                          "text": "  Load boston                              107.00      ms                                                 —\n"
                         },
                         {
-                          "text": "  Load wine                                 39.00      ms                                                 —\n"
+                          "text": "  Load wine                                 31.00      ms                                                 —\n"
                         },
                         {
-                          "text": "  Load breast_cancer                        33.00      ms                                                 —\n"
+                          "text": "  Load breast_cancer                        25.00      ms                                                 —\n"
                         },
                         {
                           "text": "\n  [MULTI-ENDPOINT STRESS]\n"
@@ -4531,13 +4531,13 @@
                           "text": "  ------------------------------------------------------------------------------------------------------------------------\n"
                         },
                         {
-                          "text": "  Total (10 mixed)                          61.00      ms                                                 —\n"
+                          "text": "  Total (10 mixed)                         156.00      ms                                                 —\n"
                         },
                         {
-                          "text": "  Avg per endpoint                          40.70      ms                                                 —\n"
+                          "text": "  Avg per endpoint                          70.60      ms                                                 —\n"
                         },
                         {
-                          "text": "  P95 per endpoint                          60.00      ms                                                 —\n"
+                          "text": "  P95 per endpoint                         155.00      ms                                                 —\n"
                         },
                         {
                           "text": "\n  [PRIVACY]\n"
@@ -4552,7 +4552,7 @@
                           "text": "  ------------------------------------------------------------------------------------------------------------------------\n"
                         },
                         {
-                          "text": "  Retention Status API                      46.00      ms                                                 —\n"
+                          "text": "  Retention Status API                      25.00      ms                                                 —\n"
                         },
                         {
                           "text": "\n  [E2E PIPELINE]\n"
@@ -4567,67 +4567,67 @@
                           "text": "  ------------------------------------------------------------------------------------------------------------------------\n"
                         },
                         {
-                          "text": "  Load Data                                 35.00      ms                                                 —\n"
+                          "text": "  Load Data                                 49.00      ms                                                 —\n"
                         },
                         {
-                          "text": "  Preprocess                                34.00      ms                                                 —\n"
+                          "text": "  Preprocess                                28.00      ms                                                 —\n"
                         },
                         {
-                          "text": "  Train (Random Forest)                     67.00      ms                                                 —\n"
+                          "text": "  Train (Random Forest)                     48.00      ms                                                 —\n"
                         },
                         {
-                          "text": "  Predict                                   35.00      ms                                                 —\n"
+                          "text": "  Predict                                   39.00      ms                                                 —\n"
                         },
                         {
-                          "text": "  Explain                                   33.00      ms                                                 —\n"
+                          "text": "  Explain                                   26.00      ms                                                 —\n"
                         },
                         {
-                          "text": "  Total Pipeline                           204.00      ms                                                 —\n"
+                          "text": "  Total Pipeline                           190.00      ms                                                 —\n"
                         },
                         {
                           "text": "\n  Rust-only API Aggregate (57 endpoints):\n"
                         },
                         {
-                          "text": "    Avg latency:     60.0 ms\n"
+                          "text": "    Avg latency:     115.5 ms\n"
                         },
                         {
-                          "text": "    Median (p50):    39.7 ms\n"
+                          "text": "    Median (p50):    41.0 ms\n"
                         },
                         {
-                          "text": "    p95:             104.0 ms\n"
+                          "text": "    p95:             157.0 ms\n"
                         },
                         {
-                          "text": "    p99:             595.0 ms\n"
+                          "text": "    p99:             3288.0 ms\n"
                         },
                         {
-                          "text": "    Fastest:         33.0 ms\n"
+                          "text": "    Fastest:         25.0 ms\n"
                         },
                         {
-                          "text": "    Slowest:         595.0 ms\n"
+                          "text": "    Slowest:         3288.0 ms\n"
                         },
                         {
-                          "text": "    Stddev:          77.6 ms\n"
+                          "text": "    Stddev:          429.5 ms\n"
                         },
                         {
                           "text": "\n    Latency Distribution:\n"
                         },
                         {
-                          "text": "      <50ms:         39 endpoints  (68%)\n"
+                          "text": "      <50ms:         34 endpoints  (60%)\n"
                         },
                         {
-                          "text": "      50-100ms:      11 endpoints  (19%)\n"
+                          "text": "      50-100ms:      15 endpoints  (26%)\n"
                         },
                         {
-                          "text": "      100-200ms:     5 endpoints  (9%)\n"
+                          "text": "      100-200ms:     7 endpoints  (12%)\n"
                         },
                         {
-                          "text": "      200-500ms:     1 endpoints  (2%)\n"
+                          "text": "      200-500ms:     0 endpoints  (0%)\n"
                         },
                         {
-                          "text": "      500ms-1s:      1 endpoints  (2%)\n"
+                          "text": "      500ms-1s:      0 endpoints  (0%)\n"
                         },
                         {
-                          "text": "      >1s:           0 endpoints  (0%)\n"
+                          "text": "      >1s:           1 endpoints  (2%)\n"
                         },
                         {
                           "text": "\n========================================================================================================================\n\n"
@@ -4641,7 +4641,7 @@
                       ],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-02-21T01:55:10.216Z",
+                      "startTime": "2026-02-28T05:26:57.158Z",
                       "annotations": [],
                       "attachments": []
                     }
@@ -4661,8 +4661,8 @@
   ],
   "errors": [],
   "stats": {
-    "startTime": "2026-02-21T01:40:12.152Z",
-    "duration": 898670.936,
+    "startTime": "2026-02-28T05:20:47.333Z",
+    "duration": 369954.985,
     "expected": 82,
     "skipped": 0,
     "unexpected": 0,

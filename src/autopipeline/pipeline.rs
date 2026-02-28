@@ -214,30 +214,56 @@ impl AutoPipeline {
                         let col_data = x_transformed.column(col);
                         let values: Vec<f64> = col_data.iter().copied().collect();
                         
+                        /// Minimum scale value to prevent numerical instability
+                        const SCALE_EPS: f64 = 1e-12;
+
+                        /// Compute quantile using linear interpolation (matching scikit-learn)
+                        fn quantile_linear(sorted: &[f64], q: f64) -> f64 {
+                            if sorted.is_empty() {
+                                return 0.0;
+                            }
+                            if sorted.len() == 1 {
+                                return sorted[0];
+                            }
+                            let pos = q * (sorted.len() - 1) as f64;
+                            let lo = pos.floor() as usize;
+                            let hi = pos.ceil() as usize;
+                            let frac = pos - lo as f64;
+                            if lo == hi {
+                                sorted[lo]
+                            } else {
+                                sorted[lo] * (1.0 - frac) + sorted[hi] * frac
+                            }
+                        }
+
+                        let n = values.len() as f64;
                         let (center, scale) = match method {
                             ScaleMethod::Standard => {
-                                let mean = values.iter().sum::<f64>() / values.len() as f64;
-                                let std = (values.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / values.len() as f64).sqrt();
-                                (mean, if std > 0.0 { std } else { 1.0 })
+                                let mean = values.iter().sum::<f64>() / n;
+                                // Use sample std (ddof=1) consistent with scaler.rs
+                                let variance = values.iter().map(|v| (v - mean).powi(2)).sum::<f64>()
+                                    / (n - 1.0).max(1.0);
+                                let std = variance.sqrt();
+                                (mean, if std.abs() < SCALE_EPS { 1.0 } else { std })
                             }
                             ScaleMethod::MinMax => {
                                 let min = values.iter().cloned().fold(f64::INFINITY, f64::min);
                                 let max = values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
                                 let range = max - min;
-                                (min, if range > 0.0 { range } else { 1.0 })
+                                (min, if range.abs() < SCALE_EPS { 1.0 } else { range })
                             }
                             ScaleMethod::Robust => {
                                 let mut sorted = values.clone();
                                 sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-                                let q1 = sorted[sorted.len() / 4];
-                                let q3 = sorted[3 * sorted.len() / 4];
-                                let median = sorted[sorted.len() / 2];
+                                let q1 = quantile_linear(&sorted, 0.25);
+                                let q3 = quantile_linear(&sorted, 0.75);
+                                let median = quantile_linear(&sorted, 0.5);
                                 let iqr = q3 - q1;
-                                (median, if iqr > 0.0 { iqr } else { 1.0 })
+                                (median, if iqr.abs() < SCALE_EPS { 1.0 } else { iqr })
                             }
                             ScaleMethod::MaxAbs => {
                                 let max_abs = values.iter().map(|v| v.abs()).fold(0.0, f64::max);
-                                (0.0, if max_abs > 0.0 { max_abs } else { 1.0 })
+                                (0.0, if max_abs < SCALE_EPS { 1.0 } else { max_abs })
                             }
                         };
                         

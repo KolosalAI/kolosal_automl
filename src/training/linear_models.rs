@@ -254,13 +254,15 @@ impl LinearRegression {
         let (x_centered, y_centered, x_mean, y_mean) = if self.fit_intercept {
             let x_mean = x.mean_axis(Axis(0)).unwrap();
             let y_mean = y.mean().unwrap_or(0.0);
-            
-            let x_centered = x - &x_mean.clone().insert_axis(Axis(0));
+
+            // Subtract mean in-place via broadcast (avoids clone + insert_axis)
+            let x_mean_view = x_mean.view().insert_axis(Axis(0));
+            let x_centered = x - &x_mean_view;
             let y_centered = y - y_mean;
-            
+
             (x_centered, y_centered, Some(x_mean), Some(y_mean))
         } else {
-            (x.clone(), y.clone(), None, None)
+            (x.to_owned(), y.to_owned(), None, None)
         };
 
         // Solve normal equations: (X^T X + alpha*I) * w = X^T y
@@ -406,7 +408,7 @@ impl LogisticRegression {
         z.mapv(|v| 1.0 / (1.0 + (-v).exp()))
     }
 
-    /// Fit the model using gradient descent
+    /// Fit the model using gradient descent with in-place updates
     pub fn fit(&mut self, x: &Array2<f64>, y: &Array1<f64>) -> Result<&mut Self> {
         let n_samples = x.nrows();
         let n_features = x.ncols();
@@ -418,33 +420,54 @@ impl LogisticRegression {
             });
         }
 
-        // Initialize weights
         let mut weights = Array1::zeros(n_features);
         let mut bias = 0.0;
 
         let lr = self.learning_rate;
         let alpha = self.alpha;
+        let inv_n = 1.0 / n_samples as f64;
 
-        // Gradient descent
+        // Pre-allocate scratch buffers to avoid per-iteration allocations
+        let mut linear = Array1::zeros(n_samples);
+        let mut errors = Array1::zeros(n_samples);
+        let mut dw = Array1::zeros(n_features);
+
         for _iter in 0..self.max_iter {
-            // Forward pass
-            let linear = x.dot(&weights) + bias;
-            let predictions = Self::sigmoid(&linear);
+            // Forward pass: linear = X·w + bias (reuse buffer)
+            ndarray::Zip::from(&mut linear)
+                .and(x.rows())
+                .for_each(|out, row| {
+                    *out = row.dot(&weights) + bias;
+                });
 
-            // Compute gradients
-            let errors = &predictions - y;
-            let dw = (x.t().dot(&errors) / n_samples as f64) + (alpha * &weights);
-            let db = errors.mean().unwrap_or(0.0);
+            // Sigmoid + error in one pass (reuse errors buffer)
+            let mut err_sum = 0.0;
+            ndarray::Zip::from(&mut errors)
+                .and(&linear)
+                .and(y)
+                .for_each(|e, &z, &yi| {
+                    let pred = 1.0 / (1.0 + (-z).exp());
+                    *e = pred - yi;
+                    err_sum += pred - yi;
+                });
+
+            // Gradient: dw = X^T · errors / n + alpha * w (reuse dw buffer)
+            // Use general_mat_vec_mul for in-place: dw = inv_n * X^T · errors + alpha * weights
+            dw.assign(&weights);
+            dw.mapv_inplace(|v| v * alpha);
+            ndarray::linalg::general_mat_vec_mul(inv_n, &x.t(), &errors, 1.0, &mut dw);
+
+            let db = err_sum * inv_n;
 
             // Check convergence
-            let grad_norm = (dw.mapv(|v| v * v).sum() + db * db).sqrt();
-            if grad_norm < self.tol {
+            let grad_norm_sq = dw.iter().fold(db * db, |acc, &v| acc + v * v);
+            if grad_norm_sq < self.tol * self.tol {
                 break;
             }
 
-            // Update weights
-            weights = weights - lr * dw;
-            bias = bias - lr * db;
+            // In-place weight update: w -= lr * dw
+            weights.scaled_add(-lr, &dw);
+            bias -= lr * db;
         }
 
         self.coefficients = Some(weights);
@@ -531,9 +554,10 @@ impl RidgeRegression {
         let (x_c, y_c, x_mean, y_mean) = if self.fit_intercept {
             let xm = x.mean_axis(Axis(0)).unwrap();
             let ym = y.mean().unwrap_or(0.0);
-            (x - &xm.clone().insert_axis(Axis(0)), y - ym, Some(xm), Some(ym))
+            let xm_view = xm.view().insert_axis(Axis(0));
+            (x - &xm_view, y - ym, Some(xm), Some(ym))
         } else {
-            (x.clone(), y.clone(), None, None)
+            (x.to_owned(), y.to_owned(), None, None)
         };
 
         let mut xtx = x_c.t().dot(&x_c);
@@ -643,14 +667,15 @@ impl LassoRegression {
         let (x_c, y_c, x_mean, y_mean) = if self.fit_intercept {
             let xm = x.mean_axis(Axis(0)).unwrap();
             let ym = y.mean().unwrap_or(0.0);
-            (x - &xm.clone().insert_axis(Axis(0)), y - ym, Some(xm), Some(ym))
+            let xm_view = xm.view().insert_axis(Axis(0));
+            (x - &xm_view, y - ym, Some(xm), Some(ym))
         } else {
-            (x.clone(), y.clone(), None, None)
+            (x.to_owned(), y.to_owned(), None, None)
         };
 
         // Pre-compute column norms
         let col_norms: Vec<f64> = (0..n_features)
-            .map(|j| x_c.column(j).mapv(|v| v * v).sum())
+            .map(|j| x_c.column(j).dot(&x_c.column(j)))
             .collect();
 
         let mut w = Array1::zeros(n_features);
@@ -672,9 +697,10 @@ impl LassoRegression {
                 let rho = x_c.column(j).dot(&r) + col_norms[j] * w[j];
                 let old_wj = w[j];
                 w[j] = Self::soft_threshold(rho, lambda) / col_norms[j];
-                // Update residual incrementally
-                if (old_wj - w[j]).abs() > 0.0 {
-                    r = r + &(&x_c.column(j) * (old_wj - w[j]));
+                // Update residual incrementally (in-place, no allocation)
+                let delta = old_wj - w[j];
+                if delta.abs() > 0.0 {
+                    r.scaled_add(delta, &x_c.column(j));
                 }
             }
 
@@ -774,13 +800,14 @@ impl ElasticNetRegression {
         let (x_c, y_c, x_mean, y_mean) = if self.fit_intercept {
             let xm = x.mean_axis(Axis(0)).unwrap();
             let ym = y.mean().unwrap_or(0.0);
-            (x - &xm.clone().insert_axis(Axis(0)), y - ym, Some(xm), Some(ym))
+            let xm_view = xm.view().insert_axis(Axis(0));
+            (x - &xm_view, y - ym, Some(xm), Some(ym))
         } else {
-            (x.clone(), y.clone(), None, None)
+            (x.to_owned(), y.to_owned(), None, None)
         };
 
         let col_norms: Vec<f64> = (0..n_features)
-            .map(|j| x_c.column(j).mapv(|v| v * v).sum())
+            .map(|j| x_c.column(j).dot(&x_c.column(j)))
             .collect();
 
         let mut w = Array1::zeros(n_features);
@@ -804,9 +831,10 @@ impl ElasticNetRegression {
                 let rho = x_c.column(j).dot(&r) + col_norms[j] * w[j];
                 let old_wj = w[j];
                 w[j] = LassoRegression::soft_threshold(rho, l1_penalty) / denom;
-                // Update residual incrementally
-                if (old_wj - w[j]).abs() > 0.0 {
-                    r = r + &(&x_c.column(j) * (old_wj - w[j]));
+                // Update residual incrementally (in-place, no allocation)
+                let delta = old_wj - w[j];
+                if delta.abs() > 0.0 {
+                    r.scaled_add(delta, &x_c.column(j));
                 }
             }
 

@@ -1092,14 +1092,14 @@ pub async fn predict(
         .map_err(|e| ServerError::Internal(format!("Prediction failed: {}", e)))?;
 
     let cache_hit = engine.last_prediction_was_cached();
-    let stats = engine.stats();
     let (cache_hits, cache_misses, cache_hit_rate) = engine.cache_stats();
+    let avg_latency = engine.stats().avg_latency_ms;
 
     Ok(Json(serde_json::json!({
         "success": true,
         "predictions": predictions.to_vec(),
         "cache_hit": cache_hit,
-        "latency_ms": stats.avg_latency_ms,
+        "latency_ms": avg_latency,
         "cache_stats": {
             "hits": cache_hits,
             "misses": cache_misses,

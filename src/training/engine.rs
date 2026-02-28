@@ -18,7 +18,7 @@ use super::sgd::{SGDRegressor, SGDClassifier, SGDConfig};
 use super::gaussian_process_regression::{GaussianProcessRegressor, GPConfig};
 use super::clustering::{KMeans, DBSCAN};
 use super::som::SOM;
-use ndarray::{Array1, Array2};
+use ndarray::{Array1, Array2, Axis};
 use polars::prelude::*;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -229,12 +229,12 @@ impl TrainEngine {
     }
 
     /// Shared helper: extract named columns from a DataFrame into a row-major Array2<f64>.
-    /// Uses `Array2::from_shape_fn` for cache-friendly construction from column-major Polars data.
+    /// Pre-allocates a flat Vec and fills it row-by-row for cache-friendly access.
     fn columns_to_array2(df: &DataFrame, col_names: &[String]) -> Result<Array2<f64>> {
         let n_rows = df.height();
         let n_cols = col_names.len();
 
-        // Collect all columns as contiguous f64 Vecs
+        // Collect all columns as contiguous f64 slices
         let col_data: Vec<Vec<f64>> = col_names
             .iter()
             .map(|col_name| {
@@ -253,9 +253,16 @@ impl TrainEngine {
             })
             .collect::<Result<Vec<Vec<f64>>>>()?;
 
-        // Build row-major array directly via from_shape_fn (avoids per-element push overhead)
+        // Build flat row-major buffer with a single allocation
         let col_refs: Vec<&[f64]> = col_data.iter().map(|c| c.as_slice()).collect();
-        Ok(Array2::from_shape_fn((n_rows, n_cols), |(r, c)| col_refs[c][r]))
+        let mut data = Vec::with_capacity(n_rows * n_cols);
+        for r in 0..n_rows {
+            for col in &col_refs {
+                data.push(col[r]);
+            }
+        }
+        Array2::from_shape_vec((n_rows, n_cols), data)
+            .map_err(|e| KolosalError::DataError(e.to_string()))
     }
 
     fn train_val_split(
@@ -264,12 +271,31 @@ impl TrainEngine {
         y: &Array1<f64>,
     ) -> Result<(Array2<f64>, Array2<f64>, Array1<f64>, Array1<f64>)> {
         let n = x.nrows();
+        let n_cols = x.ncols();
         let val_size = (n as f64 * self.config.validation_split) as usize;
         let train_size = n - val_size;
 
-        // Simple split (TODO: add stratified split for classification)
-        let x_train = x.slice(ndarray::s![..train_size, ..]).to_owned();
-        let x_val = x.slice(ndarray::s![train_size.., ..]).to_owned();
+        // Copy into contiguous arrays via pre-allocated flat buffers (avoids slice-to-owned overhead)
+        let x_raw = x.as_slice().unwrap_or(&[]);
+        let is_contiguous = !x_raw.is_empty();
+
+        let (x_train, x_val) = if is_contiguous {
+            // Data is already contiguous row-major — fast memcpy splits
+            let train_data = x_raw[..train_size * n_cols].to_vec();
+            let val_data = x_raw[train_size * n_cols..].to_vec();
+            (
+                Array2::from_shape_vec((train_size, n_cols), train_data)
+                    .map_err(|e| KolosalError::DataError(e.to_string()))?,
+                Array2::from_shape_vec((val_size, n_cols), val_data)
+                    .map_err(|e| KolosalError::DataError(e.to_string()))?,
+            )
+        } else {
+            (
+                x.slice(ndarray::s![..train_size, ..]).to_owned(),
+                x.slice(ndarray::s![train_size.., ..]).to_owned(),
+            )
+        };
+
         let y_train = y.slice(ndarray::s![..train_size]).to_owned();
         let y_val = y.slice(ndarray::s![train_size..]).to_owned();
 
@@ -961,15 +987,11 @@ impl TrainEngine {
             ));
         }
 
-        let n_cols = x.ncols();
-        let x_train = Array2::from_shape_fn((train_indices.len(), n_cols), |(i, j)| {
-            x[[train_indices[i], j]]
-        });
-        let x_val = Array2::from_shape_fn((val_indices.len(), n_cols), |(i, j)| {
-            x[[val_indices[i], j]]
-        });
-        let y_train = Array1::from_iter(train_indices.iter().map(|&i| y[i]));
-        let y_val = Array1::from_iter(val_indices.iter().map(|&i| y[i]));
+        // Use ndarray select for efficient indexed extraction
+        let x_train = x.select(Axis(0), &train_indices);
+        let x_val = x.select(Axis(0), &val_indices);
+        let y_train = y.select(Axis(0), &train_indices);
+        let y_val = y.select(Axis(0), &val_indices);
 
         Ok((x_train, x_val, y_train, y_val))
     }

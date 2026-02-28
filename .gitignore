@@ -186,4 +186,4 @@ playwright-report/
 **/*.rs.bk
 
 # PyO3/Maturin
-*.pyd
+*.pyd.DS_Store

@@ -67,11 +67,11 @@ impl std::fmt::Debug for InferenceEngine {
 /// Compute a fast hash of a float slice using XxHash64
 fn hash_f64_slice(data: &[f64]) -> u64 {
     use xxhash_rust::xxh3::xxh3_64;
-    // Convert f64 slice to bytes via to_bits for deterministic hashing
-    let bytes: Vec<u8> = data.iter()
-        .flat_map(|f| f.to_bits().to_le_bytes())
-        .collect();
-    xxh3_64(&bytes)
+    // Hash the raw bytes of the f64 slice directly (safe: deterministic bit representation)
+    let byte_slice = unsafe {
+        std::slice::from_raw_parts(data.as_ptr() as *const u8, data.len() * std::mem::size_of::<f64>())
+    };
+    xxh3_64(byte_slice)
 }
 
 /// Compute hash of a DataFrame's numeric content
@@ -357,8 +357,13 @@ impl InferenceEngine {
 
         // Check prediction cache for small inputs
         let input_hash = if n_rows <= MAX_CACHEABLE_ROWS {
-            let flat: Vec<f64> = x.iter().copied().collect();
-            let h = hash_f64_slice(&flat);
+            // Hash directly from contiguous slice if possible, avoiding allocation
+            let h = if let Some(slice) = x.as_slice() {
+                hash_f64_slice(slice)
+            } else {
+                let flat: Vec<f64> = x.iter().copied().collect();
+                hash_f64_slice(&flat)
+            };
             if let Some(ref cache) = self.prediction_cache {
                 if let Some(cached) = cache.get(&h) {
                     self.last_cache_hit.store(true, Ordering::Relaxed);
@@ -376,14 +381,30 @@ impl InferenceEngine {
         // Convert Array2 to DataFrame
         let df = self.array_to_dataframe(x, feature_names)?;
 
-        // Apply preprocessing if available
+        // Apply preprocessing with cache (mirrors predict() logic)
         let processed = if let Some(ref preprocessor) = self.preprocessor {
-            preprocessor.transform(&df)?
+            if let (Some(hash), Some(ref pp_cache)) = (input_hash, &self.preprocessing_cache) {
+                if let Some(cached_df) = pp_cache.get(&hash) {
+                    cached_df
+                } else {
+                    let transformed = preprocessor.transform(&df)?;
+                    pp_cache.set(hash, transformed.clone());
+                    transformed
+                }
+            } else {
+                preprocessor.transform(&df)?
+            }
         } else {
             df
         };
 
-        let result = model.predict(&processed);
+        let result = if processed.height() <= self.config.batch_size {
+            model.predict(&processed)
+        } else if self.should_use_parallel(processed.height()) {
+            self.predict_parallel(&processed, model)
+        } else {
+            self.predict_batched(&processed, model)
+        };
 
         let latency_ms = start.elapsed().as_secs_f64() * 1000.0;
         match &result {
@@ -541,12 +562,25 @@ impl InferenceEngine {
 
     /// Convert Array2 to DataFrame using model feature names
     fn array_to_dataframe(&self, x: &Array2<f64>, feature_names: &[String]) -> Result<DataFrame> {
-        let mut columns: Vec<Column> = Vec::with_capacity(x.ncols());
-        for (j, name) in feature_names.iter().enumerate() {
-            let col_data: Vec<f64> = x.column(j).to_vec();
-            let series = Series::new(name.as_str().into(), &col_data);
-            columns.push(series.into());
-        }
+        // For single-row predictions, use a fast path that avoids per-column allocation
+        let n_cols = x.ncols();
+        let columns: Vec<Column> = if x.nrows() == 1 {
+            // Single row: build each column from a one-element slice
+            (0..n_cols)
+                .map(|j| {
+                    let val = x[[0, j]];
+                    Column::new(feature_names[j].as_str().into(), &[val])
+                })
+                .collect()
+        } else {
+            // Multi-row: use standard column-major extraction
+            (0..n_cols)
+                .map(|j| {
+                    let col_data: Vec<f64> = x.column(j).iter().copied().collect();
+                    Column::new(feature_names[j].as_str().into(), col_data)
+                })
+                .collect()
+        };
         DataFrame::new(columns).map_err(|e| KolosalError::DataError(e.to_string()))
     }
 

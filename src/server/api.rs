@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 use axum::{
+    extract::DefaultBodyLimit,
     http::StatusCode,
     middleware as axum_middleware,
     response::IntoResponse,
@@ -218,7 +219,8 @@ pub fn create_router(state: Arc<AppState>, config: &ServerConfig) -> Router {
         }
     };
 
-    app.layer(CompressionLayer::new())
+    app.layer(DefaultBodyLimit::max(config.max_upload_size))
+        .layer(CompressionLayer::new())
         .layer(cors)
         .layer(TraceLayer::new_for_http())
 }
