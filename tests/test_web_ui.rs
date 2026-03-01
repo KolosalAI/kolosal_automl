@@ -44,7 +44,7 @@ async fn get_index_html() -> String {
 #[tokio::test]
 async fn test_index_has_five_navigation_tabs() {
     let html = get_index_html().await;
-    let expected_tabs = ["dashboard", "data", "train", "analysis", "monitor"];
+    let expected_tabs = ["dashboard", "data", "train", "analysis", "reports", "monitor"];
     for tab in &expected_tabs {
         assert!(
             html.contains(&format!("data-tab=\"{}\"", tab)),
@@ -58,7 +58,7 @@ async fn test_index_has_five_navigation_tabs() {
 async fn test_index_has_five_tab_panels() {
     let html = get_index_html().await;
     let expected_panels = [
-        "et-dashboard", "et-data", "et-train", "et-analysis", "et-monitor",
+        "et-dashboard", "et-data", "et-train", "et-analysis", "et-reports", "et-monitor",
     ];
     for panel in &expected_panels {
         assert!(
@@ -320,5 +320,43 @@ async fn test_api_endpoints_referenced() {
     ];
     for ep in &endpoints {
         assert!(html.contains(ep), "Missing API endpoint reference: {}", ep);
+    }
+}
+
+// ============================================================================
+// Reports Tab
+// ============================================================================
+
+#[tokio::test]
+async fn test_reports_tab_exists() {
+    let html = get_index_html().await;
+    assert!(html.contains("id=\"et-reports\""), "Missing reports tab panel");
+    assert!(html.contains("data-tab=\"reports\""), "Missing reports sidebar button");
+    assert!(html.contains("reports:'Reports'"), "Missing reports in eTabNames");
+}
+
+#[tokio::test]
+async fn test_reports_elements_exist() {
+    let html = get_index_html().await;
+    let ids = [
+        "e-rpt-empty", "e-rpt-nomodels", "e-rpt-select", "e-rpt-models",
+        "e-rpt-btn", "e-rpt-content", "e-rpt-date", "e-rpt-summary",
+        "e-rpt-best", "e-rpt-table", "e-rpt-rankings",
+        "e-rpt-bars", "e-rpt-radar", "e-rpt-time", "e-rpt-scatter",
+    ];
+    for id in &ids {
+        assert!(html.contains(&format!("id=\"{}\"", id)), "Missing report element: {}", id);
+    }
+}
+
+#[tokio::test]
+async fn test_reports_javascript_functions_exist() {
+    let html = get_index_html().await;
+    let fns = [
+        "function eLoadReport", "function eRptSelectAll",
+        "function eGenerateReport", "function eRptBack", "function eRptPrint",
+    ];
+    for f in &fns {
+        assert!(html.contains(f), "Missing report JS function: {}", f);
     }
 }

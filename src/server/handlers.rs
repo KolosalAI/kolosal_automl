@@ -1539,6 +1539,7 @@ const EMBEDDED_INDEX_HTML: &str = r#"<!DOCTYPE html>
                 <button class="sidebar-item" data-tab="train" onclick="eTab('train')"><i class="ri-play-circle-line"></i><span>Train</span></button>
                 <div class="sidebar-section">Analysis</div>
                 <button class="sidebar-item" data-tab="analysis" onclick="eTab('analysis')"><i class="ri-bar-chart-line"></i><span>Analysis</span></button>
+                <button class="sidebar-item" data-tab="reports" onclick="eTab('reports');eLoadReport()"><i class="ri-file-chart-line"></i><span>Reports</span></button>
                 <button class="sidebar-item" data-tab="monitor" onclick="eTab('monitor')"><i class="ri-pulse-line"></i><span>Monitor</span></button>
             </nav>
             <button class="sidebar-toggle" onclick="eToggleSidebar()" title="Toggle sidebar"><i id="e-sidebar-icon" class="ri-arrow-right-s-line"></i></button>
@@ -1867,6 +1868,41 @@ const EMBEDDED_INDEX_HTML: &str = r#"<!DOCTYPE html>
                             </div>
                         </div>
                     </div>
+                    <!-- Reports -->
+                    <div id="et-reports" class="tab-panel">
+                        <div id="e-rpt-empty" class="card" style="max-width:700px">
+                            <div class="card-header"><div><div class="card-title"><i class="ri-file-chart-line" style="color:#0066f5"></i> Model Comparison Report</div><div class="card-desc">Select trained models to generate a side-by-side comparison report with metrics, charts, and rankings.</div></div></div>
+                            <div id="e-rpt-nomodels" style="display:none" class="alert alert-warn"><i class="ri-error-warning-line"></i><span>No models trained yet. Train some models first from the <a href="javascript:void(0)" onclick="eTab('train');return false" style="color:inherit;font-weight:600">Train</a> tab.</span></div>
+                            <div id="e-rpt-select" style="display:none">
+                                <label class="form" style="margin-bottom:8px">Select Models to Compare</label>
+                                <div class="chk-grid" id="e-rpt-models"></div>
+                                <div style="display:flex;gap:8px;margin-top:16px">
+                                    <button class="btn btn-sm btn-outline" onclick="eRptSelectAll(true)">Select All</button>
+                                    <button class="btn btn-sm btn-outline" onclick="eRptSelectAll(false)">Deselect All</button>
+                                    <div style="flex:1"></div>
+                                    <button id="e-rpt-btn" class="btn btn-primary" onclick="eGenerateReport()"><i class="ri-file-chart-line"></i> Generate Report</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="e-rpt-content" style="display:none">
+                            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+                                <div><span style="font-size:18px;font-weight:700">Comparison Report</span><span id="e-rpt-date" class="mono" style="font-size:12px;color:#6a6f73;margin-left:12px"></span></div>
+                                <div style="display:flex;gap:8px"><button class="btn btn-sm btn-outline" onclick="eRptPrint()"><i class="ri-printer-line"></i> Print</button><button class="btn btn-sm btn-outline" onclick="eRptBack()"><i class="ri-arrow-left-line"></i> Back</button></div>
+                            </div>
+                            <div id="e-rpt-summary" class="grid-4" style="margin-bottom:16px"></div>
+                            <div id="e-rpt-best" style="margin-bottom:16px"></div>
+                            <div class="grid-2" style="margin-bottom:16px">
+                                <div class="card"><div class="card-title" style="margin-bottom:12px">Metric Comparison</div><canvas id="e-rpt-bars" width="600" height="350" style="width:100%;border-radius:8px"></canvas></div>
+                                <div class="card"><div class="card-title" style="margin-bottom:12px">Performance Radar</div><canvas id="e-rpt-radar" width="400" height="350" style="width:100%;border-radius:8px"></canvas></div>
+                            </div>
+                            <div class="card" style="margin-bottom:16px"><div class="card-title" style="margin-bottom:12px">Detailed Metrics</div><div id="e-rpt-table"></div></div>
+                            <div class="grid-2" style="margin-bottom:16px">
+                                <div class="card"><div class="card-title" style="margin-bottom:12px">Training Time</div><canvas id="e-rpt-time" width="600" height="280" style="width:100%;border-radius:8px"></canvas></div>
+                                <div class="card"><div class="card-title" style="margin-bottom:12px">Score Distribution</div><canvas id="e-rpt-scatter" width="600" height="280" style="width:100%;border-radius:8px"></canvas></div>
+                            </div>
+                            <div class="card"><div class="card-title" style="margin-bottom:12px">Model Rankings</div><div id="e-rpt-rankings"></div></div>
+                        </div>
+                    </div>
                     <!-- Monitor (merged: Monitor + Security) -->
                     <div id="et-monitor" class="tab-panel">
                         <div class="grid-4" style="margin-bottom:16px">
@@ -1925,7 +1961,7 @@ const EMBEDDED_INDEX_HTML: &str = r#"<!DOCTYPE html>
     var eData=null,eTraining=false,eLastModelId=null,eLoadedDataset=null;
     function $(i){return document.getElementById(i)}
     function eNotify(m,t){var d=document.createElement('div');d.className='toast'+(t==='ok'?' toast-ok':t==='err'?' toast-err':'');d.textContent=m;$('e-toasts').appendChild(d);setTimeout(function(){d.remove()},3500)}
-    var eTabNames={dashboard:'Dashboard',data:'Data',train:'Train',analysis:'Analysis',monitor:'Monitor'};
+    var eTabNames={dashboard:'Dashboard',data:'Data',train:'Train',analysis:'Analysis',reports:'Reports',monitor:'Monitor'};
     function eTab(n){
         document.querySelectorAll('.tab-panel').forEach(function(p){p.classList.remove('active')});
         document.querySelectorAll('.sidebar-item').forEach(function(t){t.classList.remove('active')});
@@ -1933,6 +1969,7 @@ const EMBEDDED_INDEX_HTML: &str = r#"<!DOCTYPE html>
         var btn=document.querySelector('[data-tab="'+n+'"]');if(btn)btn.classList.add('active');
         $('e-page-title').textContent=eTabNames[n]||n;
         eUpdateNoDataAlerts();
+        if(n==='reports')eLoadReport();
     }
     function eSubTab(parent,name){
         var panel=$('et-'+parent);if(!panel)return;
@@ -2469,6 +2506,12 @@ const EMBEDDED_INDEX_HTML: &str = r#"<!DOCTYPE html>
     var eActivityLog=[];
     function eLogActivity(msg){var now=new Date();eActivityLog.unshift({time:now,msg:msg});if(eActivityLog.length>50)eActivityLog.length=50;var h='<div style="display:flex;flex-direction:column;gap:1px">';eActivityLog.forEach(function(a){h+='<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid #f1f3f4"><span class="mono" style="font-size:11px;color:#9c9fa1;flex-shrink:0">'+a.time.toLocaleTimeString()+'</span><span style="font-size:13px">'+a.msg+'</span></div>'});h+='</div>';$('e-dash-activity').innerHTML=h}
     function eDashTrainResult(model,metrics){var h='<div style="background:#f3fbf4;border-radius:8px;padding:12px;margin-bottom:12px"><div style="font-size:14px;font-weight:600;margin-bottom:4px"><i class="ri-check-line" style="color:#3abc3f"></i> '+model+'</div></div>';h+='<table><thead><tr><th>Metric</th><th>Value</th></tr></thead><tbody>';Object.keys(metrics).forEach(function(k){h+='<tr><td>'+k+'</td><td class="mono">'+(typeof metrics[k]==='number'?metrics[k].toFixed(4):metrics[k])+'</td></tr>'});h+='</tbody></table>';$('e-dash-train-result').innerHTML=h}
+    var eRptModels=[];
+    function eLoadReport(){fetch('/api/models').then(function(r){return r.json()}).then(function(d){eRptModels=d.models||[];if(eRptModels.length===0){$('e-rpt-nomodels').style.display='flex';$('e-rpt-select').style.display='none';return}$('e-rpt-nomodels').style.display='none';$('e-rpt-select').style.display='block';var h='';eRptModels.forEach(function(m,i){h+='<label class="chk-item"><input type="checkbox" value="'+m.id+'" checked> '+(m.name||m.id)+'</label>'});$('e-rpt-models').innerHTML=h}).catch(function(){$('e-rpt-nomodels').style.display='flex';$('e-rpt-select').style.display='none'})}
+    function eRptSelectAll(val){document.querySelectorAll('#e-rpt-models input').forEach(function(cb){cb.checked=val})}
+    function eRptBack(){$('e-rpt-content').style.display='none';$('e-rpt-empty').style.display='block';eLoadReport()}
+    function eRptPrint(){window.print()}
+    function eGenerateReport(){var sel=[];document.querySelectorAll('#e-rpt-models input:checked').forEach(function(cb){sel.push(cb.value)});if(sel.length<2){eNotify('Select at least 2 models to compare','err');return}var models=eRptModels.filter(function(m){return sel.indexOf(m.id)!==-1});$('e-rpt-empty').style.display='none';$('e-rpt-content').style.display='block';$('e-rpt-date').textContent=new Date().toLocaleString();var colors=['#0066f5','#3abc3f','#ffa931','#8b5cf6','#ec4899','#06b6d4','#ff3131','#f97316'];var allMetrics={};var metricKeys=[];models.forEach(function(m){var mx=m.metrics||{};Object.keys(mx).forEach(function(k){if(typeof mx[k]==='number'&&metricKeys.indexOf(k)===-1)metricKeys.push(k)});allMetrics[m.id]=mx});var scoreKey=metricKeys.indexOf('f1')!==-1?'f1':(metricKeys.indexOf('accuracy')!==-1?'accuracy':(metricKeys.indexOf('r2')!==-1?'r2':metricKeys[0]||'score'));var timeKey='training_time_secs';var sorted=models.slice().sort(function(a,b){return((allMetrics[b.id]||{})[scoreKey]||0)-((allMetrics[a.id]||{})[scoreKey]||0)});var best=sorted[0];$('e-rpt-summary').innerHTML='<div style="text-align:center;padding:14px;background:#f0f6fe;border-radius:10px"><div style="font-size:24px;font-weight:700;color:#0066f5">'+models.length+'</div><div style="font-size:12px;color:#6a6f73">Models</div></div><div style="text-align:center;padding:14px;background:#f3fbf4;border-radius:10px"><div style="font-size:24px;font-weight:700;color:#3abc3f">'+metricKeys.length+'</div><div style="font-size:12px;color:#6a6f73">Metrics</div></div><div style="text-align:center;padding:14px;background:#fef9ee;border-radius:10px"><div style="font-size:24px;font-weight:700;color:#ffa931">'+scoreKey+'</div><div style="font-size:12px;color:#6a6f73">Primary Metric</div></div><div style="text-align:center;padding:14px;background:#fdf4ff;border-radius:10px"><div style="font-size:24px;font-weight:700;color:#8b5cf6">'+(best?(allMetrics[best.id]||{})[scoreKey]||0:0).toFixed(4)+'</div><div style="font-size:12px;color:#6a6f73">Best Score</div></div>';if(best){$('e-rpt-best').innerHTML='<div style="background:#0d0e0f;border-radius:12px;padding:20px;color:#fff;display:flex;align-items:center;gap:16px"><div style="width:48px;height:48px;border-radius:50%;background:#3abc3f;display:flex;align-items:center;justify-content:center;font-size:20px"><i class="ri-trophy-line"></i></div><div><div style="font-size:12px;opacity:.6">Best Model</div><div style="font-size:20px;font-weight:700">'+(best.name||best.id)+'</div><div style="font-size:13px;opacity:.8">'+scoreKey+': '+((allMetrics[best.id]||{})[scoreKey]||0).toFixed(6)+'</div></div></div>'}var barItems=[];sorted.forEach(function(m){var sc=(allMetrics[m.id]||{})[scoreKey]||0;if(sc>0)barItems.push({label:(m.name||m.id).substring(0,20),value:sc})});if(barItems.length>0)eDrawBars('e-rpt-bars',barItems,{label:scoreKey});var numericKeys=metricKeys.filter(function(k){return k!==timeKey});if(numericKeys.length>=3&&models.length>0){var radarLabels=numericKeys.slice(0,8);var radarMaxes={};radarLabels.forEach(function(k){var mx=0;models.forEach(function(m){var v=Math.abs((allMetrics[m.id]||{})[k]||0);if(v>mx)mx=v});radarMaxes[k]=mx||1});var radarSets=[];models.slice(0,4).forEach(function(m,mi){var vals=radarLabels.map(function(k){return radarMaxes[k]>0?Math.abs((allMetrics[m.id]||{})[k]||0)/radarMaxes[k]:0});radarSets.push({label:(m.name||m.id).substring(0,15),values:vals,color:colors[mi%colors.length]})});eDrawRadar('e-rpt-radar',radarLabels,radarSets[0].values,{labels:radarLabels,color:radarSets[0].color})}var th='<table><thead><tr><th>Model</th>';metricKeys.forEach(function(k){th+='<th>'+k+'</th>'});th+='</tr></thead><tbody>';sorted.forEach(function(m,i){var mx=allMetrics[m.id]||{};th+='<tr style="'+(i===0?'background:#f3fbf4':'')+'"><td style="font-weight:600">'+(i===0?'<i class="ri-trophy-line" style="color:#3abc3f;margin-right:4px"></i>':'')+((m.name||m.id).substring(0,30))+'</td>';metricKeys.forEach(function(k){var v=mx[k];var isBest=true;sorted.forEach(function(om){if(om.id!==m.id&&((allMetrics[om.id]||{})[k]||0)>=(v||0))isBest=false});th+='<td class="mono" style="'+(isBest&&typeof v==='number'?'color:#3abc3f;font-weight:600':'')+'">'+((typeof v==='number')?v.toFixed(4):(v||'—'))+'</td>'});th+='</tr>'});th+='</tbody></table>';$('e-rpt-table').innerHTML=th;var timeItems=[];sorted.forEach(function(m){var t=(allMetrics[m.id]||{})[timeKey]||0;if(t>0)timeItems.push({label:(m.name||m.id).substring(0,20),value:t})});if(timeItems.length>0)eDrawBars('e-rpt-time',timeItems,{label:'Time (s)'});var scatterPts=[];sorted.forEach(function(m,i){var sc=(allMetrics[m.id]||{})[scoreKey]||0;var t=(allMetrics[m.id]||{})[timeKey]||0;scatterPts.push({x:t,y:sc,c:i%colors.length,s:6})});if(scatterPts.length>0)eDrawScatter('e-rpt-scatter',scatterPts,{xLabel:'Training Time (s)',yLabel:scoreKey,colors:colors});var rh='';sorted.forEach(function(m,i){var sc=(allMetrics[m.id]||{})[scoreKey]||0;var maxSc=sorted.length>0?((allMetrics[sorted[0].id]||{})[scoreKey]||1):1;var pct=maxSc>0?(sc/maxSc*100).toFixed(0):0;var ci=colors[i%colors.length];rh+='<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid #f1f3f4"><div style="width:28px;height:28px;border-radius:50%;background:'+ci+'15;color:'+ci+';display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px">'+(i+1)+'</div><div style="flex:1;min-width:0"><div style="font-weight:600;font-size:13px;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+(m.name||m.id)+'</div><div class="progress" style="height:6px"><div class="progress-fill" style="width:'+pct+'%;background:'+ci+'"></div></div></div><div class="mono" style="font-size:13px;font-weight:600;color:'+ci+';flex-shrink:0">'+sc.toFixed(4)+'</div></div>'});$('e-rpt-rankings').innerHTML=rh;eNotify('Report generated for '+models.length+' models','ok');eLogActivity('Generated comparison report: '+models.length+' models')}
     </script>
 </body>
 </html>"#;
