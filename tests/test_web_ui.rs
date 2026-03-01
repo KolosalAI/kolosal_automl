@@ -1,4 +1,4 @@
-//! Integration test: Web UI structure, tabs, and serve tab
+//! Integration test: Web UI structure, tabs, and sub-tabs
 
 use kolosal_automl::server::{AppState, ServerConfig, create_router};
 use std::sync::Arc;
@@ -42,9 +42,9 @@ async fn get_index_html() -> String {
 // ============================================================================
 
 #[tokio::test]
-async fn test_index_has_seven_navigation_tabs() {
+async fn test_index_has_five_navigation_tabs() {
     let html = get_index_html().await;
-    let expected_tabs = ["data", "automl", "train", "predict", "analyze", "serve", "system"];
+    let expected_tabs = ["dashboard", "data", "train", "analysis", "monitor"];
     for tab in &expected_tabs {
         assert!(
             html.contains(&format!("data-tab=\"{}\"", tab)),
@@ -55,11 +55,10 @@ async fn test_index_has_seven_navigation_tabs() {
 }
 
 #[tokio::test]
-async fn test_index_has_seven_tab_panels() {
+async fn test_index_has_five_tab_panels() {
     let html = get_index_html().await;
     let expected_panels = [
-        "tab-data", "tab-automl", "tab-train", "tab-predict",
-        "tab-analyze", "tab-serve", "tab-system",
+        "et-dashboard", "et-data", "et-train", "et-analysis", "et-monitor",
     ];
     for panel in &expected_panels {
         assert!(
@@ -71,77 +70,9 @@ async fn test_index_has_seven_tab_panels() {
 }
 
 #[tokio::test]
-async fn test_data_tab_is_active_by_default() {
+async fn test_dashboard_tab_is_active_by_default() {
     let html = get_index_html().await;
-    assert!(html.contains("id=\"tab-data\" class=\"tab-panel active\""));
-}
-
-// ============================================================================
-// Serve Tab Tests
-// ============================================================================
-
-#[tokio::test]
-async fn test_serve_tab_has_model_list_section() {
-    let html = get_index_html().await;
-    assert!(html.contains("id=\"serve-models-list\""), "Serve tab missing models list element");
-    assert!(html.contains("id=\"serve-empty\""), "Serve tab missing empty state element");
-}
-
-#[tokio::test]
-async fn test_serve_tab_has_quick_test_section() {
-    let html = get_index_html().await;
-    assert!(html.contains("id=\"serve-test-model\""), "Serve tab missing model select");
-    assert!(html.contains("id=\"serve-test-input\""), "Serve tab missing test input textarea");
-    assert!(html.contains("id=\"serve-test-result\""), "Serve tab missing test result area");
-    assert!(html.contains("id=\"serve-test-output\""), "Serve tab missing test output pre");
-}
-
-#[tokio::test]
-async fn test_serve_tab_has_api_documentation() {
-    let html = get_index_html().await;
-    // Must document all prediction endpoints
-    assert!(html.contains("/api/predict"), "API docs missing /api/predict");
-    assert!(html.contains("/api/predict/batch"), "API docs missing /api/predict/batch");
-    assert!(html.contains("/api/predict/proba"), "API docs missing /api/predict/proba");
-    assert!(html.contains("/api/predict/stats/"), "API docs missing /api/predict/stats");
-    assert!(html.contains("/api/models"), "API docs missing /api/models");
-    assert!(html.contains("/api/health"), "API docs missing /api/health");
-}
-
-#[tokio::test]
-async fn test_serve_tab_has_curl_examples() {
-    let html = get_index_html().await;
-    assert!(html.contains("curl -X POST"), "API docs missing POST curl example");
-    assert!(html.contains("curl -X DELETE"), "API docs missing DELETE curl example");
-    assert!(html.contains("Content-Type: application/json"), "API docs missing Content-Type header");
-}
-
-#[tokio::test]
-async fn test_serve_tab_has_http_method_badges() {
-    let html = get_index_html().await;
-    assert!(html.contains(">POST</span>"), "API docs missing POST method badge");
-    assert!(html.contains(">GET</span>"), "API docs missing GET method badge");
-    assert!(html.contains(">DELETE</span>"), "API docs missing DELETE method badge");
-}
-
-#[tokio::test]
-async fn test_serve_tab_documents_request_response_format() {
-    let html = get_index_html().await;
-    // Prediction request must document the data format
-    assert!(html.contains("\"model_id\""), "API docs should show model_id field");
-    assert!(html.contains("\"data\""), "API docs should show data field");
-    assert!(html.contains("\"predictions\""), "API docs should show predictions response");
-    assert!(html.contains("\"probabilities\""), "API docs should show probabilities response");
-    assert!(html.contains("\"latency_ms\""), "API docs should show latency_ms response");
-}
-
-#[tokio::test]
-async fn test_serve_tab_javascript_functions_exist() {
-    let html = get_index_html().await;
-    assert!(html.contains("function loadServeModels"), "Missing loadServeModels JS function");
-    assert!(html.contains("function serveTestPredict"), "Missing serveTestPredict JS function");
-    assert!(html.contains("function serveViewStats"), "Missing serveViewStats JS function");
-    assert!(html.contains("function serveEvictCache"), "Missing serveEvictCache JS function");
+    assert!(html.contains("id=\"et-dashboard\" class=\"tab-panel active\""));
 }
 
 // ============================================================================
@@ -151,11 +82,37 @@ async fn test_serve_tab_javascript_functions_exist() {
 #[tokio::test]
 async fn test_train_tab_has_subtabs() {
     let html = get_index_html().await;
-    let subtabs = ["setup", "models", "compare", "hyperopt", "ensemble", "explain"];
+    let subtabs = ["autotune", "automl", "single", "hyperopt", "ensemble"];
     for sub in &subtabs {
         assert!(
-            html.contains(&format!("id=\"sub-{}\"", sub)),
-            "Missing sub-panel: {}",
+            html.contains(&format!("id=\"esp-train-{}\"", sub)),
+            "Missing train sub-panel: {}",
+            sub
+        );
+    }
+}
+
+#[tokio::test]
+async fn test_autotune_is_default_active_subtab() {
+    let html = get_index_html().await;
+    assert!(
+        html.contains("id=\"esp-train-autotune\" class=\"sub-panel active\""),
+        "Auto-Tune should be the default active sub-tab"
+    );
+}
+
+// ============================================================================
+// Analysis Sub-Tab Tests
+// ============================================================================
+
+#[tokio::test]
+async fn test_analysis_tab_has_subtabs() {
+    let html = get_index_html().await;
+    let subtabs = ["explain", "anomaly", "dimred"];
+    for sub in &subtabs {
+        assert!(
+            html.contains(&format!("id=\"esp-analysis-{}\"", sub)),
+            "Missing analysis sub-panel: {}",
             sub
         );
     }
@@ -169,10 +126,10 @@ async fn test_train_tab_has_subtabs() {
 async fn test_chart_canvases_present() {
     let html = get_index_html().await;
     let canvases = [
-        "columnTypesChart", "trainingMetricsChart", "comparisonChart",
-        "convergenceChart", "importanceChart", "anomalyChart",
-        "clusteringChart", "cpuGaugeChart", "memGaugeChart",
-        "umapChart", "pcaChart", "trainUmapChart",
+        "e-scatter", "e-corr", "e-at-bar", "e-aml-chart",
+        "e-train-radar", "e-train-bars", "e-ho-cvg", "e-ho-best",
+        "e-anom-scatter", "e-anom-donut", "e-dr-scatter",
+        "e-spark-cpu", "e-spark-mem",
     ];
     for canvas in &canvases {
         assert!(
@@ -183,22 +140,23 @@ async fn test_chart_canvases_present() {
     }
 }
 
-#[tokio::test]
-async fn test_chart_js_loaded() {
-    let html = get_index_html().await;
-    assert!(html.contains("chart.min.js"), "Chart.js should be loaded");
-}
-
 // ============================================================================
 // Auto-Tune Integration Tests
 // ============================================================================
 
 #[tokio::test]
-async fn test_auto_tune_wired_in_poll_jobs() {
+async fn test_auto_tune_has_target_and_task() {
     let html = get_index_html().await;
-    assert!(html.contains("hyperopt_job_id"), "pollJobs must track hyperopt job id");
-    assert!(html.contains("hyperopt_status"), "pollJobs must track hyperopt status");
-    assert!(html.contains("/api/hyperopt"), "Auto-tune must call /api/hyperopt");
+    assert!(html.contains("id=\"e-at-target\""), "Auto-Tune missing target column selector");
+    assert!(html.contains("id=\"e-at-task\""), "Auto-Tune missing task type selector");
+    assert!(html.contains("id=\"e-at-btn\""), "Auto-Tune missing start button");
+}
+
+#[tokio::test]
+async fn test_auto_tune_calls_api() {
+    let html = get_index_html().await;
+    assert!(html.contains("/api/autotune"), "Auto-tune must call /api/autotune");
+    assert!(html.contains("/api/train/status/"), "Auto-tune must poll /api/train/status/");
 }
 
 // ============================================================================
@@ -234,14 +192,17 @@ async fn test_index_response_headers() {
 async fn test_index_has_inline_styles() {
     let html = get_index_html().await;
     assert!(html.contains("<style>"), "Index must have inline styles");
-    assert!(html.contains("--color-text"), "Index must define CSS custom properties");
+    assert!(html.contains(".sub-tab"), "Must have sub-tab CSS class");
+    assert!(html.contains(".sub-panel"), "Must have sub-panel CSS class");
 }
 
 #[tokio::test]
-async fn test_index_has_sub_tab_styles() {
+async fn test_index_has_progress_styles() {
     let html = get_index_html().await;
-    assert!(html.contains(".sub-tab"), "Must have sub-tab CSS class");
-    assert!(html.contains(".sub-panel"), "Must have sub-panel CSS class");
+    assert!(html.contains(".tp-card"), "Must have training progress card styles");
+    assert!(html.contains(".tp-ring"), "Must have progress ring styles");
+    assert!(html.contains(".mc-grid"), "Must have model card grid styles");
+    assert!(html.contains(".mc-card"), "Must have model card styles");
 }
 
 // ============================================================================
@@ -252,10 +213,9 @@ async fn test_index_has_sub_tab_styles() {
 async fn test_critical_element_ids_present() {
     let html = get_index_html().await;
     let ids = [
-        "cfg-targetColumn", "cfg-taskType",
-        "btn-compare", "btn-hyperopt", "btn-anomaly", "btn-clustering",
-        "prediction-input", "prediction-output",
-        "serve-base-url",
+        "e-target", "e-task", "e-model",
+        "e-train-btn", "e-ho-btn", "e-ens-btn", "e-at-btn",
+        "e-anomaly-btn", "e-explain-btn", "e-dr-btn",
     ];
     for id in &ids {
         assert!(
@@ -267,80 +227,98 @@ async fn test_critical_element_ids_present() {
 }
 
 // ============================================================================
-// UMAP Visualization Tests
+// UMAP / PCA (Dimensionality Reduction) Tests
 // ============================================================================
 
 #[tokio::test]
-async fn test_umap_chart_canvas_present() {
+async fn test_dimred_controls_present() {
     let html = get_index_html().await;
-    assert!(html.contains("id=\"umapChart\""), "Missing UMAP chart canvas in Analyze tab");
-    assert!(html.contains("id=\"trainUmapChart\""), "Missing UMAP chart canvas in Train tab");
+    assert!(html.contains("id=\"e-dr-method\""), "Missing dim. reduction method selector");
+    assert!(html.contains("id=\"e-dr-neighbors\""), "Missing UMAP neighbors input");
+    assert!(html.contains("id=\"e-dr-color\""), "Missing color-by selector");
+    assert!(html.contains("id=\"e-dr-btn\""), "Missing dim. reduction run button");
 }
 
 #[tokio::test]
-async fn test_umap_controls_present() {
+async fn test_dimred_result_elements_present() {
     let html = get_index_html().await;
-    assert!(html.contains("id=\"btn-umap\""), "Missing UMAP run button");
-    assert!(html.contains("id=\"umap-neighbors\""), "Missing UMAP n_neighbors input");
-    assert!(html.contains("id=\"umap-mindist\""), "Missing UMAP min_dist input");
-    assert!(html.contains("id=\"umap-colorby\""), "Missing UMAP color-by select");
+    assert!(html.contains("id=\"e-dr-result\""), "Missing dim. reduction result container");
+    assert!(html.contains("id=\"e-dr-scatter\""), "Missing dim. reduction scatter canvas");
+    assert!(html.contains("id=\"e-dr-empty\""), "Missing dim. reduction empty state");
 }
 
 #[tokio::test]
-async fn test_umap_result_elements_present() {
+async fn test_dimred_javascript_function_exists() {
     let html = get_index_html().await;
-    assert!(html.contains("id=\"umap-results\""), "Missing UMAP results container");
-    assert!(html.contains("id=\"umap-chart-wrap\""), "Missing UMAP chart wrapper");
-    assert!(html.contains("id=\"umap-empty\""), "Missing UMAP empty state");
+    assert!(html.contains("function eRunDimRed"), "Missing eRunDimRed JS function");
 }
 
 #[tokio::test]
-async fn test_umap_train_card_present() {
+async fn test_dimred_calls_api() {
     let html = get_index_html().await;
-    assert!(html.contains("id=\"train-umap-card\""), "Missing live UMAP card in Train tab");
-    assert!(html.contains("id=\"train-umap-badge\""), "Missing live UMAP badge");
-    assert!(html.contains("id=\"train-umap-status\""), "Missing live UMAP status container");
-}
-
-#[tokio::test]
-async fn test_umap_javascript_functions_exist() {
-    let html = get_index_html().await;
-    assert!(html.contains("function runUmap"), "Missing runUmap JS function");
-    assert!(html.contains("function renderUmapChart"), "Missing renderUmapChart JS function");
-    assert!(html.contains("function convexHull"), "Missing convexHull JS function");
-    assert!(html.contains("function lerpColor"), "Missing lerpColor JS function");
+    assert!(html.contains("/api/visualization/umap"), "Must call UMAP API endpoint");
+    assert!(html.contains("/api/visualization/pca"), "Must call PCA API endpoint");
 }
 
 // ============================================================================
-// PCA Visualization Tests
+// Training Progress UI Tests
 // ============================================================================
 
 #[tokio::test]
-async fn test_pca_chart_canvas_present() {
+async fn test_training_progress_helpers_exist() {
     let html = get_index_html().await;
-    assert!(html.contains("id=\"pcaChart\""), "Missing PCA chart canvas in Analyze tab");
+    assert!(html.contains("function eProgressRing"), "Missing eProgressRing helper");
+    assert!(html.contains("function eStepBar"), "Missing eStepBar helper");
+    assert!(html.contains("function eElapsed"), "Missing eElapsed helper");
 }
 
 #[tokio::test]
-async fn test_pca_controls_present() {
+async fn test_core_training_functions_exist() {
     let html = get_index_html().await;
-    assert!(html.contains("id=\"btn-pca\""), "Missing PCA run button");
-    assert!(html.contains("id=\"pca-scale\""), "Missing PCA scale select");
-    assert!(html.contains("id=\"pca-colorby\""), "Missing PCA color-by select");
-    assert!(html.contains("id=\"pca-variance\""), "Missing PCA variance display");
+    let fns = [
+        "function eTrain", "function ePoll",
+        "function eAutoTune", "function eAtPoll",
+        "function eHyperOpt", "function eHoPoll",
+        "function eEnsemble", "function eEnsPoll",
+        "function eRunAutoML", "function eAMLPoll",
+        "function eExplain", "function eAnomaly",
+    ];
+    for f in &fns {
+        assert!(html.contains(f), "Missing JS function: {}", f);
+    }
 }
 
-#[tokio::test]
-async fn test_pca_result_elements_present() {
-    let html = get_index_html().await;
-    assert!(html.contains("id=\"pca-results\""), "Missing PCA results container");
-    assert!(html.contains("id=\"pca-chart-wrap\""), "Missing PCA chart wrapper");
-    assert!(html.contains("id=\"pca-empty\""), "Missing PCA empty state");
-}
+// ============================================================================
+// Chart Drawing Functions
+// ============================================================================
 
 #[tokio::test]
-async fn test_pca_javascript_functions_exist() {
+async fn test_chart_drawing_functions_exist() {
     let html = get_index_html().await;
-    assert!(html.contains("function runPca"), "Missing runPca JS function");
-    assert!(html.contains("function renderPcaChart"), "Missing renderPcaChart JS function");
+    let fns = [
+        "function eDrawLine", "function eDrawBars",
+        "function eDrawScatter", "function eDrawDonut",
+        "function eDrawRadar", "function eDrawCorrelation",
+    ];
+    for f in &fns {
+        assert!(html.contains(f), "Missing chart function: {}", f);
+    }
+}
+
+// ============================================================================
+// API Endpoint References
+// ============================================================================
+
+#[tokio::test]
+async fn test_api_endpoints_referenced() {
+    let html = get_index_html().await;
+    let endpoints = [
+        "/api/train", "/api/autotune", "/api/hyperopt",
+        "/api/ensemble/train", "/api/automl/run",
+        "/api/anomaly/detect", "/api/explain/importance",
+        "/api/system/status", "/api/models",
+    ];
+    for ep in &endpoints {
+        assert!(html.contains(ep), "Missing API endpoint reference: {}", ep);
+    }
 }
