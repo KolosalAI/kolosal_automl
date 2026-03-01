@@ -1357,6 +1357,9 @@ const EMBEDDED_INDEX_HTML: &str = r#"<!DOCTYPE html>
     <title>Kolosal AutoML</title>
     <link rel="stylesheet" href="/static/remixicon.css">
     <style>
+        @font-face{font-family:"remixicon";src:url("/static/remixicon.woff2") format("woff2");font-display:swap}
+        [class^="ri-"],[class*=" ri-"]{font-family:'remixicon'!important;font-style:normal;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+        .ri-dashboard-line:before{content:"\ec14"}.ri-database-2-line:before{content:"\ec16"}.ri-magic-line:before{content:"\eeea"}.ri-settings-3-line:before{content:"\f0e6"}.ri-play-circle-line:before{content:"\f009"}.ri-flashlight-line:before{content:"\ed3d"}.ri-equalizer-line:before{content:"\ec9d"}.ri-stack-line:before{content:"\f181"}.ri-search-eye-line:before{content:"\f0cf"}.ri-alarm-warning-line:before{content:"\ea1d"}.ri-pulse-line:before{content:"\f035"}.ri-shield-check-line:before{content:"\f100"}.ri-arrow-right-s-line:before{content:"\ea6e"}.ri-arrow-left-s-line:before{content:"\ea64"}.ri-upload-2-line:before{content:"\f24a"}.ri-refresh-line:before{content:"\f064"}.ri-cpu-line:before{content:"\ebf0"}.ri-speed-line:before{content:"\f177"}.ri-hard-drive-2-line:before{content:"\edf9"}.ri-bar-chart-line:before{content:"\ea7e"}.ri-line-chart-line:before{content:"\ee69"}.ri-time-line:before{content:"\f1dd"}.ri-check-line:before{content:"\eb7b"}.ri-close-line:before{content:"\ebd1"}.ri-information-line:before{content:"\ee59"}.ri-loader-4-line:before{content:"\ee8c"}.ri-file-upload-line:before{content:"\ed0e"}.ri-checkbox-circle-line:before{content:"\eb81"}.ri-error-warning-line:before{content:"\eca1"}
         *{margin:0;padding:0;box-sizing:border-box;font-family:system-ui,-apple-system,sans-serif}
         body{background:#f8f9f9;color:#0d0e0f;min-height:100vh;overflow:hidden}
         .app{display:flex;height:100vh}
@@ -1378,8 +1381,6 @@ const EMBEDDED_INDEX_HTML: &str = r#"<!DOCTYPE html>
         .sidebar.expanded .sidebar-item span{opacity:1}
         .sidebar-toggle{height:44px;display:flex;align-items:center;justify-content:center;border-top:1px solid #e4e7e9;flex-shrink:0;cursor:pointer;color:#9c9fa1;background:none;border-left:none;border-right:none;border-bottom:none;width:100%;font-size:18px;transition:color .12s}
         .sidebar-toggle:hover{color:#0d0e0f;background:#f1f3f4}
-        .sidebar-badge{margin-left:auto;display:inline-flex;align-items:center;height:20px;padding:0 6px;font-size:11px;font-weight:600;border-radius:999px;background:#f0f6fe;color:#0066f5;opacity:0;transition:opacity .15s}
-        .sidebar.expanded .sidebar-badge{opacity:1}
         /* Main content */
         .main-wrap{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
         .topbar{height:56px;background:#fff;border-bottom:1px solid #e4e7e9;display:flex;align-items:center;justify-content:space-between;padding:0 24px;flex-shrink:0}
@@ -1395,13 +1396,16 @@ const EMBEDDED_INDEX_HTML: &str = r#"<!DOCTYPE html>
         .card-desc{font-size:13px;color:#6a6f73;margin-top:2px}
         .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
         .grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
-        .grid-4{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:16px}
+        .grid-4{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+        @media(max-width:900px){.grid-4{grid-template-columns:repeat(2,1fr)}.grid-2{grid-template-columns:1fr}}
         .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:36px;padding:0 14px;font-size:14px;font-weight:500;border-radius:10px;border:none;cursor:pointer;background:#0d0e0f;color:#fff;transition:opacity .12s}
         .btn:hover{opacity:.85}.btn:disabled{opacity:.5;cursor:not-allowed}
         .btn-outline{background:#fff;color:#0d0e0f;border:1px solid #dde1e3}
         .btn-outline:hover{background:#f1f3f4;opacity:1}
         .btn-primary{background:#0066f5;color:#fff}
         .btn-sm{height:30px;padding:0 10px;font-size:13px;border-radius:8px}
+        .btn .spinner{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite}
+        @keyframes spin{to{transform:rotate(360deg)}}
         .badge{display:inline-flex;align-items:center;height:24px;padding:0 8px;font-size:12px;font-weight:500;border-radius:6px}
         .badge-ok{color:#2e9632;background:#f3fbf4}.badge-err{color:#cc2727;background:#fff3f3}
         .badge-info{color:#0052c4;background:#f0f6fe}.badge-warn{color:#9a6700;background:#fff8e6}
@@ -1411,10 +1415,12 @@ const EMBEDDED_INDEX_HTML: &str = r#"<!DOCTYPE html>
         select{height:36px;padding:0 14px;border:1px solid #dde1e3;border-radius:10px;width:100%;font-size:14px;appearance:none;background:#fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%236A6F73' viewBox='0 0 24 24'%3E%3Cpath d='M12 16l-6-6h12z'/%3E%3C/svg%3E") no-repeat right 12px center;padding-right:36px}
         input[type="number"],input[type="text"]{height:36px;border:1px solid #dde1e3;border-radius:10px;padding:0 14px;font-size:14px;width:100%;background:#fff}
         input[type="number"]:focus,input[type="text"]:focus,select:focus{outline:none;border-color:#0066f5;box-shadow:0 0 0 3px rgba(0,102,245,.1)}
-        .pill{display:inline-flex;align-items:center;height:28px;padding:0 10px;font-size:12px;font-weight:500;border-radius:999px;border:none;cursor:pointer;background:#f0f6fe;color:#0052c4;margin:0 4px 4px 0;transition:background .12s}
+        .pill{display:inline-flex;align-items:center;height:28px;padding:0 10px;font-size:12px;font-weight:500;border-radius:999px;border:none;cursor:pointer;background:#f0f6fe;color:#0052c4;margin:0 4px 4px 0;transition:background .12s,color .12s}
         .pill:hover{background:#b4d2fc}
+        .pill.active{background:#0066f5;color:#fff}
         .toast-box{position:fixed;bottom:20px;right:20px;z-index:100}
-        .toast{padding:10px 16px;border-radius:10px;font-size:14px;font-weight:500;color:#fff;background:#0d0e0f;margin-top:8px;box-shadow:0 4px 12px rgba(0,0,0,.15)}
+        .toast{padding:10px 16px;border-radius:10px;font-size:14px;font-weight:500;color:#fff;background:#0d0e0f;margin-top:8px;box-shadow:0 4px 12px rgba(0,0,0,.15);animation:toastIn .25s ease}
+        @keyframes toastIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
         .toast-ok{background:#3abc3f}.toast-err{background:#ff3131}
         .stat{font-size:32px;line-height:44px;font-family:"Geist Mono",monospace;font-weight:500}
         .stat-sm{font-size:24px;line-height:32px}
@@ -1430,6 +1436,11 @@ const EMBEDDED_INDEX_HTML: &str = r#"<!DOCTYPE html>
         pre.code{background:#f8f9f9;border:1px solid #e4e7e9;border-radius:10px;padding:16px;font-size:13px;font-family:"Geist Mono",monospace;overflow:auto}
         label.form{display:block;font-size:14px;font-weight:500;margin-bottom:6px}
         .form-stack>*+*{margin-top:16px}
+        .hint{font-size:12px;color:#9c9fa1;margin-top:4px}
+        .alert{padding:12px 16px;border-radius:10px;font-size:13px;display:flex;align-items:flex-start;gap:8px;margin-bottom:12px}
+        .alert i{margin-top:1px;flex-shrink:0}
+        .alert-warn{background:#fff8e6;color:#9a6700;border:1px solid #f5e6c8}
+        .alert-info{background:#f0f6fe;color:#0052c4;border:1px solid #c8dcf5}
         /* Dashboard cards */
         .dash-stat-card{background:#fff;border:1px solid #e4e7e9;border-radius:12px;padding:20px;display:flex;flex-direction:column;gap:8px}
         .dash-stat-card .icon-wrap{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px}
@@ -1437,11 +1448,26 @@ const EMBEDDED_INDEX_HTML: &str = r#"<!DOCTYPE html>
         .dash-stat-card .icon-wrap.green{background:#f3fbf4;color:#3abc3f}
         .dash-stat-card .icon-wrap.orange{background:#fff8e6;color:#ffa931}
         .dash-stat-card .icon-wrap.red{background:#fff3f3;color:#ff3131}
-        .quick-action{display:flex;align-items:center;gap:12px;padding:12px;border-radius:10px;border:1px solid #e4e7e9;cursor:pointer;background:#fff;transition:border-color .12s,box-shadow .12s;width:100%}
+        .quick-action{display:flex;align-items:center;gap:12px;padding:12px;border-radius:10px;border:1px solid #e4e7e9;cursor:pointer;background:#fff;transition:border-color .12s,box-shadow .12s;width:100%;text-align:left}
         .quick-action:hover{border-color:#0066f5;box-shadow:0 0 0 3px rgba(0,102,245,.08)}
         .quick-action i{font-size:20px;color:#0066f5;width:36px;height:36px;display:flex;align-items:center;justify-content:center;background:#f0f6fe;border-radius:8px;flex-shrink:0}
         .quick-action .qa-title{font-size:14px;font-weight:500}
         .quick-action .qa-desc{font-size:12px;color:#6a6f73}
+        /* File upload */
+        .upload-zone{border:2px dashed #dde1e3;border-radius:12px;padding:32px;text-align:center;cursor:pointer;transition:border-color .15s,background .15s}
+        .upload-zone:hover,.upload-zone.dragover{border-color:#0066f5;background:#f0f6fe}
+        .upload-zone i{font-size:32px;color:#9c9fa1;margin-bottom:8px}
+        .upload-zone p{font-size:13px;color:#6a6f73}
+        .upload-zone input[type="file"]{display:none}
+        /* Checkbox grid */
+        .chk-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+        .chk-item{display:flex;align-items:center;gap:6px;padding:6px 8px;border-radius:8px;font-size:13px;cursor:pointer;transition:background .1s}
+        .chk-item:hover{background:#f1f3f4}
+        .chk-item input{accent-color:#0066f5}
+        /* Config summary */
+        .config-summary{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+        .config-chip{display:inline-flex;align-items:center;gap:4px;height:28px;padding:0 10px;font-size:12px;border-radius:8px;background:#f1f3f4;color:#6a6f73}
+        .config-chip strong{color:#0d0e0f;font-weight:600}
     </style>
 </head>
 <body>
@@ -1473,26 +1499,25 @@ const EMBEDDED_INDEX_HTML: &str = r#"<!DOCTYPE html>
         </aside>
         <div class="main-wrap">
             <div class="topbar">
-                <div>
-                    <div class="topbar-title" id="e-page-title">Dashboard</div>
-                </div>
+                <div><div class="topbar-title" id="e-page-title">Dashboard</div></div>
                 <div class="topbar-meta">
                     <span id="e-topbar-data" style="display:none"><strong style="color:#0066f5" id="e-topbar-rows">0</strong> rows &times; <strong style="color:#0066f5" id="e-topbar-cols">0</strong> cols &mdash; <span id="e-topbar-name"></span></span>
                     <span id="e-badge" class="badge badge-ok">healthy</span>
-                    <span id="e-dot" style="width:8px;height:8px;border-radius:50%;background:#3abc3f"></span>
+                    <span id="e-dot" style="width:8px;height:8px;border-radius:50%;background:#3abc3f;display:inline-block"></span>
                 </div>
             </div>
             <div class="content">
                 <div class="content-inner">
+                    <!-- Dashboard -->
                     <div id="et-dashboard" class="tab-panel active">
                         <div class="grid-4" style="margin-bottom:20px">
                             <div class="dash-stat-card">
                                 <div class="icon-wrap blue"><i class="ri-database-2-line"></i></div>
-                                <div class="stat stat-sm stat-info" id="e-dash-rows">—</div>
+                                <div class="stat stat-sm stat-info" id="e-dash-rows">&mdash;</div>
                                 <div class="stat-label">Data Rows</div>
                             </div>
                             <div class="dash-stat-card">
-                                <div class="icon-wrap green"><i class="ri-cpu-line"></i></div>
+                                <div class="icon-wrap green"><i class="ri-bar-chart-line"></i></div>
                                 <div class="stat stat-sm stat-ok" id="e-dash-models">0</div>
                                 <div class="stat-label">Models Trained</div>
                             </div>
@@ -1512,28 +1537,37 @@ const EMBEDDED_INDEX_HTML: &str = r#"<!DOCTYPE html>
                                 <div class="card-header"><div class="card-title">Quick Actions</div></div>
                                 <div style="display:grid;gap:8px">
                                     <button class="quick-action" onclick="eTab('data')"><i class="ri-upload-2-line"></i><div><div class="qa-title">Load Dataset</div><div class="qa-desc">Import sample or custom data</div></div></button>
-                                    <button class="quick-action" onclick="eTab('automl')"><i class="ri-magic-line"></i><div><div class="qa-title">Run AutoML</div><div class="qa-desc">One-click pipeline — train &amp; optimize</div></div></button>
+                                    <button class="quick-action" onclick="eTab('automl')"><i class="ri-magic-line"></i><div><div class="qa-title">Run AutoML</div><div class="qa-desc">One-click pipeline &mdash; train &amp; optimize</div></div></button>
                                     <button class="quick-action" onclick="eTab('train')"><i class="ri-play-circle-line"></i><div><div class="qa-title">Train Model</div><div class="qa-desc">Train a single model manually</div></div></button>
                                     <button class="quick-action" onclick="eTab('autotune')"><i class="ri-equalizer-line"></i><div><div class="qa-title">Auto-Tune</div><div class="qa-desc">Compare multiple models automatically</div></div></button>
                                 </div>
                             </div>
                             <div class="card">
                                 <div class="card-header"><div class="card-title">System Health</div></div>
-                                <div id="e-dash-health">
-                                    <div style="display:flex;flex-direction:column;gap:12px">
-                                        <div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:14px">Status</span><span id="e-dash-status" class="badge badge-ok">healthy</span></div>
-                                        <div><div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px"><span>CPU</span><span class="mono" id="e-dash-cpu2">0%</span></div><div class="progress"><div class="progress-fill" id="e-dash-cpu-bar" style="width:0%"></div></div></div>
-                                        <div><div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px"><span>Memory</span><span class="mono" id="e-dash-mem2">0%</span></div><div class="progress"><div class="progress-fill" id="e-dash-mem-bar" style="width:0%;background:#3abc3f"></div></div></div>
-                                        <div style="font-size:12px;color:#9c9fa1;margin-top:4px" id="e-dash-mem-detail"></div>
-                                    </div>
+                                <div style="display:flex;flex-direction:column;gap:12px">
+                                    <div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:14px">Status</span><span id="e-dash-status" class="badge badge-ok">healthy</span></div>
+                                    <div><div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px"><span>CPU</span><span class="mono" id="e-dash-cpu2">0%</span></div><div class="progress"><div class="progress-fill" id="e-dash-cpu-bar" style="width:0%"></div></div></div>
+                                    <div><div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px"><span>Memory</span><span class="mono" id="e-dash-mem2">0%</span></div><div class="progress"><div class="progress-fill" id="e-dash-mem-bar" style="width:0%;background:#3abc3f"></div></div></div>
+                                    <div style="font-size:12px;color:#9c9fa1;margin-top:4px" id="e-dash-mem-detail"></div>
                                 </div>
                             </div>
                         </div>
+                        <div class="grid-2">
+                            <div class="card">
+                                <div class="card-header"><div class="card-title">Trained Models</div><button class="btn btn-sm btn-outline" onclick="eDashModels()"><i class="ri-refresh-line" style="font-size:14px"></i> Refresh</button></div>
+                                <div id="e-dash-model-list" class="empty">No models trained yet. Load data and run training to get started.</div>
+                            </div>
+                            <div class="card">
+                                <div class="card-header"><div class="card-title">Latest Training Result</div></div>
+                                <div id="e-dash-train-result" class="empty">No training results yet</div>
+                            </div>
+                        </div>
                         <div class="card">
-                            <div class="card-header"><div class="card-title">Trained Models</div><button class="btn btn-sm btn-outline" onclick="eDashModels()"><i class="ri-refresh-line" style="font-size:14px"></i></button></div>
-                            <div id="e-dash-model-list" class="empty">No models trained yet. Load data and run training to get started.</div>
+                            <div class="card-header"><div class="card-title">Activity Log</div></div>
+                            <div id="e-dash-activity" style="max-height:200px;overflow-y:auto"><div class="empty">No activity yet</div></div>
                         </div>
                     </div>
+                    <!-- Data -->
                     <div id="et-data" class="tab-panel">
                         <div class="grid-2">
                             <div class="card">
@@ -1541,8 +1575,16 @@ const EMBEDDED_INDEX_HTML: &str = r#"<!DOCTYPE html>
                                 <div id="e-pills"></div>
                                 <div style="margin-top:16px;padding-top:12px;border-top:1px solid #e4e7e9">
                                     <p style="font-size:12px;font-weight:500;color:#6a6f73;margin-bottom:8px">Or import from URL:</p>
-                                    <div style="display:flex;gap:8px"><input type="text" id="e-import-url" placeholder="Paste URL (Kaggle, GitHub, CSV...)"><button class="btn" onclick="eImportUrl()">Import</button></div>
+                                    <div style="display:flex;gap:8px"><input type="text" id="e-import-url" placeholder="Paste URL (Kaggle, GitHub, CSV...)" style="flex:1"><button class="btn" onclick="eImportUrl()">Import</button></div>
                                     <div id="e-import-status" style="margin-top:8px"></div>
+                                </div>
+                                <div style="margin-top:16px;padding-top:12px;border-top:1px solid #e4e7e9">
+                                    <div class="upload-zone" id="e-upload-zone" onclick="document.getElementById('e-file-input').click()">
+                                        <input type="file" id="e-file-input" accept=".csv,.tsv,.json" onchange="eFileUpload(this)">
+                                        <i class="ri-file-upload-line"></i>
+                                        <p><strong>Drop CSV file here</strong> or click to browse</p>
+                                        <p style="font-size:11px;color:#9c9fa1;margin-top:4px">Supports .csv, .tsv, .json</p>
+                                    </div>
                                 </div>
                             </div>
                             <div class="card">
@@ -1550,62 +1592,113 @@ const EMBEDDED_INDEX_HTML: &str = r#"<!DOCTYPE html>
                                 <div id="e-info" class="empty">No data loaded</div>
                             </div>
                         </div>
-                    </div>
-                    <div id="et-automl" class="tab-panel">
-                        <div class="card" style="max-width:600px">
-                            <div class="card-header"><div><div class="card-title">One-Click AutoML</div><div class="card-desc">Automatically detect, preprocess, train, and optimize — all in one click.</div></div></div>
-                <div style="margin-bottom:12px"><label class="form">Target Column</label><select id="e-automl-target"><option value="">Select target...</option></select></div>
-                <button class="btn btn-primary" id="e-btn-automl" onclick="eRunAutoML()" disabled style="width:100%;height:44px;font-size:16px">Run AutoML Pipeline</button>
-                <details style="margin-top:16px"><summary style="cursor:pointer;font-size:13px;font-weight:500;color:#6a6f73">Advanced Settings</summary>
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px">
-                    <div><label class="form">Task Type</label><select id="e-aml-task"><option value="">Auto-Detect</option><option value="classification">Classification</option><option value="regression">Regression</option></select></div>
-                    <div><label class="form">Scaler</label><select id="e-aml-scaler"><option value="">Auto</option><option value="standard">Standard</option><option value="minmax">MinMax</option><option value="robust">Robust</option></select></div>
-                    <div><label class="form">Max Models</label><input type="number" id="e-aml-max" value="8" min="1" max="20"></div>
-                    <div><label class="form">HyperOpt Trials</label><input type="number" id="e-aml-trials" value="20" min="0" max="200"></div>
-                </div></details>
-                <div id="e-automl-progress" style="display:none;margin-top:16px">
-                    <div style="font-size:14px;font-weight:500;color:#0066f5;margin-bottom:8px" id="e-aml-status">Starting...</div>
-                    <div class="progress"><div class="progress-fill" id="e-aml-bar" style="width:0%"></div></div>
-                </div>
-                <div id="e-automl-result" style="display:none;margin-top:16px">
-                    <div style="background:#0d0e0f;border-radius:10px;padding:16px;color:#fff;margin-bottom:12px">
-                        <div style="font-size:12px;opacity:.7">Best Model</div>
-                        <div style="font-size:20px;font-weight:600" id="e-aml-best">—</div>
-                        <div style="font-size:14px;opacity:.85" id="e-aml-score">—</div>
-                    </div>
-                    <div id="e-aml-leaderboard"></div>
-                    <div id="e-aml-chart-wrap" style="display:none;margin-top:16px">
-                        <h2 style="font-size:14px;font-weight:500;margin-bottom:12px;color:#6a6f73">Model Comparison</h2>
-                        <canvas id="e-aml-chart" width="700" height="300" style="width:100%;border-radius:8px"></canvas>
-                    </div>
-                </div>
-            </div>
-        </div>
-                    <div id="et-config" class="tab-panel">
-                        <div class="card form-stack" style="max-width:500px">
-                            <div class="card-header"><div class="card-title">Model Configuration</div></div>
-                <div><label class="form">Target Column</label><select id="e-target"><option value="">Select...</option></select></div>
-                <div><label class="form">Task Type</label><select id="e-task"><option value="classification">Classification</option><option value="regression">Regression</option><option value="clustering">Clustering</option></select></div>
-                <div><label class="form">Model</label><select id="e-model"><option value="random_forest">Random Forest</option><option value="xgboost">XGBoost</option><option value="lightgbm">LightGBM</option><option value="catboost">CatBoost</option><option value="gradient_boosting">Gradient Boosting</option><option value="extra_trees">Extra Trees</option><option value="decision_tree">Decision Tree</option><option value="logistic_regression">Logistic Regression</option><option value="ridge">Ridge</option><option value="lasso">Lasso</option><option value="elastic_net">Elastic Net</option><option value="polynomial">Polynomial</option><option value="adaboost">AdaBoost</option><option value="sgd">SGD</option><option value="knn">KNN</option><option value="naive_bayes">Naive Bayes</option><option value="svm">SVM</option><option value="gaussian_process">Gaussian Process</option><option value="kmeans">KMeans</option><option value="dbscan">DBSCAN</option></select></div>
-                    </div>
-                    <div id="et-train" class="tab-panel">
-                        <div class="card">
-                            <div class="card-header">
-                                <div class="card-title">Training</div>
-                    <button id="e-train-btn" class="btn" onclick="eTrain()" disabled>Train</button>
-                </div>
-                <div id="e-result"></div>
-                    </div>
-                    <div id="et-monitor" class="tab-panel">
-                        <div class="grid-2">
-                            <div class="card"><p style="font-size:12px;color:#6a6f73;margin-bottom:8px">CPU Usage</p><p id="e-cpu" class="stat stat-info">0.0%</p></div>
-                            <div class="card"><p style="font-size:12px;color:#6a6f73;margin-bottom:8px">Memory</p><p id="e-mem" class="stat stat-ok">0.0%</p><p id="e-mem2" style="font-size:12px;color:#9c9fa1;margin-top:4px"></p></div>
+                        <div id="e-data-preview-wrap" style="display:none">
+                            <div class="card">
+                                <div class="card-header"><div class="card-title">Data Preview</div><span class="badge badge-info" id="e-preview-badge"></span></div>
+                                <div style="overflow-x:auto" id="e-data-preview"></div>
+                            </div>
                         </div>
                     </div>
+                    <!-- AutoML -->
+                    <div id="et-automl" class="tab-panel">
+                        <div class="card" style="max-width:600px">
+                            <div class="card-header"><div><div class="card-title">One-Click AutoML</div><div class="card-desc">Automatically detect, preprocess, train, and optimize &mdash; all in one click.</div></div></div>
+                            <div id="e-automl-nodata" class="alert alert-warn" style="display:none"><i class="ri-error-warning-line"></i><span>Load a dataset first from the <a href="javascript:void(0)" onclick="eTab('data');return false" style="color:inherit;font-weight:600">Data</a> page.</span></div>
+                            <div style="margin-bottom:12px"><label class="form">Target Column</label><select id="e-automl-target"><option value="">Select target...</option></select></div>
+                            <button class="btn btn-primary" id="e-btn-automl" onclick="eRunAutoML()" disabled style="width:100%;height:44px;font-size:16px">Run AutoML Pipeline</button>
+                            <details style="margin-top:16px"><summary style="cursor:pointer;font-size:13px;font-weight:500;color:#6a6f73">Advanced Settings</summary>
+                            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px">
+                                <div><label class="form">Task Type</label><select id="e-aml-task"><option value="">Auto-Detect</option><option value="classification">Classification</option><option value="regression">Regression</option></select></div>
+                                <div><label class="form">Scaler</label><select id="e-aml-scaler"><option value="">Auto</option><option value="standard">Standard</option><option value="minmax">MinMax</option><option value="robust">Robust</option></select></div>
+                                <div><label class="form">Max Models</label><input type="number" id="e-aml-max" value="8" min="1" max="20"></div>
+                                <div><label class="form">HyperOpt Trials</label><input type="number" id="e-aml-trials" value="20" min="0" max="200"></div>
+                            </div></details>
+                            <div id="e-automl-progress" style="display:none;margin-top:16px">
+                                <div style="font-size:14px;font-weight:500;color:#0066f5;margin-bottom:8px" id="e-aml-status">Starting...</div>
+                                <div class="progress"><div class="progress-fill" id="e-aml-bar" style="width:0%"></div></div>
+                            </div>
+                            <div id="e-automl-result" style="display:none;margin-top:16px">
+                                <div style="background:#0d0e0f;border-radius:10px;padding:16px;color:#fff;margin-bottom:12px">
+                                    <div style="font-size:12px;opacity:.7">Best Model</div>
+                                    <div style="font-size:20px;font-weight:600" id="e-aml-best">&mdash;</div>
+                                    <div style="font-size:14px;opacity:.85" id="e-aml-score">&mdash;</div>
+                                </div>
+                                <div id="e-aml-leaderboard"></div>
+                                <div id="e-aml-chart-wrap" style="display:none;margin-top:16px">
+                                    <p style="font-size:14px;font-weight:500;margin-bottom:12px;color:#6a6f73">Model Comparison</p>
+                                    <canvas id="e-aml-chart" width="700" height="300" style="width:100%;border-radius:8px"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Config -->
+                    <div id="et-config" class="tab-panel">
+                        <div class="card form-stack" style="max-width:520px">
+                            <div class="card-header"><div><div class="card-title">Model Configuration</div><div class="card-desc">Set the target column, task type, and model before training.</div></div></div>
+                            <div id="e-config-nodata" class="alert alert-warn" style="display:none"><i class="ri-error-warning-line"></i><span>Load a dataset first from the <a href="javascript:void(0)" onclick="eTab('data');return false" style="color:inherit;font-weight:600">Data</a> page.</span></div>
+                            <div><label class="form">Target Column</label><select id="e-target"><option value="">Select...</option></select><p class="hint">The column your model will predict.</p></div>
+                            <div><label class="form">Task Type</label><select id="e-task"><option value="classification">Classification</option><option value="regression">Regression</option><option value="clustering">Clustering</option></select></div>
+                            <div><label class="form">Model</label><select id="e-model"><option value="random_forest">Random Forest</option><option value="xgboost">XGBoost</option><option value="lightgbm">LightGBM</option><option value="catboost">CatBoost</option><option value="gradient_boosting">Gradient Boosting</option><option value="extra_trees">Extra Trees</option><option value="decision_tree">Decision Tree</option><option value="logistic_regression">Logistic Regression</option><option value="ridge">Ridge</option><option value="lasso">Lasso</option><option value="elastic_net">Elastic Net</option><option value="polynomial">Polynomial</option><option value="adaboost">AdaBoost</option><option value="sgd">SGD</option><option value="knn">KNN</option><option value="naive_bayes">Naive Bayes</option><option value="svm">SVM</option><option value="gaussian_process">Gaussian Process</option><option value="kmeans">KMeans</option><option value="dbscan">DBSCAN</option></select></div>
+                        </div>
+                    </div>
+                    <!-- Train -->
+                    <div id="et-train" class="tab-panel">
+                        <div class="card" style="max-width:700px">
+                            <div class="card-header">
+                                <div><div class="card-title">Training</div><div class="card-desc">Train a model using the current configuration.</div></div>
+                                <button id="e-train-btn" class="btn" onclick="eTrain()" disabled>Train Model</button>
+                            </div>
+                            <div id="e-train-nodata" class="alert alert-warn" style="display:none"><i class="ri-error-warning-line"></i><span>Load a dataset first from the <a href="javascript:void(0)" onclick="eTab('data');return false" style="color:inherit;font-weight:600">Data</a> page.</span></div>
+                            <div id="e-train-summary" style="display:none">
+                                <p style="font-size:13px;font-weight:500;color:#6a6f73;margin-bottom:8px">Current Configuration</p>
+                                <div class="config-summary" id="e-train-config-chips"></div>
+                            </div>
+                            <div id="e-result"></div>
+                        </div>
+                    </div>
+                    <!-- Monitor -->
+                    <div id="et-monitor" class="tab-panel">
+                        <div class="grid-4" style="margin-bottom:16px">
+                            <div class="dash-stat-card">
+                                <div class="icon-wrap blue"><i class="ri-cpu-line"></i></div>
+                                <div class="stat stat-sm stat-info" id="e-cpu">0.0%</div>
+                                <div class="stat-label">CPU Usage</div>
+                            </div>
+                            <div class="dash-stat-card">
+                                <div class="icon-wrap green"><i class="ri-hard-drive-2-line"></i></div>
+                                <div class="stat stat-sm stat-ok" id="e-mem">0.0%</div>
+                                <div class="stat-label">Memory Usage</div>
+                            </div>
+                            <div class="dash-stat-card">
+                                <div class="icon-wrap orange"><i class="ri-database-2-line"></i></div>
+                                <div class="stat stat-sm" id="e-mem-used" style="color:#6a6f73">0 GB</div>
+                                <div class="stat-label">Memory Used</div>
+                            </div>
+                            <div class="dash-stat-card">
+                                <div class="icon-wrap red"><i class="ri-hard-drive-2-line"></i></div>
+                                <div class="stat stat-sm" id="e-mem-total" style="color:#6a6f73">0 GB</div>
+                                <div class="stat-label">Total Memory</div>
+                            </div>
+                        </div>
+                        <div class="grid-2">
+                            <div class="card">
+                                <div class="card-header"><div class="card-title">CPU</div></div>
+                                <div class="progress" style="height:10px"><div class="progress-fill" id="e-mon-cpu-bar" style="width:0%;height:100%"></div></div>
+                                <p id="e-mon-cpu-val" class="mono" style="font-size:13px;color:#6a6f73;margin-top:8px">0.0%</p>
+                            </div>
+                            <div class="card">
+                                <div class="card-header"><div class="card-title">Memory</div></div>
+                                <div class="progress" style="height:10px"><div class="progress-fill" id="e-mon-mem-bar" style="width:0%;height:100%;background:#3abc3f"></div></div>
+                                <p id="e-mon-mem-val" class="mono" style="font-size:13px;color:#6a6f73;margin-top:8px">0.0%</p>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- HyperOpt -->
                     <div id="et-hyperopt" class="tab-panel">
                         <div class="grid-2">
                             <div class="card">
                                 <div class="card-header"><div class="card-title">HyperOpt Config</div></div>
+                                <div id="e-ho-nodata" class="alert alert-warn" style="display:none"><i class="ri-error-warning-line"></i><span>Load data and set target in <a href="javascript:void(0)" onclick="eTab('config');return false" style="color:inherit;font-weight:600">Config</a> first.</span></div>
                                 <div class="form-stack">
                                     <div><label class="form">Model</label><select id="e-ho-model"><option value="random_forest">Random Forest</option><option value="xgboost">XGBoost</option><option value="lightgbm">LightGBM</option><option value="catboost">CatBoost</option><option value="gradient_boosting">Gradient Boosting</option><option value="extra_trees">Extra Trees</option><option value="decision_tree">Decision Tree</option><option value="adaboost">AdaBoost</option><option value="sgd">SGD</option><option value="knn">KNN</option><option value="svm">SVM</option><option value="polynomial">Polynomial</option><option value="gaussian_process">Gaussian Process</option></select></div>
                                     <div><label class="form">Sampler</label><select id="e-ho-sampler"><option value="tpe">TPE</option><option value="random">Random</option><option value="gp">Gaussian Process</option></select></div>
@@ -1631,10 +1724,12 @@ const EMBEDDED_INDEX_HTML: &str = r#"<!DOCTYPE html>
                             </div>
                         </div>
                     </div>
+                    <!-- Auto-Tune -->
                     <div id="et-autotune" class="tab-panel">
                         <div class="grid-2">
                             <div class="card">
                                 <div class="card-header"><div><div class="card-title">Auto-Tune</div><div class="card-desc">Automatically trains multiple models and picks the best.</div></div></div>
+                                <div id="e-at-nodata" class="alert alert-warn" style="display:none"><i class="ri-error-warning-line"></i><span>Load data and set target in <a href="javascript:void(0)" onclick="eTab('config');return false" style="color:inherit;font-weight:600">Config</a> first.</span></div>
                                 <button id="e-at-btn" class="btn" onclick="eAutoTune()" disabled>Start Auto-Tune</button>
                             </div>
                             <div class="card">
@@ -1649,44 +1744,67 @@ const EMBEDDED_INDEX_HTML: &str = r#"<!DOCTYPE html>
                             </div>
                         </div>
                     </div>
+                    <!-- Ensemble -->
                     <div id="et-ensemble" class="tab-panel">
                         <div class="card">
-                            <div class="card-header"><div><div class="card-title">Ensemble Training</div><div class="card-desc">Select 2+ models and strategy, then train.</div></div></div>
-                <div class="grid-2">
-                    <div><label class="form">Strategy</label><select id="e-ens-strat"><option value="voting">Voting</option><option value="averaging">Averaging</option></select></div>
-                    <div><button id="e-ens-btn" class="btn" onclick="eEnsemble()" disabled>Train Ensemble</button></div>
-                </div>
-                <div id="e-ens-result" style="margin-top:16px" class="empty">Configure ensemble to see results</div>
+                            <div class="card-header"><div><div class="card-title">Ensemble Training</div><div class="card-desc">Select 2+ models and a strategy, then train an ensemble.</div></div></div>
+                            <div id="e-ens-nodata" class="alert alert-warn" style="display:none"><i class="ri-error-warning-line"></i><span>Load data and set target in <a href="javascript:void(0)" onclick="eTab('config');return false" style="color:inherit;font-weight:600">Config</a> first.</span></div>
+                            <div style="margin-bottom:12px">
+                                <label class="form">Select Models</label>
+                                <div class="chk-grid" id="e-ens-models">
+                                    <label class="chk-item"><input type="checkbox" value="random_forest" checked> Random Forest</label>
+                                    <label class="chk-item"><input type="checkbox" value="decision_tree" checked> Decision Tree</label>
+                                    <label class="chk-item"><input type="checkbox" value="gradient_boosting" checked> Gradient Boosting</label>
+                                    <label class="chk-item"><input type="checkbox" value="extra_trees"> Extra Trees</label>
+                                    <label class="chk-item"><input type="checkbox" value="adaboost"> AdaBoost</label>
+                                    <label class="chk-item"><input type="checkbox" value="knn"> KNN</label>
+                                    <label class="chk-item"><input type="checkbox" value="svm"> SVM</label>
+                                    <label class="chk-item"><input type="checkbox" value="logistic_regression"> Logistic Regression</label>
+                                    <label class="chk-item"><input type="checkbox" value="naive_bayes"> Naive Bayes</label>
+                                </div>
+                            </div>
+                            <div class="grid-2" style="margin-bottom:12px">
+                                <div><label class="form">Strategy</label><select id="e-ens-strat"><option value="voting">Voting</option><option value="averaging">Averaging</option></select></div>
+                                <div style="display:flex;align-items:flex-end"><button id="e-ens-btn" class="btn" onclick="eEnsemble()" disabled style="width:100%">Train Ensemble</button></div>
+                            </div>
+                            <div id="e-ens-result" style="margin-top:16px" class="empty">Select models and run ensemble training</div>
+                        </div>
                     </div>
+                    <!-- Explain -->
                     <div id="et-explain" class="tab-panel">
                         <div class="card">
                             <div class="card-header">
-                                <div class="card-title">Feature Importance</div>
-                    <button id="e-explain-btn" class="btn" onclick="eExplain()" disabled>Analyze</button>
-                </div>
-                <div id="e-explain-result" class="empty">Train a model first, then analyze</div>
+                                <div><div class="card-title">Feature Importance</div><div class="card-desc">Analyze which features matter most to your trained model.</div></div>
+                                <button id="e-explain-btn" class="btn" onclick="eExplain()" disabled>Analyze</button>
+                            </div>
+                            <div id="e-explain-result" class="empty">Train a model first, then analyze feature importance</div>
+                        </div>
                     </div>
+                    <!-- Anomaly -->
                     <div id="et-anomaly" class="tab-panel">
                         <div class="card">
                             <div class="card-header">
-                                <div class="card-title">Anomaly Detection</div>
-                    <button id="e-anomaly-btn" class="btn" onclick="eAnomaly()" disabled>Detect</button>
-                </div>
-                            <div class="grid-2" style="margin-bottom:12px">
-                                <div><label class="form">Contamination</label><input type="number" id="e-anom-cont" value="0.1" min="0.01" max="0.5" step="0.01"></div>
-                                <div><label class="form">Estimators</label><input type="number" id="e-anom-est" value="100" min="10" max="1000" step="10"></div>
+                                <div><div class="card-title">Anomaly Detection</div><div class="card-desc">Find unusual data points using Isolation Forest.</div></div>
+                                <button id="e-anomaly-btn" class="btn" onclick="eAnomaly()" disabled>Detect</button>
                             </div>
-                <div id="e-anomaly-result" class="empty">Load data and run anomaly detection</div>
+                            <div id="e-anom-nodata" class="alert alert-warn" style="display:none"><i class="ri-error-warning-line"></i><span>Load a dataset first from the <a href="javascript:void(0)" onclick="eTab('data');return false" style="color:inherit;font-weight:600">Data</a> page.</span></div>
+                            <div class="grid-2" style="margin-bottom:12px">
+                                <div><label class="form">Contamination</label><input type="number" id="e-anom-cont" value="0.1" min="0.01" max="0.5" step="0.01"><p class="hint">Expected fraction of anomalies (0.01&ndash;0.5)</p></div>
+                                <div><label class="form">Estimators</label><input type="number" id="e-anom-est" value="100" min="10" max="1000" step="10"><p class="hint">Number of trees in the forest</p></div>
+                            </div>
+                            <div id="e-anomaly-result" class="empty">Load data and run anomaly detection</div>
+                        </div>
                     </div>
+                    <!-- Security -->
                     <div id="et-security" class="tab-panel">
-                        <div class="card" style="margin-bottom:12px">
+                        <div class="card" style="margin-bottom:16px">
                             <div class="card-header">
                                 <div class="card-title">Security Overview</div>
                                 <button class="btn btn-sm btn-outline" onclick="eSecLoad()"><i class="ri-refresh-line" style="font-size:14px"></i></button>
                             </div>
                             <div id="e-sec-status" class="empty">Loading security status...</div>
                         </div>
-                        <div class="card" style="margin-bottom:12px">
+                        <div class="card">
                             <div class="card-header"><div class="card-title">Audit Log</div></div>
                             <div id="e-sec-audit" class="empty" style="max-height:300px;overflow-y:auto">Loading...</div>
                         </div>
@@ -1697,31 +1815,84 @@ const EMBEDDED_INDEX_HTML: &str = r#"<!DOCTYPE html>
     </div>
     <div id="e-toasts" class="toast-box"></div>
     <script>
-    var eData=null,eTraining=false,eLastModelId=null;
+    var eData=null,eTraining=false,eLastModelId=null,eLoadedDataset=null;
     function $(i){return document.getElementById(i)}
-    function eNotify(m,t){var d=document.createElement('div');d.className='toast'+(t==='ok'?' toast-ok':t==='err'?' toast-err':'');d.textContent=m;$('e-toasts').appendChild(d);setTimeout(function(){d.remove()},3000)}
-    var eTabNames={dashboard:'Dashboard',data:'Data',automl:'AutoML',config:'Config',train:'Train',hyperopt:'HyperOpt',autotune:'Auto-Tune',ensemble:'Ensemble',explain:'Explain',anomaly:'Anomaly',monitor:'Monitor',security:'Security'};
-    function eTab(n){document.querySelectorAll('.tab-panel').forEach(function(p){p.classList.remove('active')});document.querySelectorAll('.sidebar-item').forEach(function(t){t.classList.remove('active')});$('et-'+n).classList.add('active');document.querySelector('[data-tab="'+n+'"]').classList.add('active');$('e-page-title').textContent=eTabNames[n]||n}
+    function eNotify(m,t){var d=document.createElement('div');d.className='toast'+(t==='ok'?' toast-ok':t==='err'?' toast-err':'');d.textContent=m;$('e-toasts').appendChild(d);setTimeout(function(){d.remove()},3500)}
+    var eTabNames={dashboard:'Dashboard',data:'Data',automl:'AutoML',config:'Configuration',train:'Training',hyperopt:'HyperOpt',autotune:'Auto-Tune',ensemble:'Ensemble',explain:'Explainability',anomaly:'Anomaly Detection',monitor:'System Monitor',security:'Security'};
+    function eTab(n){
+        document.querySelectorAll('.tab-panel').forEach(function(p){p.classList.remove('active')});
+        document.querySelectorAll('.sidebar-item').forEach(function(t){t.classList.remove('active')});
+        var panel=$('et-'+n);if(panel)panel.classList.add('active');
+        var btn=document.querySelector('[data-tab="'+n+'"]');if(btn)btn.classList.add('active');
+        $('e-page-title').textContent=eTabNames[n]||n;
+        eUpdateNoDataAlerts();
+        if(n==='train')eUpdateTrainSummary();
+    }
     function eToggleSidebar(){var s=$('e-sidebar');s.classList.toggle('expanded');$('e-sidebar-icon').className=s.classList.contains('expanded')?'ri-arrow-left-s-line':'ri-arrow-right-s-line'}
-    function eTopbar(name,rows,cols,mem){$('e-topbar-data').style.display='inline';$('e-topbar-name').textContent=name;$('e-topbar-rows').textContent=rows.toLocaleString();$('e-topbar-cols').textContent=cols;$('e-dash-rows').textContent=rows.toLocaleString()}
-    function eSys(){fetch('/api/system/status').then(function(r){return r.json()}).then(function(d){var s=d.system||{};$('e-badge').textContent=d.status||'error';$('e-badge').className='badge '+(d.status==='healthy'?'badge-ok':'badge-err');$('e-dot').style.background=d.status==='healthy'?'#3abc3f':'#ff3131';var cpuVal=(s.cpu_usage||0).toFixed(1);var memVal=(s.memory_usage_percent||0).toFixed(1);$('e-cpu').textContent=cpuVal+'%';$('e-mem').textContent=memVal+'%';$('e-mem2').textContent=(s.used_memory_gb||0).toFixed(1)+' / '+(s.total_memory_gb||0).toFixed(1)+' GB';$('e-dash-cpu').textContent=cpuVal+'%';$('e-dash-mem').textContent=memVal+'%';$('e-dash-cpu2').textContent=cpuVal+'%';$('e-dash-mem2').textContent=memVal+'%';$('e-dash-cpu-bar').style.width=cpuVal+'%';$('e-dash-mem-bar').style.width=memVal+'%';$('e-dash-mem-detail').textContent=(s.used_memory_gb||0).toFixed(1)+' / '+(s.total_memory_gb||0).toFixed(1)+' GB';$('e-dash-status').textContent=d.status||'error';$('e-dash-status').className='badge '+(d.status==='healthy'?'badge-ok':'badge-err')}).catch(function(){})}
-    function eLoad(n){fetch('/api/data/sample/'+n).then(function(r){return r.json()}).then(function(d){if(d.success){eData=d;eTopbar(d.name||n,d.rows,d.columns);$('e-info').innerHTML='<div class="grid-2"><div><span class="stat stat-info">'+d.rows.toLocaleString()+'</span><p style="font-size:12px;color:#6a6f73">Rows</p></div><div><span class="stat stat-info">'+d.columns+'</span><p style="font-size:12px;color:#6a6f73">Columns</p></div></div><div style="margin-top:12px;font-size:12px;color:#6a6f73">Columns: '+(d.column_names||[]).join(', ')+'</div>';var sel=$('e-target');sel.innerHTML='<option value="">Select...</option>';(d.column_names||[]).forEach(function(c){var o=document.createElement('option');o.value=c;o.textContent=c;sel.appendChild(o)});$('e-train-btn').disabled=false;$('e-ho-btn').disabled=false;$('e-ens-btn').disabled=false;$('e-at-btn').disabled=false;$('e-anomaly-btn').disabled=false;eUpdateAutoMLTarget();eNotify('Loaded '+n+' ('+d.rows+' rows, '+d.columns+' cols)','ok')}}).catch(function(e){eNotify('Failed: '+e.message,'err')})}
-    function eImportUrl(){var url=$('e-import-url').value.trim();if(!url){eNotify('Enter a URL','err');return}$('e-import-status').innerHTML='<p style="font-size:12px;color:#6a6f73">Downloading...</p>';fetch('/api/data/import/url',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:url})}).then(function(r){return r.json()}).then(function(d){if(d.success){eData=d;eTopbar(d.name||'Imported',d.rows,d.columns);$('e-info').innerHTML='<div class="grid-2"><div><span class="stat stat-info">'+d.rows.toLocaleString()+'</span><p style="font-size:12px;color:#6a6f73">Rows</p></div><div><span class="stat stat-info">'+d.columns+'</span><p style="font-size:12px;color:#6a6f73">Columns</p></div></div><div style="margin-top:12px;font-size:12px;color:#6a6f73">Columns: '+(d.column_names||[]).join(', ')+'</div>';var sel=$('e-target');sel.innerHTML='<option value="">Select...</option>';(d.column_names||[]).forEach(function(c){var o=document.createElement('option');o.value=c;o.textContent=c;sel.appendChild(o)});$('e-train-btn').disabled=false;$('e-ho-btn').disabled=false;$('e-ens-btn').disabled=false;$('e-at-btn').disabled=false;$('e-anomaly-btn').disabled=false;eUpdateAutoMLTarget();$('e-import-status').innerHTML='<p style="font-size:12px;color:#3abc3f">Imported from '+d.source+' ('+d.rows+' rows, '+d.columns+' cols)</p>';eNotify('Imported!','ok')}else if(d.needs_credentials){$('e-import-status').innerHTML='<p style="font-size:12px;color:#ffa931">'+d.message+'</p>'}else{$('e-import-status').innerHTML='<p style="font-size:12px;color:#ff3131">'+(d.message||'Failed')+'</p>'}}).catch(function(e){$('e-import-status').innerHTML='<p style="font-size:12px;color:#ff3131">'+e.message+'</p>'})}
-    function eTrain(){if(!eData||eTraining)return;eTraining=true;$('e-train-btn').disabled=true;$('e-result').innerHTML='<p>Training...</p>';var cfg={target_column:$('e-target').value,task_type:$('e-task').value,model_type:$('e-model').value};fetch('/api/train',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)}).then(function(r){return r.json()}).then(function(d){if(d.job_id){ePoll(d.job_id)}}).catch(function(e){$('e-result').innerHTML='<p style="color:#ff3131">'+e.message+'</p>';eTraining=false;$('e-train-btn').disabled=false})}
-    function ePoll(id){fetch('/api/train/status/'+id).then(function(r){return r.json()}).then(function(d){var s=d.status;if(s.Completed){var m=s.Completed.metrics||{};var h='<table><thead><tr><th>Metric</th><th>Value</th></tr></thead><tbody>';Object.keys(m).forEach(function(k){h+='<tr><td>'+k+'</td><td class="mono">'+(typeof m[k]==='number'?m[k].toFixed(4):m[k])+'</td></tr>'});h+='</tbody></table>';$('e-result').innerHTML=h;eTraining=false;$('e-train-btn').disabled=false;eNotify('Training complete!','ok');fetch('/api/models').then(function(r){return r.json()}).then(function(md){var models=md.models||[];if(models.length>0){eLastModelId=models[models.length-1].id;$('e-explain-btn').disabled=false}}).catch(function(){})}else if(s.Failed){$('e-result').innerHTML='<p style="color:#ff3131">'+(s.Failed.error||'Failed')+'</p>';eTraining=false;$('e-train-btn').disabled=false}else{var p=s.Running?s.Running.progress||0:0;$('e-result').innerHTML='<div class="progress"><div class="progress-fill" style="width:'+(p*100)+'%"></div></div><p style="font-size:12px;color:#6a6f73;margin-top:8px">'+(s.Running?s.Running.message||'':'')+'</p>';setTimeout(function(){ePoll(id)},1000)}}).catch(function(){setTimeout(function(){ePoll(id)},2000)})}
-    function eHyperOpt(){if(!eData)return;$('e-ho-btn').disabled=true;$('e-ho-result').innerHTML='<p>Optimizing...</p>';fetch('/api/hyperopt',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target_column:$('e-target').value,task_type:$('e-task').value,model_type:$('e-ho-model').value,n_trials:parseInt($('e-ho-trials').value),sampler:$('e-ho-sampler').value})}).then(function(r){return r.json()}).then(function(d){if(d.job_id){eHoPoll(d.job_id)}}).catch(function(e){$('e-ho-result').innerHTML='<p style="color:#ff3131">'+e.message+'</p>';$('e-ho-btn').disabled=false})}
-    function eHoPoll(id){fetch('/api/train/status/'+id).then(function(r){return r.json()}).then(function(d){var s=d.status;if(s.Completed){var m=s.Completed.metrics||{};var h='<div style="background:#f3fbf4;padding:12px;border-radius:8px;margin-bottom:12px">';if(m.best_trial){h+='<strong>Best Score:</strong> '+((m.best_trial.value||0).toFixed(6))+'<br><small>'+((m.best_trial.params||''))+'</small>'}h+='</div><p style="font-size:12px;color:#6a6f73">Trials: '+(m.total_trials||0)+' | Time: '+(m.total_duration_secs||0).toFixed(2)+'s</p>';if(m.trials){h+='<table style="margin-top:8px"><thead><tr><th>#</th><th>Score</th><th>Time</th></tr></thead><tbody>';m.trials.forEach(function(t){h+='<tr><td>'+t.trial_id+'</td><td class="mono">'+(t.value===Infinity?'Fail':t.value.toFixed(6))+'</td><td class="mono">'+t.duration_secs.toFixed(2)+'s</td></tr>'});h+='</tbody></table>'}$('e-ho-result').innerHTML=h;if(m.trials)eHoCharts(m.trials);$('e-ho-btn').disabled=false;eNotify('Optimization done!','ok')}else if(s.Failed){$('e-ho-result').innerHTML='<p style="color:#ff3131">'+(s.Failed.error||'Failed')+'</p>';$('e-ho-btn').disabled=false}else{setTimeout(function(){eHoPoll(id)},1500)}}).catch(function(){setTimeout(function(){eHoPoll(id)},3000)})}
-    function eAutoTune(){if(!eData)return;$('e-at-btn').disabled=true;$('e-at-result').innerHTML='<p>Auto-tuning...</p>';fetch('/api/autotune',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target_column:$('e-target').value,task_type:$('e-task').value})}).then(function(r){return r.json()}).then(function(d){if(d.job_id){eAtPoll(d.job_id)}}).catch(function(e){$('e-at-result').innerHTML='<p style="color:#ff3131">'+e.message+'</p>';$('e-at-btn').disabled=false})}
-    function eAtPoll(id){fetch('/api/train/status/'+id).then(function(r){return r.json()}).then(function(d){var s=d.status;if(s.Completed){var m=s.Completed.metrics||{};var h='';if(m.best){h+='<div style="background:#f3fbf4;padding:12px;border-radius:8px;margin-bottom:12px"><strong>Best: '+m.best_model+'</strong> (score: '+(m.best.score||0).toFixed(6)+')</div>'}if(m.leaderboard){h+='<table><thead><tr><th>#</th><th>Model</th><th>Score</th><th>Time</th></tr></thead><tbody>';m.leaderboard.forEach(function(r,i){h+='<tr><td>'+(i+1)+'</td><td>'+r.model+'</td><td class="mono">'+(r.score||0).toFixed(6)+'</td><td class="mono">'+(r.training_time_secs||0).toFixed(2)+'s</td></tr>'});h+='</tbody></table>'}$('e-at-result').innerHTML=h;$('e-at-btn').disabled=false;if(m.best&&m.best.status==='success'){eLastModelId='autotune_'+m.best_model+'_'+id;$('e-explain-btn').disabled=false}if(m.leaderboard)eAtCharts(m.leaderboard);eNotify('Auto-tune done!','ok')}else if(s.Failed){$('e-at-result').innerHTML='<p style="color:#ff3131">'+(s.Failed.error||'Failed')+'</p>';$('e-at-btn').disabled=false}else{var p=s.Running?s.Running.progress||0:0;var pr=s.Running?s.Running.partial_results:null;var ph='<div class="progress"><div class="progress-fill" style="width:'+(p*100)+'%"></div></div><p style="font-size:12px;color:#6a6f73;margin-top:8px">'+(s.Running?s.Running.message||'':'')+'</p>';if(pr&&pr.length>0){ph+='<table style="margin-top:12px"><thead><tr><th>Model</th><th>Score</th><th>Time</th></tr></thead><tbody>';pr.sort(function(a,b){return(b.score||0)-(a.score||0)});pr.forEach(function(r){ph+='<tr><td>'+r.model+'</td><td class="mono">'+((r.score||0).toFixed(6))+'</td><td class="mono">'+((r.training_time_secs||0).toFixed(2))+'s</td></tr>'});ph+='</tbody></table>';eAtCharts(pr)}$('e-at-result').innerHTML=ph;setTimeout(function(){eAtPoll(id)},1500)}}).catch(function(){setTimeout(function(){eAtPoll(id)},3000)})}
-    function eEnsemble(){if(!eData)return;$('e-ens-btn').disabled=true;$('e-ens-result').innerHTML='<p>Training ensemble...</p>';var models=['random_forest','decision_tree','gradient_boosting'];fetch('/api/ensemble/train',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target_column:$('e-target').value,task_type:$('e-task').value,models:models,strategy:$('e-ens-strat').value})}).then(function(r){return r.json()}).then(function(d){if(d.job_id){eEnsPoll(d.job_id)}}).catch(function(e){$('e-ens-result').innerHTML='<p style="color:#ff3131">'+e.message+'</p>';$('e-ens-btn').disabled=false})}
-    function eEnsPoll(id){fetch('/api/train/status/'+id).then(function(r){return r.json()}).then(function(d){var s=d.status;if(s.Completed){var m=s.Completed.metrics||{};var h='<div style="background:#f0f6fe;padding:12px;border-radius:8px;margin-bottom:12px"><strong>Ensemble:</strong> '+(m.strategy||'voting')+' | Models: '+(m.successful_models||0)+'/'+(m.model_count||0)+'<br><small>Time: '+(m.training_time_secs||0).toFixed(2)+'s</small></div>';if(m.model_results){h+='<table><thead><tr><th>Model</th><th>Status</th></tr></thead><tbody>';m.model_results.forEach(function(r){h+='<tr><td>'+r.model+'</td><td>'+(r.status==='success'?'✓':'✗ '+r.error)+'</td></tr>'});h+='</tbody></table>'}$('e-ens-result').innerHTML=h;$('e-ens-btn').disabled=false;eNotify('Ensemble done!','ok')}else if(s.Failed){$('e-ens-result').innerHTML='<p style="color:#ff3131">'+(s.Failed.error||'Failed')+'</p>';$('e-ens-btn').disabled=false}else{setTimeout(function(){eEnsPoll(id)},1500)}}).catch(function(){setTimeout(function(){eEnsPoll(id)},3000)})}
-    function eExplain(){if(!eLastModelId)return;$('e-explain-btn').disabled=true;fetch('/api/explain/importance',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model_id:eLastModelId})}).then(function(r){return r.json()}).then(function(d){if(d.success&&d.features&&d.features.length>0){var mx=Math.max.apply(null,d.features.map(function(f){return Math.abs(f.importance)}));var h='<table><thead><tr><th>Feature</th><th>Importance</th><th>Bar</th></tr></thead><tbody>';d.features.forEach(function(f){var pct=mx>0?(Math.abs(f.importance)/mx*100).toFixed(0):0;h+='<tr><td>'+f.feature+'</td><td class="mono">'+f.importance.toFixed(6)+'</td><td><div style="width:100%;background:#e4e7e9;border-radius:4px;height:6px"><div style="width:'+pct+'%;background:#0066f5;border-radius:4px;height:6px"></div></div></td></tr>'});h+='</tbody></table>';$('e-explain-result').innerHTML=h}else{$('e-explain-result').innerHTML='<p style="color:#6a6f73">'+(d.message||'Not available for this model')+'</p>'}$('e-explain-btn').disabled=false}).catch(function(e){$('e-explain-result').innerHTML='<p style="color:#ff3131">'+e.message+'</p>';$('e-explain-btn').disabled=false})}
-    function eAnomaly(){if(!eData)return;$('e-anomaly-btn').disabled=true;$('e-anomaly-result').innerHTML='<p>Detecting anomalies...</p>';fetch('/api/anomaly/detect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({contamination:parseFloat($('e-anom-cont').value),n_estimators:parseInt($('e-anom-est').value)})}).then(function(r){return r.json()}).then(function(d){$('e-anomaly-btn').disabled=false;if(d.success){var rate=((d.anomaly_rate||0)*100).toFixed(1);$('e-anomaly-result').innerHTML='<div class="grid-2"><div><span class="stat stat-info">'+d.total_samples+'</span><p style="font-size:12px;color:#6a6f73">Samples</p></div><div><span class="stat" style="color:#ff3131">'+d.anomalies_found+'</span><p style="font-size:12px;color:#6a6f73">Anomalies ('+rate+'%)</p></div></div>'}else{$('e-anomaly-result').innerHTML='<p style="color:#ff3131">'+(d.message||'Failed')+'</p>'}}).catch(function(e){$('e-anomaly-btn').disabled=false;$('e-anomaly-result').innerHTML='<p style="color:#ff3131">'+e.message+'</p>'})}
+    function eTopbar(name,rows,cols){$('e-topbar-data').style.display='inline';$('e-topbar-name').textContent=name;$('e-topbar-rows').textContent=rows.toLocaleString();$('e-topbar-cols').textContent=cols;$('e-dash-rows').textContent=rows.toLocaleString()}
+    function eUpdateNoDataAlerts(){
+        var show=!eData;
+        ['e-automl-nodata','e-config-nodata','e-train-nodata','e-ho-nodata','e-at-nodata','e-ens-nodata','e-anom-nodata'].forEach(function(id){var el=$(id);if(el)el.style.display=show?'flex':'none'});
+    }
+    function eUpdateTrainSummary(){
+        var wrap=$('e-train-summary');var chips=$('e-train-config-chips');
+        if(!eData){wrap.style.display='none';return}
+        wrap.style.display='block';
+        var target=$('e-target').value||'(not set)';
+        var task=$('e-task').value||'—';
+        var model=$('e-model').options[$('e-model').selectedIndex].text;
+        chips.innerHTML='<div class="config-chip"><strong>Target:</strong> '+target+'</div><div class="config-chip"><strong>Task:</strong> '+task+'</div><div class="config-chip"><strong>Model:</strong> '+model+'</div>';
+    }
+    function eSys(){fetch('/api/system/status').then(function(r){return r.json()}).then(function(d){var s=d.system||{};$('e-badge').textContent=d.status||'error';$('e-badge').className='badge '+(d.status==='healthy'?'badge-ok':'badge-err');$('e-dot').style.background=d.status==='healthy'?'#3abc3f':'#ff3131';var cpuVal=(s.cpu_usage||0).toFixed(1);var memVal=(s.memory_usage_percent||0).toFixed(1);var usedGb=(s.used_memory_gb||0).toFixed(1);var totalGb=(s.total_memory_gb||0).toFixed(1);$('e-cpu').textContent=cpuVal+'%';$('e-mem').textContent=memVal+'%';$('e-mem-used').textContent=usedGb+' GB';$('e-mem-total').textContent=totalGb+' GB';$('e-mon-cpu-bar').style.width=cpuVal+'%';$('e-mon-cpu-val').textContent=cpuVal+'%';$('e-mon-mem-bar').style.width=memVal+'%';$('e-mon-mem-val').textContent=memVal+'% ('+usedGb+' / '+totalGb+' GB)';$('e-dash-cpu').textContent=cpuVal+'%';$('e-dash-mem').textContent=memVal+'%';$('e-dash-cpu2').textContent=cpuVal+'%';$('e-dash-mem2').textContent=memVal+'%';$('e-dash-cpu-bar').style.width=cpuVal+'%';$('e-dash-mem-bar').style.width=memVal+'%';$('e-dash-mem-detail').textContent=usedGb+' / '+totalGb+' GB';$('e-dash-status').textContent=d.status||'error';$('e-dash-status').className='badge '+(d.status==='healthy'?'badge-ok':'badge-err')}).catch(function(){})}
+    function ePopulateTargets(cols){
+        var sel=$('e-target');sel.innerHTML='<option value="">Select...</option>';
+        (cols||[]).forEach(function(c){var o=document.createElement('option');o.value=c;o.textContent=c;sel.appendChild(o)});
+    }
+    function eEnableButtons(){$('e-train-btn').disabled=false;$('e-ho-btn').disabled=false;$('e-ens-btn').disabled=false;$('e-at-btn').disabled=false;$('e-anomaly-btn').disabled=false}
+    function eShowDataInfo(d){
+        $('e-info').innerHTML='<div class="grid-2"><div><span class="stat stat-info">'+d.rows.toLocaleString()+'</span><p style="font-size:12px;color:#6a6f73">Rows</p></div><div><span class="stat stat-info">'+d.columns+'</span><p style="font-size:12px;color:#6a6f73">Columns</p></div></div><div style="margin-top:12px;font-size:12px;color:#6a6f73"><strong>Columns:</strong> '+(d.column_names||[]).join(', ')+'</div>';
+    }
+    function eShowDataPreview(d){
+        var cols=d.column_names||[];var prev=d.preview||[];
+        if(!prev.length||!cols.length){$('e-data-preview-wrap').style.display='none';return}
+        $('e-data-preview-wrap').style.display='block';
+        $('e-preview-badge').textContent='First '+prev.length+' rows';
+        var h='<table><thead><tr>';cols.forEach(function(c){h+='<th>'+c+'</th>'});h+='</tr></thead><tbody>';
+        prev.forEach(function(row){h+='<tr>';cols.forEach(function(c){h+='<td class="mono" style="font-size:12px">'+(row[c]!=null?row[c]:'—')+'</td>'});h+='</tr>'});
+        h+='</tbody></table>';$('e-data-preview').innerHTML=h;
+    }
+    function eLoad(n){
+        document.querySelectorAll('#e-pills .pill').forEach(function(p){p.classList.remove('active')});
+        var btn=document.querySelector('#e-pills .pill[data-name="'+n+'"]');if(btn)btn.classList.add('active');
+        fetch('/api/data/sample/'+n).then(function(r){return r.json()}).then(function(d){if(d.success){eData=d;eLoadedDataset=n;eTopbar(d.name||n,d.rows,d.columns);eShowDataInfo(d);ePopulateTargets(d.column_names);eEnableButtons();eUpdateAutoMLTarget();eUpdateNoDataAlerts();eShowDataPreview(d);eNotify('Loaded '+n+' ('+d.rows+' rows, '+d.columns+' cols)','ok');eLogActivity('Loaded dataset: '+n+' ('+d.rows+' rows)')}}).catch(function(e){eNotify('Failed: '+e.message,'err')})}
+    function eImportUrl(){var url=$('e-import-url').value.trim();if(!url){eNotify('Enter a URL','err');return}$('e-import-status').innerHTML='<p style="font-size:12px;color:#6a6f73">Downloading...</p>';fetch('/api/data/import/url',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:url})}).then(function(r){return r.json()}).then(function(d){if(d.success){eData=d;eTopbar(d.name||'Imported',d.rows,d.columns);eShowDataInfo(d);ePopulateTargets(d.column_names);eEnableButtons();eUpdateAutoMLTarget();eUpdateNoDataAlerts();eShowDataPreview(d);$('e-import-status').innerHTML='<p style="font-size:12px;color:#3abc3f">Imported from '+d.source+' ('+d.rows+' rows, '+d.columns+' cols)</p>';eNotify('Imported!','ok')}else if(d.needs_credentials){$('e-import-status').innerHTML='<p style="font-size:12px;color:#ffa931">'+d.message+'</p>'}else{$('e-import-status').innerHTML='<p style="font-size:12px;color:#ff3131">'+(d.message||'Failed')+'</p>'}}).catch(function(e){$('e-import-status').innerHTML='<p style="font-size:12px;color:#ff3131">'+e.message+'</p>'})}
+    function eFileUpload(input){
+        if(!input.files||!input.files[0])return;
+        var file=input.files[0];var fd=new FormData();fd.append('file',file);
+        eNotify('Uploading '+file.name+'...','');
+        fetch('/api/data/upload',{method:'POST',body:fd}).then(function(r){return r.json()}).then(function(d){if(d.success){eData=d;eTopbar(d.name||file.name,d.rows,d.columns);eShowDataInfo(d);ePopulateTargets(d.column_names);eEnableButtons();eUpdateAutoMLTarget();eUpdateNoDataAlerts();eShowDataPreview(d);eNotify('Uploaded '+file.name+' ('+d.rows+' rows)','ok');eLogActivity('Uploaded file: '+file.name)}else{eNotify(d.message||'Upload failed','err')}}).catch(function(e){eNotify('Upload failed: '+e.message,'err')});
+        input.value='';
+    }
+    function eValidateTarget(){
+        var t=$('e-target').value;
+        if(!t){eNotify('Set target column in Config first','err');eTab('config');return false}
+        return true;
+    }
+    function eTrain(){if(!eData||eTraining)return;if(!eValidateTarget())return;eTraining=true;$('e-train-btn').disabled=true;$('e-train-btn').innerHTML='<span class="spinner"></span> Training...';$('e-result').innerHTML='<div class="progress"><div class="progress-fill" style="width:10%"></div></div><p style="font-size:12px;color:#6a6f73;margin-top:8px">Preparing...</p>';var cfg={target_column:$('e-target').value,task_type:$('e-task').value,model_type:$('e-model').value};fetch('/api/train',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)}).then(function(r){return r.json()}).then(function(d){if(d.job_id){ePoll(d.job_id)}}).catch(function(e){$('e-result').innerHTML='<p style="color:#ff3131">'+e.message+'</p>';eTraining=false;$('e-train-btn').disabled=false;$('e-train-btn').textContent='Train Model'})}
+    function ePoll(id){fetch('/api/train/status/'+id).then(function(r){return r.json()}).then(function(d){var s=d.status;if(s.Completed){var m=s.Completed.metrics||{};var h='<table><thead><tr><th>Metric</th><th>Value</th></tr></thead><tbody>';Object.keys(m).forEach(function(k){h+='<tr><td>'+k+'</td><td class="mono">'+(typeof m[k]==='number'?m[k].toFixed(4):m[k])+'</td></tr>'});h+='</tbody></table>';$('e-result').innerHTML=h;var modelName=$('e-model').options[$('e-model').selectedIndex].text;eDashTrainResult(modelName,m);eTraining=false;$('e-train-btn').disabled=false;$('e-train-btn').textContent='Train Model';eNotify('Training complete!','ok');eLogActivity('Training completed: '+modelName);eDashModels();fetch('/api/models').then(function(r){return r.json()}).then(function(md){var models=md.models||[];if(models.length>0){eLastModelId=models[models.length-1].id;$('e-explain-btn').disabled=false}}).catch(function(){})}else if(s.Failed){$('e-result').innerHTML='<p style="color:#ff3131">'+(s.Failed.error||'Failed')+'</p>';eTraining=false;$('e-train-btn').disabled=false;$('e-train-btn').textContent='Train Model';eLogActivity('Training failed: '+(s.Failed.error||'Unknown error'))}else{var p=s.Running?s.Running.progress||0:0;$('e-result').innerHTML='<div class="progress"><div class="progress-fill" style="width:'+(p*100)+'%"></div></div><p style="font-size:12px;color:#6a6f73;margin-top:8px">'+(s.Running?s.Running.message||'':'')+'</p>';setTimeout(function(){ePoll(id)},1000)}}).catch(function(){setTimeout(function(){ePoll(id)},2000)})}
+    function eHyperOpt(){if(!eData)return;if(!eValidateTarget())return;$('e-ho-btn').disabled=true;$('e-ho-btn').innerHTML='<span class="spinner"></span> Optimizing...';$('e-ho-result').innerHTML='<p style="color:#6a6f73">Optimizing hyperparameters...</p>';fetch('/api/hyperopt',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target_column:$('e-target').value,task_type:$('e-task').value,model_type:$('e-ho-model').value,n_trials:parseInt($('e-ho-trials').value),sampler:$('e-ho-sampler').value})}).then(function(r){return r.json()}).then(function(d){if(d.job_id){eHoPoll(d.job_id)}}).catch(function(e){$('e-ho-result').innerHTML='<p style="color:#ff3131">'+e.message+'</p>';$('e-ho-btn').disabled=false;$('e-ho-btn').textContent='Optimize'})}
+    function eHoPoll(id){fetch('/api/train/status/'+id).then(function(r){return r.json()}).then(function(d){var s=d.status;if(s.Completed){var m=s.Completed.metrics||{};var h='<div style="background:#f3fbf4;padding:12px;border-radius:8px;margin-bottom:12px">';if(m.best_trial){h+='<strong>Best Score:</strong> '+((m.best_trial.value||0).toFixed(6))+'<br><small>'+((m.best_trial.params||''))+'</small>'}h+='</div><p style="font-size:12px;color:#6a6f73">Trials: '+(m.total_trials||0)+' | Time: '+(m.total_duration_secs||0).toFixed(2)+'s</p>';if(m.trials){h+='<table style="margin-top:8px"><thead><tr><th>#</th><th>Score</th><th>Time</th></tr></thead><tbody>';m.trials.forEach(function(t){h+='<tr><td>'+t.trial_id+'</td><td class="mono">'+(t.value===Infinity?'Fail':t.value.toFixed(6))+'</td><td class="mono">'+t.duration_secs.toFixed(2)+'s</td></tr>'});h+='</tbody></table>'}$('e-ho-result').innerHTML=h;if(m.trials)eHoCharts(m.trials);$('e-ho-btn').disabled=false;$('e-ho-btn').textContent='Optimize';eNotify('Optimization done!','ok');eLogActivity('HyperOpt completed: '+$('e-ho-model').value);eDashModels()}else if(s.Failed){$('e-ho-result').innerHTML='<p style="color:#ff3131">'+(s.Failed.error||'Failed')+'</p>';$('e-ho-btn').disabled=false;$('e-ho-btn').textContent='Optimize'}else{setTimeout(function(){eHoPoll(id)},1500)}}).catch(function(){setTimeout(function(){eHoPoll(id)},3000)})}
+    function eAutoTune(){if(!eData)return;if(!eValidateTarget())return;$('e-at-btn').disabled=true;$('e-at-btn').innerHTML='<span class="spinner"></span> Tuning...';$('e-at-result').innerHTML='<p style="color:#6a6f73">Auto-tuning models...</p>';fetch('/api/autotune',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target_column:$('e-target').value,task_type:$('e-task').value})}).then(function(r){return r.json()}).then(function(d){if(d.job_id){eAtPoll(d.job_id)}}).catch(function(e){$('e-at-result').innerHTML='<p style="color:#ff3131">'+e.message+'</p>';$('e-at-btn').disabled=false;$('e-at-btn').textContent='Start Auto-Tune'})}
+    function eAtPoll(id){fetch('/api/train/status/'+id).then(function(r){return r.json()}).then(function(d){var s=d.status;if(s.Completed){var m=s.Completed.metrics||{};var h='';if(m.best){h+='<div style="background:#f3fbf4;padding:12px;border-radius:8px;margin-bottom:12px"><strong>Best: '+m.best_model+'</strong> (score: '+(m.best.score||0).toFixed(6)+')</div>'}if(m.leaderboard){h+='<table><thead><tr><th>#</th><th>Model</th><th>Score</th><th>Time</th></tr></thead><tbody>';m.leaderboard.forEach(function(r,i){h+='<tr><td>'+(i+1)+'</td><td>'+r.model+'</td><td class="mono">'+(r.score||0).toFixed(6)+'</td><td class="mono">'+(r.training_time_secs||0).toFixed(2)+'s</td></tr>'});h+='</tbody></table>'}$('e-at-result').innerHTML=h;$('e-at-btn').disabled=false;$('e-at-btn').textContent='Start Auto-Tune';if(m.best&&m.best.status==='success'){eLastModelId='autotune_'+m.best_model+'_'+id;$('e-explain-btn').disabled=false}if(m.leaderboard)eAtCharts(m.leaderboard);eNotify('Auto-tune done!','ok');eLogActivity('Auto-tune completed: best model '+m.best_model);eDashModels()}else if(s.Failed){$('e-at-result').innerHTML='<p style="color:#ff3131">'+(s.Failed.error||'Failed')+'</p>';$('e-at-btn').disabled=false;$('e-at-btn').textContent='Start Auto-Tune'}else{var p=s.Running?s.Running.progress||0:0;var pr=s.Running?s.Running.partial_results:null;var ph='<div class="progress"><div class="progress-fill" style="width:'+(p*100)+'%"></div></div><p style="font-size:12px;color:#6a6f73;margin-top:8px">'+(s.Running?s.Running.message||'':'')+'</p>';if(pr&&pr.length>0){ph+='<table style="margin-top:12px"><thead><tr><th>Model</th><th>Score</th><th>Time</th></tr></thead><tbody>';pr.sort(function(a,b){return(b.score||0)-(a.score||0)});pr.forEach(function(r){ph+='<tr><td>'+r.model+'</td><td class="mono">'+((r.score||0).toFixed(6))+'</td><td class="mono">'+((r.training_time_secs||0).toFixed(2))+'s</td></tr>'});ph+='</tbody></table>';eAtCharts(pr)}$('e-at-result').innerHTML=ph;setTimeout(function(){eAtPoll(id)},1500)}}).catch(function(){setTimeout(function(){eAtPoll(id)},3000)})}
+    function eEnsemble(){if(!eData)return;if(!eValidateTarget())return;var models=[];document.querySelectorAll('#e-ens-models input:checked').forEach(function(cb){models.push(cb.value)});if(models.length<2){eNotify('Select at least 2 models','err');return}$('e-ens-btn').disabled=true;$('e-ens-btn').innerHTML='<span class="spinner"></span> Training...';$('e-ens-result').innerHTML='<p style="color:#6a6f73">Training ensemble ('+models.length+' models)...</p>';fetch('/api/ensemble/train',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target_column:$('e-target').value,task_type:$('e-task').value,models:models,strategy:$('e-ens-strat').value})}).then(function(r){return r.json()}).then(function(d){if(d.job_id){eEnsPoll(d.job_id)}}).catch(function(e){$('e-ens-result').innerHTML='<p style="color:#ff3131">'+e.message+'</p>';$('e-ens-btn').disabled=false;$('e-ens-btn').textContent='Train Ensemble'})}
+    function eEnsPoll(id){fetch('/api/train/status/'+id).then(function(r){return r.json()}).then(function(d){var s=d.status;if(s.Completed){var m=s.Completed.metrics||{};var h='<div style="background:#f0f6fe;padding:12px;border-radius:8px;margin-bottom:12px"><strong>Ensemble:</strong> '+(m.strategy||'voting')+' | Models: '+(m.successful_models||0)+'/'+(m.model_count||0)+'<br><small>Time: '+(m.training_time_secs||0).toFixed(2)+'s</small></div>';if(m.model_results){h+='<table><thead><tr><th>Model</th><th>Status</th></tr></thead><tbody>';m.model_results.forEach(function(r){h+='<tr><td>'+r.model+'</td><td>'+(r.status==='success'?'<span style="color:#3abc3f">&#10003; Success</span>':'<span style="color:#ff3131">&#10007; '+r.error+'</span>')+'</td></tr>'});h+='</tbody></table>'}$('e-ens-result').innerHTML=h;$('e-ens-btn').disabled=false;$('e-ens-btn').textContent='Train Ensemble';eNotify('Ensemble done!','ok');eLogActivity('Ensemble training completed');eDashModels()}else if(s.Failed){$('e-ens-result').innerHTML='<p style="color:#ff3131">'+(s.Failed.error||'Failed')+'</p>';$('e-ens-btn').disabled=false;$('e-ens-btn').textContent='Train Ensemble'}else{setTimeout(function(){eEnsPoll(id)},1500)}}).catch(function(){setTimeout(function(){eEnsPoll(id)},3000)})}
+    function eExplain(){if(!eLastModelId)return;$('e-explain-btn').disabled=true;$('e-explain-btn').innerHTML='<span class="spinner"></span> Analyzing...';fetch('/api/explain/importance',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model_id:eLastModelId})}).then(function(r){return r.json()}).then(function(d){if(d.success&&d.features&&d.features.length>0){var mx=Math.max.apply(null,d.features.map(function(f){return Math.abs(f.importance)}));var h='<table><thead><tr><th>Feature</th><th>Importance</th><th style="width:40%">Bar</th></tr></thead><tbody>';d.features.forEach(function(f){var pct=mx>0?(Math.abs(f.importance)/mx*100).toFixed(0):0;h+='<tr><td>'+f.feature+'</td><td class="mono">'+f.importance.toFixed(6)+'</td><td><div style="width:100%;background:#e4e7e9;border-radius:4px;height:8px"><div style="width:'+pct+'%;background:#0066f5;border-radius:4px;height:8px"></div></div></td></tr>'});h+='</tbody></table>';$('e-explain-result').innerHTML=h}else{$('e-explain-result').innerHTML='<p style="color:#6a6f73">'+(d.message||'Not available for this model')+'</p>'}$('e-explain-btn').disabled=false;$('e-explain-btn').textContent='Analyze'}).catch(function(e){$('e-explain-result').innerHTML='<p style="color:#ff3131">'+e.message+'</p>';$('e-explain-btn').disabled=false;$('e-explain-btn').textContent='Analyze'})}
+    function eAnomaly(){if(!eData)return;$('e-anomaly-btn').disabled=true;$('e-anomaly-btn').innerHTML='<span class="spinner"></span> Detecting...';$('e-anomaly-result').innerHTML='<p style="color:#6a6f73">Detecting anomalies...</p>';fetch('/api/anomaly/detect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({contamination:parseFloat($('e-anom-cont').value),n_estimators:parseInt($('e-anom-est').value)})}).then(function(r){return r.json()}).then(function(d){$('e-anomaly-btn').disabled=false;$('e-anomaly-btn').textContent='Detect';if(d.success){var rate=((d.anomaly_rate||0)*100).toFixed(1);$('e-anomaly-result').innerHTML='<div class="grid-2"><div><span class="stat stat-info">'+d.total_samples+'</span><p style="font-size:12px;color:#6a6f73">Samples</p></div><div><span class="stat stat-err">'+d.anomalies_found+'</span><p style="font-size:12px;color:#6a6f73">Anomalies ('+rate+'%)</p></div></div>'}else{$('e-anomaly-result').innerHTML='<p style="color:#ff3131">'+(d.message||'Failed')+'</p>'}}).catch(function(e){$('e-anomaly-btn').disabled=false;$('e-anomaly-btn').textContent='Detect';$('e-anomaly-result').innerHTML='<p style="color:#ff3131">'+e.message+'</p>'})}
     function eUpdateAutoMLTarget(){var sel=$('e-automl-target');if(!sel||!eData)return;sel.innerHTML='<option value="">Select target...</option>';(eData.column_names||[]).forEach(function(c){var o=document.createElement('option');o.value=c;o.textContent=c;sel.appendChild(o)});sel.onchange=function(){$('e-btn-automl').disabled=!this.value}}
-    function eRunAutoML(){if(!eData)return;var target=$('e-automl-target').value;if(!target){eNotify('Select a target column','err');return}$('e-btn-automl').disabled=true;$('e-automl-progress').style.display='block';$('e-automl-result').style.display='none';$('e-aml-status').textContent='Starting...';$('e-aml-bar').style.width='0%';var body={target_column:target};var tt=$('e-aml-task').value;if(tt)body.task_type=tt;var sc=$('e-aml-scaler').value;if(sc)body.scaler=sc;body.max_models=parseInt($('e-aml-max').value)||8;body.hyperopt_trials=parseInt($('e-aml-trials').value)||20;fetch('/api/automl/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(function(r){return r.json()}).then(function(d){if(d.success&&d.job_id){eAMLPoll(d.job_id)}else{eNotify('Failed: '+(d.error||'Unknown'),'err');$('e-btn-automl').disabled=false;$('e-automl-progress').style.display='none'}}).catch(function(e){eNotify('Request failed: '+e,'err');$('e-btn-automl').disabled=false;$('e-automl-progress').style.display='none'})}
-    function eAMLPoll(id){fetch('/api/automl/status/'+id).then(function(r){return r.json()}).then(function(d){var pct=Math.round(d.progress||0);$('e-aml-bar').style.width=pct+'%';$('e-aml-status').textContent=(d.message||d.status)+' ('+pct+'%)';if(d.status==='completed'){$('e-automl-progress').style.display='none';$('e-btn-automl').disabled=false;var r=d.result||{};$('e-aml-best').textContent=r.best_model||'—';$('e-aml-score').textContent=(r.metric||'Score')+': '+(r.best_score!=null?r.best_score.toFixed(4):'—');var lb=r.leaderboard||[];var h='<table><thead><tr><th>#</th><th>Model</th><th>Score</th><th>Time</th></tr></thead><tbody>';lb.forEach(function(e,i){h+='<tr><td>'+(i+1)+'</td><td>'+e.model+'</td><td class="mono">'+(e.score!=null?parseFloat(e.score).toFixed(4):'Err')+'</td><td class="mono">'+(e.training_time_secs!=null?e.training_time_secs.toFixed(2)+'s':'—')+'</td></tr>'});h+='</tbody></table>';$('e-aml-leaderboard').innerHTML=h;$('e-automl-result').style.display='block';if(lb.length>0){$('e-aml-chart-wrap').style.display='block';var ci=[];lb.forEach(function(e){var sc=parseFloat(e.score);if(sc!=null&&sc>0)ci.push({label:e.model,value:sc})});ci.sort(function(a,b){return b.value-a.value});eDrawBars('e-aml-chart',ci,{label:'Model Score'})}eNotify('AutoML done! Best: '+r.best_model,'ok')}else if(d.status==='failed'){$('e-automl-progress').style.display='none';$('e-btn-automl').disabled=false;eNotify('AutoML failed: '+d.message,'err')}else{var pr=d.partial_results;if(pr&&pr.length>0){$('e-aml-chart-wrap').style.display='block';var ci=[];pr.forEach(function(e){var sc=parseFloat(e.score);if(sc!=null&&sc>0)ci.push({label:e.model,value:sc})});ci.sort(function(a,b){return b.value-a.value});eDrawBars('e-aml-chart',ci,{label:'Model Score (live)'})}setTimeout(function(){eAMLPoll(id)},2000)}}).catch(function(){setTimeout(function(){eAMLPoll(id)},3000)})}
-    function eSecLoad(){fetch('/api/security/status').then(function(r){return r.json()}).then(function(d){var rl=d.rate_limiting||{};var g=d.guards||{};var h='<div class="grid-2"><div><span class="stat stat-info">'+(rl.total_requests||0)+'</span><p style="font-size:12px;color:#6a6f73">Requests</p></div><div><span class="stat" style="color:#ff3131">'+(rl.total_blocked||0)+'</span><p style="font-size:12px;color:#6a6f73">Blocked</p></div></div><div style="margin-top:12px;font-size:12px;color:#6a6f73"><b>Guards:</b> SSRF '+(g.ssrf_protection?'✓':'✗')+' | Path Traversal '+(g.path_traversal_protection?'✓':'✗')+' | Input Validation '+(g.input_validation?'✓':'✗')+' | Timeout '+(g.training_timeout_secs||0)+'s | Max Rows '+(g.max_dataset_rows||0).toLocaleString()+'</div>';$('e-sec-status').innerHTML=h}).catch(function(){$('e-sec-status').innerHTML='<p style="color:#ff3131">Failed to load</p>'})}
-    function eSecAudit(){fetch('/api/security/audit-log?limit=20').then(function(r){return r.json()}).then(function(d){var entries=d.entries||[];if(!entries.length){$('e-sec-audit').innerHTML='<p style="font-size:12px;color:#6a6f73">No entries</p>';return}var h='<table><thead><tr><th>Time</th><th>Method</th><th>Path</th><th>Status</th></tr></thead><tbody>';entries.forEach(function(e){h+='<tr><td class="mono">'+new Date(e.timestamp).toLocaleTimeString()+'</td><td>'+e.action+'</td><td class="mono">'+e.resource+'</td><td>'+e.status_code+'</td></tr>'});h+='</tbody></table>';$('e-sec-audit').innerHTML=h}).catch(function(){})}
+    function eRunAutoML(){if(!eData)return;var target=$('e-automl-target').value;if(!target){eNotify('Select a target column','err');return}$('e-btn-automl').disabled=true;$('e-btn-automl').innerHTML='<span class="spinner"></span> Running...';$('e-automl-progress').style.display='block';$('e-automl-result').style.display='none';$('e-aml-status').textContent='Starting...';$('e-aml-bar').style.width='0%';var body={target_column:target};var tt=$('e-aml-task').value;if(tt)body.task_type=tt;var sc=$('e-aml-scaler').value;if(sc)body.scaler=sc;body.max_models=parseInt($('e-aml-max').value)||8;body.hyperopt_trials=parseInt($('e-aml-trials').value)||20;fetch('/api/automl/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(function(r){return r.json()}).then(function(d){if(d.success&&d.job_id){eAMLPoll(d.job_id)}else{eNotify('Failed: '+(d.error||'Unknown'),'err');$('e-btn-automl').disabled=false;$('e-btn-automl').textContent='Run AutoML Pipeline';$('e-automl-progress').style.display='none'}}).catch(function(e){eNotify('Request failed: '+e,'err');$('e-btn-automl').disabled=false;$('e-btn-automl').textContent='Run AutoML Pipeline';$('e-automl-progress').style.display='none'})}
+    function eAMLPoll(id){fetch('/api/automl/status/'+id).then(function(r){return r.json()}).then(function(d){var pct=Math.round(d.progress||0);$('e-aml-bar').style.width=pct+'%';$('e-aml-status').textContent=(d.message||d.status)+' ('+pct+'%)';if(d.status==='completed'){$('e-automl-progress').style.display='none';$('e-btn-automl').disabled=false;$('e-btn-automl').textContent='Run AutoML Pipeline';var r=d.result||{};$('e-aml-best').textContent=r.best_model||'—';$('e-aml-score').textContent=(r.metric||'Score')+': '+(r.best_score!=null?r.best_score.toFixed(4):'—');var lb=r.leaderboard||[];var h='<table><thead><tr><th>#</th><th>Model</th><th>Score</th><th>Time</th></tr></thead><tbody>';lb.forEach(function(e,i){h+='<tr><td>'+(i+1)+'</td><td>'+e.model+'</td><td class="mono">'+(e.score!=null?parseFloat(e.score).toFixed(4):'Err')+'</td><td class="mono">'+(e.training_time_secs!=null?e.training_time_secs.toFixed(2)+'s':'—')+'</td></tr>'});h+='</tbody></table>';$('e-aml-leaderboard').innerHTML=h;$('e-automl-result').style.display='block';if(lb.length>0){$('e-aml-chart-wrap').style.display='block';var ci=[];lb.forEach(function(e){var sc=parseFloat(e.score);if(sc!=null&&sc>0)ci.push({label:e.model,value:sc})});ci.sort(function(a,b){return b.value-a.value});eDrawBars('e-aml-chart',ci,{label:'Model Score'})}eNotify('AutoML done! Best: '+r.best_model,'ok');eLogActivity('AutoML completed: best model '+r.best_model);eDashModels()}else if(d.status==='failed'){$('e-automl-progress').style.display='none';$('e-btn-automl').disabled=false;$('e-btn-automl').textContent='Run AutoML Pipeline';eNotify('AutoML failed: '+d.message,'err')}else{var pr=d.partial_results;if(pr&&pr.length>0){$('e-aml-chart-wrap').style.display='block';var ci=[];pr.forEach(function(e){var sc=parseFloat(e.score);if(sc!=null&&sc>0)ci.push({label:e.model,value:sc})});ci.sort(function(a,b){return b.value-a.value});eDrawBars('e-aml-chart',ci,{label:'Model Score (live)'})}setTimeout(function(){eAMLPoll(id)},2000)}}).catch(function(){setTimeout(function(){eAMLPoll(id)},3000)})}
+    function eSecLoad(){fetch('/api/security/status').then(function(r){return r.json()}).then(function(d){var rl=d.rate_limiting||{};var g=d.guards||{};var h='<div class="grid-2"><div><span class="stat stat-info">'+(rl.total_requests||0)+'</span><p style="font-size:12px;color:#6a6f73">Requests</p></div><div><span class="stat stat-err">'+(rl.total_blocked||0)+'</span><p style="font-size:12px;color:#6a6f73">Blocked</p></div></div><div style="margin-top:12px;font-size:12px;color:#6a6f73"><b>Guards:</b> SSRF '+(g.ssrf_protection?'&#10003;':'&#10007;')+' | Path Traversal '+(g.path_traversal_protection?'&#10003;':'&#10007;')+' | Input Validation '+(g.input_validation?'&#10003;':'&#10007;')+' | Timeout '+(g.training_timeout_secs||0)+'s | Max Rows '+(g.max_dataset_rows||0).toLocaleString()+'</div>';$('e-sec-status').innerHTML=h}).catch(function(){$('e-sec-status').innerHTML='<p style="color:#ff3131">Failed to load</p>'})}
+    function eSecAudit(){fetch('/api/security/audit-log?limit=20').then(function(r){return r.json()}).then(function(d){var entries=d.entries||[];if(!entries.length){$('e-sec-audit').innerHTML='<p style="font-size:12px;color:#6a6f73">No audit entries yet</p>';return}var h='<table><thead><tr><th>Time</th><th>Method</th><th>Path</th><th>Status</th></tr></thead><tbody>';entries.forEach(function(e){h+='<tr><td class="mono">'+new Date(e.timestamp).toLocaleTimeString()+'</td><td>'+e.action+'</td><td class="mono">'+e.resource+'</td><td>'+e.status_code+'</td></tr>'});h+='</tbody></table>';$('e-sec-audit').innerHTML=h}).catch(function(){})}
     function eDrawLine(canvasId,points,opts){
         var c=document.getElementById(canvasId);if(!c)return;var ctx=c.getContext('2d');
         var W=c.width,H=c.height,pad={t:20,r:20,b:36,l:52};
@@ -1738,36 +1909,14 @@ const EMBEDDED_INDEX_HTML: &str = r#"<!DOCTYPE html>
         var dotColor=opts.dotColor||color,label=opts.label||'';
         var frame=0,total=points.length;
         function draw(){
-            ctx.clearRect(0,0,W,H);
-            ctx.fillStyle='#fafbfb';ctx.fillRect(0,0,W,H);
+            ctx.clearRect(0,0,W,H);ctx.fillStyle='#fafbfb';ctx.fillRect(0,0,W,H);
             ctx.strokeStyle='#e4e7e9';ctx.lineWidth=1;
-            var yTicks=5;
-            for(var i=0;i<=yTicks;i++){
-                var yv=yMin+yRange*i/yTicks,yy=ty(yv);
-                ctx.beginPath();ctx.moveTo(pad.l,yy);ctx.lineTo(W-pad.r,yy);ctx.stroke();
-                ctx.fillStyle='#9c9fa1';ctx.font='11px system-ui';ctx.textAlign='right';ctx.textBaseline='middle';
-                ctx.fillText(yv.toPrecision(3),pad.l-6,yy);
-            }
+            for(var i=0;i<=5;i++){var yv=yMin+yRange*i/5,yy=ty(yv);ctx.beginPath();ctx.moveTo(pad.l,yy);ctx.lineTo(W-pad.r,yy);ctx.stroke();ctx.fillStyle='#9c9fa1';ctx.font='11px system-ui';ctx.textAlign='right';ctx.textBaseline='middle';ctx.fillText(yv.toPrecision(3),pad.l-6,yy)}
             var xTicks=Math.min(total,6);
-            for(var i=0;i<=xTicks;i++){
-                var xv=xMin+xRange*i/xTicks,xx=tx(xv);
-                ctx.beginPath();ctx.moveTo(xx,pad.t);ctx.lineTo(xx,H-pad.b);ctx.stroke();
-                ctx.fillStyle='#9c9fa1';ctx.font='11px system-ui';ctx.textAlign='center';ctx.textBaseline='top';
-                ctx.fillText(Math.round(xv),xx,H-pad.b+4);
-            }
+            for(var i=0;i<=xTicks;i++){var xv=xMin+xRange*i/xTicks,xx=tx(xv);ctx.beginPath();ctx.moveTo(xx,pad.t);ctx.lineTo(xx,H-pad.b);ctx.stroke();ctx.fillStyle='#9c9fa1';ctx.font='11px system-ui';ctx.textAlign='center';ctx.textBaseline='top';ctx.fillText(Math.round(xv),xx,H-pad.b+4)}
             var n=Math.min(frame,total);
-            if(n>1){
-                ctx.beginPath();ctx.moveTo(tx(points[0].x),ty(points[0].y));
-                for(var i=1;i<n;i++){ctx.lineTo(tx(points[i].x),ty(points[i].y))}
-                ctx.strokeStyle=color;ctx.lineWidth=2.5;ctx.lineJoin='round';ctx.stroke();
-                ctx.lineTo(tx(points[n-1].x),H-pad.b);ctx.lineTo(tx(points[0].x),H-pad.b);ctx.closePath();
-                ctx.fillStyle=fill;ctx.fill();
-            }
-            for(var i=0;i<n;i++){
-                ctx.beginPath();ctx.arc(tx(points[i].x),ty(points[i].y),3.5,0,Math.PI*2);
-                ctx.fillStyle=dotColor;ctx.fill();
-                ctx.strokeStyle='#fff';ctx.lineWidth=1.5;ctx.stroke();
-            }
+            if(n>1){ctx.beginPath();ctx.moveTo(tx(points[0].x),ty(points[0].y));for(var i=1;i<n;i++){ctx.lineTo(tx(points[i].x),ty(points[i].y))}ctx.strokeStyle=color;ctx.lineWidth=2.5;ctx.lineJoin='round';ctx.stroke();ctx.lineTo(tx(points[n-1].x),H-pad.b);ctx.lineTo(tx(points[0].x),H-pad.b);ctx.closePath();ctx.fillStyle=fill;ctx.fill()}
+            for(var i=0;i<n;i++){ctx.beginPath();ctx.arc(tx(points[i].x),ty(points[i].y),3.5,0,Math.PI*2);ctx.fillStyle=dotColor;ctx.fill();ctx.strokeStyle='#fff';ctx.lineWidth=1.5;ctx.stroke()}
             if(label){ctx.fillStyle='#6a6f73';ctx.font='11px system-ui';ctx.textAlign='center';ctx.fillText(label,W/2,H-4)}
             if(frame<total+8){frame++;requestAnimationFrame(draw)}
         }
@@ -1778,43 +1927,16 @@ const EMBEDDED_INDEX_HTML: &str = r#"<!DOCTYPE html>
         var W=c.width,H=c.height,pad={t:20,r:20,b:56,l:52};
         var pW=W-pad.l-pad.r,pH=H-pad.t-pad.b;
         if(!items.length)return;
-        var vals=items.map(function(d){return d.value});
-        var vMax=Math.max.apply(null,vals)||1;
-        var barW=Math.min(48,pW/items.length*0.7);
-        var gap=(pW-barW*items.length)/(items.length+1);
+        var vals=items.map(function(d){return d.value});var vMax=Math.max.apply(null,vals)||1;
+        var barW=Math.min(48,pW/items.length*0.7);var gap=(pW-barW*items.length)/(items.length+1);
         var colors=opts.colors||['#0066f5','#3abc3f','#ffa931','#ff3131','#8b5cf6','#06b6d4','#ec4899','#f97316','#14b8a6','#6366f1','#84cc16','#a855f7','#ef4444','#22d3ee'];
-        var label=opts.label||'',metric=opts.metric||'Score';
-        var frame=0,totalFrames=40;
+        var label=opts.label||'';var frame=0,totalFrames=40;
         function ease(t){return t<0.5?2*t*t:(4-2*t)*t-1}
         function draw(){
-            ctx.clearRect(0,0,W,H);
-            ctx.fillStyle='#fafbfb';ctx.fillRect(0,0,W,H);
-            var yTicks=4;
-            for(var i=0;i<=yTicks;i++){
-                var yv=vMax*i/yTicks,yy=pad.t+pH-pH*i/yTicks;
-                ctx.strokeStyle='#e4e7e9';ctx.lineWidth=1;
-                ctx.beginPath();ctx.moveTo(pad.l,yy);ctx.lineTo(W-pad.r,yy);ctx.stroke();
-                ctx.fillStyle='#9c9fa1';ctx.font='11px system-ui';ctx.textAlign='right';ctx.textBaseline='middle';
-                ctx.fillText(yv.toPrecision(3),pad.l-6,yy);
-            }
+            ctx.clearRect(0,0,W,H);ctx.fillStyle='#fafbfb';ctx.fillRect(0,0,W,H);
+            for(var i=0;i<=4;i++){var yv=vMax*i/4,yy=pad.t+pH-pH*i/4;ctx.strokeStyle='#e4e7e9';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(pad.l,yy);ctx.lineTo(W-pad.r,yy);ctx.stroke();ctx.fillStyle='#9c9fa1';ctx.font='11px system-ui';ctx.textAlign='right';ctx.textBaseline='middle';ctx.fillText(yv.toPrecision(3),pad.l-6,yy)}
             var progress=Math.min(frame/totalFrames,1);var ep=ease(progress);
-            for(var i=0;i<items.length;i++){
-                var x=pad.l+gap+(barW+gap)*i;
-                var barH=pH*(items[i].value/vMax)*ep;
-                var y=pad.t+pH-barH;
-                var ci=colors[i%colors.length];
-                ctx.fillStyle=ci;
-                var r=4;
-                ctx.beginPath();ctx.moveTo(x+r,y);ctx.lineTo(x+barW-r,y);ctx.quadraticCurveTo(x+barW,y,x+barW,y+r);ctx.lineTo(x+barW,pad.t+pH);ctx.lineTo(x,pad.t+pH);ctx.lineTo(x,y+r);ctx.quadraticCurveTo(x,y,x+r,y);ctx.closePath();ctx.fill();
-                if(progress>0.5){
-                    ctx.fillStyle='#0d0e0f';ctx.font='bold 11px system-ui';ctx.textAlign='center';ctx.textBaseline='bottom';
-                    ctx.fillText(items[i].value.toFixed(4),x+barW/2,y-4);
-                }
-                ctx.save();ctx.translate(x+barW/2,pad.t+pH+6);ctx.rotate(-Math.PI/6);
-                ctx.fillStyle='#6a6f73';ctx.font='11px system-ui';ctx.textAlign='right';ctx.textBaseline='top';
-                var name=items[i].label.length>12?items[i].label.substring(0,11)+'..':items[i].label;
-                ctx.fillText(name,0,0);ctx.restore();
-            }
+            for(var i=0;i<items.length;i++){var x=pad.l+gap+(barW+gap)*i;var barH=pH*(items[i].value/vMax)*ep;var y=pad.t+pH-barH;var ci=colors[i%colors.length];ctx.fillStyle=ci;var r=4;ctx.beginPath();ctx.moveTo(x+r,y);ctx.lineTo(x+barW-r,y);ctx.quadraticCurveTo(x+barW,y,x+barW,y+r);ctx.lineTo(x+barW,pad.t+pH);ctx.lineTo(x,pad.t+pH);ctx.lineTo(x,y+r);ctx.quadraticCurveTo(x,y,x+r,y);ctx.closePath();ctx.fill();if(progress>0.5){ctx.fillStyle='#0d0e0f';ctx.font='bold 11px system-ui';ctx.textAlign='center';ctx.textBaseline='bottom';ctx.fillText(items[i].value.toFixed(4),x+barW/2,y-4)}ctx.save();ctx.translate(x+barW/2,pad.t+pH+6);ctx.rotate(-Math.PI/6);ctx.fillStyle='#6a6f73';ctx.font='11px system-ui';ctx.textAlign='right';ctx.textBaseline='top';var name=items[i].label.length>12?items[i].label.substring(0,11)+'..':items[i].label;ctx.fillText(name,0,0);ctx.restore()}
             if(label){ctx.fillStyle='#6a6f73';ctx.font='11px system-ui';ctx.textAlign='center';ctx.fillText(label,W/2,H-4)}
             if(frame<totalFrames+5){frame++;requestAnimationFrame(draw)}
         }
@@ -1822,28 +1944,28 @@ const EMBEDDED_INDEX_HTML: &str = r#"<!DOCTYPE html>
     }
     function eHoCharts(trials){
         $('e-ho-charts').style.display='block';
-        var pts=[];var bestPts=[];var bestVal=Infinity;
-        for(var i=0;i<trials.length;i++){
-            var v=trials[i].value;if(v===Infinity||v==null)continue;
-            pts.push({x:trials[i].trial_id,y:v});
-            if(v<bestVal)bestVal=v;
-            bestPts.push({x:trials[i].trial_id,y:bestVal});
-        }
+        var pts=[],bestPts=[],bestVal=Infinity;
+        for(var i=0;i<trials.length;i++){var v=trials[i].value;if(v===Infinity||v==null)continue;pts.push({x:trials[i].trial_id,y:v});if(v<bestVal)bestVal=v;bestPts.push({x:trials[i].trial_id,y:bestVal})}
         eDrawLine('e-ho-cvg',pts,{color:'#8b5cf6',fill:'rgba(139,92,246,0.08)',dotColor:'#8b5cf6',label:'Trial #'});
         eDrawLine('e-ho-best',bestPts,{color:'#3abc3f',fill:'rgba(58,188,63,0.08)',dotColor:'#3abc3f',label:'Trial #'});
     }
     function eAtCharts(leaderboard){
-        $('e-at-charts').style.display='block';
-        var items=[];
-        for(var i=0;i<leaderboard.length;i++){
-            var s=leaderboard[i].score;
-            if(s!=null&&s>0)items.push({label:leaderboard[i].model,value:s});
-        }
-        items.sort(function(a,b){return b.value-a.value});
-        eDrawBars('e-at-bar',items,{label:'Model Score',metric:'Score'});
+        $('e-at-charts').style.display='block';var items=[];
+        for(var i=0;i<leaderboard.length;i++){var s=leaderboard[i].score;if(s!=null&&s>0)items.push({label:leaderboard[i].model,value:s})}
+        items.sort(function(a,b){return b.value-a.value});eDrawBars('e-at-bar',items,{label:'Model Score',metric:'Score'});
     }
-    document.addEventListener('DOMContentLoaded',function(){['iris','diabetes','boston','wine','breast_cancer','titanic','heart','credit','customers','california_housing'].forEach(function(n){var b=document.createElement('button');b.className='pill';b.textContent=n.charAt(0).toUpperCase()+n.slice(1).replace(/_/g,' ');b.onclick=function(){eLoad(n)};$('e-pills').appendChild(b)});eSys();eSecLoad();eSecAudit();eDashModels();setInterval(eSys,5000)});
+    document.addEventListener('DOMContentLoaded',function(){
+        ['iris','diabetes','boston','wine','breast_cancer','titanic','heart','credit','customers','california_housing'].forEach(function(n){var b=document.createElement('button');b.className='pill';b.setAttribute('data-name',n);b.textContent=n.charAt(0).toUpperCase()+n.slice(1).replace(/_/g,' ');b.onclick=function(){eLoad(n)};$('e-pills').appendChild(b)});
+        eSys();eSecLoad();eSecAudit();eDashModels();eUpdateNoDataAlerts();setInterval(eSys,5000);
+        var uz=$('e-upload-zone');
+        uz.addEventListener('dragover',function(e){e.preventDefault();uz.classList.add('dragover')});
+        uz.addEventListener('dragleave',function(){uz.classList.remove('dragover')});
+        uz.addEventListener('drop',function(e){e.preventDefault();uz.classList.remove('dragover');if(e.dataTransfer.files.length){$('e-file-input').files=e.dataTransfer.files;eFileUpload($('e-file-input'))}});
+    });
     function eDashModels(){fetch('/api/models').then(function(r){return r.json()}).then(function(d){var models=d.models||[];$('e-dash-models').textContent=models.length;if(models.length===0){$('e-dash-model-list').innerHTML='<div class="empty">No models trained yet. Load data and run training to get started.</div>';return}var h='<table><thead><tr><th>Model</th><th>Type</th><th>Created</th></tr></thead><tbody>';models.forEach(function(m){h+='<tr><td style="font-weight:500">'+m.id+'</td><td><span class="badge badge-info">'+(m.model_type||'—')+'</span></td><td class="mono" style="font-size:12px;color:#6a6f73">'+(m.created_at?new Date(m.created_at).toLocaleString():'—')+'</td></tr>'});h+='</tbody></table>';$('e-dash-model-list').innerHTML=h;if(models.length>0){eLastModelId=models[models.length-1].id;$('e-explain-btn').disabled=false}}).catch(function(){$('e-dash-model-list').innerHTML='<div class="empty" style="color:#9c9fa1">Could not load models</div>'})}
+    var eActivityLog=[];
+    function eLogActivity(msg){var now=new Date();eActivityLog.unshift({time:now,msg:msg});if(eActivityLog.length>50)eActivityLog.length=50;var h='<div style="display:flex;flex-direction:column;gap:1px">';eActivityLog.forEach(function(a){h+='<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid #f1f3f4"><span class="mono" style="font-size:11px;color:#9c9fa1;flex-shrink:0">'+a.time.toLocaleTimeString()+'</span><span style="font-size:13px">'+a.msg+'</span></div>'});h+='</div>';$('e-dash-activity').innerHTML=h}
+    function eDashTrainResult(model,metrics){var h='<div style="background:#f3fbf4;border-radius:8px;padding:12px;margin-bottom:12px"><div style="font-size:14px;font-weight:600;margin-bottom:4px"><i class="ri-check-line" style="color:#3abc3f"></i> '+model+'</div></div>';h+='<table><thead><tr><th>Metric</th><th>Value</th></tr></thead><tbody>';Object.keys(metrics).forEach(function(k){h+='<tr><td>'+k+'</td><td class="mono">'+(typeof metrics[k]==='number'?metrics[k].toFixed(4):metrics[k])+'</td></tr>'});h+='</tbody></table>';$('e-dash-train-result').innerHTML=h}
     </script>
 </body>
 </html>"#;
