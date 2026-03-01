@@ -1355,106 +1355,213 @@ const EMBEDDED_INDEX_HTML: &str = r#"<!DOCTYPE html>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Kolosal AutoML</title>
+    <link rel="stylesheet" href="/static/remixicon.css">
     <style>
         *{margin:0;padding:0;box-sizing:border-box;font-family:system-ui,-apple-system,sans-serif}
-        body{background:#f8f9f9;color:#0d0e0f;min-height:100vh}
-        header{background:#fff;border-bottom:1px solid #dde1e3;padding:1rem 1.5rem;position:sticky;top:0;z-index:15}
+        body{background:#f8f9f9;color:#0d0e0f;min-height:100vh;overflow:hidden}
+        .app{display:flex;height:100vh}
+        /* Sidebar */
+        .sidebar{width:60px;min-width:60px;background:#fff;border-right:1px solid #e4e7e9;display:flex;flex-direction:column;transition:width .2s ease,min-width .2s ease;overflow:hidden;z-index:20;height:100vh;position:relative}
+        .sidebar.expanded{width:220px;min-width:220px}
+        .sidebar-header{height:56px;display:flex;align-items:center;padding:0 16px;gap:10px;border-bottom:1px solid #e4e7e9;flex-shrink:0}
+        .sidebar-logo{width:28px;height:28px;background:#0d0e0f;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:14px;flex-shrink:0}
+        .sidebar-title{font-weight:600;font-size:15px;white-space:nowrap;opacity:0;transition:opacity .15s;font-family:"Geist Mono",monospace}
+        .sidebar.expanded .sidebar-title{opacity:1}
+        .sidebar-nav{flex:1;padding:8px;overflow-y:auto;overflow-x:hidden}
+        .sidebar-section{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#9c9fa1;padding:12px 8px 6px;white-space:nowrap;opacity:0;height:0;overflow:hidden;transition:opacity .15s}
+        .sidebar.expanded .sidebar-section{opacity:1;height:auto}
+        .sidebar-item{display:flex;align-items:center;gap:10px;height:38px;padding:0 8px;border-radius:10px;border:none;background:none;color:#6a6f73;font-size:14px;font-weight:500;cursor:pointer;width:100%;white-space:nowrap;transition:background .12s,color .12s}
+        .sidebar-item:hover{background:#f1f3f4;color:#0d0e0f}
+        .sidebar-item.active{background:#f0f6fe;color:#0066f5}
+        .sidebar-item i{font-size:18px;width:24px;text-align:center;flex-shrink:0}
+        .sidebar-item span{opacity:0;transition:opacity .15s}
+        .sidebar.expanded .sidebar-item span{opacity:1}
+        .sidebar-toggle{height:44px;display:flex;align-items:center;justify-content:center;border-top:1px solid #e4e7e9;flex-shrink:0;cursor:pointer;color:#9c9fa1;background:none;border-left:none;border-right:none;border-bottom:none;width:100%;font-size:18px;transition:color .12s}
+        .sidebar-toggle:hover{color:#0d0e0f;background:#f1f3f4}
+        .sidebar-badge{margin-left:auto;display:inline-flex;align-items:center;height:20px;padding:0 6px;font-size:11px;font-weight:600;border-radius:999px;background:#f0f6fe;color:#0066f5;opacity:0;transition:opacity .15s}
+        .sidebar.expanded .sidebar-badge{opacity:1}
+        /* Main content */
+        .main-wrap{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
+        .topbar{height:56px;background:#fff;border-bottom:1px solid #e4e7e9;display:flex;align-items:center;justify-content:space-between;padding:0 24px;flex-shrink:0}
+        .topbar-title{font-size:16px;font-weight:600}
+        .topbar-meta{display:flex;align-items:center;gap:12px;font-size:13px;color:#6a6f73}
+        .content{flex:1;overflow-y:auto;padding:24px}
+        .content-inner{max-width:1080px;margin:0 auto}
+        /* Components */
         .flex{display:flex}.items-center{align-items:center}.justify-between{justify-content:space-between}
-        nav{background:#fff;padding:0 1.5rem;border-bottom:1px solid #e4e7e9}
-        .nav-tab{display:inline-flex;align-items:center;gap:6px;height:40px;padding:0 12px;font-size:14px;font-weight:500;color:#6a6f73;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer}
-        .nav-tab:hover{color:#0d0e0f;background:#f1f3f4}.nav-tab.active{color:#0d0e0f;border-bottom-color:#0d0e0f}
-        main{max-width:1080px;margin:0 auto;padding:24px 20px}
         .card{background:#fff;border:1px solid #e4e7e9;border-radius:12px;padding:24px;margin-bottom:16px}
+        .card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+        .card-title{font-size:16px;font-weight:600}
+        .card-desc{font-size:13px;color:#6a6f73;margin-top:2px}
         .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-        .btn{display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 14px;font-size:14px;font-weight:500;border-radius:10px;border:none;cursor:pointer;background:#0d0e0f;color:#fff}
-        .btn:disabled{opacity:.5;cursor:not-allowed}
+        .grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
+        .grid-4{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:16px}
+        .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:36px;padding:0 14px;font-size:14px;font-weight:500;border-radius:10px;border:none;cursor:pointer;background:#0d0e0f;color:#fff;transition:opacity .12s}
+        .btn:hover{opacity:.85}.btn:disabled{opacity:.5;cursor:not-allowed}
+        .btn-outline{background:#fff;color:#0d0e0f;border:1px solid #dde1e3}
+        .btn-outline:hover{background:#f1f3f4;opacity:1}
+        .btn-primary{background:#0066f5;color:#fff}
+        .btn-sm{height:30px;padding:0 10px;font-size:13px;border-radius:8px}
         .badge{display:inline-flex;align-items:center;height:24px;padding:0 8px;font-size:12px;font-weight:500;border-radius:6px}
         .badge-ok{color:#2e9632;background:#f3fbf4}.badge-err{color:#cc2727;background:#fff3f3}
+        .badge-info{color:#0052c4;background:#f0f6fe}.badge-warn{color:#9a6700;background:#fff8e6}
         .mono{font-family:"Geist Mono",monospace}
         .tab-panel{display:none}.tab-panel.active{display:block}
         .empty{text-align:center;padding:40px;color:#9c9fa1}
         select{height:36px;padding:0 14px;border:1px solid #dde1e3;border-radius:10px;width:100%;font-size:14px;appearance:none;background:#fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%236A6F73' viewBox='0 0 24 24'%3E%3Cpath d='M12 16l-6-6h12z'/%3E%3C/svg%3E") no-repeat right 12px center;padding-right:36px}
-        .pill{display:inline-flex;align-items:center;height:28px;padding:0 10px;font-size:12px;font-weight:500;border-radius:999px;border:none;cursor:pointer;background:#f0f6fe;color:#0052c4;margin:0 4px 4px 0}
+        input[type="number"],input[type="text"]{height:36px;border:1px solid #dde1e3;border-radius:10px;padding:0 14px;font-size:14px;width:100%;background:#fff}
+        input[type="number"]:focus,input[type="text"]:focus,select:focus{outline:none;border-color:#0066f5;box-shadow:0 0 0 3px rgba(0,102,245,.1)}
+        .pill{display:inline-flex;align-items:center;height:28px;padding:0 10px;font-size:12px;font-weight:500;border-radius:999px;border:none;cursor:pointer;background:#f0f6fe;color:#0052c4;margin:0 4px 4px 0;transition:background .12s}
         .pill:hover{background:#b4d2fc}
         .toast-box{position:fixed;bottom:20px;right:20px;z-index:100}
         .toast{padding:10px 16px;border-radius:10px;font-size:14px;font-weight:500;color:#fff;background:#0d0e0f;margin-top:8px;box-shadow:0 4px 12px rgba(0,0,0,.15)}
         .toast-ok{background:#3abc3f}.toast-err{background:#ff3131}
         .stat{font-size:32px;line-height:44px;font-family:"Geist Mono",monospace;font-weight:500}
-        .stat-info{color:#0066f5}.stat-ok{color:#3abc3f}
+        .stat-sm{font-size:24px;line-height:32px}
+        .stat-info{color:#0066f5}.stat-ok{color:#3abc3f}.stat-warn{color:#ffa931}.stat-err{color:#ff3131}
+        .stat-label{font-size:12px;color:#6a6f73;margin-top:4px}
         .progress{width:100%;height:6px;background:#e4e7e9;border-radius:999px;overflow:hidden}
         .progress-fill{height:100%;background:#0066f5;border-radius:999px;transition:width .3s}
-        table{width:100%;border-collapse:collapse}th{padding:8px 12px;text-align:left;font-size:12px;font-weight:500;color:#6a6f73;background:#f8f9f9;border-bottom:1px solid #e4e7e9}
+        table{width:100%;border-collapse:collapse}
+        th{padding:8px 12px;text-align:left;font-size:12px;font-weight:500;color:#6a6f73;background:#f8f9f9;border-bottom:1px solid #e4e7e9}
         td{padding:8px 12px;font-size:14px;border-bottom:1px solid #ebedee}
+        tr:hover td{background:#fafbfb}
         textarea{width:100%;min-height:120px;padding:8px 12px;border:1px solid #dde1e3;border-radius:12px;font-size:14px;resize:none;font-family:inherit}
         pre.code{background:#f8f9f9;border:1px solid #e4e7e9;border-radius:10px;padding:16px;font-size:13px;font-family:"Geist Mono",monospace;overflow:auto}
         label.form{display:block;font-size:14px;font-weight:500;margin-bottom:6px}
         .form-stack>*+*{margin-top:16px}
+        /* Dashboard cards */
+        .dash-stat-card{background:#fff;border:1px solid #e4e7e9;border-radius:12px;padding:20px;display:flex;flex-direction:column;gap:8px}
+        .dash-stat-card .icon-wrap{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px}
+        .dash-stat-card .icon-wrap.blue{background:#f0f6fe;color:#0066f5}
+        .dash-stat-card .icon-wrap.green{background:#f3fbf4;color:#3abc3f}
+        .dash-stat-card .icon-wrap.orange{background:#fff8e6;color:#ffa931}
+        .dash-stat-card .icon-wrap.red{background:#fff3f3;color:#ff3131}
+        .quick-action{display:flex;align-items:center;gap:12px;padding:12px;border-radius:10px;border:1px solid #e4e7e9;cursor:pointer;background:#fff;transition:border-color .12s,box-shadow .12s;width:100%}
+        .quick-action:hover{border-color:#0066f5;box-shadow:0 0 0 3px rgba(0,102,245,.08)}
+        .quick-action i{font-size:20px;color:#0066f5;width:36px;height:36px;display:flex;align-items:center;justify-content:center;background:#f0f6fe;border-radius:8px;flex-shrink:0}
+        .quick-action .qa-title{font-size:14px;font-weight:500}
+        .quick-action .qa-desc{font-size:12px;color:#6a6f73}
     </style>
 </head>
-<body style="background:#f8f9f9;color:#0d0e0f;font-family:system-ui,-apple-system,sans-serif;margin:0;padding:0;min-height:100vh;display:block;visibility:visible;opacity:1">
-    <header>
-        <div class="flex items-center justify-between">
-            <div class="flex items-center" style="gap:10px"><strong class="mono" style="font-size:20px">Kolosal AutoML</strong><span style="color:#6a6f73;font-size:14px">Rust-Powered</span></div>
-            <div class="flex items-center" style="gap:8px"><span id="e-badge" class="badge badge-ok">healthy</span><span id="e-dot" style="width:8px;height:8px;border-radius:50%;background:#3abc3f"></span></div>
-        </div>
-    </header>
-    <nav>
-        <button class="nav-tab active" data-tab="data" onclick="eTab('data')">Data</button>
-        <button class="nav-tab" data-tab="automl" onclick="eTab('automl')">AutoML</button>
-        <button class="nav-tab" data-tab="config" onclick="eTab('config')">Config</button>
-        <button class="nav-tab" data-tab="train" onclick="eTab('train')">Train</button>
-        <button class="nav-tab" data-tab="hyperopt" onclick="eTab('hyperopt')">HyperOpt</button>
-        <button class="nav-tab" data-tab="autotune" onclick="eTab('autotune')">Auto-Tune</button>
-        <button class="nav-tab" data-tab="ensemble" onclick="eTab('ensemble')">Ensemble</button>
-        <button class="nav-tab" data-tab="explain" onclick="eTab('explain')">Explain</button>
-        <button class="nav-tab" data-tab="anomaly" onclick="eTab('anomaly')">Anomaly</button>
-        <button class="nav-tab" data-tab="security" onclick="eTab('security')">Security</button>
-        <button class="nav-tab" data-tab="monitor" onclick="eTab('monitor')">Monitor</button>
-    </nav>
-    <div id="e-topbar" style="display:none;margin:0 24px;padding:10px 16px;background:#fff;border:1px solid #e4e7e9;border-radius:10px;font-size:13px;color:#6a6f73;display:none">
-        <div class="flex items-center justify-between">
-            <div class="flex items-center" style="gap:12px">
-                <span style="font-weight:600;color:#0d0e0f" id="e-topbar-name">—</span>
-                <span style="width:1px;height:16px;background:#dde1e3"></span>
-                <span><strong style="color:#0066f5" id="e-topbar-cols">0</strong> columns</span>
-                <span style="color:#dde1e3">&times;</span>
-                <span><strong style="color:#0066f5" id="e-topbar-rows">0</strong> rows</span>
+<body>
+    <div class="app">
+        <aside class="sidebar" id="e-sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-logo">K</div>
+                <div class="sidebar-title">Kolosal AutoML</div>
             </div>
-            <div class="flex items-center" style="gap:10px">
-                <span id="e-topbar-mem" style="font-family:'Geist Mono',monospace;font-size:12px"></span>
+            <nav class="sidebar-nav">
+                <div class="sidebar-section">Overview</div>
+                <button class="sidebar-item active" data-tab="dashboard" onclick="eTab('dashboard')"><i class="ri-dashboard-line"></i><span>Dashboard</span></button>
+                <button class="sidebar-item" data-tab="data" onclick="eTab('data')"><i class="ri-database-2-line"></i><span>Data</span></button>
+                <div class="sidebar-section">Training</div>
+                <button class="sidebar-item" data-tab="automl" onclick="eTab('automl')"><i class="ri-magic-line"></i><span>AutoML</span></button>
+                <button class="sidebar-item" data-tab="config" onclick="eTab('config')"><i class="ri-settings-3-line"></i><span>Config</span></button>
+                <button class="sidebar-item" data-tab="train" onclick="eTab('train')"><i class="ri-play-circle-line"></i><span>Train</span></button>
+                <button class="sidebar-item" data-tab="hyperopt" onclick="eTab('hyperopt')"><i class="ri-flashlight-line"></i><span>HyperOpt</span></button>
+                <button class="sidebar-item" data-tab="autotune" onclick="eTab('autotune')"><i class="ri-equalizer-line"></i><span>Auto-Tune</span></button>
+                <button class="sidebar-item" data-tab="ensemble" onclick="eTab('ensemble')"><i class="ri-stack-line"></i><span>Ensemble</span></button>
+                <div class="sidebar-section">Analysis</div>
+                <button class="sidebar-item" data-tab="explain" onclick="eTab('explain')"><i class="ri-search-eye-line"></i><span>Explain</span></button>
+                <button class="sidebar-item" data-tab="anomaly" onclick="eTab('anomaly')"><i class="ri-alarm-warning-line"></i><span>Anomaly</span></button>
+                <div class="sidebar-section">System</div>
+                <button class="sidebar-item" data-tab="monitor" onclick="eTab('monitor')"><i class="ri-pulse-line"></i><span>Monitor</span></button>
+                <button class="sidebar-item" data-tab="security" onclick="eTab('security')"><i class="ri-shield-check-line"></i><span>Security</span></button>
+            </nav>
+            <button class="sidebar-toggle" onclick="eToggleSidebar()" title="Toggle sidebar"><i id="e-sidebar-icon" class="ri-arrow-right-s-line"></i></button>
+        </aside>
+        <div class="main-wrap">
+            <div class="topbar">
+                <div>
+                    <div class="topbar-title" id="e-page-title">Dashboard</div>
+                </div>
+                <div class="topbar-meta">
+                    <span id="e-topbar-data" style="display:none"><strong style="color:#0066f5" id="e-topbar-rows">0</strong> rows &times; <strong style="color:#0066f5" id="e-topbar-cols">0</strong> cols &mdash; <span id="e-topbar-name"></span></span>
+                    <span id="e-badge" class="badge badge-ok">healthy</span>
+                    <span id="e-dot" style="width:8px;height:8px;border-radius:50%;background:#3abc3f"></span>
+                </div>
             </div>
-        </div>
-    </div>
-    <main>
-        <div id="et-data" class="tab-panel active">
-            <div class="grid-2">
-                <div class="card">
-                    <h2 style="font-size:16px;font-weight:500;margin-bottom:16px">Sample Datasets</h2>
-                    <div id="e-pills"></div>
-                    <div style="margin-top:16px;padding-top:12px;border-top:1px solid #e4e7e9">
-                        <p style="font-size:12px;font-weight:500;color:#6a6f73;margin-bottom:8px">Or import from URL:</p>
-                        <div style="display:flex;gap:8px"><input type="text" id="e-import-url" placeholder="Paste URL (Kaggle, GitHub, CSV...)" style="flex:1;height:36px;border:1px solid #dde1e3;border-radius:10px;padding:0 14px;font-size:14px"><button class="btn" onclick="eImportUrl()">Import</button></div>
-                        <div id="e-import-status" style="margin-top:8px"></div>
+            <div class="content">
+                <div class="content-inner">
+                    <div id="et-dashboard" class="tab-panel active">
+                        <div class="grid-4" style="margin-bottom:20px">
+                            <div class="dash-stat-card">
+                                <div class="icon-wrap blue"><i class="ri-database-2-line"></i></div>
+                                <div class="stat stat-sm stat-info" id="e-dash-rows">—</div>
+                                <div class="stat-label">Data Rows</div>
+                            </div>
+                            <div class="dash-stat-card">
+                                <div class="icon-wrap green"><i class="ri-cpu-line"></i></div>
+                                <div class="stat stat-sm stat-ok" id="e-dash-models">0</div>
+                                <div class="stat-label">Models Trained</div>
+                            </div>
+                            <div class="dash-stat-card">
+                                <div class="icon-wrap orange"><i class="ri-speed-line"></i></div>
+                                <div class="stat stat-sm stat-warn" id="e-dash-cpu">0%</div>
+                                <div class="stat-label">CPU Usage</div>
+                            </div>
+                            <div class="dash-stat-card">
+                                <div class="icon-wrap red"><i class="ri-hard-drive-2-line"></i></div>
+                                <div class="stat stat-sm" id="e-dash-mem" style="color:#6a6f73">0%</div>
+                                <div class="stat-label">Memory Usage</div>
+                            </div>
+                        </div>
+                        <div class="grid-2">
+                            <div class="card">
+                                <div class="card-header"><div class="card-title">Quick Actions</div></div>
+                                <div style="display:grid;gap:8px">
+                                    <button class="quick-action" onclick="eTab('data')"><i class="ri-upload-2-line"></i><div><div class="qa-title">Load Dataset</div><div class="qa-desc">Import sample or custom data</div></div></button>
+                                    <button class="quick-action" onclick="eTab('automl')"><i class="ri-magic-line"></i><div><div class="qa-title">Run AutoML</div><div class="qa-desc">One-click pipeline — train &amp; optimize</div></div></button>
+                                    <button class="quick-action" onclick="eTab('train')"><i class="ri-play-circle-line"></i><div><div class="qa-title">Train Model</div><div class="qa-desc">Train a single model manually</div></div></button>
+                                    <button class="quick-action" onclick="eTab('autotune')"><i class="ri-equalizer-line"></i><div><div class="qa-title">Auto-Tune</div><div class="qa-desc">Compare multiple models automatically</div></div></button>
+                                </div>
+                            </div>
+                            <div class="card">
+                                <div class="card-header"><div class="card-title">System Health</div></div>
+                                <div id="e-dash-health">
+                                    <div style="display:flex;flex-direction:column;gap:12px">
+                                        <div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:14px">Status</span><span id="e-dash-status" class="badge badge-ok">healthy</span></div>
+                                        <div><div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px"><span>CPU</span><span class="mono" id="e-dash-cpu2">0%</span></div><div class="progress"><div class="progress-fill" id="e-dash-cpu-bar" style="width:0%"></div></div></div>
+                                        <div><div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px"><span>Memory</span><span class="mono" id="e-dash-mem2">0%</span></div><div class="progress"><div class="progress-fill" id="e-dash-mem-bar" style="width:0%;background:#3abc3f"></div></div></div>
+                                        <div style="font-size:12px;color:#9c9fa1;margin-top:4px" id="e-dash-mem-detail"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card">
+                            <div class="card-header"><div class="card-title">Trained Models</div><button class="btn btn-sm btn-outline" onclick="eDashModels()"><i class="ri-refresh-line" style="font-size:14px"></i></button></div>
+                            <div id="e-dash-model-list" class="empty">No models trained yet. Load data and run training to get started.</div>
+                        </div>
                     </div>
-                </div>
-                <div class="card">
-                    <h2 style="font-size:16px;font-weight:500;margin-bottom:16px">Data Info</h2>
-                    <div id="e-info" class="empty">No data loaded</div>
-                </div>
-            </div>
-        </div>
-        <div id="et-automl" class="tab-panel">
-            <div class="card" style="max-width:600px">
-                <h2 style="font-size:16px;font-weight:500;margin-bottom:8px">One-Click AutoML</h2>
-                <p style="font-size:13px;color:#6a6f73;margin-bottom:16px">Automatically detect, preprocess, train, and optimize — all in one click.</p>
+                    <div id="et-data" class="tab-panel">
+                        <div class="grid-2">
+                            <div class="card">
+                                <div class="card-header"><div class="card-title">Sample Datasets</div></div>
+                                <div id="e-pills"></div>
+                                <div style="margin-top:16px;padding-top:12px;border-top:1px solid #e4e7e9">
+                                    <p style="font-size:12px;font-weight:500;color:#6a6f73;margin-bottom:8px">Or import from URL:</p>
+                                    <div style="display:flex;gap:8px"><input type="text" id="e-import-url" placeholder="Paste URL (Kaggle, GitHub, CSV...)"><button class="btn" onclick="eImportUrl()">Import</button></div>
+                                    <div id="e-import-status" style="margin-top:8px"></div>
+                                </div>
+                            </div>
+                            <div class="card">
+                                <div class="card-header"><div class="card-title">Data Info</div></div>
+                                <div id="e-info" class="empty">No data loaded</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="et-automl" class="tab-panel">
+                        <div class="card" style="max-width:600px">
+                            <div class="card-header"><div><div class="card-title">One-Click AutoML</div><div class="card-desc">Automatically detect, preprocess, train, and optimize — all in one click.</div></div></div>
                 <div style="margin-bottom:12px"><label class="form">Target Column</label><select id="e-automl-target"><option value="">Select target...</option></select></div>
-                <button class="btn" id="e-btn-automl" onclick="eRunAutoML()" disabled style="width:100%;justify-content:center;height:44px;font-size:16px">Run AutoML Pipeline</button>
+                <button class="btn btn-primary" id="e-btn-automl" onclick="eRunAutoML()" disabled style="width:100%;height:44px;font-size:16px">Run AutoML Pipeline</button>
                 <details style="margin-top:16px"><summary style="cursor:pointer;font-size:13px;font-weight:500;color:#6a6f73">Advanced Settings</summary>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px">
                     <div><label class="form">Task Type</label><select id="e-aml-task"><option value="">Auto-Detect</option><option value="classification">Classification</option><option value="regression">Regression</option></select></div>
                     <div><label class="form">Scaler</label><select id="e-aml-scaler"><option value="">Auto</option><option value="standard">Standard</option><option value="minmax">MinMax</option><option value="robust">Robust</option></select></div>
-                    <div><label class="form">Max Models</label><input type="number" id="e-aml-max" value="8" min="1" max="20" style="height:36px;border:1px solid #dde1e3;border-radius:10px;padding:0 14px;font-size:14px;width:100%"></div>
-                    <div><label class="form">HyperOpt Trials</label><input type="number" id="e-aml-trials" value="20" min="0" max="200" style="height:36px;border:1px solid #dde1e3;border-radius:10px;padding:0 14px;font-size:14px;width:100%"></div>
+                    <div><label class="form">Max Models</label><input type="number" id="e-aml-max" value="8" min="1" max="20"></div>
+                    <div><label class="form">HyperOpt Trials</label><input type="number" id="e-aml-trials" value="20" min="0" max="200"></div>
                 </div></details>
                 <div id="e-automl-progress" style="display:none;margin-top:16px">
                     <div style="font-size:14px;font-weight:500;color:#0066f5;margin-bottom:8px" id="e-aml-status">Starting...</div>
@@ -1474,131 +1581,130 @@ const EMBEDDED_INDEX_HTML: &str = r#"<!DOCTYPE html>
                 </div>
             </div>
         </div>
-        <div id="et-config" class="tab-panel">
-            <div class="card form-stack" style="max-width:500px">
+                    <div id="et-config" class="tab-panel">
+                        <div class="card form-stack" style="max-width:500px">
+                            <div class="card-header"><div class="card-title">Model Configuration</div></div>
                 <div><label class="form">Target Column</label><select id="e-target"><option value="">Select...</option></select></div>
                 <div><label class="form">Task Type</label><select id="e-task"><option value="classification">Classification</option><option value="regression">Regression</option><option value="clustering">Clustering</option></select></div>
                 <div><label class="form">Model</label><select id="e-model"><option value="random_forest">Random Forest</option><option value="xgboost">XGBoost</option><option value="lightgbm">LightGBM</option><option value="catboost">CatBoost</option><option value="gradient_boosting">Gradient Boosting</option><option value="extra_trees">Extra Trees</option><option value="decision_tree">Decision Tree</option><option value="logistic_regression">Logistic Regression</option><option value="ridge">Ridge</option><option value="lasso">Lasso</option><option value="elastic_net">Elastic Net</option><option value="polynomial">Polynomial</option><option value="adaboost">AdaBoost</option><option value="sgd">SGD</option><option value="knn">KNN</option><option value="naive_bayes">Naive Bayes</option><option value="svm">SVM</option><option value="gaussian_process">Gaussian Process</option><option value="kmeans">KMeans</option><option value="dbscan">DBSCAN</option></select></div>
-            </div>
-        </div>
-        <div id="et-train" class="tab-panel">
-            <div class="card">
-                <div class="flex items-center justify-between" style="margin-bottom:16px">
-                    <h2 style="font-size:16px;font-weight:500">Training</h2>
+                    </div>
+                    <div id="et-train" class="tab-panel">
+                        <div class="card">
+                            <div class="card-header">
+                                <div class="card-title">Training</div>
                     <button id="e-train-btn" class="btn" onclick="eTrain()" disabled>Train</button>
                 </div>
                 <div id="e-result"></div>
-            </div>
-        </div>
-        <div id="et-monitor" class="tab-panel">
-            <div class="grid-2">
-                <div class="card"><p style="font-size:12px;color:#6a6f73;margin-bottom:8px">CPU Usage</p><p id="e-cpu" class="stat stat-info">0.0%</p></div>
-                <div class="card"><p style="font-size:12px;color:#6a6f73;margin-bottom:8px">Memory</p><p id="e-mem" class="stat stat-ok">0.0%</p><p id="e-mem2" style="font-size:12px;color:#9c9fa1;margin-top:4px"></p></div>
-            </div>
-        </div>
-        <div id="et-hyperopt" class="tab-panel">
-            <div class="grid-2">
-                <div class="card">
-                    <h2 style="font-size:16px;font-weight:500;margin-bottom:16px">HyperOpt Config</h2>
-                    <div class="form-stack">
-                        <div><label class="form">Model</label><select id="e-ho-model"><option value="random_forest">Random Forest</option><option value="xgboost">XGBoost</option><option value="lightgbm">LightGBM</option><option value="catboost">CatBoost</option><option value="gradient_boosting">Gradient Boosting</option><option value="extra_trees">Extra Trees</option><option value="decision_tree">Decision Tree</option><option value="adaboost">AdaBoost</option><option value="sgd">SGD</option><option value="knn">KNN</option><option value="svm">SVM</option><option value="polynomial">Polynomial</option><option value="gaussian_process">Gaussian Process</option></select></div>
-                        <div><label class="form">Sampler</label><select id="e-ho-sampler"><option value="tpe">TPE</option><option value="random">Random</option><option value="gp">Gaussian Process</option></select></div>
-                        <div><label class="form">Trials</label><input type="number" id="e-ho-trials" value="20" min="5" max="100" style="height:36px;border:1px solid #dde1e3;border-radius:10px;width:100%;padding:0 14px;font-size:14px"></div>
-                        <button id="e-ho-btn" class="btn" onclick="eHyperOpt()" disabled>Optimize</button>
                     </div>
-                </div>
-                <div class="card">
-                    <h2 style="font-size:16px;font-weight:500;margin-bottom:16px">Results</h2>
-                    <div id="e-ho-result" class="empty">Run optimization to see results</div>
-                </div>
-            </div>
-            <div id="e-ho-charts" style="display:none;margin-top:16px">
-                <div class="grid-2">
-                    <div class="card">
-                        <h2 style="font-size:14px;font-weight:500;margin-bottom:12px;color:#6a6f73">Optimization Convergence</h2>
-                        <canvas id="e-ho-cvg" width="520" height="260" style="width:100%;border-radius:8px"></canvas>
+                    <div id="et-monitor" class="tab-panel">
+                        <div class="grid-2">
+                            <div class="card"><p style="font-size:12px;color:#6a6f73;margin-bottom:8px">CPU Usage</p><p id="e-cpu" class="stat stat-info">0.0%</p></div>
+                            <div class="card"><p style="font-size:12px;color:#6a6f73;margin-bottom:8px">Memory</p><p id="e-mem" class="stat stat-ok">0.0%</p><p id="e-mem2" style="font-size:12px;color:#9c9fa1;margin-top:4px"></p></div>
+                        </div>
                     </div>
-                    <div class="card">
-                        <h2 style="font-size:14px;font-weight:500;margin-bottom:12px;color:#6a6f73">Best Score Progress</h2>
-                        <canvas id="e-ho-best" width="520" height="260" style="width:100%;border-radius:8px"></canvas>
+                    <div id="et-hyperopt" class="tab-panel">
+                        <div class="grid-2">
+                            <div class="card">
+                                <div class="card-header"><div class="card-title">HyperOpt Config</div></div>
+                                <div class="form-stack">
+                                    <div><label class="form">Model</label><select id="e-ho-model"><option value="random_forest">Random Forest</option><option value="xgboost">XGBoost</option><option value="lightgbm">LightGBM</option><option value="catboost">CatBoost</option><option value="gradient_boosting">Gradient Boosting</option><option value="extra_trees">Extra Trees</option><option value="decision_tree">Decision Tree</option><option value="adaboost">AdaBoost</option><option value="sgd">SGD</option><option value="knn">KNN</option><option value="svm">SVM</option><option value="polynomial">Polynomial</option><option value="gaussian_process">Gaussian Process</option></select></div>
+                                    <div><label class="form">Sampler</label><select id="e-ho-sampler"><option value="tpe">TPE</option><option value="random">Random</option><option value="gp">Gaussian Process</option></select></div>
+                                    <div><label class="form">Trials</label><input type="number" id="e-ho-trials" value="20" min="5" max="100"></div>
+                                    <button id="e-ho-btn" class="btn" onclick="eHyperOpt()" disabled>Optimize</button>
+                                </div>
+                            </div>
+                            <div class="card">
+                                <div class="card-header"><div class="card-title">Results</div></div>
+                                <div id="e-ho-result" class="empty">Run optimization to see results</div>
+                            </div>
+                        </div>
+                        <div id="e-ho-charts" style="display:none;margin-top:16px">
+                            <div class="grid-2">
+                                <div class="card">
+                                    <p style="font-size:14px;font-weight:500;margin-bottom:12px;color:#6a6f73">Optimization Convergence</p>
+                                    <canvas id="e-ho-cvg" width="520" height="260" style="width:100%;border-radius:8px"></canvas>
+                                </div>
+                                <div class="card">
+                                    <p style="font-size:14px;font-weight:500;margin-bottom:12px;color:#6a6f73">Best Score Progress</p>
+                                    <canvas id="e-ho-best" width="520" height="260" style="width:100%;border-radius:8px"></canvas>
+                                </div>
+                            </div>
+                        </div>
                     </div>
-                </div>
-            </div>
-        </div>
-        <div id="et-autotune" class="tab-panel">
-            <div class="grid-2">
-                <div class="card">
-                    <h2 style="font-size:16px;font-weight:500;margin-bottom:16px">Auto-Tune</h2>
-                    <p style="font-size:14px;color:#6a6f73;margin-bottom:12px">Automatically trains multiple models and picks the best.</p>
-                    <button id="e-at-btn" class="btn" onclick="eAutoTune()" disabled>Start Auto-Tune</button>
-                </div>
-                <div class="card">
-                    <h2 style="font-size:16px;font-weight:500;margin-bottom:16px">Leaderboard</h2>
-                    <div id="e-at-result" class="empty">Run auto-tune to see results</div>
-                </div>
-            </div>
-            <div id="e-at-charts" style="display:none;margin-top:16px">
-                <div class="card">
-                    <h2 style="font-size:14px;font-weight:500;margin-bottom:12px;color:#6a6f73">Model Comparison</h2>
-                    <canvas id="e-at-bar" width="700" height="300" style="width:100%;border-radius:8px"></canvas>
-                </div>
-            </div>
-        </div>
-        <div id="et-ensemble" class="tab-panel">
-            <div class="card">
-                <h2 style="font-size:16px;font-weight:500;margin-bottom:16px">Ensemble Training</h2>
-                <p style="font-size:14px;color:#6a6f73;margin-bottom:12px">Select 2+ models and strategy, then train.</p>
+                    <div id="et-autotune" class="tab-panel">
+                        <div class="grid-2">
+                            <div class="card">
+                                <div class="card-header"><div><div class="card-title">Auto-Tune</div><div class="card-desc">Automatically trains multiple models and picks the best.</div></div></div>
+                                <button id="e-at-btn" class="btn" onclick="eAutoTune()" disabled>Start Auto-Tune</button>
+                            </div>
+                            <div class="card">
+                                <div class="card-header"><div class="card-title">Leaderboard</div></div>
+                                <div id="e-at-result" class="empty">Run auto-tune to see results</div>
+                            </div>
+                        </div>
+                        <div id="e-at-charts" style="display:none;margin-top:16px">
+                            <div class="card">
+                                <p style="font-size:14px;font-weight:500;margin-bottom:12px;color:#6a6f73">Model Comparison</p>
+                                <canvas id="e-at-bar" width="700" height="300" style="width:100%;border-radius:8px"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="et-ensemble" class="tab-panel">
+                        <div class="card">
+                            <div class="card-header"><div><div class="card-title">Ensemble Training</div><div class="card-desc">Select 2+ models and strategy, then train.</div></div></div>
                 <div class="grid-2">
                     <div><label class="form">Strategy</label><select id="e-ens-strat"><option value="voting">Voting</option><option value="averaging">Averaging</option></select></div>
                     <div><button id="e-ens-btn" class="btn" onclick="eEnsemble()" disabled>Train Ensemble</button></div>
                 </div>
                 <div id="e-ens-result" style="margin-top:16px" class="empty">Configure ensemble to see results</div>
-            </div>
-        </div>
-        <div id="et-explain" class="tab-panel">
-            <div class="card">
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-                    <h2 style="font-size:16px;font-weight:500">Feature Importance</h2>
+                    </div>
+                    <div id="et-explain" class="tab-panel">
+                        <div class="card">
+                            <div class="card-header">
+                                <div class="card-title">Feature Importance</div>
                     <button id="e-explain-btn" class="btn" onclick="eExplain()" disabled>Analyze</button>
                 </div>
                 <div id="e-explain-result" class="empty">Train a model first, then analyze</div>
-            </div>
-        </div>
-        <div id="et-anomaly" class="tab-panel">
-            <div class="card">
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-                    <h2 style="font-size:16px;font-weight:500">Anomaly Detection</h2>
+                    </div>
+                    <div id="et-anomaly" class="tab-panel">
+                        <div class="card">
+                            <div class="card-header">
+                                <div class="card-title">Anomaly Detection</div>
                     <button id="e-anomaly-btn" class="btn" onclick="eAnomaly()" disabled>Detect</button>
                 </div>
-                <div class="grid-2" style="margin-bottom:12px">
-                    <div><label class="form">Contamination</label><input type="number" id="e-anom-cont" value="0.1" min="0.01" max="0.5" step="0.01" style="height:36px;border:1px solid #dde1e3;border-radius:10px;width:100%;padding:0 14px;font-size:14px"></div>
-                    <div><label class="form">Estimators</label><input type="number" id="e-anom-est" value="100" min="10" max="1000" step="10" style="height:36px;border:1px solid #dde1e3;border-radius:10px;width:100%;padding:0 14px;font-size:14px"></div>
-                </div>
+                            <div class="grid-2" style="margin-bottom:12px">
+                                <div><label class="form">Contamination</label><input type="number" id="e-anom-cont" value="0.1" min="0.01" max="0.5" step="0.01"></div>
+                                <div><label class="form">Estimators</label><input type="number" id="e-anom-est" value="100" min="10" max="1000" step="10"></div>
+                            </div>
                 <div id="e-anomaly-result" class="empty">Load data and run anomaly detection</div>
-            </div>
-        </div>
-        <div id="et-security" class="tab-panel">
-            <div class="card" style="margin-bottom:12px">
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-                    <h2 style="font-size:16px;font-weight:500">Security Overview</h2>
-                    <button class="btn" onclick="eSecLoad()">Refresh</button>
+                    </div>
+                    <div id="et-security" class="tab-panel">
+                        <div class="card" style="margin-bottom:12px">
+                            <div class="card-header">
+                                <div class="card-title">Security Overview</div>
+                                <button class="btn btn-sm btn-outline" onclick="eSecLoad()"><i class="ri-refresh-line" style="font-size:14px"></i></button>
+                            </div>
+                            <div id="e-sec-status" class="empty">Loading security status...</div>
+                        </div>
+                        <div class="card" style="margin-bottom:12px">
+                            <div class="card-header"><div class="card-title">Audit Log</div></div>
+                            <div id="e-sec-audit" class="empty" style="max-height:300px;overflow-y:auto">Loading...</div>
+                        </div>
+                    </div>
                 </div>
-                <div id="e-sec-status" class="empty">Loading security status...</div>
-            </div>
-            <div class="card" style="margin-bottom:12px">
-                <h2 style="font-size:16px;font-weight:500;margin-bottom:12px">Audit Log</h2>
-                <div id="e-sec-audit" class="empty" style="max-height:300px;overflow-y:auto">Loading...</div>
             </div>
         </div>
-    </main>
+    </div>
     <div id="e-toasts" class="toast-box"></div>
     <script>
     var eData=null,eTraining=false,eLastModelId=null;
     function $(i){return document.getElementById(i)}
     function eNotify(m,t){var d=document.createElement('div');d.className='toast'+(t==='ok'?' toast-ok':t==='err'?' toast-err':'');d.textContent=m;$('e-toasts').appendChild(d);setTimeout(function(){d.remove()},3000)}
-    function eTab(n){document.querySelectorAll('.tab-panel').forEach(function(p){p.classList.remove('active')});document.querySelectorAll('.nav-tab').forEach(function(t){t.classList.remove('active')});$('et-'+n).classList.add('active');document.querySelector('[data-tab="'+n+'"]').classList.add('active')}
-    function eTopbar(name,rows,cols,mem){$('e-topbar').style.display='block';$('e-topbar-name').textContent=name;$('e-topbar-rows').textContent=rows.toLocaleString();$('e-topbar-cols').textContent=cols;$('e-topbar-mem').textContent=mem?mem:''}
-    function eSys(){fetch('/api/system/status').then(function(r){return r.json()}).then(function(d){var s=d.system||{};$('e-badge').textContent=d.status||'error';$('e-badge').className='badge '+(d.status==='healthy'?'badge-ok':'badge-err');$('e-dot').style.background=d.status==='healthy'?'#3abc3f':'#ff3131';$('e-cpu').textContent=(s.cpu_usage||0).toFixed(1)+'%';$('e-mem').textContent=(s.memory_usage_percent||0).toFixed(1)+'%';$('e-mem2').textContent=(s.used_memory_gb||0).toFixed(1)+' / '+(s.total_memory_gb||0).toFixed(1)+' GB'}).catch(function(){})}
+    var eTabNames={dashboard:'Dashboard',data:'Data',automl:'AutoML',config:'Config',train:'Train',hyperopt:'HyperOpt',autotune:'Auto-Tune',ensemble:'Ensemble',explain:'Explain',anomaly:'Anomaly',monitor:'Monitor',security:'Security'};
+    function eTab(n){document.querySelectorAll('.tab-panel').forEach(function(p){p.classList.remove('active')});document.querySelectorAll('.sidebar-item').forEach(function(t){t.classList.remove('active')});$('et-'+n).classList.add('active');document.querySelector('[data-tab="'+n+'"]').classList.add('active');$('e-page-title').textContent=eTabNames[n]||n}
+    function eToggleSidebar(){var s=$('e-sidebar');s.classList.toggle('expanded');$('e-sidebar-icon').className=s.classList.contains('expanded')?'ri-arrow-left-s-line':'ri-arrow-right-s-line'}
+    function eTopbar(name,rows,cols,mem){$('e-topbar-data').style.display='inline';$('e-topbar-name').textContent=name;$('e-topbar-rows').textContent=rows.toLocaleString();$('e-topbar-cols').textContent=cols;$('e-dash-rows').textContent=rows.toLocaleString()}
+    function eSys(){fetch('/api/system/status').then(function(r){return r.json()}).then(function(d){var s=d.system||{};$('e-badge').textContent=d.status||'error';$('e-badge').className='badge '+(d.status==='healthy'?'badge-ok':'badge-err');$('e-dot').style.background=d.status==='healthy'?'#3abc3f':'#ff3131';var cpuVal=(s.cpu_usage||0).toFixed(1);var memVal=(s.memory_usage_percent||0).toFixed(1);$('e-cpu').textContent=cpuVal+'%';$('e-mem').textContent=memVal+'%';$('e-mem2').textContent=(s.used_memory_gb||0).toFixed(1)+' / '+(s.total_memory_gb||0).toFixed(1)+' GB';$('e-dash-cpu').textContent=cpuVal+'%';$('e-dash-mem').textContent=memVal+'%';$('e-dash-cpu2').textContent=cpuVal+'%';$('e-dash-mem2').textContent=memVal+'%';$('e-dash-cpu-bar').style.width=cpuVal+'%';$('e-dash-mem-bar').style.width=memVal+'%';$('e-dash-mem-detail').textContent=(s.used_memory_gb||0).toFixed(1)+' / '+(s.total_memory_gb||0).toFixed(1)+' GB';$('e-dash-status').textContent=d.status||'error';$('e-dash-status').className='badge '+(d.status==='healthy'?'badge-ok':'badge-err')}).catch(function(){})}
     function eLoad(n){fetch('/api/data/sample/'+n).then(function(r){return r.json()}).then(function(d){if(d.success){eData=d;eTopbar(d.name||n,d.rows,d.columns);$('e-info').innerHTML='<div class="grid-2"><div><span class="stat stat-info">'+d.rows.toLocaleString()+'</span><p style="font-size:12px;color:#6a6f73">Rows</p></div><div><span class="stat stat-info">'+d.columns+'</span><p style="font-size:12px;color:#6a6f73">Columns</p></div></div><div style="margin-top:12px;font-size:12px;color:#6a6f73">Columns: '+(d.column_names||[]).join(', ')+'</div>';var sel=$('e-target');sel.innerHTML='<option value="">Select...</option>';(d.column_names||[]).forEach(function(c){var o=document.createElement('option');o.value=c;o.textContent=c;sel.appendChild(o)});$('e-train-btn').disabled=false;$('e-ho-btn').disabled=false;$('e-ens-btn').disabled=false;$('e-at-btn').disabled=false;$('e-anomaly-btn').disabled=false;eUpdateAutoMLTarget();eNotify('Loaded '+n+' ('+d.rows+' rows, '+d.columns+' cols)','ok')}}).catch(function(e){eNotify('Failed: '+e.message,'err')})}
     function eImportUrl(){var url=$('e-import-url').value.trim();if(!url){eNotify('Enter a URL','err');return}$('e-import-status').innerHTML='<p style="font-size:12px;color:#6a6f73">Downloading...</p>';fetch('/api/data/import/url',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:url})}).then(function(r){return r.json()}).then(function(d){if(d.success){eData=d;eTopbar(d.name||'Imported',d.rows,d.columns);$('e-info').innerHTML='<div class="grid-2"><div><span class="stat stat-info">'+d.rows.toLocaleString()+'</span><p style="font-size:12px;color:#6a6f73">Rows</p></div><div><span class="stat stat-info">'+d.columns+'</span><p style="font-size:12px;color:#6a6f73">Columns</p></div></div><div style="margin-top:12px;font-size:12px;color:#6a6f73">Columns: '+(d.column_names||[]).join(', ')+'</div>';var sel=$('e-target');sel.innerHTML='<option value="">Select...</option>';(d.column_names||[]).forEach(function(c){var o=document.createElement('option');o.value=c;o.textContent=c;sel.appendChild(o)});$('e-train-btn').disabled=false;$('e-ho-btn').disabled=false;$('e-ens-btn').disabled=false;$('e-at-btn').disabled=false;$('e-anomaly-btn').disabled=false;eUpdateAutoMLTarget();$('e-import-status').innerHTML='<p style="font-size:12px;color:#3abc3f">Imported from '+d.source+' ('+d.rows+' rows, '+d.columns+' cols)</p>';eNotify('Imported!','ok')}else if(d.needs_credentials){$('e-import-status').innerHTML='<p style="font-size:12px;color:#ffa931">'+d.message+'</p>'}else{$('e-import-status').innerHTML='<p style="font-size:12px;color:#ff3131">'+(d.message||'Failed')+'</p>'}}).catch(function(e){$('e-import-status').innerHTML='<p style="font-size:12px;color:#ff3131">'+e.message+'</p>'})}
     function eTrain(){if(!eData||eTraining)return;eTraining=true;$('e-train-btn').disabled=true;$('e-result').innerHTML='<p>Training...</p>';var cfg={target_column:$('e-target').value,task_type:$('e-task').value,model_type:$('e-model').value};fetch('/api/train',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)}).then(function(r){return r.json()}).then(function(d){if(d.job_id){ePoll(d.job_id)}}).catch(function(e){$('e-result').innerHTML='<p style="color:#ff3131">'+e.message+'</p>';eTraining=false;$('e-train-btn').disabled=false})}
@@ -1736,7 +1842,8 @@ const EMBEDDED_INDEX_HTML: &str = r#"<!DOCTYPE html>
         items.sort(function(a,b){return b.value-a.value});
         eDrawBars('e-at-bar',items,{label:'Model Score',metric:'Score'});
     }
-    document.addEventListener('DOMContentLoaded',function(){['iris','diabetes','boston','wine','breast_cancer','titanic','heart','credit','customers','california_housing'].forEach(function(n){var b=document.createElement('button');b.className='pill';b.textContent=n.charAt(0).toUpperCase()+n.slice(1).replace(/_/g,' ');b.onclick=function(){eLoad(n)};$('e-pills').appendChild(b)});eSys();eSecLoad();eSecAudit();setInterval(eSys,5000)});
+    document.addEventListener('DOMContentLoaded',function(){['iris','diabetes','boston','wine','breast_cancer','titanic','heart','credit','customers','california_housing'].forEach(function(n){var b=document.createElement('button');b.className='pill';b.textContent=n.charAt(0).toUpperCase()+n.slice(1).replace(/_/g,' ');b.onclick=function(){eLoad(n)};$('e-pills').appendChild(b)});eSys();eSecLoad();eSecAudit();eDashModels();setInterval(eSys,5000)});
+    function eDashModels(){fetch('/api/models').then(function(r){return r.json()}).then(function(d){var models=d.models||[];$('e-dash-models').textContent=models.length;if(models.length===0){$('e-dash-model-list').innerHTML='<div class="empty">No models trained yet. Load data and run training to get started.</div>';return}var h='<table><thead><tr><th>Model</th><th>Type</th><th>Created</th></tr></thead><tbody>';models.forEach(function(m){h+='<tr><td style="font-weight:500">'+m.id+'</td><td><span class="badge badge-info">'+(m.model_type||'—')+'</span></td><td class="mono" style="font-size:12px;color:#6a6f73">'+(m.created_at?new Date(m.created_at).toLocaleString():'—')+'</td></tr>'});h+='</tbody></table>';$('e-dash-model-list').innerHTML=h;if(models.length>0){eLastModelId=models[models.length-1].id;$('e-explain-btn').disabled=false}}).catch(function(){$('e-dash-model-list').innerHTML='<div class="empty" style="color:#9c9fa1">Could not load models</div>'})}
     </script>
 </body>
 </html>"#;
