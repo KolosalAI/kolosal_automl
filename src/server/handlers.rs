@@ -1645,6 +1645,20 @@ const EMBEDDED_INDEX_HTML: &str = r#"<!DOCTYPE html>
                                 <div style="overflow-x:auto" id="e-data-preview"></div>
                             </div>
                         </div>
+                        <div id="e-analysis-wrap" style="display:none">
+                            <div class="card">
+                                <div class="card-header"><div><div class="card-title"><i class="ri-bar-chart-box-line" style="color:#0066f5"></i> Data Quality Report</div><div class="card-desc">Automated profiling of your dataset</div></div><span class="badge" id="e-quality-badge"></span></div>
+                                <div id="e-analysis-loading" style="text-align:center;padding:20px"><span class="spinner" style="display:inline-block;width:20px;height:20px;border:2px solid #e4e7e9;border-top-color:#0066f5;border-radius:50%;animation:spin .6s linear infinite"></span><p style="font-size:13px;color:#6a6f73;margin-top:8px">Analyzing dataset...</p></div>
+                                <div id="e-analysis-content" style="display:none">
+                                    <div class="grid-4" id="e-analysis-overview" style="margin-bottom:20px"></div>
+                                    <div id="e-analysis-warnings" style="margin-bottom:16px"></div>
+                                    <div style="margin-bottom:20px"><p style="font-size:14px;font-weight:600;margin-bottom:12px">Data Quality</p><div class="grid-4" id="e-quality-gauges"></div></div>
+                                    <div style="margin-bottom:20px"><p style="font-size:14px;font-weight:600;margin-bottom:12px">Column Statistics</p><div style="overflow-x:auto" id="e-col-stats-table"></div></div>
+                                    <div id="e-outlier-section" style="margin-bottom:20px"><p style="font-size:14px;font-weight:600;margin-bottom:12px">Outlier Detection</p><div id="e-outlier-table"></div></div>
+                                    <div id="e-missing-section"><p style="font-size:14px;font-weight:600;margin-bottom:12px">Missing Values</p><div id="e-missing-chart"></div></div>
+                                </div>
+                            </div>
+                        </div>
                         <div id="e-data-viz-wrap" style="display:none">
                             <div class="card">
                                 <div class="card-header"><div><div class="card-title">Feature Distributions</div><div class="card-desc">Visual overview of each column's value distribution</div></div></div>
@@ -2017,13 +2031,13 @@ const EMBEDDED_INDEX_HTML: &str = r#"<!DOCTYPE html>
     function eLoad(n){
         document.querySelectorAll('#e-pills .pill').forEach(function(p){p.classList.remove('active')});
         var btn=document.querySelector('#e-pills .pill[data-name="'+n+'"]');if(btn)btn.classList.add('active');
-        fetch('/api/data/sample/'+n).then(function(r){return r.json()}).then(function(d){if(d.success){eData=d;eLoadedDataset=n;eTopbar(d.name||n,d.rows,d.columns);eShowDataInfo(d);ePopulateTargets(d.column_names);eEnableButtons();eUpdateAutoMLTarget();eUpdateDimRedColor();eUpdateNoDataAlerts();eShowDataPreview(d);eShowDataViz(d);eNotify('Loaded '+n+' ('+d.rows+' rows, '+d.columns+' cols)','ok');eLogActivity('Loaded dataset: '+n+' ('+d.rows+' rows)')}}).catch(function(e){eNotify('Failed: '+e.message,'err')})}
-    function eImportUrl(){var url=$('e-import-url').value.trim();if(!url){eNotify('Enter a URL','err');return}$('e-import-status').innerHTML='<p style="font-size:12px;color:#6a6f73">Downloading...</p>';fetch('/api/data/import/url',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:url})}).then(function(r){return r.json()}).then(function(d){if(d.success){eData=d;eTopbar(d.name||'Imported',d.rows,d.columns);eShowDataInfo(d);ePopulateTargets(d.column_names);eEnableButtons();eUpdateAutoMLTarget();eUpdateNoDataAlerts();eShowDataPreview(d);eShowDataViz(d);eUpdateDimRedColor();$('e-import-status').innerHTML='<p style="font-size:12px;color:#3abc3f">Imported from '+d.source+' ('+d.rows+' rows, '+d.columns+' cols)</p>';eNotify('Imported!','ok')}else if(d.needs_credentials){$('e-import-status').innerHTML='<p style="font-size:12px;color:#ffa931">'+d.message+'</p>'}else{$('e-import-status').innerHTML='<p style="font-size:12px;color:#ff3131">'+(d.message||'Failed')+'</p>'}}).catch(function(e){$('e-import-status').innerHTML='<p style="font-size:12px;color:#ff3131">'+e.message+'</p>'})}
+        fetch('/api/data/sample/'+n).then(function(r){return r.json()}).then(function(d){if(d.success){eData=d;eLoadedDataset=n;eTopbar(d.name||n,d.rows,d.columns);eShowDataInfo(d);ePopulateTargets(d.column_names);eEnableButtons();eUpdateAutoMLTarget();eUpdateDimRedColor();eUpdateNoDataAlerts();eShowDataPreview(d);eRunAnalysis();eShowDataViz(d);eNotify('Loaded '+n+' ('+d.rows+' rows, '+d.columns+' cols)','ok');eLogActivity('Loaded dataset: '+n+' ('+d.rows+' rows)')}}).catch(function(e){eNotify('Failed: '+e.message,'err')})}
+    function eImportUrl(){var url=$('e-import-url').value.trim();if(!url){eNotify('Enter a URL','err');return}$('e-import-status').innerHTML='<p style="font-size:12px;color:#6a6f73">Downloading...</p>';fetch('/api/data/import/url',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:url})}).then(function(r){return r.json()}).then(function(d){if(d.success){eData=d;eTopbar(d.name||'Imported',d.rows,d.columns);eShowDataInfo(d);ePopulateTargets(d.column_names);eEnableButtons();eUpdateAutoMLTarget();eUpdateNoDataAlerts();eShowDataPreview(d);eRunAnalysis();eShowDataViz(d);eUpdateDimRedColor();$('e-import-status').innerHTML='<p style="font-size:12px;color:#3abc3f">Imported from '+d.source+' ('+d.rows+' rows, '+d.columns+' cols)</p>';eNotify('Imported!','ok')}else if(d.needs_credentials){$('e-import-status').innerHTML='<p style="font-size:12px;color:#ffa931">'+d.message+'</p>'}else{$('e-import-status').innerHTML='<p style="font-size:12px;color:#ff3131">'+(d.message||'Failed')+'</p>'}}).catch(function(e){$('e-import-status').innerHTML='<p style="font-size:12px;color:#ff3131">'+e.message+'</p>'})}
     function eFileUpload(input){
         if(!input.files||!input.files[0])return;
         var file=input.files[0];var fd=new FormData();fd.append('file',file);
         eNotify('Uploading '+file.name+'...','');
-        fetch('/api/data/upload',{method:'POST',body:fd}).then(function(r){return r.json()}).then(function(d){if(d.success){eData=d;eTopbar(d.name||file.name,d.rows,d.columns);eShowDataInfo(d);ePopulateTargets(d.column_names);eEnableButtons();eUpdateAutoMLTarget();eUpdateNoDataAlerts();eShowDataPreview(d);eShowDataViz(d);eUpdateDimRedColor();eNotify('Uploaded '+file.name+' ('+d.rows+' rows)','ok');eLogActivity('Uploaded file: '+file.name)}else{eNotify(d.message||'Upload failed','err')}}).catch(function(e){eNotify('Upload failed: '+e.message,'err')});
+        fetch('/api/data/upload',{method:'POST',body:fd}).then(function(r){return r.json()}).then(function(d){if(d.success){eData=d;eTopbar(d.name||file.name,d.rows,d.columns);eShowDataInfo(d);ePopulateTargets(d.column_names);eEnableButtons();eUpdateAutoMLTarget();eUpdateNoDataAlerts();eShowDataPreview(d);eRunAnalysis();eShowDataViz(d);eUpdateDimRedColor();eNotify('Uploaded '+file.name+' ('+d.rows+' rows)','ok');eLogActivity('Uploaded file: '+file.name)}else{eNotify(d.message||'Upload failed','err')}}).catch(function(e){eNotify('Upload failed: '+e.message,'err')});
         input.value='';
     }
     function eValidateTarget(){
@@ -2382,6 +2396,46 @@ const EMBEDDED_INDEX_HTML: &str = r#"<!DOCTYPE html>
             matrix[i][j]=da&&db?num/Math.sqrt(da*db):i===j?1:0
         }}
         return{matrix:matrix,labels:numCols}
+    }
+    function eRunAnalysis(){
+        $('e-analysis-wrap').style.display='block';$('e-analysis-loading').style.display='block';$('e-analysis-content').style.display='none';
+        fetch('/api/data/analyze').then(function(r){return r.json()}).then(function(d){
+            $('e-analysis-loading').style.display='none';$('e-analysis-content').style.display='block';
+            if(!d.success)return;
+            var ov=d.overview||{},q=d.quality||{};
+            // Quality badge
+            var qs=q.score||0;var qpct=Math.round(qs*100);
+            var qcol=qpct>=80?'#3abc3f':qpct>=60?'#ffa931':'#ff3131';
+            var qclass=qpct>=80?'badge-ok':qpct>=60?'badge-warn':'badge-err';
+            $('e-quality-badge').className='badge '+qclass;$('e-quality-badge').textContent=qpct+'% Quality';
+            // Overview cards
+            function fmtMem(b){return b>1048576?(b/1048576).toFixed(1)+' MB':(b/1024).toFixed(0)+' KB'}
+            var oh='';
+            oh+='<div style="text-align:center;padding:14px;background:#f0f6fe;border-radius:10px"><span class="stat stat-sm stat-info stat-animated">'+ov.rows.toLocaleString()+'</span><p style="font-size:11px;color:#6a6f73;margin-top:2px">Rows</p></div>';
+            oh+='<div style="text-align:center;padding:14px;background:#f3fbf4;border-radius:10px"><span class="stat stat-sm stat-ok stat-animated">'+ov.columns+'</span><p style="font-size:11px;color:#6a6f73;margin-top:2px">Columns</p></div>';
+            oh+='<div style="text-align:center;padding:14px;background:'+(ov.duplicates>0?'#fff8e6':'#f3fbf4')+';border-radius:10px"><span class="stat stat-sm '+(ov.duplicates>0?'stat-warn':'stat-ok')+' stat-animated">'+ov.duplicates+'</span><p style="font-size:11px;color:#6a6f73;margin-top:2px">Duplicates</p></div>';
+            oh+='<div style="text-align:center;padding:14px;background:#f8f0fe;border-radius:10px"><span class="stat stat-sm stat-animated" style="color:#8b5cf6">'+fmtMem(ov.memory_bytes||0)+'</span><p style="font-size:11px;color:#6a6f73;margin-top:2px">Memory</p></div>';
+            $('e-analysis-overview').innerHTML=oh;
+            // Quality gauges
+            var dims=[{l:'Completeness',v:q.completeness,c:'#0066f5'},{l:'Uniqueness',v:q.uniqueness,c:'#8b5cf6'},{l:'Consistency',v:q.consistency,c:'#3abc3f'},{l:'Validity',v:q.validity,c:'#06b6d4'}];
+            var gh='';dims.forEach(function(dm){var pct=Math.round((dm.v||0)*100);gh+='<div style="text-align:center;padding:12px;background:#fafbfc;border-radius:10px"><div style="font-size:22px;font-weight:600;color:'+dm.c+';font-family:\'Geist Mono\',monospace">'+pct+'%</div><div class="progress" style="margin:8px 0 4px"><div class="progress-fill" style="width:'+pct+'%;background:'+dm.c+'"></div></div><div style="font-size:11px;color:#6a6f73">'+dm.l+'</div></div>'});
+            $('e-quality-gauges').innerHTML=gh;
+            // Warnings
+            var warns=d.warnings||[];
+            if(warns.length>0){var wh='';warns.forEach(function(w){var ic=w.severity==='warning'?'ri-error-warning-line':'ri-information-line';var cls=w.severity==='warning'?'alert-warn':'alert';wh+='<div class="alert '+cls+'" style="padding:10px 14px"><i class="'+ic+'"></i><span style="font-size:13px">'+w.message+'</span></div>'});$('e-analysis-warnings').innerHTML=wh}else{$('e-analysis-warnings').innerHTML=''}
+            // Column stats table
+            var cs=d.column_stats||[];
+            if(cs.length>0){var th='<table><thead><tr><th>Column</th><th>Type</th><th>Missing</th><th>Unique</th><th>Mean</th><th>Std</th><th>Min</th><th>Q25</th><th>Median</th><th>Q75</th><th>Max</th><th>Skew</th></tr></thead><tbody>';cs.forEach(function(c){var missPct=c.null_percent||0;var missBg=missPct>10?'#fff3f3':missPct>0?'#fff8e6':'transparent';th+='<tr><td style="font-weight:500;white-space:nowrap">'+c.column+'</td><td><span class="badge '+(c.is_numeric?'badge-info':'badge-warn')+'" style="font-size:11px">'+(c.is_numeric?'Numeric':'Categorical')+'</span></td><td style="background:'+missBg+'"><span class="mono" style="font-size:12px">'+c.null_count+'</span> <span style="font-size:11px;color:#6a6f73">('+missPct.toFixed(1)+'%)</span></td><td class="mono" style="font-size:12px">'+c.unique+'</td>';if(c.is_numeric){th+='<td class="mono" style="font-size:12px">'+(c.mean!=null?c.mean.toFixed(2):'—')+'</td><td class="mono" style="font-size:12px">'+(c.std!=null?c.std.toFixed(2):'—')+'</td><td class="mono" style="font-size:12px">'+(c.min!=null?c.min.toFixed(2):'—')+'</td><td class="mono" style="font-size:12px">'+(c.q25!=null?c.q25.toFixed(2):'—')+'</td><td class="mono" style="font-size:12px">'+(c.median!=null?c.median.toFixed(2):'—')+'</td><td class="mono" style="font-size:12px">'+(c.q75!=null?c.q75.toFixed(2):'—')+'</td><td class="mono" style="font-size:12px">'+(c.max!=null?c.max.toFixed(2):'—')+'</td><td class="mono" style="font-size:12px">'+(c.skewness!=null?c.skewness.toFixed(2):'—')+'</td>'}else{var cats=(c.top_categories||[]).slice(0,3).map(function(t){return t.value+'('+t.count+')'}).join(', ');th+='<td colspan="8" style="font-size:12px;color:#6a6f73">'+(cats||'—')+'</td>'}th+='</tr>'});th+='</tbody></table>';$('e-col-stats-table').innerHTML=th}
+            // Outlier summary
+            var out=d.outlier_summary||[];
+            var outWithData=out.filter(function(o){return o.outlier_count>0});
+            if(outWithData.length>0){$('e-outlier-section').style.display='block';var ot='<div style="display:flex;flex-wrap:wrap;gap:10px">';outWithData.forEach(function(o){var pct=o.outlier_percent||0;var col=pct>5?'#ff3131':pct>1?'#ffa931':'#06b6d4';ot+='<div style="padding:12px 16px;background:#fafbfc;border-radius:10px;border-left:3px solid '+col+';min-width:180px"><div style="font-weight:500;font-size:13px;margin-bottom:4px">'+o.column+'</div><div style="font-size:22px;font-weight:600;color:'+col+';font-family:\'Geist Mono\',monospace">'+o.outlier_count+'</div><div style="font-size:11px;color:#6a6f73">'+pct.toFixed(1)+'% outliers</div><div class="mono" style="font-size:10px;color:#9c9fa1;margin-top:4px">bounds: ['+o.lower_bound.toFixed(1)+', '+o.upper_bound.toFixed(1)+']</div></div>'});ot+='</div>';$('e-outlier-table').innerHTML=ot}else{$('e-outlier-section').style.display='none'}
+            // Missing values chart
+            var mv=d.missing_values||[];
+            var mvWithData=mv.filter(function(m){return m.null_count>0});
+            if(mvWithData.length>0){$('e-missing-section').style.display='block';mvWithData.sort(function(a,b){return b.null_percent-a.null_percent});var mh='';mvWithData.forEach(function(m){var pct=m.null_percent||0;var col=pct>50?'#ff3131':pct>10?'#ffa931':'#06b6d4';mh+='<div style="display:flex;align-items:center;gap:12px;margin-bottom:8px"><span style="font-size:12px;font-weight:500;width:140px;text-align:right;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+m.column+'</span><div style="flex:1;height:20px;background:#f1f3f4;border-radius:6px;overflow:hidden;position:relative"><div style="height:100%;width:'+Math.max(pct,0.5)+'%;background:'+col+';border-radius:6px;transition:width .3s"></div></div><span class="mono" style="font-size:12px;width:60px;flex-shrink:0;color:'+col+'">'+pct.toFixed(1)+'%</span></div>'});$('e-missing-chart').innerHTML=mh}else{$('e-missing-section').style.display='none';$('e-missing-chart').innerHTML='<p style="font-size:13px;color:#3abc3f"><i class="ri-check-line"></i> No missing values detected</p>'}
+            eLogActivity('Data analysis complete: '+qpct+'% quality score');
+        }).catch(function(e){$('e-analysis-loading').style.display='none';$('e-analysis-content').style.display='block';$('e-analysis-content').innerHTML='<p style="color:#ff3131;font-size:13px">Analysis failed: '+e.message+'</p>'})
     }
     function eShowDataViz(d){
         if(!d||!d.preview||!d.column_names)return;
