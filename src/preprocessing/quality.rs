@@ -42,6 +42,24 @@ pub struct ColumnQuality {
     pub outlier_ratio: f64,
     /// Type consistency (ratio of values matching the inferred type)
     pub type_consistency: f64,
+    /// Ratio of zero values (if numeric)
+    pub zeros_ratio: f64,
+    /// Coefficient of variation = std / |mean| (None if mean is zero or not numeric)
+    pub cv: Option<f64>,
+    /// Interquartile range (Q75 - Q25)
+    pub iqr: Option<f64>,
+    /// Value range (max - min)
+    pub value_range: Option<f64>,
+    /// Skewness of the distribution
+    pub skewness: Option<f64>,
+    /// Excess kurtosis of the distribution
+    pub kurtosis: Option<f64>,
+    /// Sum of all non-null values
+    pub sum: Option<f64>,
+    /// Most frequent value as a fraction of non-null rows
+    pub mode_frequency: Option<f64>,
+    /// Shannon entropy (categorical columns)
+    pub entropy: Option<f64>,
 }
 
 /// Quality warning
@@ -61,6 +79,14 @@ pub enum QualityWarning {
     DuplicateRows { count: usize, total: usize },
     /// Constant column (zero variance)
     ConstantColumn { column: String },
+    /// Column has high absolute skewness (|skew| > 2) indicating non-normal distribution
+    HighSkewness { column: String, skewness: f64 },
+    /// Column has very high excess kurtosis (|kurt| > 7) indicating heavy tails or spikes
+    HighKurtosis { column: String, kurtosis: f64 },
+    /// Numeric column has a high proportion of zero values (>50%)
+    HighZeroRatio { column: String, ratio: f64 },
+    /// Column has a high proportion of outliers by IQR rule (>10%)
+    HighOutlierRatio { column: String, ratio: f64 },
 }
 
 /// Data quality scorer
@@ -105,6 +131,25 @@ impl DataQualityScorer {
 
             let type_consistency = stats.type_consistency.unwrap_or(1.0);
 
+            let zeros_ratio = stats.zeros_count
+                .map(|zc| if num_rows > 0 { zc as f64 / num_rows as f64 } else { 0.0 })
+                .unwrap_or(0.0);
+
+            let cv = match (stats.mean, stats.std) {
+                (Some(m), Some(s)) if m.abs() > 1e-10 => Some(s / m.abs()),
+                _ => None,
+            };
+
+            let iqr = match (stats.q25, stats.q75) {
+                (Some(q1), Some(q3)) => Some(q3 - q1),
+                _ => None,
+            };
+
+            let value_range = match (stats.min, stats.max) {
+                (Some(mn), Some(mx)) => Some(mx - mn),
+                _ => None,
+            };
+
             // Validity: non-null, non-outlier, type-consistent
             let validity = completeness * (1.0 - outlier_ratio) * type_consistency;
 
@@ -118,6 +163,15 @@ impl DataQualityScorer {
                 distinct_ratio,
                 outlier_ratio,
                 type_consistency,
+                zeros_ratio,
+                cv,
+                iqr,
+                value_range,
+                skewness: stats.skewness,
+                kurtosis: stats.kurtosis,
+                sum: stats.sum,
+                mode_frequency: stats.mode_frequency,
+                entropy: stats.entropy,
             });
 
             // Warnings
@@ -139,6 +193,38 @@ impl DataQualityScorer {
                         variance: std * std,
                     });
                 }
+            }
+
+            if let Some(skew) = stats.skewness {
+                if skew.abs() > 2.0 {
+                    warnings.push(QualityWarning::HighSkewness {
+                        column: col_name.clone(),
+                        skewness: skew,
+                    });
+                }
+            }
+
+            if let Some(kurt) = stats.kurtosis {
+                if kurt.abs() > 7.0 {
+                    warnings.push(QualityWarning::HighKurtosis {
+                        column: col_name.clone(),
+                        kurtosis: kurt,
+                    });
+                }
+            }
+
+            if zeros_ratio > 0.5 && stats.mean.is_some() {
+                warnings.push(QualityWarning::HighZeroRatio {
+                    column: col_name.clone(),
+                    ratio: zeros_ratio,
+                });
+            }
+
+            if outlier_ratio > 0.1 {
+                warnings.push(QualityWarning::HighOutlierRatio {
+                    column: col_name.clone(),
+                    ratio: outlier_ratio,
+                });
             }
 
             if distinct_ratio > 0.95 && num_rows > 20 {
@@ -204,6 +290,15 @@ pub struct ColumnStatistics {
     pub std: Option<f64>,
     pub min: Option<f64>,
     pub max: Option<f64>,
+    pub q25: Option<f64>,
+    pub q75: Option<f64>,
+    pub median: Option<f64>,
+    pub skewness: Option<f64>,
+    pub kurtosis: Option<f64>,
+    pub zeros_count: Option<usize>,
+    pub sum: Option<f64>,
+    pub mode_frequency: Option<f64>,
+    pub entropy: Option<f64>,
     pub outlier_count: Option<usize>,
     pub type_consistency: Option<f64>,
     pub is_sequential: Option<bool>,
@@ -213,21 +308,31 @@ pub struct ColumnStatistics {
 mod tests {
     use super::*;
 
+    fn make_stats(
+        null_count: usize, unique_count: usize,
+        mean: Option<f64>, std: Option<f64>,
+        min: Option<f64>, max: Option<f64>,
+        outlier_count: Option<usize>,
+        type_consistency: Option<f64>,
+        is_sequential: Option<bool>,
+    ) -> ColumnStatistics {
+        ColumnStatistics {
+            null_count, unique_count, mean, std, min, max,
+            q25: None, q75: None, median: None,
+            skewness: None, kurtosis: None,
+            zeros_count: None, sum: None,
+            mode_frequency: None, entropy: None,
+            outlier_count, type_consistency, is_sequential,
+        }
+    }
+
     #[test]
     fn test_perfect_quality() {
         let mut stats = HashMap::new();
-        stats.insert("age".to_string(), ColumnStatistics {
-            null_count: 0,
-            unique_count: 50,
-            mean: Some(35.0),
-            std: Some(10.0),
-            min: Some(18.0),
-            max: Some(65.0),
-            outlier_count: Some(0),
-            type_consistency: Some(1.0),
-            is_sequential: Some(false),
-        });
-
+        stats.insert("age".to_string(), make_stats(
+            0, 50, Some(35.0), Some(10.0), Some(18.0), Some(65.0),
+            Some(0), Some(1.0), Some(false),
+        ));
         let report = DataQualityScorer::score(100, &stats, 0);
         assert!(report.overall_score > 0.9);
         assert_eq!(report.completeness, 1.0);
@@ -236,18 +341,9 @@ mod tests {
     #[test]
     fn test_poor_quality() {
         let mut stats = HashMap::new();
-        stats.insert("messy_col".to_string(), ColumnStatistics {
-            null_count: 80,
-            unique_count: 5,
-            mean: None,
-            std: None,
-            min: None,
-            max: None,
-            outlier_count: Some(10),
-            type_consistency: Some(0.5),
-            is_sequential: Some(false),
-        });
-
+        stats.insert("messy_col".to_string(), make_stats(
+            80, 5, None, None, None, None, Some(10), Some(0.5), Some(false),
+        ));
         let report = DataQualityScorer::score(100, &stats, 20);
         assert!(report.overall_score < 0.5);
         assert!(report.warnings.iter().any(|w| matches!(w, QualityWarning::HighMissingness { .. })));
@@ -257,18 +353,10 @@ mod tests {
     #[test]
     fn test_suspected_id_column() {
         let mut stats = HashMap::new();
-        stats.insert("row_id".to_string(), ColumnStatistics {
-            null_count: 0,
-            unique_count: 100,
-            mean: Some(50.0),
-            std: Some(29.0),
-            min: Some(1.0),
-            max: Some(100.0),
-            outlier_count: Some(0),
-            type_consistency: Some(1.0),
-            is_sequential: Some(true),
-        });
-
+        stats.insert("row_id".to_string(), make_stats(
+            0, 100, Some(50.0), Some(29.0), Some(1.0), Some(100.0),
+            Some(0), Some(1.0), Some(true),
+        ));
         let report = DataQualityScorer::score(100, &stats, 0);
         assert!(report.warnings.iter().any(|w| matches!(w, QualityWarning::SuspectedId { .. })));
     }
@@ -276,18 +364,10 @@ mod tests {
     #[test]
     fn test_constant_column_warning() {
         let mut stats = HashMap::new();
-        stats.insert("constant".to_string(), ColumnStatistics {
-            null_count: 0,
-            unique_count: 1,
-            mean: Some(5.0),
-            std: Some(0.0),
-            min: Some(5.0),
-            max: Some(5.0),
-            outlier_count: Some(0),
-            type_consistency: Some(1.0),
-            is_sequential: Some(false),
-        });
-
+        stats.insert("constant".to_string(), make_stats(
+            0, 1, Some(5.0), Some(0.0), Some(5.0), Some(5.0),
+            Some(0), Some(1.0), Some(false),
+        ));
         let report = DataQualityScorer::score(100, &stats, 0);
         assert!(report.warnings.iter().any(|w| matches!(w, QualityWarning::ConstantColumn { .. })));
     }
@@ -306,39 +386,18 @@ mod tests {
     #[test]
     fn test_zero_rows_with_columns() {
         let mut stats = HashMap::new();
-        stats.insert("col".to_string(), ColumnStatistics {
-            null_count: 0,
-            unique_count: 0,
-            mean: None,
-            std: None,
-            min: None,
-            max: None,
-            outlier_count: None,
-            type_consistency: None,
-            is_sequential: None,
-        });
-
+        stats.insert("col".to_string(), make_stats(0, 0, None, None, None, None, None, None, None));
         let report = DataQualityScorer::score(0, &stats, 0);
         assert_eq!(report.num_columns, 1);
-        // With 0 rows, completeness = 1.0 (no missing data in 0 rows)
         assert_eq!(report.completeness, 1.0);
     }
 
     #[test]
     fn test_all_null_column() {
         let mut stats = HashMap::new();
-        stats.insert("all_null".to_string(), ColumnStatistics {
-            null_count: 100,
-            unique_count: 0,
-            mean: None,
-            std: None,
-            min: None,
-            max: None,
-            outlier_count: Some(0),
-            type_consistency: Some(1.0),
-            is_sequential: Some(false),
-        });
-
+        stats.insert("all_null".to_string(), make_stats(
+            100, 0, None, None, None, None, Some(0), Some(1.0), Some(false),
+        ));
         let report = DataQualityScorer::score(100, &stats, 0);
         assert_eq!(report.completeness, 0.0);
         assert!(report.warnings.iter().any(|w| matches!(w, QualityWarning::HighMissingness { .. })));
@@ -347,18 +406,10 @@ mod tests {
     #[test]
     fn test_all_duplicates() {
         let mut stats = HashMap::new();
-        stats.insert("val".to_string(), ColumnStatistics {
-            null_count: 0,
-            unique_count: 1,
-            mean: Some(42.0),
-            std: Some(0.0),
-            min: Some(42.0),
-            max: Some(42.0),
-            outlier_count: Some(0),
-            type_consistency: Some(1.0),
-            is_sequential: Some(false),
-        });
-
+        stats.insert("val".to_string(), make_stats(
+            0, 1, Some(42.0), Some(0.0), Some(42.0), Some(42.0),
+            Some(0), Some(1.0), Some(false),
+        ));
         let report = DataQualityScorer::score(100, &stats, 100);
         assert_eq!(report.uniqueness, 0.0);
         assert!(report.warnings.iter().any(|w| matches!(w, QualityWarning::DuplicateRows { count: 100, total: 100 })));
@@ -367,18 +418,10 @@ mod tests {
     #[test]
     fn test_low_variance_warning() {
         let mut stats = HashMap::new();
-        stats.insert("low_var".to_string(), ColumnStatistics {
-            null_count: 0,
-            unique_count: 3,
-            mean: Some(1.0),
-            std: Some(0.0000001), // Very low but not zero
-            min: Some(0.9999999),
-            max: Some(1.0000001),
-            outlier_count: Some(0),
-            type_consistency: Some(1.0),
-            is_sequential: Some(false),
-        });
-
+        stats.insert("low_var".to_string(), make_stats(
+            0, 3, Some(1.0), Some(0.0000001), Some(0.9999999), Some(1.0000001),
+            Some(0), Some(1.0), Some(false),
+        ));
         let report = DataQualityScorer::score(100, &stats, 0);
         assert!(report.warnings.iter().any(|w| matches!(w, QualityWarning::LowVariance { .. })));
     }
@@ -386,21 +429,14 @@ mod tests {
     #[test]
     fn test_multiple_columns_quality() {
         let mut stats = HashMap::new();
-        // Perfect column
-        stats.insert("good".to_string(), ColumnStatistics {
-            null_count: 0, unique_count: 80, mean: Some(50.0), std: Some(15.0),
-            min: Some(10.0), max: Some(90.0), outlier_count: Some(0),
-            type_consistency: Some(1.0), is_sequential: Some(false),
-        });
-        // Bad column
-        stats.insert("bad".to_string(), ColumnStatistics {
-            null_count: 50, unique_count: 5, mean: None, std: None,
-            min: None, max: None, outlier_count: Some(20),
-            type_consistency: Some(0.3), is_sequential: Some(false),
-        });
-
+        stats.insert("good".to_string(), make_stats(
+            0, 80, Some(50.0), Some(15.0), Some(10.0), Some(90.0),
+            Some(0), Some(1.0), Some(false),
+        ));
+        stats.insert("bad".to_string(), make_stats(
+            50, 5, None, None, None, None, Some(20), Some(0.3), Some(false),
+        ));
         let report = DataQualityScorer::score(100, &stats, 5);
-        // Overall score should be between 0 and 1
         assert!(report.overall_score > 0.0);
         assert!(report.overall_score < 1.0);
         assert_eq!(report.per_column.len(), 2);
@@ -410,14 +446,11 @@ mod tests {
     #[test]
     fn test_high_cardinality_without_sequential() {
         let mut stats = HashMap::new();
-        stats.insert("high_card".to_string(), ColumnStatistics {
-            null_count: 0, unique_count: 99, mean: Some(50.0), std: Some(30.0),
-            min: Some(1.0), max: Some(99.0), outlier_count: Some(0),
-            type_consistency: Some(1.0), is_sequential: Some(false),
-        });
-
+        stats.insert("high_card".to_string(), make_stats(
+            0, 99, Some(50.0), Some(30.0), Some(1.0), Some(99.0),
+            Some(0), Some(1.0), Some(false),
+        ));
         let report = DataQualityScorer::score(100, &stats, 0);
-        // High cardinality warning but NOT suspected ID (not sequential)
         assert!(report.warnings.iter().any(|w| matches!(w, QualityWarning::HighCardinality { .. })));
         assert!(!report.warnings.iter().any(|w| matches!(w, QualityWarning::SuspectedId { .. })));
     }
@@ -425,31 +458,70 @@ mod tests {
     #[test]
     fn test_validity_accounts_for_outliers() {
         let mut stats = HashMap::new();
-        stats.insert("outlier_col".to_string(), ColumnStatistics {
-            null_count: 0, unique_count: 50, mean: Some(50.0), std: Some(10.0),
-            min: Some(0.0), max: Some(1000.0), outlier_count: Some(30),
-            type_consistency: Some(1.0), is_sequential: Some(false),
-        });
-
+        stats.insert("outlier_col".to_string(), make_stats(
+            0, 50, Some(50.0), Some(10.0), Some(0.0), Some(1000.0),
+            Some(30), Some(1.0), Some(false),
+        ));
         let report = DataQualityScorer::score(100, &stats, 0);
         let col_quality = &report.per_column[0];
         assert_eq!(col_quality.outlier_ratio, 0.3);
-        // Validity should be reduced by outlier ratio
         assert!(report.validity < 1.0);
     }
 
     #[test]
     fn test_overall_score_weights() {
-        // Perfect data should give score near 1.0
         let mut stats = HashMap::new();
-        stats.insert("col".to_string(), ColumnStatistics {
-            null_count: 0, unique_count: 50, mean: Some(50.0), std: Some(10.0),
-            min: Some(0.0), max: Some(100.0), outlier_count: Some(0),
-            type_consistency: Some(1.0), is_sequential: Some(false),
-        });
-
+        stats.insert("col".to_string(), make_stats(
+            0, 50, Some(50.0), Some(10.0), Some(0.0), Some(100.0),
+            Some(0), Some(1.0), Some(false),
+        ));
         let report = DataQualityScorer::score(100, &stats, 0);
-        // completeness=1.0 * 0.3 + uniqueness=1.0 * 0.2 + consistency=1.0 * 0.25 + validity=1.0 * 0.25 = 1.0
         assert!((report.overall_score - 1.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_high_skewness_warning() {
+        let mut stats = HashMap::new();
+        let mut s = make_stats(
+            0, 50, Some(5.0), Some(2.0), Some(0.0), Some(100.0),
+            Some(0), Some(1.0), Some(false),
+        );
+        s.skewness = Some(3.5);
+        stats.insert("skewed".to_string(), s);
+        let report = DataQualityScorer::score(100, &stats, 0);
+        assert!(report.warnings.iter().any(|w| matches!(w, QualityWarning::HighSkewness { .. })));
+    }
+
+    #[test]
+    fn test_high_zero_ratio_warning() {
+        let mut stats = HashMap::new();
+        let mut s = make_stats(
+            0, 3, Some(0.5), Some(1.0), Some(0.0), Some(10.0),
+            Some(0), Some(1.0), Some(false),
+        );
+        s.zeros_count = Some(70);
+        stats.insert("sparse".to_string(), s);
+        let report = DataQualityScorer::score(100, &stats, 0);
+        assert!(report.warnings.iter().any(|w| matches!(w, QualityWarning::HighZeroRatio { .. })));
+    }
+
+    #[test]
+    fn test_column_quality_cv_iqr() {
+        let mut stats = HashMap::new();
+        let mut s = make_stats(
+            0, 50, Some(20.0), Some(4.0), Some(10.0), Some(30.0),
+            Some(0), Some(1.0), Some(false),
+        );
+        s.q25 = Some(17.0);
+        s.q75 = Some(23.0);
+        stats.insert("col".to_string(), s);
+        let report = DataQualityScorer::score(100, &stats, 0);
+        let cq = &report.per_column[0];
+        // cv = 4.0 / 20.0 = 0.2
+        assert!((cq.cv.unwrap() - 0.2).abs() < 1e-9);
+        // iqr = 23.0 - 17.0 = 6.0
+        assert!((cq.iqr.unwrap() - 6.0).abs() < 1e-9);
+        // range = 30.0 - 10.0 = 20.0
+        assert!((cq.value_range.unwrap() - 20.0).abs() < 1e-9);
     }
 }

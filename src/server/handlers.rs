@@ -292,6 +292,7 @@ pub async fn analyze_data(
     let mut numeric_col_indices = Vec::new();
     let mut distributions = Vec::new();
     let mut outlier_summary = Vec::new();
+    let mut col_warnings: Vec<serde_json::Value> = Vec::new();
 
     for (idx, col) in df.get_columns().iter().enumerate() {
         let col_name = col.name().to_string();
@@ -336,14 +337,24 @@ pub async fn analyze_data(
                 } else { (0.0, 0.0) }
             } else { (0.0, 0.0) };
 
-            // Skewness
-            let skewness = if let Some(ca) = ca {
+            // Skewness and Kurtosis
+            let (skewness, kurtosis) = if let Some(ca) = ca {
                 let n = ca.len() as f64 - ca.null_count() as f64;
-                if n > 2.0 && std > 0.0 {
-                    let sum_cubed: f64 = ca.into_no_null_iter().map(|v| ((v - mean) / std).powi(3)).sum();
-                    sum_cubed * n / ((n - 1.0) * (n - 2.0))
-                } else { 0.0 }
-            } else { 0.0 };
+                if n > 3.0 && std > 0.0 {
+                    let sum3: f64 = ca.into_no_null_iter().map(|v| ((v - mean) / std).powi(3)).sum();
+                    let sum4: f64 = ca.into_no_null_iter().map(|v| ((v - mean) / std).powi(4)).sum();
+                    let skew = sum3 * n / ((n - 1.0) * (n - 2.0));
+                    // Fisher excess kurtosis
+                    let kurt = n * (n + 1.0) / ((n - 1.0) * (n - 2.0) * (n - 3.0)) * sum4
+                        - 3.0 * (n - 1.0).powi(2) / ((n - 2.0) * (n - 3.0));
+                    (skew, kurt)
+                } else { (0.0, 0.0) }
+            } else { (0.0, 0.0) };
+
+            // Variance, CV, range
+            let variance = std * std;
+            let cv = if mean.abs() > 1e-10 { std / mean.abs() * 100.0 } else { 0.0 };
+            let range = max - min;
 
             // IQR outliers
             let iqr = q75 - q25;
@@ -353,6 +364,14 @@ pub async fn analyze_data(
                 ca.into_no_null_iter().filter(|&v| v < lower || v > upper).count()
             } else { 0 };
 
+            // Sum and zeros
+            let (sum, zeros_count) = if let Some(ca) = ca {
+                let s: f64 = ca.into_no_null_iter().sum();
+                let z = ca.into_no_null_iter().filter(|&v| v == 0.0).count();
+                (s, z)
+            } else { (0.0, 0) };
+            let zeros_percent = zeros_count as f64 / n_rows.max(1) as f64 * 100.0;
+
             outlier_summary.push(serde_json::json!({
                 "column": col_name,
                 "outlier_count": outlier_count,
@@ -360,6 +379,37 @@ pub async fn analyze_data(
                 "lower_bound": (lower * 1000.0).round() / 1000.0,
                 "upper_bound": (upper * 1000.0).round() / 1000.0,
             }));
+
+            // Per-column advanced warnings
+            if skewness.abs() > 2.0 {
+                col_warnings.push(serde_json::json!({
+                    "type": "high_skewness",
+                    "severity": "info",
+                    "message": format!("Column '{}' is highly skewed (skew={:.2})", col_name, skewness),
+                }));
+            }
+            if kurtosis.abs() > 7.0 {
+                col_warnings.push(serde_json::json!({
+                    "type": "high_kurtosis",
+                    "severity": "info",
+                    "message": format!("Column '{}' has heavy tails (excess kurtosis={:.2})", col_name, kurtosis),
+                }));
+            }
+            let outlier_pct = outlier_count as f64 / n_rows.max(1) as f64 * 100.0;
+            if outlier_pct > 10.0 {
+                col_warnings.push(serde_json::json!({
+                    "type": "high_outlier_ratio",
+                    "severity": "warning",
+                    "message": format!("Column '{}' has {:.1}% outliers (IQR method)", col_name, outlier_pct),
+                }));
+            }
+            if zeros_percent > 50.0 {
+                col_warnings.push(serde_json::json!({
+                    "type": "high_zero_ratio",
+                    "severity": "info",
+                    "message": format!("Column '{}' is {:.1}% zeros (sparse feature)", col_name, zeros_percent),
+                }));
+            }
 
             // Histogram bins
             let hist = if let Some(ca) = ca {
@@ -392,28 +442,67 @@ pub async fn analyze_data(
                 "unique": unique_count,
                 "mean": (mean * 10000.0).round() / 10000.0,
                 "std": (std * 10000.0).round() / 10000.0,
+                "variance": (variance * 10000.0).round() / 10000.0,
+                "cv_percent": (cv * 100.0).round() / 100.0,
                 "min": (min * 10000.0).round() / 10000.0,
                 "q25": (q25 * 10000.0).round() / 10000.0,
                 "median": (median * 10000.0).round() / 10000.0,
                 "q75": (q75 * 10000.0).round() / 10000.0,
                 "max": (max * 10000.0).round() / 10000.0,
+                "range": (range * 10000.0).round() / 10000.0,
+                "iqr": (iqr * 10000.0).round() / 10000.0,
                 "skewness": (skewness * 10000.0).round() / 10000.0,
+                "kurtosis": (kurtosis * 10000.0).round() / 10000.0,
+                "sum": (sum * 10000.0).round() / 10000.0,
+                "zeros_count": zeros_count,
+                "zeros_percent": (zeros_percent * 100.0).round() / 100.0,
+                "outlier_count": outlier_count,
+                "outlier_percent": (outlier_count as f64 / n_rows.max(1) as f64 * 10000.0).round() / 100.0,
                 "is_numeric": true,
             }));
         } else {
             // Categorical stats
             let series = col.as_materialized_series();
             let value_counts = series.value_counts(true, true, "count".into(), false);
-            let top_categories: Vec<serde_json::Value> = match value_counts {
+
+            let n_valid = (n_rows - null_count) as f64;
+
+            let (top_categories, mode_value, mode_count, mode_percent, entropy) = match value_counts {
                 Ok(vc) => {
-                    let n = vc.height().min(10);
-                    (0..n).filter_map(|i| {
+                    let top_n = vc.height().min(10);
+                    let cats: Vec<serde_json::Value> = (0..top_n).filter_map(|i| {
                         let val = vc.column(col.name()).ok()?.get(i).ok()?.to_string();
                         let cnt = vc.column("count").ok()?.get(i).ok()?.to_string().replace('"', "");
                         Some(serde_json::json!({ "value": val.trim_matches('"'), "count": cnt.parse::<u64>().unwrap_or(0) }))
-                    }).collect()
+                    }).collect();
+
+                    // Mode (top category)
+                    let (mv, mc, mp) = if vc.height() > 0 {
+                        let val = vc.column(col.name()).ok()
+                            .and_then(|c| c.get(0).ok())
+                            .map(|v| v.to_string().trim_matches('"').to_string())
+                            .unwrap_or_default();
+                        let cnt = vc.column("count").ok()
+                            .and_then(|c| c.get(0).ok())
+                            .and_then(|v| v.to_string().parse::<u64>().ok())
+                            .unwrap_or(0);
+                        let pct = if n_valid > 0.0 { cnt as f64 / n_valid * 100.0 } else { 0.0 };
+                        (val, cnt, (pct * 100.0).round() / 100.0)
+                    } else { (String::new(), 0u64, 0.0_f64) };
+
+                    // Shannon entropy (nats → bits via /ln(2))
+                    let ent = if n_valid > 0.0 {
+                        let e: f64 = (0..vc.height()).filter_map(|i| {
+                            vc.column("count").ok()?.get(i).ok()
+                                .and_then(|v| v.to_string().parse::<f64>().ok())
+                                .map(|cnt| { let p = cnt / n_valid; if p > 0.0 { -p * p.log2() } else { 0.0 } })
+                        }).sum();
+                        (e * 100.0).round() / 100.0
+                    } else { 0.0 };
+
+                    (cats, mv, mc, mp, ent)
                 }
-                Err(_) => Vec::new(),
+                Err(_) => (Vec::new(), String::new(), 0u64, 0.0_f64, 0.0_f64),
             };
 
             distributions.push(serde_json::json!({
@@ -429,6 +518,10 @@ pub async fn analyze_data(
                 "null_percent": (null_pct * 100.0).round() / 100.0,
                 "unique": unique_count,
                 "top_categories": top_categories,
+                "mode_value": mode_value,
+                "mode_count": mode_count,
+                "mode_percent": mode_percent,
+                "entropy_bits": entropy,
                 "is_numeric": false,
             }));
         }
@@ -496,6 +589,7 @@ pub async fn analyze_data(
             "message": format!("{} duplicate rows ({:.1}%)", dup_count, dup_count as f64 / n_rows.max(1) as f64 * 100.0),
         }));
     }
+    warnings.extend(col_warnings);
 
     Ok(Json(serde_json::json!({
         "success": true,
@@ -2425,7 +2519,62 @@ const EMBEDDED_INDEX_HTML: &str = r#"<!DOCTYPE html>
             if(warns.length>0){var wh='';warns.forEach(function(w){var ic=w.severity==='warning'?'ri-error-warning-line':'ri-information-line';var cls=w.severity==='warning'?'alert-warn':'alert';wh+='<div class="alert '+cls+'" style="padding:10px 14px"><i class="'+ic+'"></i><span style="font-size:13px">'+w.message+'</span></div>'});$('e-analysis-warnings').innerHTML=wh}else{$('e-analysis-warnings').innerHTML=''}
             // Column stats table
             var cs=d.column_stats||[];
-            if(cs.length>0){var th='<table><thead><tr><th>Column</th><th>Type</th><th>Missing</th><th>Unique</th><th>Mean</th><th>Std</th><th>Min</th><th>Q25</th><th>Median</th><th>Q75</th><th>Max</th><th>Skew</th></tr></thead><tbody>';cs.forEach(function(c){var missPct=c.null_percent||0;var missBg=missPct>10?'#fff3f3':missPct>0?'#fff8e6':'transparent';th+='<tr><td style="font-weight:500;white-space:nowrap">'+c.column+'</td><td><span class="badge '+(c.is_numeric?'badge-info':'badge-warn')+'" style="font-size:11px">'+(c.is_numeric?'Numeric':'Categorical')+'</span></td><td style="background:'+missBg+'"><span class="mono" style="font-size:12px">'+c.null_count+'</span> <span style="font-size:11px;color:#6a6f73">('+missPct.toFixed(1)+'%)</span></td><td class="mono" style="font-size:12px">'+c.unique+'</td>';if(c.is_numeric){th+='<td class="mono" style="font-size:12px">'+(c.mean!=null?c.mean.toFixed(2):'—')+'</td><td class="mono" style="font-size:12px">'+(c.std!=null?c.std.toFixed(2):'—')+'</td><td class="mono" style="font-size:12px">'+(c.min!=null?c.min.toFixed(2):'—')+'</td><td class="mono" style="font-size:12px">'+(c.q25!=null?c.q25.toFixed(2):'—')+'</td><td class="mono" style="font-size:12px">'+(c.median!=null?c.median.toFixed(2):'—')+'</td><td class="mono" style="font-size:12px">'+(c.q75!=null?c.q75.toFixed(2):'—')+'</td><td class="mono" style="font-size:12px">'+(c.max!=null?c.max.toFixed(2):'—')+'</td><td class="mono" style="font-size:12px">'+(c.skewness!=null?c.skewness.toFixed(2):'—')+'</td>'}else{var cats=(c.top_categories||[]).slice(0,3).map(function(t){return t.value+'('+t.count+')'}).join(', ');th+='<td colspan="8" style="font-size:12px;color:#6a6f73">'+(cats||'—')+'</td>'}th+='</tr>'});th+='</tbody></table>';$('e-col-stats-table').innerHTML=th}
+            if(cs.length>0){
+                function esc(s){var d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML}
+                function fmt(v){return v!=null?Number(v).toFixed(3):'\u2014'}
+                var th='<table><thead><tr>'
+                    +'<th>Column</th><th>Type</th><th>Missing</th><th>Unique</th>'
+                    +'<th>Mean</th><th>Std</th><th>Var</th><th>CV%</th>'
+                    +'<th>Min</th><th>Q25</th><th>Median</th><th>Q75</th><th>Max</th>'
+                    +'<th>Range</th><th>IQR</th>'
+                    +'<th>Skew</th><th>Kurt</th>'
+                    +'<th>Sum</th><th>Zeros%</th><th>Outliers%</th>'
+                    +'<th>Top Categories / Mode</th><th>Entropy(bits)</th>'
+                    +'</tr></thead><tbody>';
+                cs.forEach(function(c){
+                    var missPct=c.null_percent||0;
+                    var missBg=missPct>10?'#fff3f3':missPct>0?'#fff8e6':'transparent';
+                    var skewColor=c.skewness!=null&&Math.abs(c.skewness)>2?'#ffa931':'inherit';
+                    var kurtColor=c.kurtosis!=null&&Math.abs(c.kurtosis)>7?'#ffa931':'inherit';
+                    var outColor=(c.outlier_percent||0)>10?'#ff3131':(c.outlier_percent||0)>5?'#ffa931':'inherit';
+                    var zeroColor=(c.zeros_percent||0)>50?'#ffa931':'inherit';
+                    th+='<tr>';
+                    th+='<td style="font-weight:500;white-space:nowrap">'+esc(c.column)+'</td>';
+                    th+='<td><span class="badge '+(c.is_numeric?'badge-info':'badge-warn')+'" style="font-size:11px">'+(c.is_numeric?'Numeric':'Categorical')+'</span></td>';
+                    th+='<td style="background:'+missBg+'"><span class="mono" style="font-size:12px">'+c.null_count+'</span> <span style="font-size:11px;color:#6a6f73">('+missPct.toFixed(1)+'%)</span></td>';
+                    th+='<td class="mono" style="font-size:12px">'+c.unique+'</td>';
+                    if(c.is_numeric){
+                        th+='<td class="mono" style="font-size:12px">'+fmt(c.mean)+'</td>';
+                        th+='<td class="mono" style="font-size:12px">'+fmt(c.std)+'</td>';
+                        th+='<td class="mono" style="font-size:12px">'+fmt(c.variance)+'</td>';
+                        th+='<td class="mono" style="font-size:12px">'+(c.cv_percent!=null?Number(c.cv_percent).toFixed(1)+'%':'\u2014')+'</td>';
+                        th+='<td class="mono" style="font-size:12px">'+fmt(c.min)+'</td>';
+                        th+='<td class="mono" style="font-size:12px">'+fmt(c.q25)+'</td>';
+                        th+='<td class="mono" style="font-size:12px">'+fmt(c.median)+'</td>';
+                        th+='<td class="mono" style="font-size:12px">'+fmt(c.q75)+'</td>';
+                        th+='<td class="mono" style="font-size:12px">'+fmt(c.max)+'</td>';
+                        th+='<td class="mono" style="font-size:12px">'+fmt(c.range)+'</td>';
+                        th+='<td class="mono" style="font-size:12px">'+fmt(c.iqr)+'</td>';
+                        th+='<td class="mono" style="font-size:12px;color:'+skewColor+'">'+(c.skewness!=null?Number(c.skewness).toFixed(2):'\u2014')+'</td>';
+                        th+='<td class="mono" style="font-size:12px;color:'+kurtColor+'">'+(c.kurtosis!=null?Number(c.kurtosis).toFixed(2):'\u2014')+'</td>';
+                        th+='<td class="mono" style="font-size:12px">'+fmt(c.sum)+'</td>';
+                        th+='<td class="mono" style="font-size:12px;color:'+zeroColor+'">'+(c.zeros_percent!=null?Number(c.zeros_percent).toFixed(1)+'%':'\u2014')+'</td>';
+                        th+='<td class="mono" style="font-size:12px;color:'+outColor+'">'+(c.outlier_percent!=null?Number(c.outlier_percent).toFixed(1)+'%':'\u2014')+'</td>';
+                        th+='<td style="font-size:12px;color:#6a6f73" colspan="2">\u2014</td>';
+                    }else{
+                        var cats=(c.top_categories||[]).slice(0,3).map(function(t){return esc(String(t.value))+'('+t.count+')'}).join(', ');
+                        th+='<td style="font-size:12px;color:#6a6f73" colspan="11">\u2014</td>';
+                        th+='<td class="mono" style="font-size:12px">\u2014</td>';
+                        th+='<td style="font-size:12px;color:#6a6f73" colspan="2">\u2014</td>';
+                        var modeStr=c.mode_value?(esc(c.mode_value)+' ('+Number(c.mode_percent||0).toFixed(1)+'%)'):cats||'\u2014';
+                        th+='<td style="font-size:12px;color:#6a6f73;white-space:nowrap">'+modeStr+'<br><span style="font-size:11px;color:#9ca3af">'+cats+'</span></td>';
+                        th+='<td class="mono" style="font-size:12px">'+(c.entropy_bits!=null?Number(c.entropy_bits).toFixed(2)+' bits':'\u2014')+'</td>';
+                    }
+                    th+='</tr>';
+                });
+                th+='</tbody></table>';
+                $('e-col-stats-table').innerHTML=th;
+            }
             // Outlier summary
             var out=d.outlier_summary||[];
             var outWithData=out.filter(function(o){return o.outlier_count>0});
@@ -5905,19 +6054,122 @@ pub async fn get_data_quality(
         ServerError::BadRequest("No dataset loaded. Upload data first.".to_string())
     })?;
 
+    let num_rows = df.height();
+    // Compute duplicate row count for the quality scorer
+    let duplicate_row_count = if num_rows > 0 {
+        match df.unique_stable(None, polars::frame::UniqueKeepStrategy::First, None) {
+            Ok(udf) => num_rows.saturating_sub(udf.height()),
+            Err(_) => 0,
+        }
+    } else { 0 };
+
     let mut column_stats = std::collections::HashMap::new();
     for col_name in df.get_column_names() {
         let series = df.column(col_name).map_err(|e| ServerError::Internal(e.to_string()))?;
         let null_count = series.null_count();
         let unique_count = series.n_unique().unwrap_or(0);
 
-        let (mean, std, min, max) = if let Ok(ca) = series.cast(&DataType::Float64)
-            .and_then(|s| Ok(s.f64().unwrap().clone()))
-        {
-            (ca.mean(), ca.std(1), ca.min(), ca.max())
+        let is_numeric = matches!(series.dtype(),
+            DataType::Float64 | DataType::Float32 |
+            DataType::Int64 | DataType::Int32 | DataType::Int16 | DataType::Int8 |
+            DataType::UInt64 | DataType::UInt32 | DataType::UInt16 | DataType::UInt8
+        );
+
+        let (mean, std, min, max, q25, q75, median, skewness, kurtosis, zeros_count, sum, outlier_count, is_sequential) =
+        if is_numeric {
+            if let Ok(fcast) = series.cast(&DataType::Float64) {
+                if let Ok(ca) = fcast.f64() {
+                    let mean_val = ca.mean();
+                    let std_val = ca.std(1);
+                    let min_val = ca.min();
+                    let max_val = ca.max();
+
+                    // Collect non-null values for quartile and advanced stats
+                    let mut vals: Vec<f64> = ca.into_no_null_iter().collect();
+                    vals.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                    let n = vals.len();
+
+                    let (q25_v, q75_v, median_v) = if n > 0 {
+                        (Some(vals[n / 4]), Some(vals[3 * n / 4]), Some(vals[n / 2]))
+                    } else { (None, None, None) };
+
+                    let (skew_v, kurt_v) = if let (Some(m), Some(s)) = (mean_val, std_val) {
+                        if s > 1e-10 && n > 3 {
+                            let nf = n as f64;
+                            let sum3: f64 = vals.iter().map(|v| ((v - m) / s).powi(3)).sum();
+                            let sum4: f64 = vals.iter().map(|v| ((v - m) / s).powi(4)).sum();
+                            let skew = sum3 * nf / ((nf - 1.0) * (nf - 2.0));
+                            // Fisher excess kurtosis
+                            let kurt = nf * (nf + 1.0) / ((nf - 1.0) * (nf - 2.0) * (nf - 3.0)) * sum4
+                                - 3.0 * (nf - 1.0).powi(2) / ((nf - 2.0) * (nf - 3.0));
+                            (Some(skew), Some(kurt))
+                        } else { (None, None) }
+                    } else { (None, None) };
+
+                    let zeros = vals.iter().filter(|&&v| v == 0.0).count();
+                    let sum_v: f64 = vals.iter().sum();
+
+                    // IQR outlier count
+                    let outlier_cnt = if let (Some(q1), Some(q3)) = (q25_v, q75_v) {
+                        let iqr = q3 - q1;
+                        let lo = q1 - 1.5 * iqr;
+                        let hi = q3 + 1.5 * iqr;
+                        vals.iter().filter(|&&v| v < lo || v > hi).count()
+                    } else { 0 };
+
+                    // Sequential detection: sorted unique values form an arithmetic sequence
+                    let seq = unique_count == n && n > 1 && {
+                        let step = vals[1] - vals[0];
+                        step > 0.0 && vals.windows(2).all(|w| (w[1] - w[0] - step).abs() < 1e-9)
+                    };
+
+                    (mean_val, std_val, min_val, max_val,
+                     q25_v, q75_v, median_v,
+                     skew_v, kurt_v,
+                     Some(zeros), Some(sum_v), Some(outlier_cnt), Some(seq))
+                } else {
+                    (None, None, None, None, None, None, None, None, None, None, None, None, None)
+                }
+            } else {
+                (None, None, None, None, None, None, None, None, None, None, None, None, None)
+            }
         } else {
-            (None, None, None, None)
+            // Categorical: compute entropy and mode_frequency
+            (None, None, None, None, None, None, None, None, None, None, None, None, None)
         };
+
+        // For categorical: compute entropy and mode_frequency
+        let (mode_frequency, entropy) = if !is_numeric {
+            let s = series.as_materialized_series();
+            match s.value_counts(true, true, "count".into(), false) {
+                Ok(vc) => {
+                    let n_valid = (num_rows - null_count) as f64;
+                    let mode_freq = if n_valid > 0.0 && vc.height() > 0 {
+                        vc.column("count").ok()
+                            .and_then(|c| c.get(0).ok())
+                            .and_then(|v| v.to_string().parse::<f64>().ok())
+                            .map(|top| top / n_valid)
+                    } else { None };
+                    let ent = if n_valid > 0.0 {
+                        let e: f64 = (0..vc.height()).filter_map(|i| {
+                            vc.column("count").ok()?.get(i).ok()
+                                .and_then(|v| v.to_string().parse::<f64>().ok())
+                                .map(|cnt| { let p = cnt / n_valid; if p > 0.0 { -p * p.ln() } else { 0.0 } })
+                        }).sum();
+                        Some(e)
+                    } else { None };
+                    (mode_freq, ent)
+                }
+                Err(_) => (None, None),
+            }
+        } else {
+            // For numeric: mode_frequency = ratio of most common value
+            (None, None)
+        };
+
+        // Type consistency: ratio of non-null values that parse as the inferred dtype
+        // For strongly-typed Polars series this is always 1.0 unless dtype is Utf8/String
+        let type_consistency = Some(1.0_f64);
 
         column_stats.insert(col_name.to_string(), ColumnStatistics {
             null_count,
@@ -5926,13 +6178,22 @@ pub async fn get_data_quality(
             std,
             min,
             max,
-            outlier_count: None,
-            type_consistency: Some(1.0),
-            is_sequential: None,
+            q25,
+            q75,
+            median,
+            skewness,
+            kurtosis,
+            zeros_count,
+            sum,
+            mode_frequency,
+            entropy,
+            outlier_count,
+            type_consistency,
+            is_sequential,
         });
     }
 
-    let report = DataQualityScorer::score(df.height(), &column_stats, 0);
+    let report = DataQualityScorer::score(num_rows, &column_stats, duplicate_row_count);
 
     Ok(Json(serde_json::json!({
         "quality_report": report,
