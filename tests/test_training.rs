@@ -207,3 +207,28 @@ fn test_epoch_history_populated_for_sgd() {
         assert!(rec.train_loss.is_finite(), "train_loss should be finite");
     }
 }
+
+#[test]
+fn test_tree_nodes_decision_tree() {
+    let df = classification_df();
+    let config = TrainingConfig::new(TaskType::BinaryClassification, "target")
+        .with_model(ModelType::DecisionTree);
+    let mut engine = TrainEngine::new(config);
+    engine.fit(&df).unwrap();
+    let nodes = engine.tree_nodes();
+    assert!(nodes.is_some(), "decision tree should serialize nodes");
+    let nodes = nodes.unwrap();
+    assert!(!nodes.is_empty());
+    assert_eq!(nodes[0].parent_id, None, "root has no parent");
+    assert!(nodes.iter().any(|n| n.is_leaf), "at least one leaf exists");
+}
+
+#[test]
+fn test_tree_nodes_non_tree_returns_none() {
+    let df = classification_df();
+    let config = TrainingConfig::new(TaskType::BinaryClassification, "target")
+        .with_model(ModelType::SGD);
+    let mut engine = TrainEngine::new(config);
+    engine.fit(&df).unwrap();
+    assert!(engine.tree_nodes().is_none(), "SGD has no tree nodes");
+}

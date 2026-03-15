@@ -102,6 +102,23 @@ pub struct EpochRecord {
     pub val_acc: Option<f64>,
 }
 
+/// A flattened, serializable representation of a single decision tree node
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SerializedNode {
+    pub id: usize,
+    pub parent_id: Option<usize>,
+    pub feature_name: Option<String>,
+    pub threshold: Option<f64>,
+    pub gini: f64,
+    pub samples: usize,
+    pub is_leaf: bool,
+    pub is_classification: bool,
+    pub predicted_class: Option<String>,
+    pub predicted_value: Option<f64>,
+    pub left_child: Option<usize>,
+    pub right_child: Option<usize>,
+}
+
 /// Main training engine
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TrainEngine {
@@ -1174,6 +1191,104 @@ impl TrainEngine {
         }
 
         comparisons
+    }
+
+    /// Serialize the decision tree (or first tree of a random forest) into a flat node list
+    pub fn tree_nodes(&self) -> Option<Vec<SerializedNode>> {
+        use super::decision_tree::TreeNode;
+        use std::collections::{VecDeque, HashMap};
+
+        let is_classification = matches!(
+            self.config.task_type,
+            TaskType::BinaryClassification | TaskType::MultiClassification
+        );
+
+        let root = match self.model.as_ref()? {
+            TrainedModel::DecisionTreeClassifier(dt)
+            | TrainedModel::DecisionTreeRegressor(dt) => dt.root()?,
+            TrainedModel::RandomForestClassifier(rf)
+            | TrainedModel::RandomForestRegressor(rf) => rf.first_tree()?.root()?,
+            _ => return None,
+        };
+
+        let feature_names = &self.feature_names;
+        let mut nodes: Vec<SerializedNode> = Vec::new();
+        let mut id_counter = 0usize;
+        let mut queue: VecDeque<(&TreeNode, Option<usize>)> = VecDeque::new();
+        queue.push_back((root, None));
+
+        while let Some((node, parent_id)) = queue.pop_front() {
+            let current_id = id_counter;
+            id_counter += 1;
+            match node {
+                TreeNode::Leaf { value, n_samples } => {
+                    nodes.push(SerializedNode {
+                        id: current_id,
+                        parent_id,
+                        feature_name: None,
+                        threshold: None,
+                        gini: 0.0,
+                        samples: *n_samples,
+                        is_leaf: true,
+                        is_classification,
+                        predicted_class: if is_classification {
+                            Some(format!("class_{}", *value as i64))
+                        } else {
+                            None
+                        },
+                        predicted_value: if !is_classification { Some(*value) } else { None },
+                        left_child: None,
+                        right_child: None,
+                    });
+                }
+                TreeNode::Split {
+                    feature_idx,
+                    threshold,
+                    left,
+                    right,
+                    n_samples,
+                    impurity,
+                } => {
+                    let feat = feature_names
+                        .get(*feature_idx)
+                        .cloned()
+                        .unwrap_or_else(|| format!("feature_{}", feature_idx));
+                    nodes.push(SerializedNode {
+                        id: current_id,
+                        parent_id,
+                        feature_name: Some(feat),
+                        threshold: Some(*threshold),
+                        gini: *impurity,
+                        samples: *n_samples,
+                        is_leaf: false,
+                        is_classification,
+                        predicted_class: None,
+                        predicted_value: None,
+                        left_child: Some(id_counter),
+                        right_child: None, // fixed in post-pass
+                    });
+                    queue.push_back((left, Some(current_id)));
+                    queue.push_back((right, Some(current_id)));
+                }
+            }
+        }
+
+        // Post-pass: fix right_child for each split node
+        let mut parent_to_children: HashMap<usize, Vec<usize>> = HashMap::new();
+        for n in &nodes {
+            if let Some(pid) = n.parent_id {
+                parent_to_children.entry(pid).or_default().push(n.id);
+            }
+        }
+        for n in &mut nodes {
+            if !n.is_leaf {
+                let ch = parent_to_children.get(&n.id);
+                n.left_child = ch.and_then(|v| v.first()).copied();
+                n.right_child = ch.and_then(|v| v.get(1)).copied();
+            }
+        }
+
+        Some(nodes)
     }
 
     /// Generate a text report summarizing the trained model

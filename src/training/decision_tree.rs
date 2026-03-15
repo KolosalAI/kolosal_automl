@@ -575,6 +575,11 @@ impl DecisionTree {
         }
     }
 
+    /// Get the root node
+    pub fn root(&self) -> Option<&TreeNode> {
+        self.root.as_ref()
+    }
+
     /// Get number of leaves
     pub fn get_n_leaves(&self) -> usize {
         match &self.root {

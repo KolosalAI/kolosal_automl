@@ -35,7 +35,7 @@ pub mod clustering;
 pub mod som;
 
 pub use config::{TrainingConfig, ModelType, TaskType};
-pub use engine::{TrainEngine, TrainedModel, EnsembleStrategy, EnsembleResult, ModelComparison, EpochRecord};
+pub use engine::{TrainEngine, TrainedModel, EnsembleStrategy, EnsembleResult, ModelComparison, EpochRecord, SerializedNode};
 pub use models::{Model, ModelMetrics};
 pub use cross_validation::{CrossValidator, CVStrategy, CVSplit, CVResults, cross_val_score};
 pub use linear_models::{LinearRegression, LogisticRegression, RidgeRegression, LassoRegression, ElasticNetRegression, PolynomialRegression};

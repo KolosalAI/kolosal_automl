@@ -387,6 +387,11 @@ impl RandomForest {
         self.oob_score_value
     }
 
+    /// Get the first tree (for visualization)
+    pub fn first_tree(&self) -> Option<&DecisionTree> {
+        self.trees.first()
+    }
+
     /// Get number of trees
     pub fn n_trees(&self) -> usize {
         self.trees.len()
