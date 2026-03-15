@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use dashmap::DashMap;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 use polars::prelude::*;
@@ -163,14 +164,14 @@ pub struct AppState {
     pub config: ServerConfig,
     pub datasets: RwLock<HashMap<String, DatasetInfo>>,
     pub jobs: RwLock<HashMap<String, TrainingJob>>,
-    pub models: RwLock<HashMap<String, ModelInfo>>,
+    pub models: DashMap<String, ModelInfo>,
     pub current_data: RwLock<Option<DataFrame>>,
     pub preprocessor: RwLock<Option<DataPreprocessor>>,
     pub model_registry: ModelRegistry,
     /// Shared prediction cache for all inference engines
     pub prediction_cache: Arc<LruTtlCache<u64, Vec<f64>>>,
     /// Store trained engines for post-training analysis (explainability, etc.)
-    pub train_engines: RwLock<HashMap<String, TrainEngine>>,
+    pub train_engines: DashMap<String, TrainEngine>,
     /// Store completed hyperopt studies for history
     pub completed_studies: RwLock<Vec<serde_json::Value>>,
     /// Security manager for auth, input validation, audit logging
@@ -222,13 +223,13 @@ impl AppState {
             config,
             datasets: RwLock::new(HashMap::new()),
             jobs: RwLock::new(HashMap::new()),
-            models: RwLock::new(HashMap::new()),
+            models: DashMap::new(),
             current_data: RwLock::new(None),
             preprocessor: RwLock::new(None),
             model_registry: ModelRegistry::new(10)
                 .with_prediction_cache(Arc::clone(&prediction_cache)),
             prediction_cache,
-            train_engines: RwLock::new(HashMap::new()),
+            train_engines: DashMap::new(),
             completed_studies: RwLock::new(Vec::new()),
             security_manager: Arc::new(SecurityManager::new(security_config)),
             rate_limiter: Arc::new(RateLimiter::new(rate_limit_config)),
@@ -279,31 +280,41 @@ impl AppState {
     /// Evict completed/failed jobs and old train engines to prevent unbounded memory growth.
     /// Called automatically after adding new entries.
     pub async fn evict_stale_entries(&self) {
-        // Evict oldest completed/failed jobs if over limit
-        let mut jobs = self.jobs.write().await;
-        if jobs.len() > Self::MAX_JOBS {
-            let mut completed_ids: Vec<(String, chrono::DateTime<chrono::Utc>)> = jobs.iter()
-                .filter(|(_, j)| matches!(j.status, JobStatus::Completed { .. } | JobStatus::Failed { .. }))
-                .map(|(id, j)| (id.clone(), j.created_at))
-                .collect();
-            completed_ids.sort_by_key(|(_, t)| *t);
-            let to_remove = jobs.len() - Self::MAX_JOBS;
-            for (id, _) in completed_ids.into_iter().take(to_remove) {
-                jobs.remove(&id);
+        // Evict jobs: only acquire write lock if over limit
+        {
+            let jobs_len = self.jobs.read().await.len();
+            if jobs_len > Self::MAX_JOBS {
+                let mut jobs = self.jobs.write().await;
+                if jobs.len() > Self::MAX_JOBS {
+                    let to_remove = jobs.len() - Self::MAX_JOBS;
+                    // Single pass to find oldest completed/failed jobs (O(n) not O(n log n))
+                    let mut removable: Vec<(String, chrono::DateTime<chrono::Utc>)> = jobs.iter()
+                        .filter(|(_, j)| matches!(j.status, JobStatus::Completed { .. } | JobStatus::Failed { .. }))
+                        .map(|(id, j)| (id.clone(), j.created_at))
+                        .collect();
+                    if !removable.is_empty() {
+                        // Partial sort: only bring the `to_remove` oldest to front
+                        let pivot = to_remove.min(removable.len()) - 1;
+                        removable.select_nth_unstable_by_key(pivot, |(_, t)| *t);
+                        for (id, _) in removable.into_iter().take(to_remove) {
+                            jobs.remove(&id);
+                        }
+                    }
+                }
             }
         }
-        drop(jobs);
 
-        // Evict oldest train engines if over limit
-        let mut engines = self.train_engines.write().await;
-        if engines.len() > Self::MAX_TRAIN_ENGINES {
-            let keys: Vec<String> = engines.keys().cloned().collect();
-            let to_remove = engines.len() - Self::MAX_TRAIN_ENGINES;
-            for key in keys.into_iter().take(to_remove) {
-                engines.remove(&key);
+        // Evict train_engines: DashMap — no lock needed
+        if self.train_engines.len() > Self::MAX_TRAIN_ENGINES {
+            let to_remove = self.train_engines.len() - Self::MAX_TRAIN_ENGINES;
+            let keys: Vec<String> = self.train_engines.iter()
+                .take(to_remove)
+                .map(|entry| entry.key().clone())
+                .collect();
+            for key in keys {
+                self.train_engines.remove(&key);
             }
         }
-        drop(engines);
 
         // Truncate completed studies
         let mut studies = self.completed_studies.write().await;

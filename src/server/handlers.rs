@@ -816,7 +816,7 @@ pub async fn start_training(
                 }
 
                 // Store engine for post-training analysis
-                state_clone.train_engines.write().await.insert(model_id.clone(), engine);
+                state_clone.train_engines.insert(model_id.clone(), engine);
 
                 // Register model in state
                 let model_info = ModelInfo {
@@ -827,7 +827,7 @@ pub async fn start_training(
                     created_at: chrono::Utc::now().to_rfc3339(),
                     path: std::path::PathBuf::from(&model_path),
                 };
-                state_clone.models.write().await.insert(model_id, model_info);
+                state_clone.models.insert(model_id, model_info);
 
                 // Update job status
                 let mut jobs = state_clone.jobs.write().await;
@@ -1081,9 +1081,10 @@ pub async fn compare_models(
 pub async fn list_models(
     State(state): State<Arc<AppState>>,
 ) -> Json<serde_json::Value> {
-    let models = state.models.read().await;
-    let model_list: Vec<&ModelInfo> = models.values().collect();
-    
+    let model_list: Vec<ModelInfo> = state.models.iter()
+        .map(|entry| entry.value().clone())
+        .collect();
+
     Json(serde_json::json!({
         "models": model_list,
     }))
@@ -1093,10 +1094,9 @@ pub async fn get_model(
     State(state): State<Arc<AppState>>,
     Path(model_id): Path<String>,
 ) -> Result<Json<serde_json::Value>> {
-    let models = state.models.read().await;
-    
-    let model = models.get(&model_id)
-        .ok_or_else(|| ServerError::NotFound(format!("Model not found: {}", model_id)))?;
+    let model = state.models.get(&model_id)
+        .ok_or_else(|| ServerError::NotFound(format!("Model not found: {}", model_id)))?
+        .clone();
 
     Ok(Json(serde_json::json!(model)))
 }
@@ -1105,12 +1105,11 @@ pub async fn download_model(
     State(state): State<Arc<AppState>>,
     Path(model_id): Path<String>,
 ) -> Result<impl IntoResponse> {
-    let models = state.models.read().await;
+    let model = state.models.get(&model_id)
+        .ok_or_else(|| ServerError::NotFound(format!("Model not found: {}", model_id)))?
+        .clone();
 
-    let model = models.get(&model_id)
-        .ok_or_else(|| ServerError::NotFound(format!("Model not found: {}", model_id)))?;
-
-    let json_bytes = serde_json::to_vec_pretty(model)
+    let json_bytes = serde_json::to_vec_pretty(&model)
         .map_err(|e| ServerError::Internal(format!("Failed to serialize model: {}", e)))?;
 
     let disposition = format!("attachment; filename=\"model_{}.json\"", model_id);
@@ -1140,26 +1139,28 @@ pub async fn predict(
     State(state): State<Arc<AppState>>,
     Json(request): Json<PredictRequest>,
 ) -> Result<Json<serde_json::Value>> {
-    let models = state.models.read().await;
-
-    let model_count = models.len();
+    let model_count = state.models.len();
     debug!(model_count = model_count, requested_id = ?request.model_id, "Predict request received");
 
     // Find the model: use provided model_id or most recently created
-    let model_info = if let Some(ref id) = request.model_id {
-        models.get(id)
-            .ok_or_else(|| ServerError::NotFound(format!("Model not found: {}", id)))?
+    let (model_id, model_path) = if let Some(ref id) = request.model_id {
+        let entry = state.models.get(id)
+            .ok_or_else(|| ServerError::NotFound(format!("Model not found: {}", id)))?;
+        let mid = entry.id.clone();
+        let mpath = entry.path.to_str()
+            .ok_or_else(|| ServerError::Internal("Invalid model path".to_string()))?
+            .to_string();
+        (mid, mpath)
     } else {
-        models.values()
-            .max_by_key(|m| &m.created_at)
-            .ok_or_else(|| ServerError::NotFound("No trained models available".to_string()))?
+        let entry = state.models.iter()
+            .max_by_key(|e| e.value().created_at.clone())
+            .ok_or_else(|| ServerError::NotFound("No trained models available".to_string()))?;
+        let mid = entry.id.clone();
+        let mpath = entry.path.to_str()
+            .ok_or_else(|| ServerError::Internal("Invalid model path".to_string()))?
+            .to_string();
+        (mid, mpath)
     };
-
-    let model_id = model_info.id.clone();
-    let model_path = model_info.path.to_str()
-        .ok_or_else(|| ServerError::Internal("Invalid model path".to_string()))?
-        .to_string();
-    drop(models);
 
     // Parse features from data field
     let features: Vec<Vec<f64>> = serde_json::from_value(request.data)
@@ -1212,23 +1213,25 @@ pub async fn predict_batch(
     State(state): State<Arc<AppState>>,
     Json(request): Json<BatchPredictRequest>,
 ) -> Result<Json<serde_json::Value>> {
-    let models = state.models.read().await;
-
     // Find the model: use provided model_id or most recently created
-    let model_info = if let Some(ref id) = request.model_id {
-        models.get(id)
-            .ok_or_else(|| ServerError::NotFound(format!("Model not found: {}", id)))?
+    let (model_id, model_path) = if let Some(ref id) = request.model_id {
+        let entry = state.models.get(id)
+            .ok_or_else(|| ServerError::NotFound(format!("Model not found: {}", id)))?;
+        let mid = entry.id.clone();
+        let mpath = entry.path.to_str()
+            .ok_or_else(|| ServerError::Internal("Invalid model path".to_string()))?
+            .to_string();
+        (mid, mpath)
     } else {
-        models.values()
-            .max_by_key(|m| &m.created_at)
-            .ok_or_else(|| ServerError::NotFound("No trained models available".to_string()))?
+        let entry = state.models.iter()
+            .max_by_key(|e| e.value().created_at.clone())
+            .ok_or_else(|| ServerError::NotFound("No trained models available".to_string()))?;
+        let mid = entry.id.clone();
+        let mpath = entry.path.to_str()
+            .ok_or_else(|| ServerError::Internal("Invalid model path".to_string()))?
+            .to_string();
+        (mid, mpath)
     };
-
-    let model_id = model_info.id.clone();
-    let model_path = model_info.path.to_str()
-        .ok_or_else(|| ServerError::Internal("Invalid model path".to_string()))?
-        .to_string();
-    drop(models);
 
     if request.data.is_empty() {
         return Err(ServerError::BadRequest("Data array is empty".to_string()));
@@ -1273,22 +1276,24 @@ pub async fn predict_proba(
     State(state): State<Arc<AppState>>,
     Json(request): Json<PredictRequest>,
 ) -> Result<Json<serde_json::Value>> {
-    let models = state.models.read().await;
-
-    let model_info = if let Some(ref id) = request.model_id {
-        models.get(id)
-            .ok_or_else(|| ServerError::NotFound(format!("Model not found: {}", id)))?
+    let (model_id, model_path) = if let Some(ref id) = request.model_id {
+        let entry = state.models.get(id)
+            .ok_or_else(|| ServerError::NotFound(format!("Model not found: {}", id)))?;
+        let mid = entry.id.clone();
+        let mpath = entry.path.to_str()
+            .ok_or_else(|| ServerError::Internal("Invalid model path".to_string()))?
+            .to_string();
+        (mid, mpath)
     } else {
-        models.values()
-            .max_by_key(|m| &m.created_at)
-            .ok_or_else(|| ServerError::NotFound("No trained models available".to_string()))?
+        let entry = state.models.iter()
+            .max_by_key(|e| e.value().created_at.clone())
+            .ok_or_else(|| ServerError::NotFound("No trained models available".to_string()))?;
+        let mid = entry.id.clone();
+        let mpath = entry.path.to_str()
+            .ok_or_else(|| ServerError::Internal("Invalid model path".to_string()))?
+            .to_string();
+        (mid, mpath)
     };
-
-    let model_id = model_info.id.clone();
-    let model_path = model_info.path.to_str()
-        .ok_or_else(|| ServerError::Internal("Invalid model path".to_string()))?
-        .to_string();
-    drop(models);
 
     let features: Vec<Vec<f64>> = serde_json::from_value(request.data)
         .map_err(|e| ServerError::BadRequest(format!("Invalid features format: {}", e)))?;
@@ -1394,13 +1399,12 @@ pub async fn get_system_status(
     let system_info = state.get_system_info();
     let datasets = state.datasets.read().await;
     let jobs = state.jobs.read().await;
-    let models = state.models.read().await;
 
     Json(serde_json::json!({
         "system": system_info,
         "datasets_count": datasets.len(),
         "jobs_count": jobs.len(),
-        "models_count": models.len(),
+        "models_count": state.models.len(),
         "status": "healthy",
     }))
 }
@@ -3558,12 +3562,9 @@ pub async fn delete_model(
     Path(model_id): Path<String>,
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<serde_json::Value>> {
-    let mut models = state.models.write().await;
-    if let Some(model_info) = models.remove(&model_id) {
-        drop(models); // release lock before additional cleanup
-
+    if let Some((_, model_info)) = state.models.remove(&model_id) {
         // Clean up associated resources
-        state.train_engines.write().await.remove(&model_id);
+        state.train_engines.remove(&model_id);
         state.model_registry.evict(&model_id).await;
 
         // Attempt to delete the model file from disk
@@ -3587,9 +3588,9 @@ pub async fn get_model_metrics(
     Path(model_id): Path<String>,
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<serde_json::Value>> {
-    let models = state.models.read().await;
-    let model = models.get(&model_id)
-        .ok_or_else(|| ServerError::NotFound(format!("Model '{}' not found", model_id)))?;
+    let model = state.models.get(&model_id)
+        .ok_or_else(|| ServerError::NotFound(format!("Model '{}' not found", model_id)))?
+        .clone();
 
     Ok(Json(serde_json::json!({
         "model_id": model.id,
@@ -3686,10 +3687,9 @@ pub async fn get_alerts(
 pub async fn get_performance_analysis(
     State(state): State<Arc<AppState>>,
 ) -> Json<serde_json::Value> {
-    let models = state.models.read().await;
     let jobs = state.jobs.read().await;
 
-    let total_models = models.len();
+    let total_models = state.models.len();
     let total_jobs = jobs.len();
     let completed_jobs = jobs.values().filter(|j| matches!(j.status, JobStatus::Completed { .. })).count();
     let failed_jobs = jobs.values().filter(|j| matches!(j.status, JobStatus::Failed { .. })).count();
@@ -3976,8 +3976,7 @@ pub async fn get_feature_importance(
     State(state): State<Arc<AppState>>,
     Json(request): Json<ExplainRequest>,
 ) -> Result<Json<serde_json::Value>> {
-    let engines = state.train_engines.read().await;
-    let engine = engines.get(&request.model_id)
+    let engine = state.train_engines.get(&request.model_id)
         .ok_or_else(|| ServerError::NotFound(format!("Engine not found for model: {}", request.model_id)))?;
 
     let feature_names = engine.feature_names().to_vec();
@@ -4032,8 +4031,7 @@ pub async fn get_local_explanations(
             .ok_or_else(|| ServerError::BadRequest("missing 'instance' field".into()))?
     ).map_err(|e| ServerError::BadRequest(format!("invalid instance data: {}", e)))?;
 
-    let engines = state.train_engines.read().await;
-    let engine = engines.get(model_id)
+    let engine = state.train_engines.get(model_id)
         .ok_or_else(|| ServerError::NotFound(format!("Engine not found: {}", model_id)))?;
 
     let feature_names = engine.feature_names().to_vec();
@@ -4341,9 +4339,9 @@ pub async fn export_model(
     State(state): State<Arc<AppState>>,
     Json(request): Json<ExportRequest>,
 ) -> Result<Json<serde_json::Value>> {
-    let models = state.models.read().await;
-    let model_info = models.get(&request.model_id)
-        .ok_or_else(|| ServerError::NotFound(format!("Model not found: {}", request.model_id)))?;
+    let model_info = state.models.get(&request.model_id)
+        .ok_or_else(|| ServerError::NotFound(format!("Model not found: {}", request.model_id)))?
+        .clone();
 
     let export_format = request.format.to_lowercase();
     let models_dir = &state.config.models_dir;
@@ -4358,9 +4356,11 @@ pub async fn export_model(
     let export_path = format!("{}/{}_{}.{}", models_dir, safe_model_id, export_format,
         if export_format == "onnx" { "onnx" } else { "pmml" });
 
-    let engines = state.train_engines.read().await;
-    let _engine = engines.get(&request.model_id)
-        .ok_or_else(|| ServerError::NotFound("Model engine not loaded — train a new model first".to_string()))?;
+    // Existence check only — drop the Ref immediately so the shard lock is not held
+    // across the blocking file write below
+    if !state.train_engines.contains_key(&request.model_id) {
+        return Err(ServerError::NotFound("Model engine not loaded — train a new model first".to_string()));
+    }
 
     // Write a metadata-based export file
     let export_data = serde_json::json!({
@@ -5165,7 +5165,7 @@ pub async fn auto_tune(
                     }));
 
                     let model_id = format!("autotune_{}_{}", name, job_id);
-                    state_clone.train_engines.write().await.insert(model_id, engine);
+                    state_clone.train_engines.insert(model_id, engine);
                 }
                 Ok((name, _time, Err(e))) => {
                     warn!(model = %name, error = %e, "Auto-tune: model failed");
@@ -5206,7 +5206,7 @@ pub async fn auto_tune(
                     created_at: chrono::Utc::now().to_rfc3339(),
                     path: std::path::PathBuf::from(&models_dir).join(format!("{}.model", model_id)),
                 };
-                state_clone.models.write().await.insert(model_id, model_info);
+                state_clone.models.insert(model_id, model_info);
             }
         }
 
@@ -5578,7 +5578,7 @@ pub async fn run_automl_pipeline(
 
                     // Store engine
                     let key = format!("automl_{}_{}", name, job_id_clone);
-                    state_clone.train_engines.write().await.insert(key, engine.clone());
+                    state_clone.train_engines.insert(key, engine.clone());
 
                     if score > best_score {
                         best_score = score;
@@ -5718,7 +5718,7 @@ pub async fn run_automl_pipeline(
 
         // Store best engine
         if let Some(engine) = best_engine {
-            state_clone.train_engines.write().await.insert(
+            state_clone.train_engines.insert(
                 format!("automl_best_{}", job_id_clone), engine,
             );
         }
@@ -5907,7 +5907,7 @@ pub async fn apply_best_params(
         match result {
             Ok(Ok((metrics_val, engine))) => {
                 let model_id = format!("optimized_{}_{}", model_type_str, job_id);
-                state_clone.train_engines.write().await.insert(model_id.clone(), engine);
+                state_clone.train_engines.insert(model_id.clone(), engine);
 
                 let model_info = super::state::ModelInfo {
                     id: model_id.clone(),
@@ -5917,7 +5917,7 @@ pub async fn apply_best_params(
                     created_at: chrono::Utc::now().to_rfc3339(),
                     path: std::path::PathBuf::from(&models_dir).join(format!("{}.model", model_id)),
                 };
-                state_clone.models.write().await.insert(model_id.clone(), model_info);
+                state_clone.models.insert(model_id.clone(), model_info);
 
                 let completed_metrics = serde_json::json!({
                     "applied_params": true,
@@ -6318,10 +6318,9 @@ pub async fn get_model_card(
 ) -> Result<Json<serde_json::Value>> {
     use crate::export::ModelCard;
 
-    let models = state.models.read().await;
-    let model = models.get(&model_id).ok_or_else(|| {
+    let model = state.models.get(&model_id).ok_or_else(|| {
         ServerError::NotFound(format!("Model not found: {}", model_id))
-    })?;
+    })?.clone();
 
     let metrics: std::collections::HashMap<String, f64> = model.metrics
         .as_object()
@@ -6427,7 +6426,7 @@ pub async fn get_compliance_report(
 
     // Derive actual capabilities from system state rather than hardcoding all as true
     let security_status = state.security_manager.get_status();
-    let has_models = !state.models.read().await.is_empty();
+    let has_models = !state.models.is_empty();
 
     let mut capabilities = std::collections::HashMap::new();
     capabilities.insert("auth_enabled".to_string(), security_status.api_key_auth_enabled);
