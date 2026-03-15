@@ -26,7 +26,7 @@ fn create_regression_data(n_rows: usize, n_features: usize) -> DataFrame {
     
     series.push(Series::new("target".into(), target));
     
-    DataFrame::new(series).unwrap()
+    DataFrame::new(series.into_iter().map(|s| s.into()).collect()).unwrap()
 }
 
 fn bench_training(c: &mut Criterion) {
@@ -43,7 +43,8 @@ fn bench_training(c: &mut Criterion) {
                 b.iter(|| {
                     let config = TrainingConfig::new(TaskType::Regression, "target");
                     let mut engine = TrainEngine::new(config);
-                    engine.fit(black_box(df)).unwrap()
+                    engine.fit(black_box(df)).unwrap();
+                    engine
                 })
             },
         );

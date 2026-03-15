@@ -13,7 +13,7 @@ fn create_test_dataframe(n_rows: usize, n_cols: usize) -> DataFrame {
         })
         .collect();
     
-    DataFrame::new(series).unwrap()
+    DataFrame::new(series.into_iter().map(|s| s.into()).collect()).unwrap()
 }
 
 fn bench_preprocessing(c: &mut Criterion) {
