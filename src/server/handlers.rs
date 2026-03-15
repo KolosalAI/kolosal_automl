@@ -3762,7 +3762,20 @@ const EMBEDDED_INDEX_HTML: &str = r#"<!DOCTYPE html>
     if (nearest.p) {
       eInsMetricsThreshold = nearest.p.threshold;
       eInsMetricsDrawROC(d);
-      eInsMetricsDrawCM(d);
+      // Recompute binary CM from ROC data at new threshold (binary only)
+      if (d.confusion_matrix && d.confusion_matrix.length === 2 && nearest.p.fpr != null) {
+        var origCM = d.confusion_matrix;
+        var P = origCM[1][1] + origCM[1][0]; // TP + FN (total positives)
+        var N = origCM[0][0] + origCM[0][1]; // TN + FP (total negatives)
+        var tp = Math.round(nearest.p.tpr * P);
+        var fn_ = P - tp;
+        var fp = Math.round(nearest.p.fpr * N);
+        var tn = N - fp;
+        var dAtThreshold = Object.assign({}, d, {confusion_matrix: [[tn, fp],[fn_, tp]]});
+        eInsMetricsDrawCM(dAtThreshold);
+      } else {
+        eInsMetricsDrawCM(d);
+      }
     }
   };
 }
