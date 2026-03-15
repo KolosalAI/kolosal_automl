@@ -8,7 +8,7 @@ use tokio::sync::RwLock;
 use uuid::Uuid;
 use polars::prelude::*;
 use crate::cache::LruTtlCache;
-use crate::inference::{InferenceConfig, InferenceEngine};
+use crate::inference::{InferenceConfig, InferenceEngine, InferenceStats};
 use crate::security::{SecurityManager, SecurityConfig, RateLimiter, RateLimitConfig, AuditTrail};
 use crate::preprocessing::DataPreprocessor;
 use crate::training::TrainEngine;
@@ -67,7 +67,7 @@ pub struct DatasetInfo {
 
 /// In-memory model registry for caching loaded inference engines
 pub struct ModelRegistry {
-    engines: RwLock<HashMap<String, Arc<InferenceEngine>>>,
+    engines: DashMap<String, Arc<InferenceEngine>>,
     max_cached: usize,
     /// Shared prediction cache across all models
     prediction_cache: Option<Arc<LruTtlCache<u64, Vec<f64>>>>,
@@ -76,7 +76,7 @@ pub struct ModelRegistry {
 impl ModelRegistry {
     pub fn new(max_cached: usize) -> Self {
         Self {
-            engines: RwLock::new(HashMap::new()),
+            engines: DashMap::new(),
             max_cached,
             prediction_cache: None,
         }
@@ -88,25 +88,40 @@ impl ModelRegistry {
         self
     }
 
-    /// Get a cached inference engine, or load from disk and cache it
+    /// Insert a pre-built engine into the registry (e.g. right after training).
+    /// The shared prediction cache is injected automatically.
+    pub fn insert(&self, model_id: String, mut engine: InferenceEngine) {
+        if let Some(ref cache) = self.prediction_cache {
+            engine.set_prediction_cache(Arc::clone(cache));
+        }
+        // Evict least-used entry if at capacity
+        if self.engines.len() >= self.max_cached {
+            let least_used = self.engines.iter()
+                .min_by_key(|e| e.value().stats().total_predictions)
+                .map(|e| e.key().clone());
+            if let Some(key) = least_used {
+                self.engines.remove(&key);
+            }
+        }
+        self.engines.insert(model_id, Arc::new(engine));
+    }
+
+    /// Get a cached inference engine, or load from disk and cache it.
+    /// Uses DashMap for lock-free fast-path reads (no async overhead on cache hit).
     pub async fn get_or_load(
         &self,
         model_id: &str,
         model_path: &str,
     ) -> crate::error::Result<Arc<InferenceEngine>> {
-        // Fast path: check cache with read lock (no blocking on concurrent reads)
-        {
-            let engines = self.engines.read().await;
-            if let Some(engine) = engines.get(model_id) {
-                return Ok(Arc::clone(engine));
-            }
+        // Fast path: DashMap read — no async overhead
+        if let Some(engine) = self.engines.get(model_id) {
+            return Ok(Arc::clone(engine.value()));
         }
 
-        // Load from disk WITHOUT holding any lock — this is potentially slow I/O
-        // and we don't want to block concurrent cache reads.
+        // Slow path: load from disk (blocking I/O, done without holding any lock)
         let mut engine = InferenceEngine::load(InferenceConfig::new(), None, model_path)?;
 
-        // Inject shared prediction cache if available
+        // Inject shared prediction cache
         if let Some(ref cache) = self.prediction_cache {
             engine.set_prediction_cache(Arc::clone(cache));
         }
@@ -114,48 +129,39 @@ impl ModelRegistry {
         engine.warmup()?;
         let engine = Arc::new(engine);
 
-        // Now take write lock and double-check (another task may have loaded
-        // the same model concurrently).
-        let mut engines = self.engines.write().await;
-        if let Some(existing) = engines.get(model_id) {
-            return Ok(Arc::clone(existing));
-        }
-
         // Evict least-used entry if at capacity
-        if engines.len() >= self.max_cached {
-            let least_used = engines.iter()
-                .min_by_key(|(_, e)| e.stats().total_predictions)
-                .map(|(k, _)| k.clone());
+        if self.engines.len() >= self.max_cached {
+            let least_used = self.engines.iter()
+                .min_by_key(|e| e.value().stats().total_predictions)
+                .map(|e| e.key().clone());
             if let Some(key) = least_used {
-                engines.remove(&key);
+                self.engines.remove(&key);
             }
         }
-        engines.insert(model_id.to_string(), Arc::clone(&engine));
 
-        Ok(engine)
+        // entry().or_insert() is atomic — if another task raced us, we get their Arc back
+        let entry = self.engines.entry(model_id.to_string()).or_insert_with(|| Arc::clone(&engine));
+        Ok(Arc::clone(entry.value()))
     }
 
     /// Evict a model from the cache
-    pub async fn evict(&self, model_id: &str) {
-        let mut engines = self.engines.write().await;
-        engines.remove(model_id);
+    pub fn evict(&self, model_id: &str) {
+        self.engines.remove(model_id);
     }
 
     /// Clear all cached models
-    pub async fn clear(&self) {
-        let mut engines = self.engines.write().await;
-        engines.clear();
+    pub fn clear(&self) {
+        self.engines.clear();
     }
 
     /// Number of currently cached models
-    pub async fn cached_count(&self) -> usize {
-        self.engines.read().await.len()
+    pub fn cached_count(&self) -> usize {
+        self.engines.len()
     }
 
     /// Get stats for a cached model
-    pub async fn get_model_stats(&self, model_id: &str) -> Option<crate::inference::InferenceStats> {
-        let engines = self.engines.read().await;
-        engines.get(model_id).map(|e| e.stats())
+    pub fn get_model_stats(&self, model_id: &str) -> Option<InferenceStats> {
+        self.engines.get(model_id).map(|e| e.value().stats())
     }
 }
 

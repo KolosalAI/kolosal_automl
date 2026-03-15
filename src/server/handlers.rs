@@ -16,6 +16,7 @@ use calamine;
 
 use crate::preprocessing::{DataPreprocessor, PreprocessingConfig, ScalerType, ImputeStrategy};
 use crate::training::{TrainEngine, TrainingConfig, TaskType, ModelType};
+use crate::inference::{InferenceConfig, InferenceEngine};
 
 use super::error::{Result, ServerError};
 use super::state::{AppState, JobStatus, ModelInfo, TrainingJob};
@@ -827,6 +828,23 @@ pub async fn start_training(
                     info!(job_id = %job_id, model_id = %model_id, path = %model_path, "Model saved to disk");
                 }
 
+                // Pre-warm inference engine into registry so the first prediction
+                // hits the in-memory cache instead of loading from disk.
+                {
+                    let preprocessor_opt = state_clone.preprocessor.read().await;
+                    let mut inf_engine = InferenceEngine::new(InferenceConfig::new())
+                        .with_model(engine.clone());
+                    if let Some(ref pp) = *preprocessor_opt {
+                        inf_engine = inf_engine.with_preprocessor(pp.clone());
+                    }
+                    if let Err(e) = inf_engine.warmup() {
+                        warn!(model_id = %model_id, error = %e, "Inference engine warmup failed");
+                    } else {
+                        state_clone.model_registry.insert(model_id.clone(), inf_engine);
+                        info!(model_id = %model_id, "Inference engine pre-warmed into registry");
+                    }
+                }
+
                 // Store engine for post-training analysis
                 state_clone.train_engines.insert(model_id.clone(), engine);
 
@@ -1345,7 +1363,7 @@ pub async fn get_inference_stats(
     State(state): State<Arc<AppState>>,
     Path(model_id): Path<String>,
 ) -> Result<Json<serde_json::Value>> {
-    match state.model_registry.get_model_stats(&model_id).await {
+    match state.model_registry.get_model_stats(&model_id) {
         Some(stats) => Ok(Json(serde_json::json!({
             "success": true,
             "model_id": model_id,
@@ -1368,7 +1386,7 @@ pub async fn evict_model_cache(
     State(state): State<Arc<AppState>>,
     Path(model_id): Path<String>,
 ) -> Result<Json<serde_json::Value>> {
-    state.model_registry.evict(&model_id).await;
+    state.model_registry.evict(&model_id);
     Ok(Json(serde_json::json!({
         "success": true,
         "message": format!("Model {} evicted from cache", model_id),
@@ -3579,7 +3597,7 @@ pub async fn delete_model(
     if let Some((_, model_info)) = state.models.remove(&model_id) {
         // Clean up associated resources
         state.train_engines.remove(&model_id);
-        state.model_registry.evict(&model_id).await;
+        state.model_registry.evict(&model_id);
 
         // Attempt to delete the model file from disk
         if model_info.path.exists() {
