@@ -224,6 +224,20 @@ fn test_tree_nodes_decision_tree() {
 }
 
 #[test]
+fn test_tree_nodes_random_forest() {
+    let df = classification_df();
+    let config = TrainingConfig::new(TaskType::BinaryClassification, "target")
+        .with_model(ModelType::RandomForest);
+    let mut engine = TrainEngine::new(config);
+    engine.fit(&df).unwrap();
+    let nodes = engine.tree_nodes();
+    assert!(nodes.is_some(), "random forest should serialize first tree's nodes");
+    let nodes = nodes.unwrap();
+    assert!(!nodes.is_empty());
+    assert_eq!(nodes[0].parent_id, None, "root has no parent");
+}
+
+#[test]
 fn test_tree_nodes_non_tree_returns_none() {
     let df = classification_df();
     let config = TrainingConfig::new(TaskType::BinaryClassification, "target")
