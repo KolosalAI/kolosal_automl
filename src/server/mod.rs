@@ -7,7 +7,7 @@
 mod api;
 mod error;
 pub mod import;
-mod state;
+pub mod state;
 mod handlers;
 
 pub use api::create_router;

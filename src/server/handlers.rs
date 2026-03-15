@@ -801,10 +801,11 @@ pub async fn start_training(
     
     tokio::spawn(async move {
         let start = std::time::Instant::now();
+        let task_type_for_insights = task_type.clone();
         let result = run_training_job(
-            &df, 
-            &target_col, 
-            task_type, 
+            &df,
+            &target_col,
+            task_type,
             model_type,
         ).await;
 
@@ -846,7 +847,52 @@ pub async fn start_training(
                 }
 
                 // Store engine for post-training analysis
+                let engine_for_insights = engine.clone();
                 state_clone.train_engines.insert(model_id.clone(), engine);
+
+                // Populate evaluation cache for Metrics Deep Dive
+                if let Some(df) = state_clone.current_data.read().await.as_ref() {
+                    use crate::server::state::InsightsEvaluation;
+                    use crate::training::TaskType;
+
+                    if let Ok(y_pred_arr) = engine_for_insights.predict(df) {
+                        if let Ok(target_col_series) = df.column(&target_col) {
+                            let task_type = task_type_for_insights.clone();
+                            let y_true: Vec<f64> = target_col_series
+                                .cast(&polars::prelude::DataType::Float64)
+                                .ok()
+                                .and_then(|s| s.f64().ok().map(|ca| ca.into_iter().flatten().collect()))
+                                .unwrap_or_default();
+                            let y_pred: Vec<f64> = y_pred_arr.to_vec();
+
+                            let y_prob = match &task_type {
+                                TaskType::BinaryClassification | TaskType::MultiClassification => {
+                                    engine_for_insights.predict_proba(df).ok().map(|arr| {
+                                        arr.outer_iter().map(|row| row.to_vec()).collect()
+                                    })
+                                }
+                                _ => None,
+                            };
+
+                            let mut class_vals: Vec<f64> = y_true.clone();
+                            class_vals.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                            class_vals.dedup();
+                            let classes: Vec<String> = class_vals.iter()
+                                .map(|v| format!("class_{}", *v as i64))
+                                .collect();
+
+                            if !y_true.is_empty() && y_true.len() == y_pred.len() {
+                                state_clone.insights_cache.insert(model_id.clone(), InsightsEvaluation {
+                                    task: task_type,
+                                    classes,
+                                    y_true,
+                                    y_pred,
+                                    y_prob,
+                                });
+                            }
+                        }
+                    }
+                }
 
                 // Register model in state
                 let model_info = ModelInfo {

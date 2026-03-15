@@ -53,6 +53,16 @@ pub struct ModelInfo {
     pub path: PathBuf,
 }
 
+/// Cached evaluation data for Metrics Deep Dive insights
+#[derive(Debug, Clone)]
+pub struct InsightsEvaluation {
+    pub task: crate::training::TaskType,
+    pub classes: Vec<String>,
+    pub y_true: Vec<f64>,
+    pub y_pred: Vec<f64>,
+    pub y_prob: Option<Vec<Vec<f64>>>,
+}
+
 /// Uploaded dataset information
 #[derive(Debug, Clone)]
 pub struct DatasetInfo {
@@ -178,6 +188,8 @@ pub struct AppState {
     pub prediction_cache: Arc<LruTtlCache<u64, Vec<f64>>>,
     /// Store trained engines for post-training analysis (explainability, etc.)
     pub train_engines: DashMap<String, TrainEngine>,
+    /// Cache of evaluation data (y_true/y_pred) for Metrics Deep Dive
+    pub insights_cache: DashMap<String, InsightsEvaluation>,
     /// Store completed hyperopt studies for history
     pub completed_studies: RwLock<Vec<serde_json::Value>>,
     /// Security manager for auth, input validation, audit logging
@@ -237,6 +249,7 @@ impl AppState {
                 .with_prediction_cache(Arc::clone(&prediction_cache)),
             prediction_cache,
             train_engines: DashMap::new(),
+            insights_cache: DashMap::new(),
             completed_studies: RwLock::new(Vec::new()),
             security_manager: Arc::new(SecurityManager::new(security_config)),
             rate_limiter: Arc::new(RateLimiter::new(rate_limit_config)),
@@ -320,6 +333,18 @@ impl AppState {
                 .collect();
             for key in keys {
                 self.train_engines.remove(&key);
+            }
+        }
+
+        // Evict insights_cache: DashMap — no lock needed
+        if self.insights_cache.len() > Self::MAX_TRAIN_ENGINES {
+            let to_remove = self.insights_cache.len() - Self::MAX_TRAIN_ENGINES;
+            let keys: Vec<String> = self.insights_cache.iter()
+                .take(to_remove)
+                .map(|e| e.key().clone())
+                .collect();
+            for key in keys {
+                self.insights_cache.remove(&key);
             }
         }
 

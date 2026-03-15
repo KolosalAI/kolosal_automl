@@ -854,3 +854,17 @@ async fn test_compare_models_no_data() {
         .unwrap();
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
+
+#[test]
+fn test_insights_evaluation_struct_exists() {
+    use kolosal_automl::server::state::InsightsEvaluation;
+    use kolosal_automl::training::TaskType;
+    let eval = InsightsEvaluation {
+        task: TaskType::BinaryClassification,
+        classes: vec!["a".to_string(), "b".to_string()],
+        y_true: vec![0.0, 1.0],
+        y_pred: vec![0.0, 1.0],
+        y_prob: None,
+    };
+    assert_eq!(eval.y_true.len(), 2);
+}
