@@ -43,28 +43,45 @@
 <div class="container">
 
 <h1>🚀 Kolosal AutoML — Rust vs Python</h1>
-<p class="subtitle">Performance Comparison Report &bull; Generated February 28, 2026 at 05:29 UTC</p>
+<p class="subtitle">Performance Comparison Report &bull; Updated March 15, 2026 at 09:34 UTC (post-optimization re-run)</p>
 
 <div class="stats-grid">
   <div class="stat-card highlight">
-    <div class="stat-value">17/18</div>
-    <div class="stat-label">Rust Wins</div>
+    <div class="stat-value">9/10</div>
+    <div class="stat-label">Rust Wins (Mar 15)</div>
   </div>
   <div class="stat-card green">
-    <div class="stat-value">9.9x</div>
-    <div class="stat-label">Avg Speedup</div>
+    <div class="stat-value">6.2x</div>
+    <div class="stat-label">Avg Speedup (Mar 15)</div>
   </div>
-  <div class="stat-card">
-    <div class="stat-value">75</div>
-    <div class="stat-label">Total Metrics</div>
+  <div class="stat-card green">
+    <div class="stat-value">21.1x</div>
+    <div class="stat-label">Peak Speedup (concurrent p95)</div>
   </div>
   <div class="stat-card">
     <div class="stat-value">57</div>
-    <div class="stat-label">Rust-Only APIs</div>
+    <div class="stat-label">Rust-Only APIs (Feb 28)</div>
   </div>
 </div>
 
-<h2>📊 Head-to-Head Comparison</h2>
+<h2>📊 Head-to-Head Comparison — March 15, 2026 (post-optimization)</h2>
+<p style="color:#8b949e;margin-bottom:1rem">Re-run after 8-file performance optimization (DashMap migration, O(n³)→O(n²), clone storm elimination, rayon parallelism). 10 metrics across 5 categories.</p>
+<table>
+<tr><th>Metric</th><th>Category</th><th>Rust (ms)</th><th>Python (ms)</th><th>Speedup</th><th>Winner</th></tr>
+<tr><td>Iris Load avg</td><td>Dataset Loading</td><td class="rust">746.7</td><td class="python">1223.3</td><td class="speedup">1.6x</td><td class="winner">🦀 Rust</td></tr>
+<tr><td>Iris Load p50</td><td>Dataset Loading</td><td class="rust">717.0</td><td class="python">1248.0</td><td class="speedup">1.7x</td><td class="winner">🦀 Rust</td></tr>
+<tr><td>Iris Load p95</td><td>Dataset Loading</td><td class="rust">813.0</td><td class="python">1784.0</td><td class="speedup">2.2x</td><td class="winner">🦀 Rust</td></tr>
+<tr><td>Iris Classification Time</td><td>Training</td><td class="rust">309.0</td><td class="python">866.0</td><td class="speedup">2.8x</td><td class="winner">🦀 Rust</td></tr>
+<tr><td>Single Prediction avg</td><td>Prediction</td><td class="rust">47.8</td><td class="python">42.3</td><td class="speedup">0.9x</td><td class="loser">🐍 Python</td></tr>
+<tr><td>Single Prediction p50</td><td>Prediction</td><td class="rust">34.0</td><td class="python">37.0</td><td class="speedup">1.1x</td><td class="winner">🦀 Rust</td></tr>
+<tr><td>Tab Switch avg</td><td>UI Responsiveness</td><td class="rust">29.5</td><td class="python">335.2</td><td class="speedup">11.4x</td><td class="winner">🦀 Rust</td></tr>
+<tr><td>Total Time (10 reqs)</td><td>Concurrent Stress</td><td class="rust">930.0</td><td class="python">1898.0</td><td class="speedup">2.0x</td><td class="winner">🦀 Rust</td></tr>
+<tr><td>Avg Individual Latency</td><td>Concurrent Stress</td><td class="rust">52.4</td><td class="python">919.6</td><td class="speedup">17.5x</td><td class="winner">🦀 Rust</td></tr>
+<tr><td>P95 Individual Latency</td><td>Concurrent Stress</td><td class="rust">90.0</td><td class="python">1898.0</td><td class="speedup">21.1x</td><td class="winner">🦀 Rust</td></tr>
+</table>
+
+<h2>📊 Head-to-Head Comparison — February 28, 2026 (pre-optimization baseline)</h2>
+<p style="color:#8b949e;margin-bottom:1rem">Historical baseline with full 16-metric suite including page load and API latency.</p>
 <table>
 <tr><th>Metric</th><th>Category</th><th>Rust (ms)</th><th>Python (ms)</th><th>Speedup</th><th>Winner</th></tr>
 <tr><td>TTFB (avg)</td><td>Page Load</td><td class="rust">80.6</td><td class="python">362.1</td><td class="speedup">4.5x</td><td class="winner">🦀 Rust</td></tr>

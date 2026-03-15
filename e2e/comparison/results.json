@@ -1,34 +1,14 @@
 {
-  "timestamp": "2026-02-28T05:26:57.160Z",
+  "timestamp": "2026-03-15T09:34:14.108Z",
   "summary": {
-    "totalMetrics": 75,
-    "headToHeadMetrics": 18,
-    "rustOnlyMetrics": 57,
-    "rustWins": 17,
+    "totalMetrics": 10,
+    "headToHeadMetrics": 10,
+    "rustOnlyMetrics": 0,
+    "rustWins": 9,
     "pythonWins": 1,
     "ties": 0,
-    "avgSpeedupFactor": 9.887183781300374,
+    "avgSpeedupFactor": 6.239185874302585,
     "categories": [
-      "Data Analysis",
-      "Multi-Model Training",
-      "Model Management",
-      "AutoML Pipeline",
-      "Batch Prediction",
-      "Visualization",
-      "Clustering",
-      "Anomaly Detection",
-      "HyperOpt",
-      "Explainability",
-      "System & Monitoring",
-      "Security & Compliance",
-      "Preprocessing",
-      "Batch Processing",
-      "Sample Datasets",
-      "Multi-Endpoint Stress",
-      "Privacy",
-      "E2E Pipeline",
-      "Page Load",
-      "API Latency",
       "Dataset Loading",
       "Training",
       "Prediction",
@@ -38,1425 +18,217 @@
   },
   "entries": [
     {
-      "metric": "Analyze API avg",
-      "category": "Data Analysis",
-      "rust": 40.2,
-      "python": 0,
-      "unit": "ms",
-      "improvement": "Rust-only (40.2ms)",
-      "rustOnly": true,
-      "rustSamples": [
-        44,
-        41,
-        33,
-        40,
-        43
-      ],
-      "rustStats": {
-        "min": 33,
-        "max": 44,
-        "avg": 40.2,
-        "p50": 41,
-        "p95": 44,
-        "p99": 44,
-        "stddev": 4.324349662087931,
-        "cv": 10.757088711661519,
-        "ci95_lower": 35.227922633345294,
-        "ci95_upper": 45.17207736665471,
-        "n": 5,
-        "values": [
-          33,
-          40,
-          41,
-          43,
-          44
-        ]
-      }
-    },
-    {
-      "metric": "Analyze API p50",
-      "category": "Data Analysis",
-      "rust": 41,
-      "python": 0,
-      "unit": "ms",
-      "improvement": "Rust-only (41.0ms)",
-      "rustOnly": true
-    },
-    {
-      "metric": "Quality API avg",
-      "category": "Data Analysis",
-      "rust": 28.2,
-      "python": 0,
-      "unit": "ms",
-      "improvement": "Rust-only (28.2ms)",
-      "rustOnly": true,
-      "rustSamples": [
-        31,
-        29,
-        28,
-        26,
-        27
-      ],
-      "rustStats": {
-        "min": 26,
-        "max": 31,
-        "avg": 28.2,
-        "p50": 28,
-        "p95": 31,
-        "p99": 31,
-        "stddev": 1.9235384061671346,
-        "cv": 6.8210581778976405,
-        "ci95_lower": 25.98834217384334,
-        "ci95_upper": 30.41165782615666,
-        "n": 5,
-        "values": [
-          26,
-          27,
-          28,
-          29,
-          31
-        ]
-      }
-    },
-    {
-      "metric": "Data Info API avg",
-      "category": "Data Analysis",
-      "rust": 57.4,
-      "python": 0,
-      "unit": "ms",
-      "improvement": "Rust-only (57.4ms)",
-      "rustOnly": true,
-      "rustSamples": [
-        42,
-        31,
-        34,
-        114,
-        66
-      ],
-      "rustStats": {
-        "min": 31,
-        "max": 114,
-        "avg": 57.4,
-        "p50": 42,
-        "p95": 114,
-        "p99": 114,
-        "stddev": 34.49347764433154,
-        "cv": 60.0931666277553,
-        "ci95_lower": 17.739877000190738,
-        "ci95_upper": 97.06012299980927,
-        "n": 5,
-        "values": [
-          31,
-          34,
-          42,
-          66,
-          114
-        ]
-      }
-    },
-    {
-      "metric": "Data Preview API avg",
-      "category": "Data Analysis",
-      "rust": 74.4,
-      "python": 0,
-      "unit": "ms",
-      "improvement": "Rust-only (74.4ms)",
-      "rustOnly": true,
-      "rustSamples": [
-        146,
-        88,
-        66,
-        42,
-        30
-      ],
-      "rustStats": {
-        "min": 30,
-        "max": 146,
-        "avg": 74.4,
-        "p50": 66,
-        "p95": 146,
-        "p99": 146,
-        "stddev": 45.8344848340199,
-        "cv": 61.605490368306306,
-        "ci95_lower": 21.700143960727942,
-        "ci95_upper": 127.09985603927207,
-        "n": 5,
-        "values": [
-          30,
-          42,
-          66,
-          88,
-          146
-        ]
-      }
-    },
-    {
-      "metric": "Datasheet API",
-      "category": "Data Analysis",
-      "rust": 45,
-      "python": 0,
-      "unit": "ms",
-      "improvement": "Rust-only (45.0ms)",
-      "rustOnly": true
-    },
-    {
-      "metric": "Lineage API",
-      "category": "Data Analysis",
-      "rust": 27,
-      "python": 0,
-      "unit": "ms",
-      "improvement": "Rust-only (27.0ms)",
-      "rustOnly": true
-    },
-    {
-      "metric": "logistic_regression total roundtrip",
-      "category": "Multi-Model Training",
-      "rust": 145,
-      "python": 0,
-      "unit": "ms",
-      "improvement": "Rust-only (145.0ms)",
-      "rustOnly": true
-    },
-    {
-      "metric": "decision_tree total roundtrip",
-      "category": "Multi-Model Training",
-      "rust": 80,
-      "python": 0,
-      "unit": "ms",
-      "improvement": "Rust-only (80.0ms)",
-      "rustOnly": true
-    },
-    {
-      "metric": "random_forest total roundtrip",
-      "category": "Multi-Model Training",
-      "rust": 88,
-      "python": 0,
-      "unit": "ms",
-      "improvement": "Rust-only (88.0ms)",
-      "rustOnly": true
-    },
-    {
-      "metric": "naive_bayes total roundtrip",
-      "category": "Multi-Model Training",
-      "rust": 83,
-      "python": 0,
-      "unit": "ms",
-      "improvement": "Rust-only (83.0ms)",
-      "rustOnly": true
-    },
-    {
-      "metric": "knn total roundtrip",
-      "category": "Multi-Model Training",
-      "rust": 88,
-      "python": 0,
-      "unit": "ms",
-      "improvement": "Rust-only (88.0ms)",
-      "rustOnly": true
-    },
-    {
-      "metric": "List Models avg",
-      "category": "Model Management",
-      "rust": 33.6,
-      "python": 0,
-      "unit": "ms",
-      "improvement": "Rust-only (33.6ms)",
-      "rustOnly": true,
-      "rustSamples": [
-        27,
-        27,
-        27,
-        50,
-        37
-      ],
-      "rustStats": {
-        "min": 27,
-        "max": 50,
-        "avg": 33.6,
-        "p50": 27,
-        "p95": 50,
-        "p99": 50,
-        "stddev": 10.13903348450926,
-        "cv": 30.1756948943728,
-        "ci95_lower": 21.942279684260736,
-        "ci95_upper": 45.25772031573926,
-        "n": 5,
-        "values": [
-          27,
-          27,
-          27,
-          37,
-          50
-        ]
-      }
-    },
-    {
-      "metric": "Model Detail API",
-      "category": "Model Management",
-      "rust": 30,
-      "python": 0,
-      "unit": "ms",
-      "improvement": "Rust-only (30.0ms)",
-      "rustOnly": true
-    },
-    {
-      "metric": "Model Metrics API",
-      "category": "Model Management",
-      "rust": 41,
-      "python": 0,
-      "unit": "ms",
-      "improvement": "Rust-only (41.0ms)",
-      "rustOnly": true
-    },
-    {
-      "metric": "Model Card API",
-      "category": "Model Management",
-      "rust": 31,
-      "python": 0,
-      "unit": "ms",
-      "improvement": "Rust-only (31.0ms)",
-      "rustOnly": true
-    },
-    {
-      "metric": "Full AutoML Run",
-      "category": "AutoML Pipeline",
-      "rust": 3288,
-      "python": 0,
-      "unit": "ms",
-      "improvement": "Rust-only (3288.0ms)",
-      "rustOnly": true
-    },
-    {
-      "metric": "Batch 100 samples avg",
-      "category": "Batch Prediction",
-      "rust": 37.333333333333336,
-      "python": 0,
-      "unit": "ms",
-      "improvement": "Rust-only (37.3ms)",
-      "rustOnly": true,
-      "rustSamples": [
-        41,
-        33,
-        38
-      ],
-      "rustStats": {
-        "min": 33,
-        "max": 41,
-        "avg": 37.333333333333336,
-        "p50": 38,
-        "p95": 41,
-        "p99": 41,
-        "stddev": 4.041451884327381,
-        "cv": 10.825317547305483,
-        "ci95_lower": 29.90866666666667,
-        "ci95_upper": 44.758,
-        "n": 3,
-        "values": [
-          33,
-          38,
-          41
-        ]
-      }
-    },
-    {
-      "metric": "Batch 100 samples p50",
-      "category": "Batch Prediction",
-      "rust": 38,
-      "python": 0,
-      "unit": "ms",
-      "improvement": "Rust-only (38.0ms)",
-      "rustOnly": true
-    },
-    {
-      "metric": "Predict Proba avg",
-      "category": "Batch Prediction",
-      "rust": 38.8,
-      "python": 0,
-      "unit": "ms",
-      "improvement": "Rust-only (38.8ms)",
-      "rustOnly": true,
-      "rustSamples": [
-        57,
-        41,
-        30,
-        32,
-        34
-      ],
-      "rustStats": {
-        "min": 30,
-        "max": 57,
-        "avg": 38.8,
-        "p50": 34,
-        "p95": 57,
-        "p99": 57,
-        "stddev": 10.986355173577815,
-        "cv": 28.315348385509836,
-        "ci95_lower": 26.16804093816006,
-        "ci95_upper": 51.43195906183993,
-        "n": 5,
-        "values": [
-          30,
-          32,
-          34,
-          41,
-          57
-        ]
-      }
-    },
-    {
-      "metric": "UMAP Generation avg",
-      "category": "Visualization",
-      "rust": 99.33333333333333,
-      "python": 0,
-      "unit": "ms",
-      "improvement": "Rust-only (99.3ms)",
-      "rustOnly": true,
-      "rustSamples": [
-        76,
-        138,
-        84
-      ],
-      "rustStats": {
-        "min": 76,
-        "max": 138,
-        "avg": 99.33333333333333,
-        "p50": 84,
-        "p95": 138,
-        "p99": 138,
-        "stddev": 33.724372986511305,
-        "cv": 33.95071106024628,
-        "ci95_lower": 37.377324667685905,
-        "ci95_upper": 161.28934199898075,
-        "n": 3,
-        "values": [
-          76,
-          84,
-          138
-        ]
-      }
-    },
-    {
-      "metric": "PCA Generation avg",
-      "category": "Visualization",
-      "rust": 35,
-      "python": 0,
-      "unit": "ms",
-      "improvement": "Rust-only (35.0ms)",
-      "rustOnly": true,
-      "rustSamples": [
-        35,
-        34,
-        36
-      ],
-      "rustStats": {
-        "min": 34,
-        "max": 36,
-        "avg": 35,
-        "p50": 35,
-        "p95": 36,
-        "p99": 36,
-        "stddev": 1,
-        "cv": 2.857142857142857,
-        "ci95_lower": 33.16287144343861,
-        "ci95_upper": 36.83712855656139,
-        "n": 3,
-        "values": [
-          34,
-          35,
-          36
-        ]
-      }
-    },
-    {
-      "metric": "K-Means (k=3) avg",
-      "category": "Clustering",
-      "rust": 102.33333333333333,
-      "python": 0,
-      "unit": "ms",
-      "improvement": "Rust-only (102.3ms)",
-      "rustOnly": true,
-      "rustSamples": [
-        45,
-        119,
-        143
-      ],
-      "rustStats": {
-        "min": 45,
-        "max": 143,
-        "avg": 102.33333333333333,
-        "p50": 119,
-        "p95": 143,
-        "p99": 143,
-        "stddev": 51.08163401197473,
-        "cv": 49.91690620062677,
-        "ci95_lower": 8.489804774117033,
-        "ci95_upper": 196.17686189254962,
-        "n": 3,
-        "values": [
-          45,
-          119,
-          143
-        ]
-      }
-    },
-    {
-      "metric": "Isolation Forest avg",
-      "category": "Anomaly Detection",
-      "rust": 42.666666666666664,
-      "python": 0,
-      "unit": "ms",
-      "improvement": "Rust-only (42.7ms)",
-      "rustOnly": true,
-      "rustSamples": [
-        43,
-        39,
-        46
-      ],
-      "rustStats": {
-        "min": 39,
-        "max": 46,
-        "avg": 42.666666666666664,
-        "p50": 43,
-        "p95": 46,
-        "p99": 46,
-        "stddev": 3.511884584284246,
-        "cv": 8.230979494416202,
-        "ci95_lower": 36.214883209530356,
-        "ci95_upper": 49.11845012380297,
-        "n": 3,
-        "values": [
-          39,
-          43,
-          46
-        ]
-      }
-    },
-    {
-      "metric": "LogReg 3 trials",
-      "category": "HyperOpt",
-      "rust": 27,
-      "python": 0,
-      "unit": "ms",
-      "improvement": "Rust-only (27.0ms)",
-      "rustOnly": true
-    },
-    {
-      "metric": "History API",
-      "category": "HyperOpt",
-      "rust": 28,
-      "python": 0,
-      "unit": "ms",
-      "improvement": "Rust-only (28.0ms)",
-      "rustOnly": true
-    },
-    {
-      "metric": "Search Space API",
-      "category": "HyperOpt",
-      "rust": 27,
-      "python": 0,
-      "unit": "ms",
-      "improvement": "Rust-only (27.0ms)",
-      "rustOnly": true
-    },
-    {
-      "metric": "Config API",
-      "category": "HyperOpt",
-      "rust": 50,
-      "python": 0,
-      "unit": "ms",
-      "improvement": "Rust-only (50.0ms)",
-      "rustOnly": true
-    },
-    {
-      "metric": "Feature Importance API",
-      "category": "Explainability",
-      "rust": 29,
-      "python": 0,
-      "unit": "ms",
-      "improvement": "Rust-only (29.0ms)",
-      "rustOnly": true
-    },
-    {
-      "metric": "System Status avg",
-      "category": "System & Monitoring",
-      "rust": 83,
-      "python": 0,
-      "unit": "ms",
-      "improvement": "Rust-only (83.0ms)",
-      "rustOnly": true,
-      "rustSamples": [
-        132,
-        78,
-        64,
-        63,
-        78
-      ],
-      "rustStats": {
-        "min": 63,
-        "max": 132,
-        "avg": 83,
-        "p50": 78,
-        "p95": 132,
-        "p99": 132,
-        "stddev": 28.337254630609507,
-        "cv": 34.141270639288564,
-        "ci95_lower": 50.41821698249158,
-        "ci95_upper": 115.58178301750843,
-        "n": 5,
-        "values": [
-          63,
-          64,
-          78,
-          78,
-          132
-        ]
-      }
-    },
-    {
-      "metric": "Alerts API",
-      "category": "System & Monitoring",
-      "rust": 82,
-      "python": 0,
-      "unit": "ms",
-      "improvement": "Rust-only (82.0ms)",
-      "rustOnly": true
-    },
-    {
-      "metric": "Performance API",
-      "category": "System & Monitoring",
-      "rust": 27,
-      "python": 0,
-      "unit": "ms",
-      "improvement": "Rust-only (27.0ms)",
-      "rustOnly": true
-    },
-    {
-      "metric": "SLO Status API",
-      "category": "System & Monitoring",
-      "rust": 26,
-      "python": 0,
-      "unit": "ms",
-      "improvement": "Rust-only (26.0ms)",
-      "rustOnly": true
-    },
-    {
-      "metric": "Device Info API",
-      "category": "System & Monitoring",
-      "rust": 89,
-      "python": 0,
-      "unit": "ms",
-      "improvement": "Rust-only (89.0ms)",
-      "rustOnly": true
-    },
-    {
-      "metric": "Optimal Configs API",
-      "category": "System & Monitoring",
-      "rust": 72,
-      "python": 0,
-      "unit": "ms",
-      "improvement": "Rust-only (72.0ms)",
-      "rustOnly": true
-    },
-    {
-      "metric": "Security Status API",
-      "category": "Security & Compliance",
-      "rust": 67,
-      "python": 0,
-      "unit": "ms",
-      "improvement": "Rust-only (67.0ms)",
-      "rustOnly": true
-    },
-    {
-      "metric": "Audit Log API",
-      "category": "Security & Compliance",
-      "rust": 69,
-      "python": 0,
-      "unit": "ms",
-      "improvement": "Rust-only (69.0ms)",
-      "rustOnly": true
-    },
-    {
-      "metric": "Compliance Report API",
-      "category": "Security & Compliance",
-      "rust": 37,
-      "python": 0,
-      "unit": "ms",
-      "improvement": "Rust-only (37.0ms)",
-      "rustOnly": true
-    },
-    {
-      "metric": "Audit Events API",
-      "category": "Security & Compliance",
-      "rust": 29,
-      "python": 0,
-      "unit": "ms",
-      "improvement": "Rust-only (29.0ms)",
-      "rustOnly": true
-    },
-    {
-      "metric": "Config API",
-      "category": "Preprocessing",
-      "rust": 27,
-      "python": 0,
-      "unit": "ms",
-      "improvement": "Rust-only (27.0ms)",
-      "rustOnly": true
-    },
-    {
-      "metric": "Pipeline Run avg",
-      "category": "Preprocessing",
-      "rust": 31.666666666666668,
-      "python": 0,
-      "unit": "ms",
-      "improvement": "Rust-only (31.7ms)",
-      "rustOnly": true,
-      "rustSamples": [
-        35,
-        25,
-        35
-      ],
-      "rustStats": {
-        "min": 25,
-        "max": 35,
-        "avg": 31.666666666666668,
-        "p50": 35,
-        "p95": 35,
-        "p99": 35,
-        "stddev": 5.773502691896257,
-        "cv": 18.232113763882918,
-        "ci95_lower": 21.060000000000002,
-        "ci95_upper": 42.27333333333333,
-        "n": 3,
-        "values": [
-          25,
-          35,
-          35
-        ]
-      }
-    },
-    {
-      "metric": "Batch Stats API",
-      "category": "Batch Processing",
-      "rust": 31,
-      "python": 0,
-      "unit": "ms",
-      "improvement": "Rust-only (31.0ms)",
-      "rustOnly": true
-    },
-    {
-      "metric": "Load iris",
-      "category": "Sample Datasets",
-      "rust": 33,
-      "python": 0,
-      "unit": "ms",
-      "improvement": "Rust-only (33.0ms)",
-      "rustOnly": true
-    },
-    {
-      "metric": "Load diabetes",
-      "category": "Sample Datasets",
-      "rust": 157,
-      "python": 0,
-      "unit": "ms",
-      "improvement": "Rust-only (157.0ms)",
-      "rustOnly": true
-    },
-    {
-      "metric": "Load boston",
-      "category": "Sample Datasets",
-      "rust": 107,
-      "python": 0,
-      "unit": "ms",
-      "improvement": "Rust-only (107.0ms)",
-      "rustOnly": true
-    },
-    {
-      "metric": "Load wine",
-      "category": "Sample Datasets",
-      "rust": 31,
-      "python": 0,
-      "unit": "ms",
-      "improvement": "Rust-only (31.0ms)",
-      "rustOnly": true
-    },
-    {
-      "metric": "Load breast_cancer",
-      "category": "Sample Datasets",
-      "rust": 25,
-      "python": 0,
-      "unit": "ms",
-      "improvement": "Rust-only (25.0ms)",
-      "rustOnly": true
-    },
-    {
-      "metric": "Total (10 mixed)",
-      "category": "Multi-Endpoint Stress",
-      "rust": 156,
-      "python": 0,
-      "unit": "ms",
-      "improvement": "Rust-only (156.0ms)",
-      "rustOnly": true
-    },
-    {
-      "metric": "Avg per endpoint",
-      "category": "Multi-Endpoint Stress",
-      "rust": 70.6,
-      "python": 0,
-      "unit": "ms",
-      "improvement": "Rust-only (70.6ms)",
-      "rustOnly": true
-    },
-    {
-      "metric": "P95 per endpoint",
-      "category": "Multi-Endpoint Stress",
-      "rust": 155,
-      "python": 0,
-      "unit": "ms",
-      "improvement": "Rust-only (155.0ms)",
-      "rustOnly": true
-    },
-    {
-      "metric": "Retention Status API",
-      "category": "Privacy",
-      "rust": 25,
-      "python": 0,
-      "unit": "ms",
-      "improvement": "Rust-only (25.0ms)",
-      "rustOnly": true
-    },
-    {
-      "metric": "Load Data",
-      "category": "E2E Pipeline",
-      "rust": 49,
-      "python": 0,
-      "unit": "ms",
-      "improvement": "Rust-only (49.0ms)",
-      "rustOnly": true
-    },
-    {
-      "metric": "Preprocess",
-      "category": "E2E Pipeline",
-      "rust": 28,
-      "python": 0,
-      "unit": "ms",
-      "improvement": "Rust-only (28.0ms)",
-      "rustOnly": true
-    },
-    {
-      "metric": "Train (Random Forest)",
-      "category": "E2E Pipeline",
-      "rust": 48,
-      "python": 0,
-      "unit": "ms",
-      "improvement": "Rust-only (48.0ms)",
-      "rustOnly": true
-    },
-    {
-      "metric": "Predict",
-      "category": "E2E Pipeline",
-      "rust": 39,
-      "python": 0,
-      "unit": "ms",
-      "improvement": "Rust-only (39.0ms)",
-      "rustOnly": true
-    },
-    {
-      "metric": "Explain",
-      "category": "E2E Pipeline",
-      "rust": 26,
-      "python": 0,
-      "unit": "ms",
-      "improvement": "Rust-only (26.0ms)",
-      "rustOnly": true
-    },
-    {
-      "metric": "Total Pipeline",
-      "category": "E2E Pipeline",
-      "rust": 190,
-      "python": 0,
-      "unit": "ms",
-      "improvement": "Rust-only (190.0ms)",
-      "rustOnly": true
-    },
-    {
-      "metric": "TTFB (avg)",
-      "category": "Page Load",
-      "rust": 80.59999999403954,
-      "python": 362.09999999403954,
-      "unit": "ms",
-      "improvement": "4.5x faster",
-      "rustOnly": false,
-      "rustSamples": [
-        25.5,
-        87.59999999403954,
-        128.69999998807907
-      ],
-      "rustStats": {
-        "min": 25.5,
-        "max": 128.69999998807907,
-        "avg": 80.59999999403954,
-        "p50": 87.59999999403954,
-        "p95": 128.69999998807907,
-        "p99": 128.69999998807907,
-        "stddev": 51.954884268804605,
-        "cv": 64.46015418442522,
-        "ci95_lower": -14.847801549023501,
-        "ci95_upper": 176.04780153710257,
-        "n": 3,
-        "values": [
-          25.5,
-          87.59999999403954,
-          128.69999998807907
-        ]
-      },
-      "pythonSamples": [
-        52.599999994039536,
-        148.09999999403954,
-        885.5999999940395
-      ],
-      "pythonStats": {
-        "min": 52.599999994039536,
-        "max": 885.5999999940395,
-        "avg": 362.09999999403954,
-        "p50": 148.09999999403954,
-        "p95": 885.5999999940395,
-        "p99": 885.5999999940395,
-        "stddev": 455.8719666748549,
-        "cv": 125.89670441379698,
-        "ci95_lower": -475.3954081201383,
-        "ci95_upper": 1199.5954081082173,
-        "n": 3,
-        "values": [
-          52.599999994039536,
-          148.09999999403954,
-          885.5999999940395
-        ]
-      },
-      "effectSize": -0.8676572533129563,
-      "effectLabel": "large"
-    },
-    {
-      "metric": "DOM Content Loaded (avg)",
-      "category": "Page Load",
-      "rust": 94.09999999403954,
-      "python": 615.7333333392938,
-      "unit": "ms",
-      "improvement": "6.5x faster",
-      "rustOnly": false,
-      "rustSamples": [
-        32.29999998211861,
-        112.80000001192093,
-        137.19999998807907
-      ],
-      "rustStats": {
-        "min": 32.29999998211861,
-        "max": 137.19999998807907,
-        "avg": 94.09999999403954,
-        "p50": 112.80000001192093,
-        "p95": 137.19999998807907,
-        "p99": 137.19999998807907,
-        "stddev": 54.893260067281474,
-        "cv": 58.335026642676425,
-        "ci95_lower": -6.745975638314221,
-        "ci95_upper": 194.9459756263933,
-        "n": 3,
-        "values": [
-          32.29999998211861,
-          112.80000001192093,
-          137.19999998807907
-        ]
-      },
-      "pythonSamples": [
-        275,
-        308.90000000596046,
-        1263.300000011921
-      ],
-      "pythonStats": {
-        "min": 275,
-        "max": 1263.300000011921,
-        "avg": 615.7333333392938,
-        "p50": 308.90000000596046,
-        "p95": 1263.300000011921,
-        "p99": 1263.300000011921,
-        "stddev": 561.0652754708885,
-        "cv": 91.1214717624714,
-        "ci95_lower": -415.01570632325786,
-        "ci95_upper": 1646.4823730018456,
-        "n": 3,
-        "values": [
-          275,
-          308.90000000596046,
-          1263.300000011921
-        ]
-      },
-      "effectSize": -1.3085738990365345,
-      "effectLabel": "very large"
-    },
-    {
-      "metric": "Full Load (avg)",
-      "category": "Page Load",
-      "rust": 96.2333333293597,
-      "python": 715.4666666686535,
-      "unit": "ms",
-      "improvement": "7.4x faster",
-      "rustOnly": false,
-      "rustSamples": [
-        35.099999994039536,
-        113,
-        140.59999999403954
-      ],
-      "rustStats": {
-        "min": 35.099999994039536,
-        "max": 140.59999999403954,
-        "avg": 96.2333333293597,
-        "p50": 113,
-        "p95": 140.59999999403954,
-        "p99": 140.59999999403954,
-        "stddev": 54.71200355893824,
-        "cv": 56.85348482285839,
-        "ci95_lower": -4.279650795454103,
-        "ci95_upper": 196.7463174541735,
-        "n": 3,
-        "values": [
-          35.099999994039536,
-          113,
-          140.59999999403954
-        ]
-      },
-      "pythonSamples": [
-        385.09999999403954,
-        423.09999999403954,
-        1338.2000000178814
-      ],
-      "pythonStats": {
-        "min": 385.09999999403954,
-        "max": 1338.2000000178814,
-        "avg": 715.4666666686535,
-        "p50": 423.09999999403954,
-        "p95": 1338.2000000178814,
-        "p99": 1338.2000000178814,
-        "stddev": 539.6374740028535,
-        "cv": 75.42454444670447,
-        "ci95_lower": -275.916747012643,
-        "ci95_upper": 1706.85008034995,
-        "n": 3,
-        "values": [
-          385.09999999403954,
-          423.09999999403954,
-          1338.2000000178814
-        ]
-      },
-      "effectSize": -1.6145314488865588,
-      "effectLabel": "very large"
-    },
-    {
-      "metric": "Transfer Size (avg)",
-      "category": "Page Load",
-      "rust": 0,
-      "python": 886365.6666666666,
-      "unit": "bytes",
-      "improvement": "Infinityx faster",
-      "rustOnly": false,
-      "rustSamples": [
-        0,
-        0,
-        0
-      ],
-      "rustStats": {
-        "min": 0,
-        "max": 0,
-        "avg": 0,
-        "p50": 0,
-        "p95": 0,
-        "p99": 0,
-        "stddev": 0,
-        "cv": 0,
-        "ci95_lower": 0,
-        "ci95_upper": 0,
-        "n": 3,
-        "values": [
-          0,
-          0,
-          0
-        ]
-      },
-      "pythonSamples": [
-        761094,
-        783503,
-        1114500
-      ],
-      "pythonStats": {
-        "min": 761094,
-        "max": 1114500,
-        "avg": 886365.6666666666,
-        "p50": 783503,
-        "p95": 1114500,
-        "p99": 1114500,
-        "stddev": 197887.5851445293,
-        "cv": 22.325727697544988,
-        "ci95_lower": 522820.7330086785,
-        "ci95_upper": 1249910.6003246547,
-        "n": 3,
-        "values": [
-          761094,
-          783503,
-          1114500
-        ]
-      },
-      "effectSize": -6.334456737679401,
-      "effectLabel": "very large"
-    },
-    {
-      "metric": "Request Count (avg)",
-      "category": "Page Load",
-      "rust": 1,
-      "python": 17.666666666666668,
-      "unit": "reqs",
-      "improvement": "17.7x faster",
-      "rustOnly": false,
-      "rustSamples": [
-        1,
-        1,
-        1
-      ],
-      "rustStats": {
-        "min": 1,
-        "max": 1,
-        "avg": 1,
-        "p50": 1,
-        "p95": 1,
-        "p99": 1,
-        "stddev": 0,
-        "cv": 0,
-        "ci95_lower": 1,
-        "ci95_upper": 1,
-        "n": 3,
-        "values": [
-          1,
-          1,
-          1
-        ]
-      },
-      "pythonSamples": [
-        16,
-        18,
-        19
-      ],
-      "pythonStats": {
-        "min": 16,
-        "max": 19,
-        "avg": 17.666666666666668,
-        "p50": 18,
-        "p95": 19,
-        "p99": 19,
-        "stddev": 1.5275252316519465,
-        "cv": 8.646369235765734,
-        "ci95_lower": 14.860406442730826,
-        "ci95_upper": 20.47292689060251,
-        "n": 3,
-        "values": [
-          16,
-          18,
-          19
-        ]
-      },
-      "effectSize": -15.430334996209194,
-      "effectLabel": "very large"
-    },
-    {
-      "metric": "Health Check avg",
-      "category": "API Latency",
-      "rust": 117.6,
-      "python": 204.2,
-      "unit": "ms",
-      "improvement": "42.4% faster",
-      "rustOnly": false,
-      "rustSamples": [
-        79,
-        189,
-        79,
-        169,
-        72
-      ],
-      "rustStats": {
-        "min": 72,
-        "max": 189,
-        "avg": 117.6,
-        "p50": 79,
-        "p95": 189,
-        "p99": 189,
-        "stddev": 56.56677470034862,
-        "cv": 48.10099889485427,
-        "ci95_lower": 52.56030567138248,
-        "ci95_upper": 182.6396943286175,
-        "n": 5,
-        "values": [
-          72,
-          79,
-          79,
-          169,
-          189
-        ]
-      },
-      "pythonSamples": [
-        124,
-        134,
-        439,
-        178,
-        146
-      ],
-      "pythonStats": {
-        "min": 124,
-        "max": 439,
-        "avg": 204.2,
-        "p50": 146,
-        "p95": 439,
-        "p99": 439,
-        "stddev": 132.82017918976018,
-        "cv": 65.04416218891292,
-        "ci95_lower": 51.48519699177814,
-        "ci95_upper": 356.91480300822184,
-        "n": 5,
-        "values": [
-          124,
-          134,
-          146,
-          178,
-          439
-        ]
-      },
-      "effectSize": -0.8483471653798419,
-      "effectLabel": "large"
-    },
-    {
-      "metric": "Health Check p50",
-      "category": "API Latency",
-      "rust": 79,
-      "python": 146,
-      "unit": "ms",
-      "improvement": "45.9% faster",
-      "rustOnly": false
-    },
-    {
-      "metric": "Health Check p95",
-      "category": "API Latency",
-      "rust": 189,
-      "python": 439,
-      "unit": "ms",
-      "improvement": "2.3x faster",
-      "rustOnly": false
-    },
-    {
       "metric": "Iris Load avg",
       "category": "Dataset Loading",
-      "rust": 79.66666666666667,
-      "python": 1182.6666666666667,
+      "rust": 746.6666666666666,
+      "python": 1223.3333333333333,
       "unit": "ms",
-      "improvement": "14.8x faster",
+      "improvement": "39.0% faster",
       "rustOnly": false,
       "rustSamples": [
-        70,
-        83,
-        86
+        710,
+        717,
+        813
       ],
       "rustStats": {
-        "min": 70,
-        "max": 86,
-        "avg": 79.66666666666667,
-        "p50": 83,
-        "p95": 86,
-        "p99": 86,
-        "stddev": 8.504900548115383,
-        "cv": 10.67560738257161,
-        "ci95_lower": 64.04207099900928,
-        "ci95_upper": 95.29126233432406,
+        "min": 710,
+        "max": 813,
+        "avg": 746.6666666666666,
+        "p50": 717,
+        "p95": 813,
+        "p99": 813,
+        "stddev": 57.55287424041768,
+        "cv": 7.707974228627368,
+        "ci95_lower": 640.9346378874089,
+        "ci95_upper": 852.3986954459243,
         "n": 3,
         "values": [
-          70,
-          83,
-          86
+          710,
+          717,
+          813
         ]
       },
       "pythonSamples": [
-        1717,
-        407,
-        1424
+        1784,
+        638,
+        1248
       ],
       "pythonStats": {
-        "min": 407,
-        "max": 1717,
-        "avg": 1182.6666666666667,
-        "p50": 1424,
-        "p95": 1717,
-        "p99": 1717,
-        "stddev": 687.5364232775842,
-        "cv": 58.13442135943496,
-        "ci95_lower": -80.42613021266175,
-        "ci95_upper": 2445.7594635459955,
+        "min": 638,
+        "max": 1784,
+        "avg": 1223.3333333333333,
+        "p50": 1248,
+        "p95": 1784,
+        "p99": 1784,
+        "stddev": 573.398058362019,
+        "cv": 46.87177588790347,
+        "ci95_lower": 169.92738603961402,
+        "ci95_upper": 2276.7392806270527,
         "n": 3,
         "values": [
-          407,
-          1424,
-          1717
+          638,
+          1248,
+          1784
         ]
       },
-      "effectSize": -2.2686190495013667,
-      "effectLabel": "very large"
+      "effectSize": -1.1697602744619466,
+      "effectLabel": "large"
     },
     {
       "metric": "Iris Load p50",
       "category": "Dataset Loading",
-      "rust": 83,
-      "python": 1424,
+      "rust": 717,
+      "python": 1248,
       "unit": "ms",
-      "improvement": "17.2x faster",
+      "improvement": "42.5% faster",
       "rustOnly": false
     },
     {
       "metric": "Iris Load p95",
       "category": "Dataset Loading",
-      "rust": 86,
-      "python": 1717,
+      "rust": 813,
+      "python": 1784,
       "unit": "ms",
-      "improvement": "20.0x faster",
+      "improvement": "2.2x faster",
       "rustOnly": false
     },
     {
       "metric": "Iris Classification Time",
       "category": "Training",
-      "rust": 149,
-      "python": 907,
+      "rust": 309,
+      "python": 866,
       "unit": "ms",
-      "improvement": "6.1x faster",
+      "improvement": "2.8x faster",
       "rustOnly": false
     },
     {
       "metric": "Single Prediction avg",
       "category": "Prediction",
-      "rust": 63,
-      "python": 40.333333333333336,
+      "rust": 47.8,
+      "python": 42.333333333333336,
       "unit": "ms",
-      "improvement": "56.2% slower",
+      "improvement": "12.9% slower",
       "rustOnly": false
     },
     {
       "metric": "Single Prediction p50",
       "category": "Prediction",
-      "rust": 37,
-      "python": 39,
+      "rust": 34,
+      "python": 37,
       "unit": "ms",
-      "improvement": "5.1% faster",
+      "improvement": "8.1% faster",
       "rustOnly": false
     },
     {
       "metric": "Tab Switch avg",
       "category": "UI Responsiveness",
-      "rust": 46.5,
-      "python": 355.4,
+      "rust": 29.5,
+      "python": 335.2,
       "unit": "ms",
-      "improvement": "7.6x faster",
+      "improvement": "11.4x faster",
       "rustOnly": false
     },
     {
       "metric": "Total Time (10 reqs)",
       "category": "Concurrent Stress",
-      "rust": 937,
-      "python": 1435,
+      "rust": 930,
+      "python": 1898,
       "unit": "ms",
-      "improvement": "34.7% faster",
+      "improvement": "2.0x faster",
       "rustOnly": false
     },
     {
       "metric": "Avg Individual Latency",
       "category": "Concurrent Stress",
-      "rust": 28.3,
-      "python": 576.5,
+      "rust": 52.4,
+      "python": 919.6,
       "unit": "ms",
-      "improvement": "20.4x faster",
+      "improvement": "17.5x faster",
       "rustOnly": false,
       "rustSamples": [
-        28,
         25,
-        24,
-        25,
-        24,
-        25,
-        25,
-        33,
-        39,
-        35
+        90,
+        69,
+        58,
+        40,
+        20,
+        83,
+        64,
+        46,
+        29
       ],
       "rustStats": {
-        "min": 24,
-        "max": 39,
-        "avg": 28.3,
-        "p50": 25,
-        "p95": 39,
-        "p99": 39,
-        "stddev": 5.396500923952689,
-        "cv": 19.068907858490068,
-        "ci95_lower": 24.497865794641704,
-        "ci95_upper": 32.1021342053583,
+        "min": 20,
+        "max": 90,
+        "avg": 52.4,
+        "p50": 58,
+        "p95": 90,
+        "p99": 90,
+        "stddev": 24.34565897878123,
+        "cv": 46.46118125721609,
+        "ci95_lower": 35.247132973821024,
+        "ci95_upper": 69.55286702617897,
         "n": 10,
         "values": [
-          24,
-          24,
+          20,
           25,
-          25,
-          25,
-          25,
-          28,
-          33,
-          35,
-          39
+          29,
+          40,
+          46,
+          58,
+          64,
+          69,
+          83,
+          90
         ]
       },
       "pythonSamples": [
-        58,
-        194,
-        241,
-        394,
-        568,
-        568,
-        592,
-        768,
-        949,
-        1433
+        86,
+        169,
+        342,
+        416,
+        577,
+        1180,
+        1387,
+        1503,
+        1638,
+        1898
       ],
       "pythonStats": {
-        "min": 58,
-        "max": 1433,
-        "avg": 576.5,
-        "p50": 568,
-        "p95": 1433,
-        "p99": 1433,
-        "stddev": 404.2029880586678,
-        "cv": 70.11326765978626,
-        "ci95_lower": 291.71657672945764,
-        "ci95_upper": 861.2834232705424,
+        "min": 86,
+        "max": 1898,
+        "avg": 919.6,
+        "p50": 1180,
+        "p95": 1898,
+        "p99": 1898,
+        "stddev": 671.8870936896069,
+        "cv": 73.06297234554229,
+        "ci95_lower": 446.2182778330931,
+        "ci95_upper": 1392.9817221669068,
         "n": 10,
         "values": [
-          58,
-          194,
-          241,
-          394,
-          568,
-          568,
-          592,
-          768,
-          949,
-          1433
+          86,
+          169,
+          342,
+          416,
+          577,
+          1180,
+          1387,
+          1503,
+          1638,
+          1898
         ]
       },
-      "effectSize": -1.9178551657744498,
+      "effectSize": -1.824118509830705,
       "effectLabel": "very large"
     },
     {
       "metric": "P95 Individual Latency",
       "category": "Concurrent Stress",
-      "rust": 39,
-      "python": 1433,
+      "rust": 90,
+      "python": 1898,
       "unit": "ms",
-      "improvement": "36.7x faster",
+      "improvement": "21.1x faster",
       "rustOnly": false
     }
   ]

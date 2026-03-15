@@ -69,7 +69,9 @@ async function loadPlatform(page: Page, platform: Platform) {
 /** Load the Iris sample dataset on either platform */
 async function loadIrisDataset(page: Page, platform: Platform) {
   if (platform.name === 'rust') {
-    // Try both old (.pill) and new (plain button) selectors
+    // Navigate to Data section first (sidebar nav replaces old tab layout)
+    await page.locator('nav button:has-text("Data")').click();
+    await page.waitForTimeout(500);
     const pill = page.locator('button:has-text("Iris")').first();
     await pill.waitFor({ state: 'visible', timeout: 30_000 });
     await pill.click();
@@ -103,16 +105,15 @@ async function loadIrisDataset(page: Page, platform: Platform) {
     // Click Load Sample Dataset button
     await page.locator(PY.loadSampleBtn).click();
 
-    // Wait for success indicator
-    await page.waitForSelector('text=Sample Dataset Loaded', { timeout: 60_000 });
+    // Wait for success indicator (Gradio can be slow to update)
+    await page.waitForSelector('text=Sample Dataset Loaded', { timeout: 120_000 });
   }
 }
 
-/** Switch to a tab on the Rust platform */
+/** Switch to a nav section on the Rust platform (sidebar nav) */
 async function switchTabRust(page: Page, tabName: string) {
-  await page.locator(`button.nav-tab[data-tab="${tabName}"]`).click();
-  // Wait for the tab button to become active (works with both old and new UI)
-  await expect(page.locator(`button.nav-tab[data-tab="${tabName}"]`)).toHaveClass(/active/, { timeout: 10_000 });
+  await page.locator(`nav button:has-text("${tabName}")`).click();
+  await expect(page.locator(`nav button:has-text("${tabName}")`)).toHaveClass(/active/, { timeout: 10_000 });
 }
 
 /** Switch to a tab on the Python/Gradio platform */
@@ -625,16 +626,16 @@ test.describe('6. UI Responsiveness', () => {
     const page = await context.newPage();
     await loadPlatform(page, RUST_PLATFORM);
 
-    // Use current tab names from the production UI
-    const tabs = ['automl', 'config', 'train', 'hyperopt', 'explain', 'security', 'monitor', 'data'];
+    // Sidebar nav sections in the current production UI
+    const tabs = ['Dashboard', 'Data', 'Train', 'Analysis', 'Reports', 'Monitor'];
     const switchTimes: number[] = [];
 
     for (let i = 0; i < tabs.length; i++) {
       if (i > 0) await new Promise(r => setTimeout(r, 300));
       const tab = tabs[i];
       const { elapsed } = await measureTime(async () => {
-        await page.locator(`button.nav-tab[data-tab="${tab}"]`).click();
-        await expect(page.locator(`button.nav-tab[data-tab="${tab}"]`)).toHaveClass(/active/, { timeout: 10_000 });
+        await page.locator(`nav button:has-text("${tab}")`).click();
+        await expect(page.locator(`nav button:has-text("${tab}")`)).toHaveClass(/active/, { timeout: 10_000 });
       });
       switchTimes.push(elapsed);
     }
