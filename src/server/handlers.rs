@@ -267,10 +267,15 @@ pub async fn get_data_info(
 pub async fn analyze_data(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<serde_json::Value>> {
-    let data = state.current_data.read().await;
-
-    let df = data.as_ref()
-        .ok_or_else(|| ServerError::NotFound("No data loaded".to_string()))?;
+    // Clone the DataFrame and immediately drop the read lock.
+    // This prevents blocking writers for the full duration of CPU-intensive analysis.
+    let df = {
+        let data = state.current_data.read().await;
+        data.as_ref()
+            .ok_or_else(|| ServerError::NotFound("No data loaded".to_string()))?
+            .clone()   // DataFrame clone (reference-counted column buffers)
+    };
+    // `data` guard dropped here — lock released
 
     let n_rows = df.height();
     let n_cols = df.width();
@@ -337,12 +342,15 @@ pub async fn analyze_data(
                 } else { (0.0, 0.0) }
             } else { (0.0, 0.0) };
 
-            // Skewness and Kurtosis
+            // Skewness and Kurtosis — single pass computing both sum3 and sum4
             let (skewness, kurtosis) = if let Some(ca) = ca {
                 let n = ca.len() as f64 - ca.null_count() as f64;
                 if n > 3.0 && std > 0.0 {
-                    let sum3: f64 = ca.into_no_null_iter().map(|v| ((v - mean) / std).powi(3)).sum();
-                    let sum4: f64 = ca.into_no_null_iter().map(|v| ((v - mean) / std).powi(4)).sum();
+                    let (sum3, sum4) = ca.into_no_null_iter().fold((0.0_f64, 0.0_f64), |(s3, s4), v| {
+                        let z = (v - mean) / std;
+                        let z3 = z * z * z;
+                        (s3 + z3, s4 + z3 * z)
+                    });
                     let skew = sum3 * n / ((n - 1.0) * (n - 2.0));
                     // Fisher excess kurtosis
                     let kurt = n * (n + 1.0) / ((n - 1.0) * (n - 2.0) * (n - 3.0)) * sum4
@@ -6049,10 +6057,15 @@ pub async fn get_data_quality(
 ) -> Result<Json<serde_json::Value>> {
     use crate::preprocessing::quality::{DataQualityScorer, ColumnStatistics};
 
-    let data = state.current_data.read().await;
-    let df = data.as_ref().ok_or_else(|| {
-        ServerError::BadRequest("No dataset loaded. Upload data first.".to_string())
-    })?;
+    // Clone the DataFrame and immediately drop the read lock.
+    // This prevents blocking writers for the full duration of CPU-intensive analysis.
+    let df = {
+        let data = state.current_data.read().await;
+        data.as_ref().ok_or_else(|| {
+            ServerError::BadRequest("No dataset loaded. Upload data first.".to_string())
+        })?.clone()   // DataFrame clone (reference-counted column buffers)
+    };
+    // `data` guard dropped here — lock released
 
     let num_rows = df.height();
     // Compute duplicate row count for the quality scorer
@@ -6093,11 +6106,15 @@ pub async fn get_data_quality(
                         (Some(vals[n / 4]), Some(vals[3 * n / 4]), Some(vals[n / 2]))
                     } else { (None, None, None) };
 
+                    // Single pass computing both sum3 and sum4
                     let (skew_v, kurt_v) = if let (Some(m), Some(s)) = (mean_val, std_val) {
                         if s > 1e-10 && n > 3 {
                             let nf = n as f64;
-                            let sum3: f64 = vals.iter().map(|v| ((v - m) / s).powi(3)).sum();
-                            let sum4: f64 = vals.iter().map(|v| ((v - m) / s).powi(4)).sum();
+                            let (sum3, sum4) = vals.iter().fold((0.0_f64, 0.0_f64), |(s3, s4), &v| {
+                                let z = (v - m) / s;
+                                let z3 = z * z * z;
+                                (s3 + z3, s4 + z3 * z)
+                            });
                             let skew = sum3 * nf / ((nf - 1.0) * (nf - 2.0));
                             // Fisher excess kurtosis
                             let kurt = nf * (nf + 1.0) / ((nf - 1.0) * (nf - 2.0) * (nf - 3.0)) * sum4
