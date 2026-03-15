@@ -3104,8 +3104,219 @@ const EMBEDDED_INDEX_HTML: &str = r#"<!DOCTYPE html>
       eInsStTimer = setTimeout(eInsStAutoPlay, speed);
     }
     function eInsConceptsLoad(structData) {
-      // Will be fully implemented in Task 9
-      // For now, do nothing to prevent errors
+      if (!eLastModelId) return;
+
+      // Panel 1: Bias-Variance (from epoch_history in structData)
+      eInsConceptsDrawBV(structData ? structData.epoch_history : null);
+
+      // Panel 2: Feature Importance (POST to /api/explain/importance)
+      fetch('/api/explain/importance', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({model_id: eLastModelId})
+      })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        // Response shape: {features: [{feature, importance}]}
+        // Also handle legacy shapes just in case
+        var importances = d.features || d.importances || d.feature_importances || [];
+        eInsConceptsDrawFI(importances);
+      })
+      .catch(function(e) { console.error('FI load failed', e); });
+
+      // Panel 3: Data Split Breakdown (from eData session state)
+      eInsConceptsDrawSplit();
+    }
+    function eInsConceptsDrawBV(epochHistory) {
+      var canvas = document.getElementById('e-ins-c-bv-canvas');
+      var caption = document.getElementById('e-ins-c-bv-caption');
+      if (!canvas) return;
+      var ctx = canvas.getContext('2d');
+      var W = canvas.width, H = canvas.height;
+      ctx.clearRect(0, 0, W, H);
+
+      if (!epochHistory || !epochHistory.length) {
+        ctx.fillStyle = '#9ca3af'; ctx.font = '13px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('No training history available \u2014 train an SGD model to see this curve', W/2, H/2);
+        if (caption) caption.textContent = 'Retrain with an iterative model to see bias-variance analysis.';
+        return;
+      }
+
+      var pad = 40;
+      var maxY = 0;
+      epochHistory.forEach(function(r) {
+        if (r.train_acc && r.train_acc > maxY) maxY = r.train_acc;
+        if (r.val_acc && r.val_acc > maxY) maxY = r.val_acc;
+      });
+      if (maxY === 0) maxY = 1;
+      var n = epochHistory.length;
+      function toX(i) { return pad + i * (W - 2*pad) / (n - 1 || 1); }
+      function toY(v) { return H - pad - v * (H - 2*pad) / maxY; }
+
+      ctx.strokeStyle = '#e5e7eb'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(pad, pad); ctx.lineTo(pad, H-pad); ctx.lineTo(W-pad, H-pad); ctx.stroke();
+
+      var hasTrainAcc = epochHistory.some(function(r) { return r.train_acc != null; });
+      if (hasTrainAcc) {
+        ctx.strokeStyle = '#3b82f6'; ctx.lineWidth = 2;
+        ctx.beginPath();
+        epochHistory.forEach(function(r, i) {
+          if (r.train_acc == null) return;
+          if (i === 0) ctx.moveTo(toX(i), toY(r.train_acc));
+          else ctx.lineTo(toX(i), toY(r.train_acc));
+        });
+        ctx.stroke();
+      }
+
+      var hasValAcc = epochHistory.some(function(r) { return r.val_acc != null; });
+      if (hasValAcc) {
+        ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = 2; ctx.setLineDash([4,4]);
+        ctx.beginPath();
+        epochHistory.forEach(function(r, i) {
+          if (r.val_acc == null) return;
+          if (i === 0) ctx.moveTo(toX(i), toY(r.val_acc));
+          else ctx.lineTo(toX(i), toY(r.val_acc));
+        });
+        ctx.stroke(); ctx.setLineDash([]);
+      }
+
+      if (!hasTrainAcc && !hasValAcc) {
+        ctx.strokeStyle = '#3b82f6'; ctx.lineWidth = 2;
+        var maxL = 0;
+        epochHistory.forEach(function(r) { if (r.train_loss > maxL) maxL = r.train_loss; });
+        if (maxL === 0) maxL = 1;
+        ctx.beginPath();
+        epochHistory.forEach(function(r, i) {
+          var y = H - pad - r.train_loss * (H - 2*pad) / maxL;
+          if (i === 0) ctx.moveTo(toX(i), y); else ctx.lineTo(toX(i), y);
+        });
+        ctx.stroke();
+      }
+
+      var lastTrain = 0, lastVal = 0;
+      epochHistory.forEach(function(r) {
+        if (r.train_acc != null) lastTrain = r.train_acc;
+        if (r.val_acc != null) lastVal = r.val_acc;
+      });
+
+      var captionText = '';
+      if (hasTrainAcc && hasValAcc) {
+        if (lastTrain - lastVal > 0.05) {
+          captionText = 'Possible overfitting \u2014 your model fits the training data well but may struggle on unseen data.';
+        } else if (lastTrain < 0.7) {
+          captionText = 'Possible underfitting \u2014 both curves plateau below 70%. Consider more features or a complex model.';
+        } else {
+          captionText = 'Good balance \u2014 training and validation accuracy track closely.';
+        }
+      } else {
+        captionText = 'Training loss curve (accuracy not available for this model type).';
+      }
+      if (caption) caption.textContent = captionText;
+
+      ctx.font = '11px sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+      ctx.fillStyle = '#3b82f6'; ctx.fillRect(pad + 4, pad + 4, 12, 3);
+      ctx.fillStyle = '#374151'; ctx.fillText('Train', pad + 20, pad + 1);
+      if (hasValAcc) {
+        ctx.fillStyle = '#f59e0b'; ctx.fillRect(pad + 60, pad + 4, 12, 3);
+        ctx.fillStyle = '#374151'; ctx.fillText('Val', pad + 76, pad + 1);
+      }
+    }
+    function eInsConceptsDrawFI(importances) {
+      var canvas = document.getElementById('e-ins-c-fi-canvas');
+      var caption = document.getElementById('e-ins-c-fi-caption');
+      if (!canvas) return;
+      var ctx = canvas.getContext('2d');
+      var W = canvas.width, H = canvas.height;
+      ctx.clearRect(0, 0, W, H);
+
+      var items = [];
+      if (Array.isArray(importances)) {
+        importances.forEach(function(item) {
+          if (typeof item === 'object' && item !== null) {
+            var name = item.feature || item.name || item.feature_name || '';
+            var val = item.importance || item.value || item.score || 0;
+            if (name) items.push({name: name, value: val});
+          }
+        });
+      }
+
+      if (!items.length) {
+        ctx.fillStyle = '#9ca3af'; ctx.font = '13px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('Feature importance not available for this model type', W/2, H/2);
+        if (caption) caption.textContent = '';
+        return;
+      }
+
+      items.sort(function(a, b) { return b.value - a.value; });
+      items = items.slice(0, 10);
+      var maxVal = items[0].value || 1;
+
+      var pad = {top: 10, bottom: 10, left: 120, right: 20};
+      var rowH = Math.floor((H - pad.top - pad.bottom) / items.length);
+      var barW = W - pad.left - pad.right;
+
+      items.forEach(function(item, i) {
+        var y = pad.top + i * rowH;
+        var frac = item.value / maxVal;
+        var blue = Math.round(147 - frac * 100);
+        ctx.fillStyle = 'rgb(29,' + blue + ',222)';
+        ctx.fillRect(pad.left, y + 2, Math.max(2, frac * barW), rowH - 4);
+        ctx.fillStyle = '#374151'; ctx.font = '11px sans-serif'; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+        var label = item.name.length > 16 ? item.name.slice(0, 15) + '\u2026' : item.name;
+        ctx.fillText(label, pad.left - 4, y + rowH/2);
+        ctx.textAlign = 'left';
+        ctx.fillText((item.value * 100).toFixed(1) + '%', pad.left + frac * barW + 4, y + rowH/2);
+      });
+
+      if (caption && items.length >= 2) {
+        var ratio = items[1].value > 0 ? (items[0].value / items[1].value).toFixed(1) : 'far more';
+        var text = (items[0].name || 'Top feature') + ' drove predictions ' + ratio + '\xd7 more than the next feature.';
+        caption.textContent = text;
+      }
+    }
+    function eInsConceptsDrawSplit() {
+      var canvas = document.getElementById('e-ins-c-split-canvas');
+      var caption = document.getElementById('e-ins-c-split-caption');
+      if (!canvas) return;
+      var ctx = canvas.getContext('2d');
+      var W = canvas.width, H = canvas.height;
+      ctx.clearRect(0, 0, W, H);
+
+      var trainN = 0, valN = 0, testN = 0, total = 0;
+      if (typeof eData !== 'undefined' && eData) {
+        trainN = eData.train_rows || eData.n_train || 0;
+        valN = eData.val_rows || eData.n_val || 0;
+        testN = eData.test_rows || eData.n_test || 0;
+        total = eData.total_rows || eData.n_rows || eData.rows || (trainN + valN + testN);
+      }
+
+      if (total === 0) {
+        ctx.fillStyle = '#9ca3af'; ctx.font = '12px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('No dataset loaded', W/2, H/2);
+        if (caption) caption.textContent = '';
+        return;
+      }
+
+      var pad = {left: 20, right: 20, top: 20, bottom: 20};
+      var barH = H - pad.top - pad.bottom;
+      var barW = W - pad.left - pad.right;
+      var trainW = trainN / total * barW;
+      var valW = valN / total * barW;
+      var testW = testN / total * barW;
+
+      ctx.fillStyle = '#3b82f6'; ctx.fillRect(pad.left, pad.top, trainW, barH);
+      ctx.fillStyle = '#f59e0b'; ctx.fillRect(pad.left + trainW, pad.top, valW, barH);
+      ctx.fillStyle = '#10b981'; ctx.fillRect(pad.left + trainW + valW, pad.top, testW, barH);
+
+      ctx.fillStyle = '#fff'; ctx.font = '11px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      if (trainW > 30) ctx.fillText('Train ' + trainN, pad.left + trainW/2, pad.top + barH/2);
+      if (valW > 30) ctx.fillText('Val ' + valN, pad.left + trainW + valW/2, pad.top + barH/2);
+      if (testW > 30) ctx.fillText('Test ' + testN, pad.left + trainW + valW + testW/2, pad.top + barH/2);
+
+      if (caption) {
+        var evalN = (valN + testN) || testN;
+        caption.textContent = 'Your model trained on ' + trainN + ' rows and was evaluated on ' + evalN + ' rows it had never seen.';
+      }
     }
     </script>
 </body>
