@@ -106,9 +106,8 @@ impl Scaler {
             return Err(KolosalError::ModelNotFitted);
         }
 
-        // Batch-transform all scaled columns, then replace in one operation
-        // (avoids N full DataFrame clones for N columns)
-        let scaled_cols: Vec<Series> = self.params.iter()
+        // Parallel: scale all columns independently
+        let scaled_cols: Vec<Series> = self.params.par_iter()
             .filter_map(|(col_name, params)| {
                 df.column(col_name).ok().map(|column| {
                     let series = column.as_materialized_series();
@@ -117,13 +116,24 @@ impl Scaler {
             })
             .collect::<Result<Vec<Series>>>()?;
 
-        let mut result = df.clone();
-        for col in scaled_cols {
-            result.with_column(col)
-                .map_err(|e| KolosalError::DataError(e.to_string()))?;
-        }
-
-        Ok(result)
+        // Build result without full DataFrame clone:
+        // keep all columns from df, replace the scaled ones
+        let scaled_names: std::collections::HashSet<&str> =
+            self.params.keys().map(|s| s.as_str()).collect();
+        let mut all_cols: Vec<Column> = df.get_columns()
+            .iter()
+            .filter(|c| !scaled_names.contains(c.name().as_str()))
+            .cloned()
+            .collect();
+        all_cols.extend(scaled_cols.into_iter().map(|s| s.into()));
+        // Restore original column order
+        let orig_order: Vec<&str> = df.get_column_names().into_iter().map(|s| s.as_str()).collect();
+        let pos: std::collections::HashMap<&str, usize> = orig_order.iter()
+            .enumerate()
+            .map(|(i, &s)| (s, i))
+            .collect();
+        all_cols.sort_by_key(|c| pos.get(c.name().as_str()).copied().unwrap_or(usize::MAX));
+        DataFrame::new(all_cols).map_err(|e| KolosalError::DataError(e.to_string()))
     }
 
     /// Fit and transform in one step
@@ -138,7 +148,8 @@ impl Scaler {
             return Err(KolosalError::ModelNotFitted);
         }
 
-        let unscaled_cols: Vec<Series> = self.params.iter()
+        // Parallel: unscale all columns independently
+        let unscaled_cols: Vec<Series> = self.params.par_iter()
             .filter_map(|(col_name, params)| {
                 df.column(col_name).ok().map(|column| {
                     let series = column.as_materialized_series();
@@ -147,13 +158,23 @@ impl Scaler {
             })
             .collect::<Result<Vec<Series>>>()?;
 
-        let mut result = df.clone();
-        for col in unscaled_cols {
-            result.with_column(col)
-                .map_err(|e| KolosalError::DataError(e.to_string()))?;
-        }
-
-        Ok(result)
+        // Build result without full DataFrame clone
+        let scaled_names: std::collections::HashSet<&str> =
+            self.params.keys().map(|s| s.as_str()).collect();
+        let mut all_cols: Vec<Column> = df.get_columns()
+            .iter()
+            .filter(|c| !scaled_names.contains(c.name().as_str()))
+            .cloned()
+            .collect();
+        all_cols.extend(unscaled_cols.into_iter().map(|s| s.into()));
+        // Restore original column order
+        let orig_order: Vec<&str> = df.get_column_names().into_iter().map(|s| s.as_str()).collect();
+        let pos: std::collections::HashMap<&str, usize> = orig_order.iter()
+            .enumerate()
+            .map(|(i, &s)| (s, i))
+            .collect();
+        all_cols.sort_by_key(|c| pos.get(c.name().as_str()).copied().unwrap_or(usize::MAX));
+        DataFrame::new(all_cols).map_err(|e| KolosalError::DataError(e.to_string()))
     }
 
     fn compute_params(&self, series: &Series) -> Result<ScalerParams> {
@@ -180,9 +201,22 @@ impl Scaler {
                 })
             }
             ScalerType::Robust => {
-                let median = ca.median().unwrap_or(0.0);
-                let q1 = ca.quantile(0.25, QuantileMethod::Linear).unwrap_or(Some(0.0)).unwrap_or(0.0);
-                let q3 = ca.quantile(0.75, QuantileMethod::Linear).unwrap_or(Some(1.0)).unwrap_or(1.0);
+                // Single sort for Q1/Q3: uses nearest-rank (vals[n/4], vals[3n/4])
+                // instead of Polars QuantileMethod::Linear — small numeric difference
+                // on datasets with n < ~20, negligible otherwise.
+                let mut vals: Vec<f64> = ca.into_no_null_iter().collect();
+                if vals.is_empty() {
+                    return Ok(ScalerParams { center: 0.0, scale: 1.0 });
+                }
+                vals.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                let n = vals.len();
+                let median = if n % 2 == 0 {
+                    (vals[n / 2 - 1] + vals[n / 2]) / 2.0
+                } else {
+                    vals[n / 2]
+                };
+                let q1 = vals[n / 4];
+                let q3 = vals[3 * n / 4];
                 let iqr = q3 - q1;
                 Ok(ScalerParams {
                     center: median,
