@@ -37,7 +37,7 @@ Existing endpoints reused:
 - POST `/api/predict` — Playground sub-tab
 - POST `/api/explain/importance` (body: `{ "model_id": "..." }`) — Concepts feature importance panel
 - POST `/api/explain/local` (body: `{ "model_id": "...", "instance": [f64, ...] }`) — Playground attribution arrows
-- POST `/api/data/analyze` — Playground slider min/max/distinct values (returns `column_stats` with `min`, `max`, `unique_values`)
+- GET `/api/data/analyze` — Playground slider min/max/distinct values (returns `column_stats` with `min`, `max`, `top_categories`)
 
 Note: existing `/api/visualization/umap` and `/api/visualization/pca` are POST (not GET), consistent with the router in `src/server/api.rs`.
 
@@ -95,7 +95,8 @@ pub struct EpochRecord {
 - `SGD` / linear models with iterative solvers: yes — instrument the iteration loop
 
 **Which model types do NOT produce epoch history (no training loop to instrument):**
-- `DecisionTree`, `RandomForest`, `GradientBoosting`, `KNN`, `NaiveBayes`, `SVM`, `LinearRegression`, `LogisticRegression` (closed-form / single-pass)
+- `DecisionTree`, `RandomForest`, `KNN`, `NaiveBayes`, `SVM`, `LinearRegression`, `LogisticRegression` (closed-form / single-pass — structurally cannot produce epoch history)
+- `GradientBoosting`, `XGBoost`, `LightGBM`, `CatBoost` (iterative round-by-round, but per-round history is deferred to future work — show "This model's iteration history is not yet visualized" message, no retrain prompt)
 
 For these, `epoch_history` remains empty and the Step-Through sub-tab shows the tree animation (for tree types) or the message *"This model type doesn't have a training loop to animate — it learns in a single pass."* (not "retrain", which would be misleading).
 
@@ -184,7 +185,7 @@ Three annotated diagrams drawn from real session data that explain foundational 
 Feature sliders tied to the real model. Every change fires a prediction and updates the display live.
 
 ### Behaviour
-- **Slider metadata:** On tab load, POST `/api/data/analyze` (no body required — uses current dataset in session). Response `column_stats` provides `min`, `max`, and `unique_values` per column. The target column (identified from `eLastModelId`'s `ModelInfo.task_type` and the dataset's label) is excluded from sliders. Numeric columns → `<input type="range">` with `min`/`max`/`step` from `column_stats`. Categorical/string columns → `<select>` dropdown populated from `unique_values`.
+- **Slider metadata:** On tab load, GET `/api/data/analyze` (no body required — uses current dataset in session). Response `column_stats` provides `min`, `max`, and `top_categories` per column. The target column (identified from `eLastModelId`'s `ModelInfo.task_type` and the dataset's label) is excluded from sliders. Numeric columns → `<input type="range">` with `min`/`max`/`step` from `column_stats`. Categorical/string columns → `<select>` dropdown populated from `top_categories`.
 - On every input change: POST `/api/predict` with `{ model_id: eLastModelId, features: { ... } }`, debounced 150ms
 - Updates:
   - Large prediction label with confidence badge (*"Iris-virginica — 92%"*)
@@ -197,7 +198,7 @@ Feature sliders tied to the real model. Every change fires a prediction and upda
 - Bottom section: feature attribution arrows
 
 ### Data sources
-POST `/api/predict`, POST `/api/explain/local`, POST `/api/data/analyze` (once on tab load), `eLastModelId` for model identification.
+POST `/api/predict`, POST `/api/explain/local`, GET `/api/data/analyze` (once on tab load), `eLastModelId` for model identification.
 
 ---
 
