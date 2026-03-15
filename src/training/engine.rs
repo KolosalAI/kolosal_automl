@@ -620,15 +620,20 @@ impl TrainEngine {
 
             // SGD
             (TaskType::Regression | TaskType::TimeSeries, ModelType::SGD) => {
+                // Use a conservative default learning rate for SGD to avoid divergence;
+                // cap user-supplied rates above 0.01 for regression to maintain stability.
+                let raw_lr = self.config.learning_rate.unwrap_or(0.01);
+                let eta0 = if raw_lr > 0.01 { 0.01 } else { raw_lr };
                 let config = SGDConfig {
                     max_iter: self.config.max_iter.unwrap_or(1000),
-                    eta0: self.config.learning_rate.unwrap_or(0.01),
+                    eta0,
                     alpha: self.config.reg_alpha,
                     random_state: self.config.random_seed,
                     ..Default::default()
                 };
                 let mut model = SGDRegressor::new(config);
                 model.fit(x, y)?;
+                self.epoch_history = std::mem::take(&mut model.epoch_records);
                 TrainedModel::SGDRegressor(model)
             }
             (TaskType::BinaryClassification | TaskType::MultiClassification, ModelType::SGD) => {
@@ -641,6 +646,7 @@ impl TrainEngine {
                 };
                 let mut model = SGDClassifier::new(config);
                 model.fit(x, y)?;
+                self.epoch_history = std::mem::take(&mut model.epoch_records);
                 TrainedModel::SGDClassifier(model)
             }
 

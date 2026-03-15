@@ -85,11 +85,13 @@ pub struct SGDRegressor {
     pub config: SGDConfig,
     pub weights: Option<Array1<f64>>,
     pub bias: f64,
+    #[serde(default)]
+    pub epoch_records: Vec<crate::training::engine::EpochRecord>,
 }
 
 impl SGDRegressor {
     pub fn new(config: SGDConfig) -> Self {
-        Self { config, weights: None, bias: 0.0 }
+        Self { config, weights: None, bias: 0.0, epoch_records: Vec::new() }
     }
 
     pub fn fit(&mut self, x: &Array2<f64>, y: &Array1<f64>) -> Result<()> {
@@ -152,6 +154,14 @@ impl SGDRegressor {
 
             epoch_loss /= n as f64;
 
+            self.epoch_records.push(crate::training::engine::EpochRecord {
+                epoch,
+                train_loss: epoch_loss,
+                val_loss: None,
+                train_acc: None,
+                val_acc: None,
+            });
+
             // Adaptive schedule: halve lr if loss didn't improve
             if matches!(self.config.learning_rate, LearningRateSchedule::Adaptive) {
                 if epoch_loss > prev_loss - self.config.tol {
@@ -182,13 +192,15 @@ pub struct SGDClassifier {
     pub config: SGDConfig,
     pub weights: Option<Array1<f64>>,
     pub bias: f64,
+    #[serde(default)]
+    pub epoch_records: Vec<crate::training::engine::EpochRecord>,
 }
 
 impl SGDClassifier {
     pub fn new(config: SGDConfig) -> Self {
         let mut config = config;
         config.loss = SGDLoss::Log; // default to logistic for classification
-        Self { config, weights: None, bias: 0.0 }
+        Self { config, weights: None, bias: 0.0, epoch_records: Vec::new() }
     }
 
     pub fn fit(&mut self, x: &Array2<f64>, y: &Array1<f64>) -> Result<()> {
@@ -268,6 +280,14 @@ impl SGDClassifier {
             }
 
             epoch_loss /= n as f64;
+
+            self.epoch_records.push(crate::training::engine::EpochRecord {
+                epoch,
+                train_loss: epoch_loss,
+                val_loss: None,
+                train_acc: None,
+                val_acc: None,
+            });
 
             if matches!(self.config.learning_rate, LearningRateSchedule::Adaptive) {
                 if epoch_loss > prev_loss - self.config.tol {

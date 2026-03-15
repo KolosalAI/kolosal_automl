@@ -192,3 +192,18 @@ fn test_epoch_history_empty_for_non_sgd() {
     engine.fit(&df).unwrap();
     assert!(engine.epoch_history().is_empty(), "decision tree should have no epoch history");
 }
+
+#[test]
+fn test_epoch_history_populated_for_sgd() {
+    let df = regression_df();
+    let config = TrainingConfig::new(TaskType::Regression, "target")
+        .with_model(ModelType::SGD);
+    let mut engine = TrainEngine::new(config);
+    engine.fit(&df).unwrap();
+    let history = engine.epoch_history();
+    assert!(!history.is_empty(), "SGD should produce epoch history");
+    assert_eq!(history[0].epoch, 0);
+    for rec in history {
+        assert!(rec.train_loss.is_finite(), "train_loss should be finite");
+    }
+}
