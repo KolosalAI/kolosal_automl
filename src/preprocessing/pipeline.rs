@@ -127,14 +127,30 @@ impl DataPreprocessor {
         let cast_names: std::collections::HashSet<&str> = columns_to_cast.iter()
             .map(|c| c.name().as_str())
             .collect();
-        let mut all_cols: Vec<Column> = df.get_columns().iter()
-            .filter(|c| !cast_names.contains(c.name().as_str()))
-            .cloned()
-            .collect();
-        all_cols.extend(columns_to_cast);
-        // Restore original column order
+
+        // Direct-index placement: O(n) instead of O(n log n) sort
         let orig_order: Vec<&str> = df.get_column_names().into_iter().map(|s| s.as_str()).collect();
-        all_cols.sort_by_key(|c| orig_order.iter().position(|&n| n == c.name().as_str()).unwrap_or(usize::MAX));
+        let pos_map: std::collections::HashMap<&str, usize> = orig_order.iter()
+            .enumerate()
+            .map(|(i, &s)| (s, i))
+            .collect();
+
+        let mut ordered: Vec<Option<Column>> = vec![None; orig_order.len()];
+        // Place non-cast columns
+        for col in df.get_columns() {
+            if !cast_names.contains(col.name().as_str()) {
+                if let Some(&idx) = pos_map.get(col.name().as_str()) {
+                    ordered[idx] = Some(col.clone());
+                }
+            }
+        }
+        // Place cast columns
+        for col in columns_to_cast {
+            if let Some(&idx) = pos_map.get(col.name().as_str()) {
+                ordered[idx] = Some(col);
+            }
+        }
+        let all_cols: Vec<Column> = ordered.into_iter().flatten().collect();
         DataFrame::new(all_cols).map_err(|e| KolosalError::DataError(e.to_string()))
     }
 
@@ -165,35 +181,38 @@ impl DataPreprocessor {
             self.categorical_imputer = Some(imputer);
         }
 
-        // Fit scaler for numeric columns
+        // Fit scaler for numeric columns — impute first if needed
         if !self.numeric_columns.is_empty() {
             let mut scaler = Scaler::new(self.config.scaler_type.clone());
             let cols: Vec<&str> = self.numeric_columns.iter().map(|s| s.as_str()).collect();
-            
-            // Need to impute first before fitting scaler
-            let imputed = if let Some(ref imputer) = self.numeric_imputer {
-                imputer.transform(df)?
+
+            // Borrow imputed data; only materialise an owned DataFrame when transform occurs
+            let imputed_owned: Option<DataFrame>;
+            let imputed_ref: &DataFrame = if let Some(ref imputer) = self.numeric_imputer {
+                imputed_owned = Some(imputer.transform(df)?);
+                imputed_owned.as_ref().unwrap()
             } else {
-                df.clone()
+                df  // borrow without cloning
             };
-            
-            scaler.fit(&imputed, &cols)?;
+
+            scaler.fit(imputed_ref, &cols)?;
             self.scaler = Some(scaler);
         }
 
-        // Fit encoder for categorical columns
+        // Fit encoder for categorical columns — impute first if needed
         if !self.categorical_columns.is_empty() {
             let mut encoder = Encoder::new(self.config.encoder_type.clone());
             let cols: Vec<&str> = self.categorical_columns.iter().map(|s| s.as_str()).collect();
-            
-            // Need to impute first before fitting encoder
-            let imputed = if let Some(ref imputer) = self.categorical_imputer {
-                imputer.transform(df)?
+
+            let imputed_owned: Option<DataFrame>;
+            let imputed_ref: &DataFrame = if let Some(ref imputer) = self.categorical_imputer {
+                imputed_owned = Some(imputer.transform(df)?);
+                imputed_owned.as_ref().unwrap()
             } else {
-                df.clone()
+                df
             };
-            
-            encoder.fit(&imputed, &cols)?;
+
+            encoder.fit(imputed_ref, &cols)?;
             self.encoder = Some(encoder);
         }
 
@@ -558,22 +577,32 @@ impl DataPreprocessor {
     fn compute_statistics(&mut self, df: &DataFrame) -> Result<()> {
         self.feature_stats.clear();
 
-        for col_name in &self.numeric_columns {
-            if let Ok(column) = df.column(col_name) {
-                let series = column.as_materialized_series();
-                let stats = FeatureStats::from_numeric_series(col_name, series)?;
-                self.feature_stats.insert(col_name.clone(), stats);
-            }
-        }
+        // Combine numeric and categorical column names, tagged by type
+        let all_columns: Vec<(&str, bool)> = self.numeric_columns.iter()
+            .map(|s| (s.as_str(), true))
+            .chain(self.categorical_columns.iter().map(|s| (s.as_str(), false)))
+            .collect();
 
-        for col_name in &self.categorical_columns {
-            if let Ok(column) = df.column(col_name) {
-                let series = column.as_materialized_series();
-                let stats = FeatureStats::from_categorical_series(col_name, series)?;
-                self.feature_stats.insert(col_name.clone(), stats);
-            }
-        }
+        // Collect stats in parallel — each column is independent
+        let stats: Vec<Result<(String, FeatureStats)>> = all_columns.par_iter()
+            .filter_map(|(col_name, is_numeric)| {
+                df.column(col_name).ok().map(|column| {
+                    let series = column.as_materialized_series();
+                    let fs = if *is_numeric {
+                        FeatureStats::from_numeric_series(col_name, series)?
+                    } else {
+                        FeatureStats::from_categorical_series(col_name, series)?
+                    };
+                    Ok((col_name.to_string(), fs))
+                })
+            })
+            .collect();
 
+        // Apply to self sequentially (cannot mutate self in parallel)
+        for result in stats {
+            let (name, stat) = result?;
+            self.feature_stats.insert(name, stat);
+        }
         Ok(())
     }
 }
