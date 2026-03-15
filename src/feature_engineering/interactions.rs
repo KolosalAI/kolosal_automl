@@ -179,33 +179,39 @@ impl FeatureTransformer for FeatureInteractions {
     }
 
     fn transform(&self, x: &Array2<f64>) -> Result<Array2<f64>> {
+        use ndarray::{s, Array1};
+        use rayon::prelude::*;
+
         let crossings = self.crossings.as_ref().ok_or_else(|| {
             KolosalError::ValidationError("Transformer not fitted".to_string())
         })?;
 
-        let n_samples = x.nrows();
         let n_original = if self.include_original { x.ncols() } else { 0 };
-        let n_interactions = crossings.len();
-        let n_output = n_original + n_interactions;
+        let n_output = n_original + crossings.len();
+        let mut result = Array2::zeros((x.nrows(), n_output));
 
-        let mut result = Array2::zeros((n_samples, n_output));
-
-        for i in 0..n_samples {
-            let mut col_idx = 0;
-
-            if self.include_original {
-                for j in 0..x.ncols() {
-                    result[[i, col_idx]] = x[[i, j]];
-                    col_idx += 1;
-                }
+        // Copy original columns with column-slice assignment (cache-friendly)
+        if self.include_original {
+            for j in 0..x.ncols() {
+                result.slice_mut(s![.., j]).assign(&x.slice(s![.., j]));
             }
+        }
 
-            for crossing in crossings {
-                let a = x[[i, crossing.feature_a]];
-                let b = x[[i, crossing.feature_b]];
-                result[[i, col_idx]] = crossing.interaction.apply(a, b);
-                col_idx += 1;
-            }
+        // Compute interaction columns in parallel, collecting one Vec<f64> per crossing
+        let interaction_cols: Vec<Array1<f64>> = crossings
+            .par_iter()
+            .map(|crossing| {
+                let col_a = x.slice(s![.., crossing.feature_a]);
+                let col_b = x.slice(s![.., crossing.feature_b]);
+                Array1::from_iter(
+                    col_a.iter().zip(col_b.iter()).map(|(&a, &b)| crossing.interaction.apply(a, b))
+                )
+            })
+            .collect();
+
+        // Assign each computed column into the result (sequential, but just memcpy-level work)
+        for (idx, col) in interaction_cols.iter().enumerate() {
+            result.slice_mut(s![.., n_original + idx]).assign(col);
         }
 
         Ok(result)
@@ -217,7 +223,7 @@ impl FeatureTransformer for FeatureInteractions {
 
         if self.include_original {
             if let Some(ref input_names) = self.feature_names_in {
-                names.extend(input_names.clone());
+                names.extend_from_slice(input_names);
             } else {
                 for i in 0..n_features {
                     names.push(format!("x{}", i));
@@ -280,39 +286,42 @@ impl AutoCrossing {
         self
     }
 
-    fn correlation(x: &Array2<f64>, col_a: usize, col_b: usize) -> f64 {
+    fn correlation_from_stats(
+        x: &Array2<f64>,
+        col_a: usize, mean_a: f64, std_a: f64,
+        col_b: usize, mean_b: f64, std_b: f64,
+    ) -> f64 {
+        if std_a < 1e-10 || std_b < 1e-10 { return 0.0; }
         let n = x.nrows() as f64;
-        let a: Vec<f64> = x.column(col_a).iter().copied().collect();
-        let b: Vec<f64> = x.column(col_b).iter().copied().collect();
-
-        let mean_a = a.iter().sum::<f64>() / n;
-        let mean_b = b.iter().sum::<f64>() / n;
-
-        let cov: f64 = a.iter()
-            .zip(b.iter())
-            .map(|(&ai, &bi)| (ai - mean_a) * (bi - mean_b))
+        let cov: f64 = x.column(col_a).iter()
+            .zip(x.column(col_b).iter())
+            .map(|(&a, &b)| (a - mean_a) * (b - mean_b))
             .sum::<f64>() / n;
-
-        let std_a = (a.iter().map(|&ai| (ai - mean_a).powi(2)).sum::<f64>() / n).sqrt();
-        let std_b = (b.iter().map(|&bi| (bi - mean_b).powi(2)).sum::<f64>() / n).sqrt();
-
-        if std_a < 1e-10 || std_b < 1e-10 {
-            0.0
-        } else {
-            cov / (std_a * std_b)
-        }
+        cov / (std_a * std_b)
     }
 }
 
 impl FeatureTransformer for AutoCrossing {
     fn fit(&mut self, x: &Array2<f64>) -> Result<()> {
         let n_features = x.ncols();
+        let n = x.nrows() as f64;
+
+        // Precompute means and stds once for all columns
+        let means: Vec<f64> = (0..n_features)
+            .map(|i| x.column(i).iter().sum::<f64>() / n)
+            .collect();
+        let stds: Vec<f64> = (0..n_features)
+            .map(|i| {
+                let m = means[i];
+                (x.column(i).iter().map(|&v| (v - m).powi(2)).sum::<f64>() / n).sqrt()
+            })
+            .collect();
 
         let mut pair_correlations: Vec<((usize, usize), f64)> = Vec::new();
 
         for i in 0..n_features {
             for j in (i + 1)..n_features {
-                let corr = Self::correlation(x, i, j);
+                let corr = Self::correlation_from_stats(x, i, means[i], stds[i], j, means[j], stds[j]);
                 if corr.abs() >= self.correlation_threshold {
                     pair_correlations.push(((i, j), corr.abs()));
                 }
