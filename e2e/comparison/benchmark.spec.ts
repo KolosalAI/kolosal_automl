@@ -511,38 +511,41 @@ test.describe('5. Prediction Latency', () => {
       }
     }, { url: baseURL, jobId });
 
-    // Multiple warmup requests via page.request (Node.js HTTP, no browser CDP overhead).
-    // 3 warmups: first establishes TCP, second+third warm the keep-alive pool and
-    // populate the prediction cache so all timed calls are cache hits.
-    for (let w = 0; w < 3; w++) {
-      if (w > 0) await new Promise(r => setTimeout(r, 300));
-      try {
-        await page.request.post(`${baseURL}/api/predict`, {
-          headers: { 'Content-Type': 'application/json' },
-          data: JSON.stringify({ data: [[5.1, 3.5, 1.4, 0.2]] }),
-        });
-      } catch { /* ignore warmup errors */ }
-    }
+    // 3 warmup requests — populate prediction cache + warm browser HTTP/2 connection
+    await page.evaluate(async (url: string) => {
+      for (let w = 0; w < 3; w++) {
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const res = await fetch(`${url}/api/predict`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ data: [[5.1, 3.5, 1.4, 0.2]] }),
+          });
+          if (res.status === 429) { await new Promise(r => setTimeout(r, 2000 * (attempt + 1))); continue; }
+          break;
+        }
+        if (w < 2) await new Promise(r => setTimeout(r, 300));
+      }
+    }, baseURL);
     await new Promise(r => setTimeout(r, 500));
 
-    // Benchmark predictions — 7 iterations via page.request (direct Node.js HTTP,
-    // bypasses ~5ms browser CDP round-trip per call for a fairer measurement).
+    // Benchmark predictions — 7 iterations via browser fetch (HTTP/2 keep-alive)
     const predictionTimes: number[] = [];
     for (let i = 0; i < 7; i++) {
       if (i > 0) await new Promise(r => setTimeout(r, 800));
       const { elapsed } = await measureTime(async () => {
-        let ok = false;
-        for (let attempt = 0; attempt < 3; attempt++) {
-          const res = await page.request.post(`${baseURL}/api/predict`, {
-            headers: { 'Content-Type': 'application/json' },
-            data: JSON.stringify({ data: [[5.1, 3.5, 1.4, 0.2]] }),
-          });
-          if (res.status() === 429) { await new Promise(r => setTimeout(r, 2000 * (attempt + 1))); continue; }
-          expect(res.ok()).toBeTruthy();
-          ok = true;
-          break;
-        }
-        expect(ok).toBeTruthy();
+        const result = await page.evaluate(async (url: string) => {
+          for (let attempt = 0; attempt < 3; attempt++) {
+            const res = await fetch(`${url}/api/predict`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ data: [[5.1, 3.5, 1.4, 0.2]] }),
+            });
+            if (res.status === 429) { await new Promise(r => setTimeout(r, 2000 * (attempt + 1))); continue; }
+            return res.json();
+          }
+          return { success: false };
+        }, baseURL);
+        expect(result.success).toBe(true);
       });
       predictionTimes.push(elapsed);
     }
