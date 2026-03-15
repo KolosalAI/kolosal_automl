@@ -2876,6 +2876,237 @@ const EMBEDDED_INDEX_HTML: &str = r#"<!DOCTYPE html>
     function eRptBack(){$('e-rpt-content').style.display='none';$('e-rpt-empty').style.display='block';eLoadReport()}
     function eRptPrint(){window.print()}
     function eGenerateReport(){var sel=[];document.querySelectorAll('#e-rpt-models input:checked').forEach(function(cb){sel.push(cb.value)});if(sel.length<2){eNotify('Select at least 2 models to compare','err');return}var models=eRptModels.filter(function(m){return sel.indexOf(m.id)!==-1});$('e-rpt-empty').style.display='none';$('e-rpt-content').style.display='block';$('e-rpt-date').textContent=new Date().toLocaleString();var colors=['#0066f5','#3abc3f','#ffa931','#8b5cf6','#ec4899','#06b6d4','#ff3131','#f97316'];var allMetrics={};var metricKeys=[];models.forEach(function(m){var mx=m.metrics||{};Object.keys(mx).forEach(function(k){if(typeof mx[k]==='number'&&metricKeys.indexOf(k)===-1)metricKeys.push(k)});allMetrics[m.id]=mx});var scoreKey=metricKeys.indexOf('f1')!==-1?'f1':(metricKeys.indexOf('accuracy')!==-1?'accuracy':(metricKeys.indexOf('r2')!==-1?'r2':metricKeys[0]||'score'));var timeKey='training_time_secs';var sorted=models.slice().sort(function(a,b){return((allMetrics[b.id]||{})[scoreKey]||0)-((allMetrics[a.id]||{})[scoreKey]||0)});var best=sorted[0];$('e-rpt-summary').innerHTML='<div style="text-align:center;padding:14px;background:#f0f6fe;border-radius:10px"><div style="font-size:24px;font-weight:700;color:#0066f5">'+models.length+'</div><div style="font-size:12px;color:#6a6f73">Models</div></div><div style="text-align:center;padding:14px;background:#f3fbf4;border-radius:10px"><div style="font-size:24px;font-weight:700;color:#3abc3f">'+metricKeys.length+'</div><div style="font-size:12px;color:#6a6f73">Metrics</div></div><div style="text-align:center;padding:14px;background:#fef9ee;border-radius:10px"><div style="font-size:24px;font-weight:700;color:#ffa931">'+scoreKey+'</div><div style="font-size:12px;color:#6a6f73">Primary Metric</div></div><div style="text-align:center;padding:14px;background:#fdf4ff;border-radius:10px"><div style="font-size:24px;font-weight:700;color:#8b5cf6">'+(best?(allMetrics[best.id]||{})[scoreKey]||0:0).toFixed(4)+'</div><div style="font-size:12px;color:#6a6f73">Best Score</div></div>';if(best){$('e-rpt-best').innerHTML='<div style="background:#0d0e0f;border-radius:12px;padding:20px;color:#fff;display:flex;align-items:center;gap:16px"><div style="width:48px;height:48px;border-radius:50%;background:#3abc3f;display:flex;align-items:center;justify-content:center;font-size:20px"><i class="ri-trophy-line"></i></div><div><div style="font-size:12px;opacity:.6">Best Model</div><div style="font-size:20px;font-weight:700">'+(best.name||best.id)+'</div><div style="font-size:13px;opacity:.8">'+scoreKey+': '+((allMetrics[best.id]||{})[scoreKey]||0).toFixed(6)+'</div></div></div>'}var barItems=[];sorted.forEach(function(m){var sc=(allMetrics[m.id]||{})[scoreKey]||0;if(sc>0)barItems.push({label:(m.name||m.id).substring(0,20),value:sc})});if(barItems.length>0)eDrawBars('e-rpt-bars',barItems,{label:scoreKey});var numericKeys=metricKeys.filter(function(k){return k!==timeKey});if(numericKeys.length>=3&&models.length>0){var radarLabels=numericKeys.slice(0,8);var radarMaxes={};radarLabels.forEach(function(k){var mx=0;models.forEach(function(m){var v=Math.abs((allMetrics[m.id]||{})[k]||0);if(v>mx)mx=v});radarMaxes[k]=mx||1});var radarSets=[];models.slice(0,4).forEach(function(m,mi){var vals=radarLabels.map(function(k){return radarMaxes[k]>0?Math.abs((allMetrics[m.id]||{})[k]||0)/radarMaxes[k]:0});radarSets.push({label:(m.name||m.id).substring(0,15),values:vals,color:colors[mi%colors.length]})});eDrawRadar('e-rpt-radar',radarLabels,radarSets[0].values,{labels:radarLabels,color:radarSets[0].color})}var th='<table><thead><tr><th>Model</th>';metricKeys.forEach(function(k){th+='<th>'+k+'</th>'});th+='</tr></thead><tbody>';sorted.forEach(function(m,i){var mx=allMetrics[m.id]||{};th+='<tr style="'+(i===0?'background:#f3fbf4':'')+'"><td style="font-weight:600">'+(i===0?'<i class="ri-trophy-line" style="color:#3abc3f;margin-right:4px"></i>':'')+((m.name||m.id).substring(0,30))+'</td>';metricKeys.forEach(function(k){var v=mx[k];var isBest=true;sorted.forEach(function(om){if(om.id!==m.id&&((allMetrics[om.id]||{})[k]||0)>=(v||0))isBest=false});th+='<td class="mono" style="'+(isBest&&typeof v==='number'?'color:#3abc3f;font-weight:600':'')+'">'+((typeof v==='number')?v.toFixed(4):(v||'—'))+'</td>'});th+='</tr>'});th+='</tbody></table>';$('e-rpt-table').innerHTML=th;var timeItems=[];sorted.forEach(function(m){var t=(allMetrics[m.id]||{})[timeKey]||0;if(t>0)timeItems.push({label:(m.name||m.id).substring(0,20),value:t})});if(timeItems.length>0)eDrawBars('e-rpt-time',timeItems,{label:'Time (s)'});var scatterPts=[];sorted.forEach(function(m,i){var sc=(allMetrics[m.id]||{})[scoreKey]||0;var t=(allMetrics[m.id]||{})[timeKey]||0;scatterPts.push({x:t,y:sc,c:i%colors.length,s:6})});if(scatterPts.length>0)eDrawScatter('e-rpt-scatter',scatterPts,{xLabel:'Training Time (s)',yLabel:scoreKey,colors:colors});var rh='';sorted.forEach(function(m,i){var sc=(allMetrics[m.id]||{})[scoreKey]||0;var maxSc=sorted.length>0?((allMetrics[sorted[0].id]||{})[scoreKey]||1):1;var pct=maxSc>0?(sc/maxSc*100).toFixed(0):0;var ci=colors[i%colors.length];rh+='<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid #f1f3f4"><div style="width:28px;height:28px;border-radius:50%;background:'+ci+'15;color:'+ci+';display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px">'+(i+1)+'</div><div style="flex:1;min-width:0"><div style="font-weight:600;font-size:13px;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+(m.name||m.id)+'</div><div class="progress" style="height:6px"><div class="progress-fill" style="width:'+pct+'%;background:'+ci+'"></div></div></div><div class="mono" style="font-size:13px;font-weight:600;color:'+ci+';flex-shrink:0">'+sc.toFixed(4)+'</div></div>'});$('e-rpt-rankings').innerHTML=rh;eNotify('Report generated for '+models.length+' models','ok');eLogActivity('Generated comparison report: '+models.length+' models')}
+    function eInsLoad() {
+      var noModelIds = ['e-ins-st-nomodel','e-ins-c-nomodel','e-ins-pg-nomodel','e-ins-m-nomodel'];
+      if (!eLastModelId) {
+        noModelIds.forEach(function(id) { var el=document.getElementById(id); if(el) el.style.display='flex'; });
+        return;
+      }
+      noModelIds.forEach(function(id) { var el=document.getElementById(id); if(el) el.style.display='none'; });
+
+      fetch('/api/insights/model-structure?model_id=' + encodeURIComponent(eLastModelId))
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          eInsModelType = d.type || 'unsupported';
+          var stContent = document.getElementById('e-ins-st-content');
+          var stUnsupported = document.getElementById('e-ins-st-unsupported');
+          if (d.type === 'tree' && d.nodes && d.nodes.length) {
+            eInsStNodes = d.nodes;
+            eInsStEpochs = [];
+            eInsStCurrent = 0;
+            var splits = d.nodes.filter(function(n) { return !n.is_leaf; });
+            var tot = document.getElementById('e-ins-st-total');
+            if (tot) tot.textContent = splits.length;
+            if (stContent) stContent.style.display = 'block';
+            if (stUnsupported) stUnsupported.style.display = 'none';
+            eInsStDraw();
+          } else if (d.type === 'convergence' && d.epoch_history && d.epoch_history.length) {
+            eInsStEpochs = d.epoch_history;
+            eInsStNodes = [];
+            eInsStCurrent = 0;
+            var tot2 = document.getElementById('e-ins-st-total');
+            if (tot2) tot2.textContent = d.epoch_history.length;
+            if (stContent) stContent.style.display = 'block';
+            if (stUnsupported) stUnsupported.style.display = 'none';
+            eInsStDraw();
+          } else {
+            if (stContent) stContent.style.display = 'none';
+            var msg = (d.type === 'convergence')
+              ? 'No epoch history recorded \u2014 retrain to see the animation.'
+              : 'This model type learns in a single pass \u2014 there is no training loop to animate.';
+            if (stUnsupported) {
+              stUnsupported.style.display = 'block';
+              stUnsupported.textContent = msg;
+            }
+          }
+          eInsConceptsLoad(d);
+        })
+        .catch(function(e) { console.error('Insights load failed', e); });
+    }
+    function eInsStDraw() {
+      var stepEl = document.getElementById('e-ins-st-step');
+      if (stepEl) stepEl.textContent = eInsStCurrent + 1;
+      if (eInsModelType === 'tree' && eInsStNodes.length) {
+        eInsStDrawTree();
+      } else if (eInsModelType === 'convergence' && eInsStEpochs.length) {
+        eInsStDrawConvergence();
+      }
+    }
+    function eInsStDrawTree() {
+      var canvas = document.getElementById('e-ins-st-canvas');
+      if (!canvas) return;
+      var ctx = canvas.getContext('2d');
+      var W = canvas.width, H = canvas.height;
+      ctx.clearRect(0, 0, W, H);
+
+      var splits = eInsStNodes.filter(function(n) { return !n.is_leaf; });
+      var all = eInsStNodes;
+      var pos = {};
+      var levels = {};
+      var queue = [0];
+      levels[0] = 0;
+      while (queue.length) {
+        var nid = queue.shift();
+        var node = all[nid];
+        if (!node) continue;
+        var lv = levels[nid] || 0;
+        if (node.left_child != null) { levels[node.left_child] = lv + 1; queue.push(node.left_child); }
+        if (node.right_child != null) { levels[node.right_child] = lv + 1; queue.push(node.right_child); }
+      }
+      var maxLevel = 0;
+      all.forEach(function(n) { if ((levels[n.id]||0) > maxLevel) maxLevel = levels[n.id]||0; });
+      var levelNodes = {};
+      all.forEach(function(n) {
+        var lv = levels[n.id] || 0;
+        if (!levelNodes[lv]) levelNodes[lv] = [];
+        levelNodes[lv].push(n.id);
+      });
+      var lvCount = maxLevel + 1;
+      var R = Math.min(18, Math.floor(H / (lvCount * 2.5)));
+      all.forEach(function(n) {
+        var lv = levels[n.id] || 0;
+        var arr = levelNodes[lv];
+        var idx = arr.indexOf(n.id);
+        var x = (idx + 1) * W / (arr.length + 1);
+        var y = (lv + 1) * H / (lvCount + 1);
+        pos[n.id] = {x: x, y: y};
+      });
+
+      ctx.strokeStyle = '#d1d5db';
+      ctx.lineWidth = 1;
+      all.forEach(function(n) {
+        var p = pos[n.id];
+        if (!p) return;
+        if (n.left_child != null && pos[n.left_child]) {
+          ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(pos[n.left_child].x, pos[n.left_child].y); ctx.stroke();
+        }
+        if (n.right_child != null && pos[n.right_child]) {
+          ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(pos[n.right_child].x, pos[n.right_child].y); ctx.stroke();
+        }
+      });
+
+      var activeSplitIdx = eInsStCurrent;
+      var activeSplitId = splits[activeSplitIdx] ? splits[activeSplitIdx].id : -1;
+      all.forEach(function(n, i) {
+        var p = pos[n.id];
+        if (!p) return;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, R, 0, Math.PI * 2);
+        if (n.id === activeSplitId) {
+          ctx.fillStyle = '#1d4ed8'; ctx.fill();
+        } else if (n.is_leaf) {
+          ctx.fillStyle = '#d1fae5'; ctx.fill();
+        } else {
+          var splitIdx = splits.indexOf(n);
+          ctx.fillStyle = splitIdx < activeSplitIdx ? '#bfdbfe' : '#f3f4f6';
+          ctx.fill();
+        }
+        ctx.strokeStyle = n.id === activeSplitId ? '#1e40af' : '#9ca3af';
+        ctx.lineWidth = n.id === activeSplitId ? 2 : 1;
+        ctx.stroke();
+        ctx.fillStyle = n.id === activeSplitId ? '#fff' : '#374151';
+        ctx.font = Math.max(8, R - 4) + 'px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        var label = n.is_leaf ? 'L' : (n.feature_name ? n.feature_name.slice(0, 3) : 'S');
+        ctx.fillText(label, p.x, p.y);
+      });
+
+      var activeSplit = splits[activeSplitIdx];
+      var ann = '';
+      if (activeSplit) {
+        ann = 'Splitting on ' + (activeSplit.feature_name || 'feature') + ' \u2264 ' + (activeSplit.threshold != null ? activeSplit.threshold.toFixed(3) : '?') + '\n' +
+          'Gini: ' + activeSplit.gini.toFixed(4) + '  Samples: ' + activeSplit.samples + '\n\n' +
+          'The model chose this feature because splitting here reduced uncertainty the most.';
+      }
+      var annEl = document.getElementById('e-ins-st-annotation-text');
+      if (annEl) annEl.textContent = ann;
+    }
+    function eInsStDrawConvergence() {
+      var canvas = document.getElementById('e-ins-st-canvas');
+      if (!canvas) return;
+      var ctx = canvas.getContext('2d');
+      var W = canvas.width, H = canvas.height;
+      ctx.clearRect(0, 0, W, H);
+      var epochs = eInsStEpochs.slice(0, eInsStCurrent + 1);
+      if (!epochs.length) return;
+      var pad = 40;
+      var maxL = 0;
+      epochs.forEach(function(r) { if (r.train_loss > maxL) maxL = r.train_loss; if (r.val_loss && r.val_loss > maxL) maxL = r.val_loss; });
+      if (maxL === 0) maxL = 1;
+      function toX(i) { return pad + i * (W - 2*pad) / (eInsStEpochs.length - 1 || 1); }
+      function toY(v) { return H - pad - v * (H - 2*pad) / maxL; }
+      ctx.strokeStyle = '#9ca3af'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(pad, pad); ctx.lineTo(pad, H-pad); ctx.lineTo(W-pad, H-pad); ctx.stroke();
+      ctx.strokeStyle = '#3b82f6'; ctx.lineWidth = 2;
+      ctx.beginPath();
+      epochs.forEach(function(r, i) {
+        if (i === 0) ctx.moveTo(toX(r.epoch), toY(r.train_loss));
+        else ctx.lineTo(toX(r.epoch), toY(r.train_loss));
+      });
+      ctx.stroke();
+      var hasVal = epochs.some(function(r) { return r.val_loss != null; });
+      if (hasVal) {
+        ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = 2; ctx.setLineDash([4,4]);
+        ctx.beginPath();
+        epochs.forEach(function(r, i) {
+          if (r.val_loss == null) return;
+          if (i === 0) ctx.moveTo(toX(r.epoch), toY(r.val_loss));
+          else ctx.lineTo(toX(r.epoch), toY(r.val_loss));
+        });
+        ctx.stroke(); ctx.setLineDash([]);
+      }
+      ctx.fillStyle = '#374151'; ctx.font = '11px sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+      ctx.fillText('Epoch ' + (eInsStCurrent + 1) + ' / ' + eInsStEpochs.length, pad + 4, pad + 4);
+      var cur = eInsStEpochs[eInsStCurrent];
+      var annEl = document.getElementById('e-ins-st-annotation-text');
+      if (annEl && cur) {
+        annEl.textContent = 'Epoch ' + cur.epoch + '\nTrain loss: ' + cur.train_loss.toFixed(4) + (cur.val_loss != null ? '\nVal loss: ' + cur.val_loss.toFixed(4) : '');
+      }
+    }
+    function eInsStepNext() {
+      var max = eInsModelType === 'tree'
+        ? eInsStNodes.filter(function(n) { return !n.is_leaf; }).length - 1
+        : eInsStEpochs.length - 1;
+      if (eInsStCurrent < max) { eInsStCurrent++; eInsStDraw(); }
+    }
+    function eInsStepPrev() {
+      if (eInsStCurrent > 0) { eInsStCurrent--; eInsStDraw(); }
+    }
+    function eInsStepReset() {
+      eInsStCurrent = 0; eInsStPlaying = false;
+      if (eInsStTimer) { clearTimeout(eInsStTimer); eInsStTimer = null; }
+      var btn = document.getElementById('e-ins-st-play-btn');
+      if (btn) btn.textContent = 'Play';
+      eInsStDraw();
+    }
+    function eInsStepTogglePlay() {
+      eInsStPlaying = !eInsStPlaying;
+      var btn = document.getElementById('e-ins-st-play-btn');
+      if (btn) btn.textContent = eInsStPlaying ? 'Pause' : 'Play';
+      if (eInsStPlaying) eInsStAutoPlay();
+      else if (eInsStTimer) { clearTimeout(eInsStTimer); eInsStTimer = null; }
+    }
+    function eInsStAutoPlay() {
+      if (!eInsStPlaying) return;
+      var max = eInsModelType === 'tree'
+        ? eInsStNodes.filter(function(n) { return !n.is_leaf; }).length - 1
+        : eInsStEpochs.length - 1;
+      if (eInsStCurrent >= max) {
+        eInsStPlaying = false;
+        var btn = document.getElementById('e-ins-st-play-btn');
+        if (btn) btn.textContent = 'Play';
+        return;
+      }
+      eInsStCurrent++; eInsStDraw();
+      var speedEl = document.getElementById('e-ins-st-speed');
+      var speed = speedEl ? parseInt(speedEl.value) : 800;
+      eInsStTimer = setTimeout(eInsStAutoPlay, speed);
+    }
+    function eInsConceptsLoad(structData) {
+      // Will be fully implemented in Task 9
+      // For now, do nothing to prevent errors
+    }
     </script>
 </body>
 </html>"#;
