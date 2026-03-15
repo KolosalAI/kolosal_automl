@@ -1,7 +1,7 @@
 //! Integration test: Training pipeline end-to-end
 
 use kolosal_automl::training::{
-    TrainEngine, TrainingConfig, TaskType, ModelType, EnsembleStrategy, EpochRecord,
+    TrainEngine, TrainingConfig, TaskType, ModelType, EnsembleStrategy,
 };
 use polars::prelude::*;
 

@@ -114,7 +114,7 @@ pub struct TrainEngine {
     training_history: Vec<ModelComparison>,
     /// Per-epoch training metrics (only populated by iterative models: SGD)
     #[serde(default)]
-    pub epoch_history: Vec<EpochRecord>,
+    epoch_history: Vec<EpochRecord>,
 }
 
 impl TrainEngine {
