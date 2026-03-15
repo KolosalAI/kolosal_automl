@@ -220,6 +220,7 @@ impl AppState {
                 .ok().and_then(|s| s.parse().ok()).unwrap_or(60),
             burst_size: std::env::var("SECURITY_RATE_BURST")
                 .ok().and_then(|s| s.parse().ok()).unwrap_or(20),
+            algorithm: crate::security::RateLimitAlgorithm::TokenBucket,
             ..Default::default()
         };
 

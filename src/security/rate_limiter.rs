@@ -1,6 +1,7 @@
 use serde::{Serialize, Deserialize};
 use std::collections::HashMap;
 use std::time::Instant;
+use dashmap::DashMap;
 use parking_lot::Mutex;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -23,7 +24,7 @@ impl Default for RateLimitConfig {
         Self {
             requests_per_window: 100,
             window_seconds: 60,
-            algorithm: RateLimitAlgorithm::SlidingWindow,
+            algorithm: RateLimitAlgorithm::TokenBucket,
             burst_size: 10,
         }
     }
@@ -55,45 +56,47 @@ impl ClientState {
     }
 }
 
+/// Per-client state protected by a lightweight Mutex.
+/// Using DashMap<String, Mutex<ClientState>> instead of Mutex<HashMap<...>> means
+/// different clients never block each other — only concurrent requests from the
+/// *same* client contend on the same lock.
 #[derive(Debug)]
 pub struct RateLimiter {
     config: RateLimitConfig,
-    clients: Mutex<HashMap<String, ClientState>>,
+    clients: DashMap<String, Mutex<ClientState>>,
 }
 
 impl RateLimiter {
     pub fn new(config: RateLimitConfig) -> Self {
         Self {
             config,
-            clients: Mutex::new(HashMap::new()),
+            clients: DashMap::new(),
         }
     }
 
     pub fn is_allowed(&self, client_id: &str) -> bool {
-        let mut clients = self.clients.lock();
-
-        // Evict stale clients when map gets too large
-        if clients.len() > 10_000 {
+        // Evict stale entries when the map grows large.
+        // We do this outside of any per-client lock to avoid blocking other clients.
+        if self.clients.len() > 10_000 {
             let window = std::time::Duration::from_secs(self.config.window_seconds * 2);
             let now = Instant::now();
-            clients.retain(|_, state| now.duration_since(state.window_start) < window);
+            self.clients.retain(|_, cell| {
+                let state = cell.lock();
+                now.duration_since(state.window_start) < window
+            });
         }
 
-        let state = clients
+        let entry = self.clients
             .entry(client_id.to_string())
-            .or_insert_with(|| ClientState::new(self.config.burst_size));
+            .or_insert_with(|| Mutex::new(ClientState::new(self.config.burst_size)));
+
+        let mut state = entry.value().lock();
         state.total_requests += 1;
 
         let allowed = match self.config.algorithm {
-            RateLimitAlgorithm::SlidingWindow => {
-                self.check_sliding_window(state)
-            }
-            RateLimitAlgorithm::TokenBucket => {
-                self.check_token_bucket(state)
-            }
-            RateLimitAlgorithm::FixedWindow => {
-                self.check_fixed_window(state)
-            }
+            RateLimitAlgorithm::SlidingWindow => self.check_sliding_window(&mut state),
+            RateLimitAlgorithm::TokenBucket   => self.check_token_bucket(&mut state),
+            RateLimitAlgorithm::FixedWindow   => self.check_fixed_window(&mut state),
         };
 
         if !allowed {
@@ -103,21 +106,22 @@ impl RateLimiter {
     }
 
     pub fn get_remaining(&self, client_id: &str) -> u32 {
-        let mut clients = self.clients.lock();
-        let state = match clients.get_mut(client_id) {
-            Some(s) => s,
+        let entry = match self.clients.get(client_id) {
+            Some(e) => e,
             None => return self.config.requests_per_window,
         };
-
+        let mut state = entry.value().lock();
         match self.config.algorithm {
             RateLimitAlgorithm::SlidingWindow => {
                 let now = Instant::now();
                 let window = std::time::Duration::from_secs(self.config.window_seconds);
-                let count = state.request_times.iter().filter(|t| now.duration_since(**t) < window).count() as u32;
+                let count = state.request_times.iter()
+                    .filter(|t| now.duration_since(**t) < window)
+                    .count() as u32;
                 self.config.requests_per_window.saturating_sub(count)
             }
             RateLimitAlgorithm::TokenBucket => {
-                self.refill_tokens(state);
+                self.refill_tokens(&mut state);
                 state.tokens as u32
             }
             RateLimitAlgorithm::FixedWindow => {
@@ -127,25 +131,25 @@ impl RateLimiter {
     }
 
     pub fn reset_client(&self, client_id: &str) {
-        self.clients.lock().remove(client_id);
+        self.clients.remove(client_id);
     }
 
     pub fn get_metrics(&self) -> HashMap<String, usize> {
-        let clients = self.clients.lock();
         let mut metrics = HashMap::new();
         let mut total_requests: usize = 0;
         let mut total_blocked: usize = 0;
 
-        for (id, state) in clients.iter() {
+        for entry in self.clients.iter() {
+            let state = entry.value().lock();
             total_requests += state.total_requests;
             total_blocked += state.blocked_requests;
-            metrics.insert(format!("client_{}_requests", id), state.total_requests);
-            metrics.insert(format!("client_{}_blocked", id), state.blocked_requests);
+            metrics.insert(format!("client_{}_requests", entry.key()), state.total_requests);
+            metrics.insert(format!("client_{}_blocked", entry.key()), state.blocked_requests);
         }
 
         metrics.insert("total_requests".to_string(), total_requests);
         metrics.insert("total_blocked".to_string(), total_blocked);
-        metrics.insert("active_clients".to_string(), clients.len());
+        metrics.insert("active_clients".to_string(), self.clients.len());
         metrics
     }
 
