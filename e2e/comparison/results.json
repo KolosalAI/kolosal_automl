@@ -1,14 +1,16 @@
 {
-  "timestamp": "2026-03-15T09:34:14.108Z",
+  "timestamp": "2026-03-15T09:58:04.354Z",
   "summary": {
-    "totalMetrics": 10,
-    "headToHeadMetrics": 10,
+    "totalMetrics": 18,
+    "headToHeadMetrics": 18,
     "rustOnlyMetrics": 0,
-    "rustWins": 9,
-    "pythonWins": 1,
+    "rustWins": 13,
+    "pythonWins": 5,
     "ties": 0,
-    "avgSpeedupFactor": 6.239185874302585,
+    "avgSpeedupFactor": 3.008116934887469,
     "categories": [
+      "Page Load",
+      "API Latency",
       "Dataset Loading",
       "Training",
       "Prediction",
@@ -18,217 +20,585 @@
   },
   "entries": [
     {
-      "metric": "Iris Load avg",
-      "category": "Dataset Loading",
-      "rust": 746.6666666666666,
-      "python": 1223.3333333333333,
+      "metric": "TTFB (avg)",
+      "category": "Page Load",
+      "rust": 95.39999999602635,
+      "python": 147.2000000079473,
       "unit": "ms",
-      "improvement": "39.0% faster",
+      "improvement": "35.2% faster",
       "rustOnly": false,
       "rustSamples": [
-        710,
-        717,
-        813
+        49.400000005960464,
+        88.7999999821186,
+        148
       ],
       "rustStats": {
-        "min": 710,
-        "max": 813,
-        "avg": 746.6666666666666,
-        "p50": 717,
-        "p95": 813,
-        "p99": 813,
-        "stddev": 57.55287424041768,
-        "cv": 7.707974228627368,
-        "ci95_lower": 640.9346378874089,
-        "ci95_upper": 852.3986954459243,
+        "min": 49.400000005960464,
+        "max": 148,
+        "avg": 95.39999999602635,
+        "p50": 88.7999999821186,
+        "p95": 148,
+        "p99": 148,
+        "stddev": 49.63023272002496,
+        "cv": 52.023304740138556,
+        "ci95_lower": 4.222882197281066,
+        "ci95_upper": 186.57711779477165,
         "n": 3,
         "values": [
-          710,
-          717,
-          813
+          49.400000005960464,
+          88.7999999821186,
+          148
         ]
       },
       "pythonSamples": [
-        1784,
-        638,
-        1248
+        82.80000001192093,
+        133.80000001192093,
+        225
       ],
       "pythonStats": {
-        "min": 638,
-        "max": 1784,
-        "avg": 1223.3333333333333,
-        "p50": 1248,
-        "p95": 1784,
-        "p99": 1784,
-        "stddev": 573.398058362019,
-        "cv": 46.87177588790347,
-        "ci95_lower": 169.92738603961402,
-        "ci95_upper": 2276.7392806270527,
+        "min": 82.80000001192093,
+        "max": 225,
+        "avg": 147.2000000079473,
+        "p50": 133.80000001192093,
+        "p95": 225,
+        "p99": 225,
+        "stddev": 72.04082175456185,
+        "cv": 48.94077564583721,
+        "ci95_lower": 14.851749124492756,
+        "ci95_upper": 279.54825089140184,
         "n": 3,
         "values": [
-          638,
-          1248,
-          1784
+          82.80000001192093,
+          133.80000001192093,
+          225
         ]
       },
-      "effectSize": -1.1697602744619466,
+      "effectSize": -0.8373899918662226,
+      "effectLabel": "large"
+    },
+    {
+      "metric": "DOM Content Loaded (avg)",
+      "category": "Page Load",
+      "rust": 222.63333332538605,
+      "python": 786.366666674614,
+      "unit": "ms",
+      "improvement": "3.5x faster",
+      "rustOnly": false,
+      "rustSamples": [
+        163.59999999403954,
+        223.59999999403954,
+        280.69999998807907
+      ],
+      "rustStats": {
+        "min": 163.59999999403954,
+        "max": 280.69999998807907,
+        "avg": 222.63333332538605,
+        "p50": 223.59999999403954,
+        "p95": 280.69999998807907,
+        "p99": 280.69999998807907,
+        "stddev": 58.55598460437011,
+        "cv": 26.301535232726618,
+        "ci95_lower": 115.05846185112867,
+        "ci95_upper": 330.20820479964345,
+        "n": 3,
+        "values": [
+          163.59999999403954,
+          223.59999999403954,
+          280.69999998807907
+        ]
+      },
+      "pythonSamples": [
+        654.4000000059605,
+        825.2000000178814,
+        879.5
+      ],
+      "pythonStats": {
+        "min": 654.4000000059605,
+        "max": 879.5,
+        "avg": 786.366666674614,
+        "p50": 825.2000000178814,
+        "p95": 879.5,
+        "p99": 879.5,
+        "stddev": 117.46711596545283,
+        "cv": 14.93795718251863,
+        "ci95_lower": 570.5644734775723,
+        "ci95_upper": 1002.1688598716556,
+        "n": 3,
+        "values": [
+          654.4000000059605,
+          825.2000000178814,
+          879.5
+        ]
+      },
+      "effectSize": -6.074069664752863,
+      "effectLabel": "very large"
+    },
+    {
+      "metric": "Full Load (avg)",
+      "category": "Page Load",
+      "rust": 544.1333333353201,
+      "python": 1075.6333333452542,
+      "unit": "ms",
+      "improvement": "49.4% faster",
+      "rustOnly": false,
+      "rustSamples": [
+        369.90000000596046,
+        477.19999998807907,
+        785.3000000119209
+      ],
+      "rustStats": {
+        "min": 369.90000000596046,
+        "max": 785.3000000119209,
+        "avg": 544.1333333353201,
+        "p50": 477.19999998807907,
+        "p95": 785.3000000119209,
+        "p99": 785.3000000119209,
+        "stddev": 215.63706391983652,
+        "cv": 39.62945306034964,
+        "ci95_lower": 147.98032535513482,
+        "ci95_upper": 940.2863413155054,
+        "n": 3,
+        "values": [
+          369.90000000596046,
+          477.19999998807907,
+          785.3000000119209
+        ]
+      },
+      "pythonSamples": [
+        852.7000000178814,
+        1176.7000000178814,
+        1197.5
+      ],
+      "pythonStats": {
+        "min": 852.7000000178814,
+        "max": 1197.5,
+        "avg": 1075.6333333452542,
+        "p50": 1176.7000000178814,
+        "p95": 1197.5,
+        "p99": 1197.5,
+        "stddev": 193.34583867038407,
+        "cv": 17.975069447603705,
+        "ci95_lower": 720.4321718315803,
+        "ci95_upper": 1430.834494858928,
+        "n": 3,
+        "values": [
+          852.7000000178814,
+          1176.7000000178814,
+          1197.5
+        ]
+      },
+      "effectSize": -2.59527862869108,
+      "effectLabel": "very large"
+    },
+    {
+      "metric": "Transfer Size (avg)",
+      "category": "Page Load",
+      "rust": 0,
+      "python": 769275,
+      "unit": "bytes",
+      "improvement": "Infinityx faster",
+      "rustOnly": false,
+      "rustSamples": [
+        0,
+        0,
+        0
+      ],
+      "rustStats": {
+        "min": 0,
+        "max": 0,
+        "avg": 0,
+        "p50": 0,
+        "p95": 0,
+        "p99": 0,
+        "stddev": 0,
+        "cv": 0,
+        "ci95_lower": 0,
+        "ci95_upper": 0,
+        "n": 3,
+        "values": [
+          0,
+          0,
+          0
+        ]
+      },
+      "pythonSamples": [
+        762161,
+        762161,
+        783503
+      ],
+      "pythonStats": {
+        "min": 762161,
+        "max": 783503,
+        "avg": 769275,
+        "p50": 762161,
+        "p95": 783503,
+        "p99": 783503,
+        "stddev": 12321.809445044993,
+        "cv": 1.6017431276260108,
+        "ci95_lower": 746638.252,
+        "ci95_upper": 791911.748,
+        "n": 3,
+        "values": [
+          762161,
+          762161,
+          783503
+        ]
+      },
+      "effectSize": -88.29215733668491,
+      "effectLabel": "very large"
+    },
+    {
+      "metric": "Request Count (avg)",
+      "category": "Page Load",
+      "rust": 7,
+      "python": 17.333333333333332,
+      "unit": "reqs",
+      "improvement": "2.5x faster",
+      "rustOnly": false,
+      "rustSamples": [
+        7,
+        7,
+        7
+      ],
+      "rustStats": {
+        "min": 7,
+        "max": 7,
+        "avg": 7,
+        "p50": 7,
+        "p95": 7,
+        "p99": 7,
+        "stddev": 0,
+        "cv": 0,
+        "ci95_lower": 7,
+        "ci95_upper": 7,
+        "n": 3,
+        "values": [
+          7,
+          7,
+          7
+        ]
+      },
+      "pythonSamples": [
+        17,
+        17,
+        18
+      ],
+      "pythonStats": {
+        "min": 17,
+        "max": 18,
+        "avg": 17.333333333333332,
+        "p50": 17,
+        "p95": 18,
+        "p99": 18,
+        "stddev": 0.5773502691896258,
+        "cv": 3.330866937632457,
+        "ci95_lower": 16.272666666666666,
+        "ci95_upper": 18.394,
+        "n": 3,
+        "values": [
+          17,
+          17,
+          18
+        ]
+      },
+      "effectSize": -25.311394008759503,
+      "effectLabel": "very large"
+    },
+    {
+      "metric": "Health Check avg",
+      "category": "API Latency",
+      "rust": 238.8,
+      "python": 223.2,
+      "unit": "ms",
+      "improvement": "7.0% slower",
+      "rustOnly": false,
+      "rustSamples": [
+        404,
+        212,
+        200,
+        215,
+        163
+      ],
+      "rustStats": {
+        "min": 163,
+        "max": 404,
+        "avg": 238.8,
+        "p50": 212,
+        "p95": 404,
+        "p99": 404,
+        "stddev": 94.63984361779134,
+        "cv": 39.63142530058264,
+        "ci95_lower": 129.98441818866198,
+        "ci95_upper": 347.6155818113381,
+        "n": 5,
+        "values": [
+          163,
+          200,
+          212,
+          215,
+          404
+        ]
+      },
+      "pythonSamples": [
+        230,
+        214,
+        236,
+        217,
+        219
+      ],
+      "pythonStats": {
+        "min": 214,
+        "max": 236,
+        "avg": 223.2,
+        "p50": 219,
+        "p95": 236,
+        "p99": 236,
+        "stddev": 9.364827814754523,
+        "cv": 4.195711386538766,
+        "ci95_lower": 212.43245064371655,
+        "ci95_upper": 233.96754935628343,
+        "n": 5,
+        "values": [
+          214,
+          217,
+          219,
+          230,
+          236
+        ]
+      },
+      "effectSize": 0.23197955741625642,
+      "effectLabel": "small"
+    },
+    {
+      "metric": "Health Check p50",
+      "category": "API Latency",
+      "rust": 212,
+      "python": 219,
+      "unit": "ms",
+      "improvement": "3.2% faster",
+      "rustOnly": false
+    },
+    {
+      "metric": "Health Check p95",
+      "category": "API Latency",
+      "rust": 404,
+      "python": 236,
+      "unit": "ms",
+      "improvement": "71.2% slower",
+      "rustOnly": false
+    },
+    {
+      "metric": "Iris Load avg",
+      "category": "Dataset Loading",
+      "rust": 764.3333333333334,
+      "python": 570.6666666666666,
+      "unit": "ms",
+      "improvement": "33.9% slower",
+      "rustOnly": false,
+      "rustSamples": [
+        847,
+        792,
+        654
+      ],
+      "rustStats": {
+        "min": 654,
+        "max": 847,
+        "avg": 764.3333333333334,
+        "p50": 792,
+        "p95": 847,
+        "p99": 847,
+        "stddev": 99.43004240838546,
+        "cv": 13.008727746408914,
+        "ci95_lower": 581.6675630447785,
+        "ci95_upper": 946.9991036218883,
+        "n": 3,
+        "values": [
+          654,
+          792,
+          847
+        ]
+      },
+      "pythonSamples": [
+        932,
+        340,
+        440
+      ],
+      "pythonStats": {
+        "min": 340,
+        "max": 932,
+        "avg": 570.6666666666666,
+        "p50": 440,
+        "p95": 932,
+        "p99": 932,
+        "stddev": 316.8932522685413,
+        "cv": 55.530359626496725,
+        "ci95_lower": -11.506976457482779,
+        "ci95_upper": 1152.840309790816,
+        "n": 3,
+        "values": [
+          340,
+          440,
+          932
+        ]
+      },
+      "effectSize": 0.8246449931005183,
       "effectLabel": "large"
     },
     {
       "metric": "Iris Load p50",
       "category": "Dataset Loading",
-      "rust": 717,
-      "python": 1248,
+      "rust": 792,
+      "python": 440,
       "unit": "ms",
-      "improvement": "42.5% faster",
+      "improvement": "80.0% slower",
       "rustOnly": false
     },
     {
       "metric": "Iris Load p95",
       "category": "Dataset Loading",
-      "rust": 813,
-      "python": 1784,
+      "rust": 847,
+      "python": 932,
       "unit": "ms",
-      "improvement": "2.2x faster",
+      "improvement": "9.1% faster",
       "rustOnly": false
     },
     {
       "metric": "Iris Classification Time",
       "category": "Training",
-      "rust": 309,
-      "python": 866,
+      "rust": 629,
+      "python": 868,
       "unit": "ms",
-      "improvement": "2.8x faster",
+      "improvement": "27.5% faster",
       "rustOnly": false
     },
     {
       "metric": "Single Prediction avg",
       "category": "Prediction",
-      "rust": 47.8,
-      "python": 42.333333333333336,
+      "rust": 50.4,
+      "python": 37,
       "unit": "ms",
-      "improvement": "12.9% slower",
+      "improvement": "36.2% slower",
       "rustOnly": false
     },
     {
       "metric": "Single Prediction p50",
       "category": "Prediction",
-      "rust": 34,
-      "python": 37,
+      "rust": 25,
+      "python": 36,
       "unit": "ms",
-      "improvement": "8.1% faster",
+      "improvement": "30.6% faster",
       "rustOnly": false
     },
     {
       "metric": "Tab Switch avg",
       "category": "UI Responsiveness",
-      "rust": 29.5,
-      "python": 335.2,
+      "rust": 24.5,
+      "python": 346.2,
       "unit": "ms",
-      "improvement": "11.4x faster",
+      "improvement": "14.1x faster",
       "rustOnly": false
     },
     {
       "metric": "Total Time (10 reqs)",
       "category": "Concurrent Stress",
-      "rust": 930,
-      "python": 1898,
+      "rust": 974,
+      "python": 1667,
       "unit": "ms",
-      "improvement": "2.0x faster",
+      "improvement": "41.6% faster",
       "rustOnly": false
     },
     {
       "metric": "Avg Individual Latency",
       "category": "Concurrent Stress",
-      "rust": 52.4,
-      "python": 919.6,
+      "rust": 132,
+      "python": 1095.2,
       "unit": "ms",
-      "improvement": "17.5x faster",
+      "improvement": "8.3x faster",
       "rustOnly": false,
       "rustSamples": [
-        25,
-        90,
-        69,
-        58,
-        40,
-        20,
-        83,
-        64,
-        46,
-        29
+        155,
+        134,
+        118,
+        186,
+        163,
+        149,
+        134,
+        109,
+        99,
+        73
       ],
       "rustStats": {
-        "min": 20,
-        "max": 90,
-        "avg": 52.4,
-        "p50": 58,
-        "p95": 90,
-        "p99": 90,
-        "stddev": 24.34565897878123,
-        "cv": 46.46118125721609,
-        "ci95_lower": 35.247132973821024,
-        "ci95_upper": 69.55286702617897,
+        "min": 73,
+        "max": 186,
+        "avg": 132,
+        "p50": 134,
+        "p95": 186,
+        "p99": 186,
+        "stddev": 33.32999983331666,
+        "cv": 25.249999873724743,
+        "ci95_lower": 108.51716654612945,
+        "ci95_upper": 155.48283345387057,
         "n": 10,
         "values": [
-          20,
-          25,
-          29,
-          40,
-          46,
-          58,
-          64,
-          69,
-          83,
-          90
+          73,
+          99,
+          109,
+          118,
+          134,
+          134,
+          149,
+          155,
+          163,
+          186
         ]
       },
       "pythonSamples": [
-        86,
-        169,
-        342,
-        416,
-        577,
-        1180,
-        1387,
-        1503,
-        1638,
-        1898
+        237,
+        402,
+        740,
+        900,
+        1159,
+        1402,
+        1403,
+        1472,
+        1570,
+        1667
       ],
       "pythonStats": {
-        "min": 86,
-        "max": 1898,
-        "avg": 919.6,
-        "p50": 1180,
-        "p95": 1898,
-        "p99": 1898,
-        "stddev": 671.8870936896069,
-        "cv": 73.06297234554229,
-        "ci95_lower": 446.2182778330931,
-        "ci95_upper": 1392.9817221669068,
+        "min": 237,
+        "max": 1667,
+        "avg": 1095.2,
+        "p50": 1402,
+        "p95": 1667,
+        "p99": 1667,
+        "stddev": 502.0634754025962,
+        "cv": 45.84217269928745,
+        "ci95_lower": 741.4684357902262,
+        "ci95_upper": 1448.931564209774,
         "n": 10,
         "values": [
-          86,
-          169,
-          342,
-          416,
-          577,
-          1180,
-          1387,
-          1503,
-          1638,
-          1898
+          237,
+          402,
+          740,
+          900,
+          1159,
+          1402,
+          1403,
+          1472,
+          1570,
+          1667
         ]
       },
-      "effectSize": -1.824118509830705,
+      "effectSize": -2.707185128746633,
       "effectLabel": "very large"
     },
     {
       "metric": "P95 Individual Latency",
       "category": "Concurrent Stress",
-      "rust": 90,
-      "python": 1898,
+      "rust": 186,
+      "python": 1667,
       "unit": "ms",
-      "improvement": "21.1x faster",
+      "improvement": "9.0x faster",
       "rustOnly": false
     }
   ]
