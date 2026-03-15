@@ -3553,6 +3553,371 @@ const EMBEDDED_INDEX_HTML: &str = r#"<!DOCTYPE html>
         ctx.fillText((val >= 0 ? '+' : '') + val.toFixed(3), val >= 0 ? endX + 4 : endX - 4, y);
       });
     }
+
+    function eInsMetricsLoad() {
+  if (!eLastModelId) return;
+  var nodata = document.getElementById('e-ins-m-nodata');
+  var content = document.getElementById('e-ins-m-content');
+
+  fetch('/api/insights/evaluation?model_id=' + encodeURIComponent(eLastModelId))
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.error) {
+        if (nodata) nodata.style.display = 'flex';
+        if (content) { while(content.firstChild) content.removeChild(content.firstChild); }
+        return;
+      }
+      if (nodata) nodata.style.display = 'none';
+      if (content) { while(content.firstChild) content.removeChild(content.firstChild); }
+      eInsMetricsData = d;
+      if (d.task === 'classification') {
+        eInsMetricsRenderClassification(d, content);
+      } else {
+        eInsMetricsRenderRegression(d, content);
+      }
+    })
+    .catch(function(e) { console.error('Metrics load failed', e); });
+}
+
+    function eInsMetricsRenderClassification(d, container) {
+  // Build layout using createElement
+  var grid = document.createElement('div');
+  grid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:16px 0';
+
+  // Left column: confusion matrix
+  var leftCol = document.createElement('div');
+  var cmTitle = document.createElement('h4');
+  cmTitle.style.cssText = 'margin:0 0 8px;font-size:14px;font-weight:600;color:#111827';
+  cmTitle.textContent = 'Confusion Matrix';
+  leftCol.appendChild(cmTitle);
+  var cmCanvas = document.createElement('canvas');
+  cmCanvas.id = 'e-ins-m-cm-canvas';
+  cmCanvas.width = 320; cmCanvas.height = 320;
+  cmCanvas.style.cssText = 'border:1px solid #e5e7eb;border-radius:6px';
+  leftCol.appendChild(cmCanvas);
+  var cmTooltip = document.createElement('div');
+  cmTooltip.id = 'e-ins-m-cm-tooltip';
+  cmTooltip.style.cssText = 'font-size:12px;color:#374151;margin-top:6px;min-height:16px';
+  leftCol.appendChild(cmTooltip);
+  grid.appendChild(leftCol);
+
+  // Right column: ROC + PR
+  var rightCol = document.createElement('div');
+  var rocTitle = document.createElement('h4');
+  rocTitle.style.cssText = 'margin:0 0 8px;font-size:14px;font-weight:600;color:#111827';
+  rocTitle.textContent = 'ROC Curve (AUC: ' + (d.auc ? d.auc.toFixed(3) : 'N/A') + ')';
+  rightCol.appendChild(rocTitle);
+  var rocCanvas = document.createElement('canvas');
+  rocCanvas.id = 'e-ins-m-roc-canvas';
+  rocCanvas.width = 300; rocCanvas.height = 220;
+  rocCanvas.style.cssText = 'border:1px solid #e5e7eb;border-radius:6px;display:block';
+  rightCol.appendChild(rocCanvas);
+  var prTitle = document.createElement('h4');
+  prTitle.style.cssText = 'margin:12px 0 8px;font-size:14px;font-weight:600;color:#111827';
+  prTitle.textContent = 'Precision-Recall Curve';
+  rightCol.appendChild(prTitle);
+  var prCanvas = document.createElement('canvas');
+  prCanvas.id = 'e-ins-m-pr-canvas';
+  prCanvas.width = 300; prCanvas.height = 180;
+  prCanvas.style.cssText = 'border:1px solid #e5e7eb;border-radius:6px;display:block';
+  rightCol.appendChild(prCanvas);
+  grid.appendChild(rightCol);
+  container.appendChild(grid);
+
+  // Accuracy card
+  var accCard = document.createElement('div');
+  accCard.style.cssText = 'padding:8px;background:#f9fafb;border-radius:6px;margin-bottom:12px';
+  var accLabel = document.createElement('span');
+  accLabel.style.cssText = 'font-size:12px;color:#6b7280';
+  accLabel.textContent = 'Accuracy: ';
+  var accVal = document.createElement('strong');
+  accVal.textContent = d.accuracy != null ? (d.accuracy * 100).toFixed(2) + '%' : 'N/A';
+  accCard.appendChild(accLabel); accCard.appendChild(accVal);
+  container.appendChild(accCard);
+
+  // Draw canvases
+  eInsMetricsDrawCM(d);
+  eInsMetricsDrawROC(d);
+  eInsMetricsDrawPR(d);
+}
+
+    function eInsMetricsDrawCM(d) {
+  var canvas = document.getElementById('e-ins-m-cm-canvas');
+  if (!canvas || !d.confusion_matrix) return;
+  var ctx = canvas.getContext('2d');
+  var W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+  var cm = d.confusion_matrix;
+  var n = cm.length;
+  var pad = 30;
+  var cellW = (W - pad) / n;
+  var cellH = (H - pad) / n;
+  var maxVal = 0;
+  cm.forEach(function(row) { row.forEach(function(v) { if (v > maxVal) maxVal = v; }); });
+
+  cm.forEach(function(row, i) {
+    row.forEach(function(val, j) {
+      var x = pad + j * cellW;
+      var y = pad + i * cellH;
+      var isCorrect = (i === j);
+      var intensity = maxVal > 0 ? val / maxVal : 0;
+      if (isCorrect) {
+        ctx.fillStyle = 'rgba(16,185,129,' + (0.2 + intensity * 0.7) + ')';
+      } else if (val > 0) {
+        ctx.fillStyle = 'rgba(239,68,68,' + (0.2 + intensity * 0.7) + ')';
+      } else {
+        ctx.fillStyle = '#f9fafb';
+      }
+      ctx.fillRect(x, y, cellW - 2, cellH - 2);
+      ctx.fillStyle = '#111827';
+      ctx.font = '12px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(val, x + cellW/2, y + cellH/2);
+    });
+  });
+
+  // Axis labels
+  ctx.fillStyle = '#6b7280'; ctx.font = '10px sans-serif';
+  d.classes.forEach(function(cls, i) {
+    var label = cls.length > 6 ? cls.slice(0,5)+'\u2026' : cls;
+    ctx.textAlign = 'center'; ctx.fillText(label, pad + i * cellW + cellW/2, pad - 8);
+    ctx.textAlign = 'right'; ctx.fillText(label, pad - 4, pad + i * cellH + cellH/2);
+  });
+
+  // Click handler for tooltip
+  canvas.onclick = function(e) {
+    var rect = canvas.getBoundingClientRect();
+    var mx = e.clientX - rect.left;
+    var my = e.clientY - rect.top;
+    var ci = Math.floor((mx - pad) / cellW);
+    var ri = Math.floor((my - pad) / cellH);
+    var tooltip = document.getElementById('e-ins-m-cm-tooltip');
+    if (tooltip && ri >= 0 && ri < n && ci >= 0 && ci < n) {
+      var actual = d.classes[ri] || ('class ' + ri);
+      var predicted = d.classes[ci] || ('class ' + ci);
+      var cnt = cm[ri][ci];
+      tooltip.textContent = cnt + ' sample' + (cnt !== 1 ? 's' : '') + ' were ' + actual + ' but predicted as ' + predicted;
+    }
+  };
+}
+
+    function eInsMetricsDrawROC(d) {
+  var canvas = document.getElementById('e-ins-m-roc-canvas');
+  if (!canvas || !d.roc_points || !d.roc_points.length) return;
+  var ctx = canvas.getContext('2d');
+  var W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+  var pad = 30;
+  var pts = d.roc_points;
+
+  function toX(fpr) { return pad + fpr * (W - 2*pad); }
+  function toY(tpr) { return H - pad - tpr * (H - 2*pad); }
+
+  // Shaded AUC area
+  ctx.fillStyle = 'rgba(59,130,246,0.1)';
+  ctx.beginPath();
+  ctx.moveTo(toX(0), toY(0));
+  pts.forEach(function(p) { ctx.lineTo(toX(p.fpr), toY(p.tpr)); });
+  ctx.lineTo(toX(1), toY(0));
+  ctx.closePath();
+  ctx.fill();
+
+  // Diagonal baseline
+  ctx.strokeStyle = '#9ca3af'; ctx.lineWidth = 1; ctx.setLineDash([4,4]);
+  ctx.beginPath(); ctx.moveTo(toX(0), toY(0)); ctx.lineTo(toX(1), toY(1)); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // ROC curve
+  ctx.strokeStyle = '#3b82f6'; ctx.lineWidth = 2;
+  ctx.beginPath();
+  pts.forEach(function(p, i) {
+    if (i === 0) ctx.moveTo(toX(p.fpr), toY(p.tpr));
+    else ctx.lineTo(toX(p.fpr), toY(p.tpr));
+  });
+  ctx.stroke();
+
+  // Current threshold dot
+  var curPt = pts.reduce(function(best, p) {
+    return Math.abs(p.threshold - eInsMetricsThreshold) < Math.abs(best.threshold - eInsMetricsThreshold) ? p : best;
+  }, pts[0]);
+  if (curPt) {
+    ctx.fillStyle = '#ef4444'; ctx.beginPath();
+    ctx.arc(toX(curPt.fpr), toY(curPt.tpr), 5, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#374151'; ctx.font = '10px sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+    ctx.fillText('t=' + eInsMetricsThreshold.toFixed(2), toX(curPt.fpr) + 6, toY(curPt.tpr) - 2);
+  }
+
+  // Click to set threshold
+  canvas.onclick = function(e) {
+    var rect = canvas.getBoundingClientRect();
+    var mx = e.clientX - rect.left;
+    var my = e.clientY - rect.top;
+    // Find nearest point
+    var nearest = pts.reduce(function(best, p) {
+      var dx = toX(p.fpr) - mx, dy = toY(p.tpr) - my;
+      var dist = dx*dx + dy*dy;
+      return dist < best.dist ? {p: p, dist: dist} : best;
+    }, {p: pts[0], dist: Infinity});
+    if (nearest.p) {
+      eInsMetricsThreshold = nearest.p.threshold;
+      eInsMetricsDrawROC(d);
+      eInsMetricsDrawCM(d);
+    }
+  };
+}
+
+    function eInsMetricsDrawPR(d) {
+  var canvas = document.getElementById('e-ins-m-pr-canvas');
+  if (!canvas || !d.pr_points || !d.pr_points.length) return;
+  var ctx = canvas.getContext('2d');
+  var W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+  var pad = 30;
+  var pts = d.pr_points;
+
+  function toX(recall) { return pad + recall * (W - 2*pad); }
+  function toY(prec) { return H - pad - prec * (H - 2*pad); }
+
+  ctx.strokeStyle = '#10b981'; ctx.lineWidth = 2;
+  ctx.beginPath();
+  pts.forEach(function(p, i) {
+    if (i === 0) ctx.moveTo(toX(p.recall), toY(p.precision));
+    else ctx.lineTo(toX(p.recall), toY(p.precision));
+  });
+  ctx.stroke();
+
+  // Current threshold dot
+  var curPt = pts.reduce(function(best, p) {
+    return Math.abs(p.threshold - eInsMetricsThreshold) < Math.abs(best.threshold - eInsMetricsThreshold) ? p : best;
+  }, pts[0]);
+  if (curPt) {
+    ctx.fillStyle = '#ef4444'; ctx.beginPath();
+    ctx.arc(toX(curPt.recall), toY(curPt.precision), 5, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#374151'; ctx.font = '10px sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+    ctx.fillText('t=' + eInsMetricsThreshold.toFixed(2), toX(curPt.recall) + 6, toY(curPt.precision) - 2);
+  }
+}
+
+    function eInsMetricsRenderRegression(d, container) {
+  // Stat cards
+  var stats = [
+    {label: 'R\u00b2', value: d.r2 != null ? d.r2.toFixed(4) : 'N/A'},
+    {label: 'MAE', value: d.mae != null ? d.mae.toFixed(4) : 'N/A'},
+    {label: 'RMSE', value: d.rmse != null ? d.rmse.toFixed(4) : 'N/A'},
+  ];
+  var cardsRow = document.createElement('div');
+  cardsRow.style.cssText = 'display:flex;gap:12px;margin-bottom:16px';
+  stats.forEach(function(s) {
+    var card = document.createElement('div');
+    card.style.cssText = 'flex:1;padding:12px;background:#f9fafb;border-radius:8px;text-align:center;border:1px solid #e5e7eb';
+    var valEl = document.createElement('div');
+    valEl.style.cssText = 'font-size:20px;font-weight:700;color:#111827';
+    valEl.textContent = s.value;
+    var lblEl = document.createElement('div');
+    lblEl.style.cssText = 'font-size:11px;color:#6b7280;margin-top:4px';
+    lblEl.textContent = s.label;
+    card.appendChild(valEl); card.appendChild(lblEl);
+    cardsRow.appendChild(card);
+  });
+  container.appendChild(cardsRow);
+
+  // Residual scatter canvas
+  var residTitle = document.createElement('h4');
+  residTitle.style.cssText = 'margin:0 0 8px;font-size:14px;font-weight:600;color:#111827';
+  residTitle.textContent = 'Actual vs Predicted';
+  container.appendChild(residTitle);
+  var residCanvas = document.createElement('canvas');
+  residCanvas.id = 'e-ins-m-resid-canvas';
+  residCanvas.width = 500; residCanvas.height = 280;
+  residCanvas.style.cssText = 'border:1px solid #e5e7eb;border-radius:6px;display:block;margin-bottom:16px';
+  container.appendChild(residCanvas);
+
+  // Error distribution canvas
+  var histTitle = document.createElement('h4');
+  histTitle.style.cssText = 'margin:0 0 8px;font-size:14px;font-weight:600;color:#111827';
+  histTitle.textContent = 'Error Distribution';
+  container.appendChild(histTitle);
+  var histCanvas = document.createElement('canvas');
+  histCanvas.id = 'e-ins-m-hist-canvas';
+  histCanvas.width = 500; histCanvas.height = 160;
+  histCanvas.style.cssText = 'border:1px solid #e5e7eb;border-radius:6px;display:block';
+  container.appendChild(histCanvas);
+
+  eInsMetricsDrawResiduals(d);
+  eInsMetricsDrawErrorDist(d);
+}
+
+    function eInsMetricsDrawResiduals(d) {
+  var canvas = document.getElementById('e-ins-m-resid-canvas');
+  if (!canvas || !d.residuals || !d.residuals.length) return;
+  var ctx = canvas.getContext('2d');
+  var W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+  var pad = 40;
+  var pts = d.residuals;
+  var allV = pts.map(function(p) { return p.actual; }).concat(pts.map(function(p) { return p.predicted; }));
+  var minV = allV.reduce(function(m,v) { return Math.min(m,v); }, Infinity);
+  var maxV = allV.reduce(function(m,v) { return Math.max(m,v); }, -Infinity);
+  if (minV === maxV) { minV -= 1; maxV += 1; }
+  function toX(v) { return pad + (v - minV) / (maxV - minV) * (W - 2*pad); }
+  function toY(v) { return H - pad - (v - minV) / (maxV - minV) * (H - 2*pad); }
+
+  // Perfect prediction line y=x
+  ctx.strokeStyle = '#9ca3af'; ctx.lineWidth = 1; ctx.setLineDash([4,4]);
+  ctx.beginPath(); ctx.moveTo(toX(minV), toY(minV)); ctx.lineTo(toX(maxV), toY(maxV)); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Scatter points, color by residual magnitude
+  pts.forEach(function(p) {
+    var err = Math.abs(p.actual - p.predicted);
+    var maxErr = maxV - minV;
+    var t = maxErr > 0 ? Math.min(err / maxErr, 1) : 0;
+    var r = Math.round(16 + t * 223), g = Math.round(185 - t * 173), b = Math.round(129 - t * 129);
+    ctx.fillStyle = 'rgb(' + r + ',' + g + ',' + b + ')';
+    ctx.beginPath(); ctx.arc(toX(p.actual), toY(p.predicted), 3, 0, Math.PI*2); ctx.fill();
+  });
+
+  ctx.fillStyle = '#6b7280'; ctx.font = '10px sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  ctx.fillText('Actual', W/2, H - pad + 4);
+  ctx.save(); ctx.translate(10, H/2); ctx.rotate(-Math.PI/2);
+  ctx.textAlign = 'center'; ctx.fillText('Predicted', 0, 0); ctx.restore();
+}
+
+    function eInsMetricsDrawErrorDist(d) {
+  var canvas = document.getElementById('e-ins-m-hist-canvas');
+  if (!canvas || !d.residuals || !d.residuals.length) return;
+  var ctx = canvas.getContext('2d');
+  var W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+  var errors = d.residuals.map(function(p) { return p.actual - p.predicted; });
+  var minE = errors.reduce(function(m,v) { return Math.min(m,v); }, Infinity);
+  var maxE = errors.reduce(function(m,v) { return Math.max(m,v); }, -Infinity);
+  if (minE === maxE) { minE -= 1; maxE += 1; }
+  var bins = 20;
+  var counts = new Array(bins).fill(0);
+  errors.forEach(function(e) {
+    var idx = Math.floor((e - minE) / (maxE - minE) * bins);
+    counts[Math.min(idx, bins-1)]++;
+  });
+  var maxCount = counts.reduce(function(m,v) { return Math.max(m,v); }, 0) || 1;
+  var pad = 30;
+  var bw = (W - 2*pad) / bins;
+  counts.forEach(function(c, i) {
+    var x = pad + i * bw;
+    var bh = c / maxCount * (H - 2*pad);
+    var binMid = minE + (i + 0.5) * (maxE - minE) / bins;
+    ctx.fillStyle = binMid < 0 ? '#f87171' : '#34d399';
+    ctx.fillRect(x, H - pad - bh, bw - 1, bh);
+  });
+  // Zero line
+  var zeroX = pad + (0 - minE) / (maxE - minE) * (W - 2*pad);
+  if (zeroX > pad && zeroX < W - pad) {
+    ctx.strokeStyle = '#374151'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(zeroX, pad); ctx.lineTo(zeroX, H-pad); ctx.stroke();
+  }
+  ctx.fillStyle = '#6b7280'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  ctx.fillText('Residual (Actual - Predicted)', W/2, H - pad + 4);
+}
     </script>
 </body>
 </html>"#;
