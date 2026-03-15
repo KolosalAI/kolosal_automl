@@ -6802,6 +6802,9 @@ pub async fn get_insights_evaluation(
                 .collect();
 
             let n = eval.y_true.len() as f64;
+            if n == 0.0 {
+                return axum::Json(serde_json::json!({"error": "evaluation_data_unavailable"})).into_response();
+            }
             let mean_true = eval.y_true.iter().sum::<f64>() / n;
             let ss_res: f64 = eval.y_true.iter().zip(eval.y_pred.iter()).map(|(&a, &p)| (a - p).powi(2)).sum();
             let ss_tot: f64 = eval.y_true.iter().map(|&a| (a - mean_true).powi(2)).sum();
