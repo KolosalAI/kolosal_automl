@@ -2253,6 +2253,8 @@ const EMBEDDED_INDEX_HTML: &str = r#"<!DOCTYPE html>
         var show=!eData;
         ['e-train-nodata','e-anom-nodata','e-dr-nodata'].forEach(function(id){var el=$(id);if(el)el.style.display=show?'flex':'none'});
         $('e-dr-btn').disabled=!eData;
+        var hasModel=!!eLastModelId;
+        ['e-ins-st-nomodel','e-ins-c-nomodel','e-ins-pg-nomodel','e-ins-m-nomodel'].forEach(function(id){var el=document.getElementById(id);if(el)el.style.display=hasModel?'none':'';});
     }
     function eUpdateTrainSummary(){
         var wrap=$('e-train-summary');var chips=$('e-train-config-chips');
