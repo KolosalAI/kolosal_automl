@@ -879,3 +879,17 @@ fn test_insights_evaluation_struct_exists() {
     };
     assert_eq!(eval.y_true.len(), 2);
 }
+
+#[tokio::test]
+async fn test_insights_evaluation_no_cache() {
+    let app = test_app();
+    let resp = app.oneshot(
+        axum::http::Request::builder()
+            .uri("/api/insights/evaluation?model_id=nonexistent")
+            .body(axum::body::Body::empty()).unwrap()
+    ).await.unwrap();
+    assert_eq!(resp.status(), 200);
+    let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["error"], "evaluation_data_unavailable");
+}

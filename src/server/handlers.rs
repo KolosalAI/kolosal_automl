@@ -6687,10 +6687,11 @@ pub async fn get_insights_model_structure(
 
 /// GET /api/insights/evaluation — return evaluation data for Metrics Deep Dive (Task 6)
 pub async fn get_insights_evaluation(
-    State(state): State<Arc<AppState>>,
-    Query(params): Query<std::collections::HashMap<String, String>>,
+    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> impl axum::response::IntoResponse {
     use axum::http::StatusCode;
+    use crate::training::TaskType;
 
     let model_id = match params.get("model_id").filter(|s| !s.is_empty()) {
         Some(id) => id.clone(),
@@ -6698,12 +6699,128 @@ pub async fn get_insights_evaluation(
             axum::Json(serde_json::json!({"error": "model_id required"}))).into_response(),
     };
 
-    match state.insights_cache.get(&model_id) {
-        Some(_eval) => axum::Json(serde_json::json!({
-            "status": "ok",
-            "model_id": model_id,
-        })).into_response(),
-        None => (StatusCode::NOT_FOUND,
-            axum::Json(serde_json::json!({"error": "evaluation_not_found"}))).into_response(),
+    let eval = match state.insights_cache.get(&model_id) {
+        Some(e) => e,
+        None => return axum::Json(serde_json::json!({"error": "evaluation_data_unavailable"})).into_response(),
+    };
+
+    match eval.task {
+        TaskType::BinaryClassification | TaskType::MultiClassification => {
+            // --- confusion matrix at default threshold 0.5 ---
+            let n_classes = eval.classes.len().max(2);
+            let mut cm = vec![vec![0usize; n_classes]; n_classes];
+            for (yt, yp) in eval.y_true.iter().zip(eval.y_pred.iter()) {
+                let ti = (*yt as usize).min(n_classes - 1);
+                let pi = (*yp as usize).min(n_classes - 1);
+                cm[ti][pi] += 1;
+            }
+
+            // --- ROC + PR: 100 thresholds, binary only (use class 1 prob) ---
+            let (roc_points, pr_points, auc) = if n_classes == 2 {
+                let probs: Vec<f64> = eval.y_prob.as_ref()
+                    .and_then(|m| {
+                        if m.first().map(|r| r.len()).unwrap_or(0) >= 2 {
+                            Some(m.iter().map(|row| row[1]).collect())
+                        } else { None }
+                    })
+                    .unwrap_or_else(|| eval.y_pred.iter().map(|&v| v).collect());
+
+                let mut roc_pts: Vec<serde_json::Value> = Vec::with_capacity(102);
+                let mut pr_pts: Vec<serde_json::Value> = Vec::with_capacity(102);
+                for i in 0..=100 {
+                    let t = i as f64 / 100.0;
+                    let (mut tp, mut fp, mut tn, mut fn_) = (0f64, 0f64, 0f64, 0f64);
+                    for ((&yt, &prob)) in eval.y_true.iter().zip(probs.iter()) {
+                        let pred_pos = prob >= t;
+                        let actual_pos = yt > 0.5;
+                        match (actual_pos, pred_pos) {
+                            (true, true)  => tp += 1.0,
+                            (false, true) => fp += 1.0,
+                            (false, false)=> tn += 1.0,
+                            (true, false) => fn_ += 1.0,
+                        }
+                    }
+                    let fpr = if fp + tn > 0.0 { fp / (fp + tn) } else { 0.0 };
+                    let tpr = if tp + fn_ > 0.0 { tp / (tp + fn_) } else { 0.0 };
+                    let prec = if tp + fp > 0.0 { tp / (tp + fp) } else { 1.0 };
+                    let rec = if tp + fn_ > 0.0 { tp / (tp + fn_) } else { 0.0 };
+                    roc_pts.push(serde_json::json!({"threshold": t, "fpr": fpr, "tpr": tpr}));
+                    pr_pts.push(serde_json::json!({"threshold": t, "precision": prec, "recall": rec}));
+                }
+                // AUC via trapezoidal rule over FPR (sort descending threshold = ascending FPR)
+                let mut roc_sorted = roc_pts.iter()
+                    .map(|v| (v["fpr"].as_f64().unwrap_or(0.0), v["tpr"].as_f64().unwrap_or(0.0)))
+                    .collect::<Vec<_>>();
+                roc_sorted.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+                let auc = roc_sorted.windows(2).map(|w| {
+                    let dx = w[1].0 - w[0].0;
+                    let avg_y = (w[0].1 + w[1].1) / 2.0;
+                    dx * avg_y
+                }).sum::<f64>();
+
+                (roc_pts, pr_pts, auc)
+            } else {
+                (vec![], vec![], 0.0)
+            };
+
+            let total = eval.y_true.len() as f64;
+            let correct = eval.y_true.iter().zip(eval.y_pred.iter())
+                .filter(|(&yt, &yp)| (yt as usize) == (yp as usize))
+                .count() as f64;
+            let accuracy = if total > 0.0 { correct / total } else { 0.0 };
+
+            // per-class precision/recall/f1
+            let per_class: Vec<serde_json::Value> = eval.classes.iter().enumerate().map(|(ci, cls)| {
+                let (mut tp, mut fp, mut fn_) = (0f64, 0f64, 0f64);
+                for (&yt, &yp) in eval.y_true.iter().zip(eval.y_pred.iter()) {
+                    let y = yt as usize; let p = yp as usize;
+                    if y == ci && p == ci { tp += 1.0; }
+                    else if y != ci && p == ci { fp += 1.0; }
+                    else if y == ci && p != ci { fn_ += 1.0; }
+                }
+                let prec = if tp + fp > 0.0 { tp / (tp + fp) } else { 0.0 };
+                let rec = if tp + fn_ > 0.0 { tp / (tp + fn_) } else { 0.0 };
+                let f1 = if prec + rec > 0.0 { 2.0 * prec * rec / (prec + rec) } else { 0.0 };
+                serde_json::json!({"class": cls, "precision": prec, "recall": rec, "f1": f1})
+            }).collect();
+
+            axum::Json(serde_json::json!({
+                "task": "classification",
+                "classes": eval.classes,
+                "confusion_matrix": cm,
+                "roc_points": roc_points,
+                "pr_points": pr_points,
+                "auc": auc,
+                "accuracy": accuracy,
+                "per_class": per_class,
+            })).into_response()
+        }
+
+        TaskType::Regression | TaskType::TimeSeries => {
+            let residuals: Vec<serde_json::Value> = eval.y_true.iter().zip(eval.y_pred.iter())
+                .map(|(&a, &p)| serde_json::json!({"actual": a, "predicted": p}))
+                .collect();
+
+            let n = eval.y_true.len() as f64;
+            let mean_true = eval.y_true.iter().sum::<f64>() / n;
+            let ss_res: f64 = eval.y_true.iter().zip(eval.y_pred.iter()).map(|(&a, &p)| (a - p).powi(2)).sum();
+            let ss_tot: f64 = eval.y_true.iter().map(|&a| (a - mean_true).powi(2)).sum();
+            let r2 = if ss_tot > 0.0 { 1.0 - ss_res / ss_tot } else { 0.0 };
+            let mae = eval.y_true.iter().zip(eval.y_pred.iter()).map(|(&a, &p)| (a - p).abs()).sum::<f64>() / n;
+            let rmse = (ss_res / n).sqrt();
+            let min_t = eval.y_true.iter().cloned().fold(f64::INFINITY, f64::min);
+            let max_t = eval.y_true.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+
+            axum::Json(serde_json::json!({
+                "task": "regression",
+                "residuals": residuals,
+                "r2": r2,
+                "mae": mae,
+                "rmse": rmse,
+                "target_range": [min_t, max_t],
+            })).into_response()
+        }
+
+        _ => axum::Json(serde_json::json!({"error": "unsupported_task_type"})).into_response(),
     }
 }
