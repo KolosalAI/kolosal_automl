@@ -2,7 +2,6 @@
 
 use crate::error::{KolosalError, Result};
 use polars::prelude::*;
-use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
@@ -207,185 +206,157 @@ impl Encoder {
     }
 
     fn transform_label(&self, df: &DataFrame) -> Result<DataFrame> {
-        let mut result = df.clone();
-
+        // Compute all replacement columns first
+        let mut new_cols: Vec<Series> = Vec::new();
         for (col_name, mapping) in &self.mappings {
             if let Ok(series) = df.column(col_name) {
-                let ca = series
-                    .str()
-                    .map_err(|e| KolosalError::DataError(e.to_string()))?;
-
+                let ca = series.str().map_err(|e| KolosalError::DataError(e.to_string()))?;
                 let values: Vec<Option<i64>> = ca
                     .into_iter()
                     .map(|v| v.and_then(|s| mapping.get(s).map(|&i| i as i64)))
                     .collect();
-
-                let new_series = Series::new(col_name.clone().into(), values);
-                result = result
-                    .with_column(new_series)
-                    .map_err(|e| KolosalError::DataError(e.to_string()))?
-                    .clone();
+                new_cols.push(Series::new(col_name.clone().into(), values));
             }
         }
-
+        // One clone + N in-place mutations — no clone after each with_column
+        let mut result = df.clone();
+        for col in new_cols {
+            result.with_column(col).map_err(|e| KolosalError::DataError(e.to_string()))?;
+        }
         Ok(result)
     }
 
     fn transform_target(&self, df: &DataFrame) -> Result<DataFrame> {
-        let mut result = df.clone();
-
+        let mut new_cols: Vec<Series> = Vec::new();
         for (col_name, means) in &self.target_means {
             if let Ok(series) = df.column(col_name) {
-                let ca = series
-                    .str()
-                    .map_err(|e| KolosalError::DataError(e.to_string()))?;
-
-                let global_mean: f64 =
-                    means.values().sum::<f64>() / means.len().max(1) as f64;
-
+                let ca = series.str().map_err(|e| KolosalError::DataError(e.to_string()))?;
+                let global_mean: f64 = means.values().sum::<f64>() / means.len().max(1) as f64;
                 let values: Vec<f64> = ca
                     .into_iter()
-                    .map(|v| {
-                        v.and_then(|s| means.get(s).copied())
-                            .unwrap_or(global_mean)
-                    })
+                    .map(|v| v.and_then(|s| means.get(s).copied()).unwrap_or(global_mean))
                     .collect();
-
-                let new_series = Series::new(col_name.clone().into(), values);
-                result = result
-                    .with_column(new_series)
-                    .map_err(|e| KolosalError::DataError(e.to_string()))?
-                    .clone();
+                new_cols.push(Series::new(col_name.clone().into(), values));
             }
         }
-
+        let mut result = df.clone();
+        for col in new_cols {
+            result.with_column(col).map_err(|e| KolosalError::DataError(e.to_string()))?;
+        }
         Ok(result)
     }
 
     fn transform_frequency(&self, df: &DataFrame) -> Result<DataFrame> {
+        use rayon::prelude::*;
+
+        let new_cols: Vec<Result<Series>> = self.mappings.par_iter()
+            .filter_map(|(col_name, _mapping)| {
+                df.column(col_name).ok().map(|series| {
+                    let ca = series.str().map_err(|e| KolosalError::DataError(e.to_string()))?;
+                    let total = ca.len() as f64;
+                    // Collect values once to allow two-pass logic safely
+                    let raw_vals: Vec<Option<String>> = ca.into_iter()
+                        .map(|v| v.map(|s| s.to_string()))
+                        .collect();
+                    let mut freq_map: HashMap<String, f64> = HashMap::new();
+                    for val in raw_vals.iter().flatten() {
+                        *freq_map.entry(val.clone()).or_insert(0.0) += 1.0;
+                    }
+                    for v in freq_map.values_mut() { *v /= total; }
+                    let values: Vec<f64> = raw_vals.iter()
+                        .map(|v| v.as_deref().and_then(|s| freq_map.get(s).copied()).unwrap_or(0.0))
+                        .collect();
+                    Ok(Series::new(col_name.clone().into(), values))
+                })
+            })
+            .collect();
+
+        let new_cols: Vec<Series> = new_cols.into_iter().collect::<Result<Vec<_>>>()?;
         let mut result = df.clone();
-
-        for (col_name, mapping) in &self.mappings {
-            if let Ok(series) = df.column(col_name) {
-                let ca = series
-                    .str()
-                    .map_err(|e| KolosalError::DataError(e.to_string()))?;
-
-                let total = ca.len() as f64;
-                let mut freq_map: HashMap<String, f64> = HashMap::new();
-
-                // Count frequencies
-                for val in ca.into_iter().flatten() {
-                    *freq_map.entry(val.to_string()).or_insert(0.0) += 1.0;
-                }
-
-                // Normalize
-                for v in freq_map.values_mut() {
-                    *v /= total;
-                }
-
-                let values: Vec<f64> = ca
-                    .into_iter()
-                    .map(|v| v.and_then(|s| freq_map.get(s).copied()).unwrap_or(0.0))
-                    .collect();
-
-                let new_series = Series::new(col_name.clone().into(), values);
-                result = result
-                    .with_column(new_series)
-                    .map_err(|e| KolosalError::DataError(e.to_string()))?
-                    .clone();
-            }
+        for col in new_cols {
+            result.with_column(col).map_err(|e| KolosalError::DataError(e.to_string()))?;
         }
-
         Ok(result)
     }
 
     fn transform_binary(&self, df: &DataFrame) -> Result<DataFrame> {
-        let mut result = df.clone();
+        let mut extra_cols: Vec<Series> = Vec::new();
+        let mut cols_to_drop: Vec<String> = Vec::new();
 
         for (col_name, mapping) in &self.mappings {
             if let Ok(series) = df.column(col_name) {
-                let ca = series
-                    .str()
-                    .map_err(|e| KolosalError::DataError(e.to_string()))?;
-
+                let ca = series.str().map_err(|e| KolosalError::DataError(e.to_string()))?;
                 let n_categories = mapping.len();
                 if n_categories == 0 {
-                    // No categories - just drop the column
-                    result = result
-                        .drop(col_name)
-                        .map_err(|e| KolosalError::DataError(e.to_string()))?;
+                    cols_to_drop.push(col_name.clone());
                     continue;
                 }
                 let n_bits = if n_categories <= 1 { 1 } else { (n_categories as f64).log2().ceil() as usize };
 
-                // Create binary columns for each bit position
+                // Collect all rows once into a Vec for multi-bit access
+                let indices: Vec<Option<usize>> = ca
+                    .into_iter()
+                    .map(|v| v.and_then(|s| mapping.get(s).copied()))
+                    .collect();
+
                 for bit_pos in 0..n_bits {
                     let new_col_name = format!("{}_{}", col_name, bit_pos);
-                    let values: Vec<i32> = ca
-                        .into_iter()
-                        .map(|v| {
-                            v.and_then(|s| mapping.get(s))
-                                .map(|&idx| ((idx >> bit_pos) & 1) as i32)
-                                .unwrap_or(0)
-                        })
+                    let values: Vec<i32> = indices.iter()
+                        .map(|opt| opt.map(|idx| ((idx >> bit_pos) & 1) as i32).unwrap_or(0))
                         .collect();
-
-                    let new_series = Series::new(new_col_name.into(), values);
-                    result = result
-                        .with_column(new_series)
-                        .map_err(|e| KolosalError::DataError(e.to_string()))?
-                        .clone();
+                    extra_cols.push(Series::new(new_col_name.into(), values));
                 }
-
-                // Drop original column
-                result = result
-                    .drop(col_name)
-                    .map_err(|e| KolosalError::DataError(e.to_string()))?;
+                cols_to_drop.push(col_name.clone());
             }
         }
 
-        Ok(result)
+        // Build result: one clone + drop originals + add all new columns
+        let mut result = df.clone();
+        for col_name in &cols_to_drop {
+            result = result.drop(col_name).map_err(|e| KolosalError::DataError(e.to_string()))?;
+        }
+        // Build final DataFrame with new columns appended
+        let mut all_cols: Vec<Column> = result.get_columns().to_vec();
+        all_cols.extend(extra_cols.into_iter().map(|s| s.into()));
+        DataFrame::new(all_cols).map_err(|e| KolosalError::DataError(e.to_string()))
     }
 
     fn transform_hash(&self, df: &DataFrame, n_components: usize) -> Result<DataFrame> {
-        let mut result = df.clone();
+        let mut extra_cols: Vec<Series> = Vec::new();
+        let mut cols_to_drop: Vec<String> = Vec::new();
 
         for col_name in self.mappings.keys() {
             if let Ok(series) = df.column(col_name) {
-                let ca = series
-                    .str()
-                    .map_err(|e| KolosalError::DataError(e.to_string()))?;
+                let ca = series.str().map_err(|e| KolosalError::DataError(e.to_string()))?;
 
-                // Create n_components hash columns
-                for comp_idx in 0..n_components {
-                    let new_col_name = format!("{}_{}", col_name, comp_idx);
-                    let values: Vec<f64> = ca
-                        .into_iter()
-                        .map(|v| {
-                            v.map(|s| {
+                // Row-outer, component-inner: each row read once for all components
+                let mut component_values: Vec<Vec<f64>> = vec![Vec::with_capacity(ca.len()); n_components];
+                for opt_val in ca.into_iter() {
+                    for comp_idx in 0..n_components {
+                        let v = opt_val
+                            .map(|s| {
                                 let hash = self.hash_string(s, comp_idx);
-                                // Normalize to [-1, 1] for signed hashing
                                 if hash % 2 == 0 { 1.0 } else { -1.0 }
-                            }).unwrap_or(0.0)
-                        })
-                        .collect();
-
-                    let new_series = Series::new(new_col_name.into(), values);
-                    result = result
-                        .with_column(new_series)
-                        .map_err(|e| KolosalError::DataError(e.to_string()))?
-                        .clone();
+                            })
+                            .unwrap_or(0.0);
+                        component_values[comp_idx].push(v);
+                    }
                 }
-
-                // Drop original column
-                result = result
-                    .drop(col_name)
-                    .map_err(|e| KolosalError::DataError(e.to_string()))?;
+                for (comp_idx, values) in component_values.into_iter().enumerate() {
+                    let new_col_name = format!("{}_{}", col_name, comp_idx);
+                    extra_cols.push(Series::new(new_col_name.into(), values));
+                }
+                cols_to_drop.push(col_name.clone());
             }
         }
 
-        Ok(result)
+        let mut result = df.clone();
+        for col_name in &cols_to_drop {
+            result = result.drop(col_name).map_err(|e| KolosalError::DataError(e.to_string()))?;
+        }
+        let mut all_cols: Vec<Column> = result.get_columns().to_vec();
+        all_cols.extend(extra_cols.into_iter().map(|s| s.into()));
+        DataFrame::new(all_cols).map_err(|e| KolosalError::DataError(e.to_string()))
     }
 
     /// Hash a string to a bucket index using murmur-like hashing
