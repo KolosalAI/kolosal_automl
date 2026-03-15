@@ -95,6 +95,7 @@ impl SGDRegressor {
     }
 
     pub fn fit(&mut self, x: &Array2<f64>, y: &Array1<f64>) -> Result<()> {
+        self.epoch_records.clear();
         let n = x.nrows();
         let p = x.ncols();
         if n == 0 { return Err(KolosalError::TrainingError("Empty dataset".into())); }
@@ -204,6 +205,7 @@ impl SGDClassifier {
     }
 
     pub fn fit(&mut self, x: &Array2<f64>, y: &Array1<f64>) -> Result<()> {
+        self.epoch_records.clear();
         let n = x.nrows();
         let p = x.ncols();
         if n == 0 { return Err(KolosalError::TrainingError("Empty dataset".into())); }

@@ -623,7 +623,12 @@ impl TrainEngine {
                 // Use a conservative default learning rate for SGD to avoid divergence;
                 // cap user-supplied rates above 0.01 for regression to maintain stability.
                 let raw_lr = self.config.learning_rate.unwrap_or(0.01);
-                let eta0 = if raw_lr > 0.01 { 0.01 } else { raw_lr };
+                let eta0 = if raw_lr > 0.01 {
+                    eprintln!("[kolosal] SGD regression: clamping learning_rate {raw_lr} → 0.01 to prevent divergence");
+                    0.01
+                } else {
+                    raw_lr
+                };
                 let config = SGDConfig {
                     max_iter: self.config.max_iter.unwrap_or(1000),
                     eta0,
