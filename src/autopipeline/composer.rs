@@ -1,5 +1,6 @@
 //! Pipeline composition
 
+use std::collections::HashSet;
 use crate::error::Result;
 use crate::autopipeline::detector::DetectedSchema;
 use crate::training::TaskType;
@@ -189,6 +190,11 @@ impl PipelineComposer {
         let mut steps = Vec::new();
         let mut notes = Vec::new();
 
+        // Build HashSets once for O(1) membership checks throughout
+        let drop_set: HashSet<usize> = schema.drop_columns.iter().copied().collect();
+        let numeric_set: HashSet<usize> = schema.numeric_columns.iter().copied().collect();
+        let categorical_set: HashSet<usize> = schema.categorical_columns.iter().copied().collect();
+
         // Step 1: Drop unusable columns
         if !schema.drop_columns.is_empty() {
             steps.push(PreprocessingStep::DropColumns {
@@ -201,66 +207,55 @@ impl PipelineComposer {
         }
 
         // Step 2: Handle missing values
-        let columns_with_missing: Vec<usize> = schema
+        // Single pass: partition columns with missing values into high/remaining buckets
+        let (high_missing_pairs, remaining_missing_pairs): (Vec<(usize, _)>, Vec<(usize, _)>) = schema
             .columns
             .iter()
             .enumerate()
-            .filter(|(i, col)| col.n_missing > 0 && !schema.drop_columns.contains(i))
-            .map(|(i, _)| i)
-            .collect();
+            .filter(|(i, col)| col.n_missing > 0 && !drop_set.contains(i))
+            .partition(|(_, col)| col.pct_missing > self.config.missing_threshold);
 
-        if !columns_with_missing.is_empty() {
-            let high_missing: Vec<usize> = columns_with_missing
+        let high_missing: Vec<usize> = high_missing_pairs.into_iter().map(|(i, _)| i).collect();
+        let remaining_missing: Vec<usize> = remaining_missing_pairs.into_iter().map(|(i, _)| i).collect();
+
+        if !high_missing.is_empty() {
+            steps.push(PreprocessingStep::DropColumns {
+                columns: high_missing.clone(),
+            });
+            notes.push(format!(
+                "Dropping {} columns with >{:.0}% missing values",
+                high_missing.len(),
+                self.config.missing_threshold * 100.0
+            ));
+        }
+
+        if !remaining_missing.is_empty() {
+            // Use median for numeric (robust to outliers)
+            let numeric_missing: Vec<usize> = remaining_missing
                 .iter()
-                .filter(|&&i| schema.columns[i].pct_missing > self.config.missing_threshold)
+                .filter(|&&i| numeric_set.contains(&i))
                 .copied()
                 .collect();
 
-            if !high_missing.is_empty() {
-                steps.push(PreprocessingStep::DropColumns {
-                    columns: high_missing.clone(),
+            if !numeric_missing.is_empty() {
+                steps.push(PreprocessingStep::Impute {
+                    strategy: ImputeStrategy::Median,
+                    columns: numeric_missing,
                 });
-                notes.push(format!(
-                    "Dropping {} columns with >{:.0}% missing values",
-                    high_missing.len(),
-                    self.config.missing_threshold * 100.0
-                ));
             }
 
-            let remaining_missing: Vec<usize> = columns_with_missing
+            // Use mode for categorical
+            let categorical_missing: Vec<usize> = remaining_missing
                 .iter()
-                .filter(|i| !high_missing.contains(i))
+                .filter(|&&i| categorical_set.contains(&i))
                 .copied()
                 .collect();
 
-            if !remaining_missing.is_empty() {
-                // Use median for numeric (robust to outliers)
-                let numeric_missing: Vec<usize> = remaining_missing
-                    .iter()
-                    .filter(|&&i| schema.numeric_columns.contains(&i))
-                    .copied()
-                    .collect();
-
-                if !numeric_missing.is_empty() {
-                    steps.push(PreprocessingStep::Impute {
-                        strategy: ImputeStrategy::Median,
-                        columns: numeric_missing,
-                    });
-                }
-
-                // Use mode for categorical
-                let categorical_missing: Vec<usize> = remaining_missing
-                    .iter()
-                    .filter(|&&i| schema.categorical_columns.contains(&i))
-                    .copied()
-                    .collect();
-
-                if !categorical_missing.is_empty() {
-                    steps.push(PreprocessingStep::Impute {
-                        strategy: ImputeStrategy::Mode,
-                        columns: categorical_missing,
-                    });
-                }
+            if !categorical_missing.is_empty() {
+                steps.push(PreprocessingStep::Impute {
+                    strategy: ImputeStrategy::Mode,
+                    columns: categorical_missing,
+                });
             }
         }
 
@@ -269,7 +264,7 @@ impl PipelineComposer {
             let active_categorical: Vec<usize> = schema
                 .categorical_columns
                 .iter()
-                .filter(|i| !schema.drop_columns.contains(i))
+                .filter(|i| !drop_set.contains(i))
                 .copied()
                 .collect();
 
@@ -314,7 +309,7 @@ impl PipelineComposer {
             let active_numeric: Vec<usize> = schema
                 .numeric_columns
                 .iter()
-                .filter(|i| !schema.drop_columns.contains(i))
+                .filter(|i| !drop_set.contains(i))
                 .copied()
                 .collect();
 
@@ -331,7 +326,7 @@ impl PipelineComposer {
             let skewed: Vec<usize> = schema.skewed_columns(self.config.skewness_threshold);
             let active_skewed: Vec<usize> = skewed
                 .iter()
-                .filter(|i| !schema.drop_columns.contains(i))
+                .filter(|i| !drop_set.contains(i))
                 .copied()
                 .collect();
 
@@ -349,7 +344,7 @@ impl PipelineComposer {
             let active_numeric: Vec<usize> = schema
                 .numeric_columns
                 .iter()
-                .filter(|i| !schema.drop_columns.contains(i))
+                .filter(|i| !drop_set.contains(i))
                 .copied()
                 .collect();
 
