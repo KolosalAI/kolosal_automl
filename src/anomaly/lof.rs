@@ -130,14 +130,14 @@ impl LocalOutlierFactor {
     }
 
     /// Compute reachability distance
-    fn reachability_distance(&self, point_idx: usize, neighbor_idx: usize, dist: f64, k_distances: &Array1<f64>) -> f64 {
+    fn reachability_distance(&self, _point_idx: usize, neighbor_idx: usize, dist: f64, k_distances: &Array1<f64>) -> f64 {
         k_distances[neighbor_idx].max(dist)
     }
 
     /// Compute Local Reachability Density (LRD)
     fn compute_lrd(
         &self,
-        point: &[f64],
+        _point: &[f64],
         neighbors: &[(usize, f64)],
         k_distances: &Array1<f64>,
     ) -> f64 {

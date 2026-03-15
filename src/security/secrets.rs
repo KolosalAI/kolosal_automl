@@ -38,6 +38,7 @@ struct StoredSecret {
 
 #[derive(Debug, Clone)]
 pub struct SecretsManager {
+    #[allow(dead_code)]
     storage_path: String,
     secrets: Arc<RwLock<HashMap<String, StoredSecret>>>,
     hmac_key: Vec<u8>,

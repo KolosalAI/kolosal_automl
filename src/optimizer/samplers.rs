@@ -107,6 +107,7 @@ impl TPESampler {
     }
 
     /// Set gamma (quantile for splitting good/bad)
+    #[allow(dead_code)]
     pub fn with_gamma(mut self, gamma: f64) -> Self {
         self.gamma = gamma;
         self

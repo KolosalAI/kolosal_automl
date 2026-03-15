@@ -252,7 +252,7 @@ impl IterativeImputer {
     }
 
     /// Run one iteration
-    fn iteration(&self, data: &mut Array2<f64>, rng: &mut StdRng) -> f64 {
+    fn iteration(&self, data: &mut Array2<f64>, _rng: &mut StdRng) -> f64 {
         let n_features = data.ncols();
         let mut total_change = 0.0;
 

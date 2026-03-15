@@ -123,6 +123,7 @@ pub struct LruCache<K, V> {
 struct CacheEntry<V> {
     value: V,
     created_at: Instant,
+    #[allow(dead_code)]
     last_accessed: Instant,
 }
 

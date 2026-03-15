@@ -197,6 +197,7 @@ pub struct ChunkedReader {
     path: String,
     chunk_size: usize,
     current_chunk: usize,
+    #[allow(dead_code)]
     total_rows: Option<usize>,
 }
 

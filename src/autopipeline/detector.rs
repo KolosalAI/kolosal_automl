@@ -116,6 +116,7 @@ pub struct DataTypeDetector {
     /// Maximum unique values for categorical
     max_categorical_unique: usize,
     /// Minimum text length to consider as text
+    #[allow(dead_code)]
     min_text_length: usize,
     /// ID column detection enabled
     detect_id_columns: bool,

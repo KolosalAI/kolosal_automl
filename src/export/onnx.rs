@@ -435,6 +435,7 @@ impl Default for ONNXExporter {
 }
 
 /// Helper to create linear regression ONNX graph
+#[allow(dead_code)]
 pub fn linear_regression_to_onnx(
     weights: &[f64],
     bias: f64,

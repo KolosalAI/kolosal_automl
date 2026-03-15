@@ -5,7 +5,7 @@ use super::{
     config::PreprocessingConfig,
     imputer::{Imputer, ImputeStrategy},
     scaler::{Scaler, ScalerType},
-    encoder::{Encoder, EncoderType},
+    encoder::Encoder,
     FeatureStats, ColumnType,
 };
 use polars::prelude::*;

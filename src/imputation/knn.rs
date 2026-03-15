@@ -213,7 +213,7 @@ impl Imputer for KNNImputer {
         }
 
         let mut result = x.clone();
-        let n_features = x.ncols();
+        let _n_features = x.ncols();
 
         for (row_idx, row) in x.rows().into_iter().enumerate() {
             let row_vec: Vec<f64> = row.iter().copied().collect();

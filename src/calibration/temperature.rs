@@ -62,6 +62,7 @@ impl TemperatureScaling {
     }
 
     /// Compute negative log likelihood (cross-entropy loss)
+    #[allow(dead_code)]
     fn nll(logits: &[f64], labels: &[f64], temperature: f64) -> f64 {
         let mut loss = 0.0;
         for (&logit, &label) in logits.iter().zip(labels.iter()) {
@@ -174,9 +175,10 @@ impl Calibrator for TemperatureScaling {
 }
 
 /// Beta calibration
-/// 
+///
 /// Fits: P(y=1|p) = 1 / (1 + 1/exp(c) * ((1-p)/p)^a * (p/(1-p))^b)
 /// Simplifies to: logit(P) = c + a*log(p) - b*log(1-p)
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BetaCalibration {
     /// Parameter a

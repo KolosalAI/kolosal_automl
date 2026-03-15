@@ -59,7 +59,7 @@ impl ModelMetrics {
     pub fn compute_classification(
         y_true: &Array1<f64>,
         y_pred: &Array1<f64>,
-        y_prob: Option<&Array1<f64>>,
+        _y_prob: Option<&Array1<f64>>,
     ) -> Self {
         let mut metrics = Self::new();
         metrics.n_samples = y_true.len();

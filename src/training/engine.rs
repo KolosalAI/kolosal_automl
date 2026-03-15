@@ -20,7 +20,6 @@ use super::clustering::{KMeans, DBSCAN};
 use super::som::SOM;
 use ndarray::{Array1, Array2, Axis};
 use polars::prelude::*;
-use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::Instant;

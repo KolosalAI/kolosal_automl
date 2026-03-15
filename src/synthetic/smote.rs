@@ -98,7 +98,7 @@ impl Default for SMOTE {
 }
 
 impl Sampler for SMOTE {
-    fn fit(&mut self, x: &Array2<f64>, y: &Array1<i64>) -> Result<()> {
+    fn fit(&mut self, _x: &Array2<f64>, y: &Array1<i64>) -> Result<()> {
         let counts = class_counts(y);
         
         if counts.len() < 2 {

@@ -90,6 +90,7 @@ fn make_leaf(gradients: &[f64], hessians: &[f64], indices: &[usize], lambda: f64
     LGBNode::Leaf { value: compute_leaf_weight(g, h, lambda, alpha) }
 }
 
+#[allow(dead_code)]
 struct SplitResult {
     feature: usize,
     threshold: f64,

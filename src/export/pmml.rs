@@ -504,6 +504,7 @@ impl Default for PMMLExporter {
 }
 
 /// Helper to create linear regression PMML
+#[allow(dead_code)]
 pub fn linear_regression_to_pmml(
     model_name: &str,
     feature_names: &[String],

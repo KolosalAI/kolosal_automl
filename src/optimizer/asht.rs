@@ -52,8 +52,10 @@ impl Default for ASHTConfig {
 #[derive(Debug, Clone)]
 struct Bracket {
     /// Bracket index
+    #[allow(dead_code)]
     s: usize,
     /// Number of configurations
+    #[allow(dead_code)]
     n: usize,
     /// Starting resource
     r: usize,

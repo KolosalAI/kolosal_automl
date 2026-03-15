@@ -416,7 +416,7 @@ impl ExperimentTracker {
             if !run.params.is_empty() {
                 report.push_str("    Parameters:\n");
                 let mut params: Vec<_> = run.params.iter().collect();
-                params.sort_by_key(|(k, _)| k.clone());
+                params.sort_by_key(|(k, _)| (*k).clone());
                 for (k, v) in &params {
                     report.push_str(&format!("      {}: {}\n", k, v));
                 }
@@ -425,7 +425,7 @@ impl ExperimentTracker {
             if !run.metrics.is_empty() {
                 report.push_str("    Metrics:\n");
                 let mut metrics: Vec<_> = run.metrics.iter().collect();
-                metrics.sort_by_key(|(k, _)| k.clone());
+                metrics.sort_by_key(|(k, _)| (*k).clone());
                 for (k, v) in &metrics {
                     report.push_str(&format!("      {}: {:.6}\n", k, v));
                 }

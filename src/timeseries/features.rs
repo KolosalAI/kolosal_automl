@@ -294,6 +294,7 @@ impl TimeSeriesFeatures {
 }
 
 /// Extract date/time features from timestamps
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct DateTimeFeatures {
     /// Include day of week (0-6)
@@ -338,6 +339,7 @@ impl Default for DateTimeFeatures {
     }
 }
 
+#[allow(dead_code)]
 impl DateTimeFeatures {
     /// Create features from Unix timestamps (seconds)
     pub fn from_timestamps(&self, timestamps: &[i64]) -> Result<Array2<f64>> {

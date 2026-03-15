@@ -186,12 +186,14 @@ where
 }
 
 /// Trait-based permutation importance for any Model
+#[allow(dead_code)]
 pub struct ModelPermutationImportance {
     n_repeats: usize,
     seed: Option<u64>,
     feature_names: Option<Vec<String>>,
 }
 
+#[allow(dead_code)]
 impl ModelPermutationImportance {
     /// Create new calculator
     pub fn new() -> Self {

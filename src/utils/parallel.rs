@@ -56,6 +56,7 @@ where
 }
 
 /// Parallel map with configuration
+#[allow(dead_code)]
 pub fn parallel_map_with_config<T, U, F>(items: Vec<T>, config: &ParallelConfig, f: F) -> Vec<U>
 where
     T: Send + Sync,

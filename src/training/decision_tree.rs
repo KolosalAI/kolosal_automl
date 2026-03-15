@@ -75,7 +75,7 @@ impl Default for DecisionTree {
 /// Compute impurity from pre-accumulated statistics (free function usable in parallel closures)
 fn compute_impurity_from_counts_static(
     criterion: Criterion,
-    is_classification: bool,
+    _is_classification: bool,
     count: usize,
     sum: f64,
     sq_sum: f64,
@@ -115,6 +115,7 @@ fn compute_impurity_from_counts_static(
     }
 }
 
+#[allow(dead_code)]
 impl DecisionTree {
     /// Create a new classifier tree
     pub fn new_classifier() -> Self {

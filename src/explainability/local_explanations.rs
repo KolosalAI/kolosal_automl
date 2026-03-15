@@ -247,6 +247,7 @@ where
 }
 
 /// Summary of SHAP values across many instances
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ShapSummary {
     /// Feature names
@@ -263,6 +264,7 @@ pub struct ShapSummary {
     pub max_shap: Vec<f64>,
 }
 
+#[allow(dead_code)]
 impl ShapSummary {
     /// Create from a list of explanations
     pub fn from_explanations(explanations: &[LocalExplanation]) -> Self {

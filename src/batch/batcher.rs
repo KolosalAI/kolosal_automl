@@ -204,6 +204,7 @@ pub struct DynamicBatcher<T: Send + 'static> {
     inner: Mutex<BatcherInner>,
 
     // Worker
+    #[allow(dead_code)]
     worker_thread: Arc<Mutex<Option<JoinHandle<()>>>>,
 
     // Latency-adaptive batch sizing config

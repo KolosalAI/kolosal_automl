@@ -73,7 +73,7 @@ impl Pca {
         let n_components = self.config.n_components.min(d).min(n);
 
         // Step 1: Center (and optionally scale) the data
-        let (centered, means, stds) = self.center_and_scale(data, d);
+        let (centered, _means, _stds) = self.center_and_scale(data, d);
 
         // Step 2: Compute covariance matrix (d x d)
         let cov = self.compute_covariance(&centered, d);
@@ -82,7 +82,7 @@ impl Pca {
         let (eigenvalues, eigenvectors) = self.power_iteration(&cov, d, n_components);
 
         // Step 4: Project data onto top eigenvectors
-        let total_variance: f64 = eigenvalues.iter().sum::<f64>().max(1e-12);
+        let _total_variance: f64 = eigenvalues.iter().sum::<f64>().max(1e-12);
         // Total variance should include all eigenvalues from the diagonal of cov
         let full_variance: f64 = (0..d).map(|i| cov[i * d + i]).sum::<f64>().max(1e-12);
 
@@ -117,7 +117,7 @@ impl Pca {
         data: &[Vec<f64>],
         d: usize,
     ) -> (Vec<Vec<f64>>, Vec<f64>, Vec<f64>) {
-        let n = data.len();
+        let _n = data.len();
 
         // Compute column means
         let means: Vec<f64> = (0..d)

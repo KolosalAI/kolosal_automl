@@ -46,6 +46,7 @@ impl Default for TabNetConfig {
 /// TabNet encoder component
 #[derive(Debug, Clone)]
 pub struct TabNetEncoder {
+    #[allow(dead_code)]
     config: TabNetConfig,
     // Weights would be stored here in a real implementation
 }
@@ -66,6 +67,7 @@ impl TabNetEncoder {
 /// TabNet decoder component
 #[derive(Debug, Clone)]
 pub struct TabNetDecoder {
+    #[allow(dead_code)]
     config: TabNetConfig,
 }
 
@@ -85,8 +87,10 @@ impl TabNetDecoder {
 /// TabNet model
 #[derive(Debug)]
 pub struct TabNet {
+    #[allow(dead_code)]
     config: TabNetConfig,
     encoder: TabNetEncoder,
+    #[allow(dead_code)]
     decoder: Option<TabNetDecoder>,
     is_fitted: bool,
 }

@@ -1,7 +1,6 @@
 //! Common neural network layers for tabular architectures
 
 use ndarray::{Array1, Array2, Axis};
-use serde::{Deserialize, Serialize};
 
 /// Ghost Batch Normalization
 /// 
@@ -10,6 +9,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone)]
 pub struct GhostBatchNorm {
     /// Number of features
+    #[allow(dead_code)]
     num_features: usize,
     /// Virtual batch size
     virtual_batch_size: usize,
@@ -110,7 +110,7 @@ pub struct Sparsemax;
 impl Sparsemax {
     /// Apply sparsemax to input
     pub fn forward(&self, x: &Array1<f64>) -> Array1<f64> {
-        let n = x.len();
+        let _n = x.len();
         
         // Sort in descending order
         let mut sorted: Vec<f64> = x.iter().cloned().collect();
@@ -149,8 +149,10 @@ impl Sparsemax {
 #[derive(Debug, Clone)]
 pub struct GLUBlock {
     /// Input dimension
+    #[allow(dead_code)]
     input_dim: usize,
     /// Output dimension
+    #[allow(dead_code)]
     output_dim: usize,
     /// Linear weights
     fc_weights: Array2<f64>,
@@ -223,8 +225,10 @@ impl GLUBlock {
 #[derive(Debug, Clone)]
 pub struct AttentionTransformer {
     /// Input dimension
+    #[allow(dead_code)]
     input_dim: usize,
     /// Output dimension (attention weights)
+    #[allow(dead_code)]
     output_dim: usize,
     /// FC layer weights
     fc_weights: Array2<f64>,
@@ -285,7 +289,7 @@ pub struct FeatureAttention {
 
 impl FeatureAttention {
     /// Create new feature attention
-    pub fn new(num_features: usize, attention_dim: usize, num_heads: usize) -> Self {
+    pub fn new(num_features: usize, attention_dim: usize, _num_heads: usize) -> Self {
         use rand::Rng;
         let mut rng = rand::thread_rng();
         let scale = (2.0 / (num_features + attention_dim) as f64).sqrt();
@@ -314,7 +318,7 @@ impl FeatureAttention {
 
     /// Forward pass with self-attention
     pub fn forward(&self, x: &Array2<f64>) -> Array2<f64> {
-        let batch_size = x.nrows();
+        let _batch_size = x.nrows();
         
         // Project to Q, K, V
         let q = x.dot(&self.query_weights);

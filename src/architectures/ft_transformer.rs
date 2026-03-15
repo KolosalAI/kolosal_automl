@@ -56,6 +56,7 @@ pub struct FeatureTokenizer {
     /// Numerical feature embeddings (linear projection weights)
     numerical_weights: Vec<Vec<f64>>,
     /// Categorical feature embeddings
+    #[allow(dead_code)]
     categorical_embeddings: HashMap<usize, Vec<Vec<f64>>>,
 }
 
@@ -102,6 +103,7 @@ impl FeatureTokenizer {
 /// FT-Transformer model
 #[derive(Debug)]
 pub struct FTTransformer {
+    #[allow(dead_code)]
     config: FTTransformerConfig,
     tokenizer: FeatureTokenizer,
     is_fitted: bool,

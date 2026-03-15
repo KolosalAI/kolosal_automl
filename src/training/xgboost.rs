@@ -7,7 +7,7 @@
 //! - Built-in L1 (alpha) and L2 (lambda) regularization
 //! - Minimum child weight constraint
 
-use crate::error::{KolosalError, Result};
+use crate::error::Result;
 use ndarray::{Array1, Array2};
 use rand::prelude::*;
 use rand_xoshiro::Xoshiro256PlusPlus;
@@ -105,7 +105,7 @@ fn build_xgb_tree(
     }).max_by(|a, b| a.3.partial_cmp(&b.3).unwrap_or(std::cmp::Ordering::Equal));
 
     match best_split {
-        Some((feature, threshold, split_pos, gain)) if gain > config.gamma => {
+        Some((feature, threshold, _split_pos, gain)) if gain > config.gamma => {
             let (left_idx, right_idx): (Vec<usize>, Vec<usize>) =
                 indices.iter().partition(|&&i| x[[i, feature]] <= threshold);
 

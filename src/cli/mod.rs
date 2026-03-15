@@ -56,6 +56,7 @@ fn kv(key: &str, val: &str) -> String {
     format!("{} {}", muted(key), val.white())
 }
 
+#[allow(dead_code)]
 fn step_ok(msg: &str) {
     println!("  {} {}", ok("✓"), msg);
 }

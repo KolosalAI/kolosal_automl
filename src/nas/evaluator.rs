@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use super::search_space::NetworkArchitecture;
-use crate::error::{KolosalError, Result};
+use crate::error::Result;
 
 /// Evaluation configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -162,7 +162,7 @@ impl ArchitectureEvaluator {
                         params += hidden * op_hidden + op_hidden;
                     }
                     super::search_space::OperationType::MultiHeadAttention => {
-                        let heads = op.num_heads.unwrap_or(4);
+                        let _heads = op.num_heads.unwrap_or(4);
                         // Q, K, V projections + output
                         params += 4 * hidden * op_hidden;
                     }
@@ -282,7 +282,7 @@ impl ArchitectureEvaluator {
 
         // Estimate parameters
         let num_params = self.estimate_params(arch);
-        let flops = self.estimate_flops(arch, x_train.nrows());
+        let _flops = self.estimate_flops(arch, x_train.nrows());
 
         // Simulate training
         let train_loss = self.simulate_training(arch, x_train, y_train, self.config.epochs);
@@ -303,8 +303,8 @@ impl ArchitectureEvaluator {
     fn simulate_training(
         &self,
         arch: &NetworkArchitecture,
-        x: &Array2<f64>,
-        y: &Array1<f64>,
+        _x: &Array2<f64>,
+        _y: &Array1<f64>,
         epochs: usize,
     ) -> f64 {
         // Synthetic loss based on architecture complexity
@@ -322,8 +322,8 @@ impl ArchitectureEvaluator {
     fn simulate_validation(
         &self,
         arch: &NetworkArchitecture,
-        x: &Array2<f64>,
-        y: &Array1<f64>,
+        _x: &Array2<f64>,
+        _y: &Array1<f64>,
     ) -> (f64, f64) {
         // Synthetic validation based on architecture
         let complexity = arch.cells.iter()
@@ -353,6 +353,7 @@ impl ArchitectureEvaluator {
 }
 
 /// Multi-fidelity evaluator for efficient search
+#[allow(dead_code)]
 pub struct MultiFidelityEvaluator {
     /// Fidelity levels (epochs per level)
     fidelity_levels: Vec<usize>,
@@ -362,6 +363,7 @@ pub struct MultiFidelityEvaluator {
     results: HashMap<u64, Vec<EvaluationResult>>,
 }
 
+#[allow(dead_code)]
 impl MultiFidelityEvaluator {
     /// Create new multi-fidelity evaluator
     pub fn new(fidelity_levels: Vec<usize>) -> Self {

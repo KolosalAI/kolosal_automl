@@ -146,7 +146,7 @@ impl CrossValidator {
 
     fn stratified_k_fold_split(
         &self,
-        n_samples: usize,
+        _n_samples: usize,
         y: &Array1<f64>,
         n_splits: usize,
         shuffle: bool,

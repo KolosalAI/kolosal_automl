@@ -271,6 +271,7 @@ impl KNNClassifier {
         Array2::from_shape_vec((x.nrows(), n_classes), flat).unwrap()
     }
 
+    #[allow(dead_code)]
     fn distance(&self, a: &Array1<f64>, b: &Array1<f64>) -> f64 {
         compute_distance(a.as_slice().unwrap(), b.as_slice().unwrap(), self.config.metric)
     }
@@ -604,7 +605,7 @@ fn compute_distance(a: &[f64], b: &[f64], metric: DistanceMetric) -> f64 {
 }
 
 /// Classify by weighted majority vote
-fn vote_classify(neighbors: &[(f64, f64)], classes: &[i64], weights: WeightScheme) -> f64 {
+fn vote_classify(neighbors: &[(f64, f64)], _classes: &[i64], weights: WeightScheme) -> f64 {
     let mut votes: HashMap<i64, f64> = HashMap::new();
     for &(dist, label) in neighbors {
         let weight = match weights {

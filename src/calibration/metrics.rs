@@ -168,6 +168,7 @@ pub fn reliability_diagram(
 }
 
 /// Compute all calibration metrics
+#[allow(dead_code)]
 pub fn compute_calibration_metrics(
     probs: &Array1<f64>,
     labels: &Array1<f64>,
@@ -200,6 +201,7 @@ pub fn compute_calibration_metrics(
 }
 
 /// Adaptive ECE with variable bin widths
+#[allow(dead_code)]
 pub fn adaptive_expected_calibration_error(
     probs: &Array1<f64>,
     labels: &Array1<f64>,

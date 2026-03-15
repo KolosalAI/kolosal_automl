@@ -141,6 +141,7 @@ pub struct Quantizer {
     total_values: AtomicU64,
     
     // Cache
+    #[allow(dead_code)]
     cache: Option<RwLock<HashMap<u64, i32>>>,
 }
 

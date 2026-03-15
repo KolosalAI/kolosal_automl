@@ -59,7 +59,7 @@ fn build_symmetric_tree(
     indices: &[usize],
     max_depth: usize,
     reg_lambda: f64,
-    rng: &mut Xoshiro256PlusPlus,
+    _rng: &mut Xoshiro256PlusPlus,
 ) -> SymmetricTree {
     let n_features = x.ncols();
     let mut splits = Vec::with_capacity(max_depth);

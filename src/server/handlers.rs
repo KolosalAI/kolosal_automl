@@ -119,10 +119,10 @@ pub async fn upload_data(
     mut multipart: Multipart,
 ) -> Result<Json<serde_json::Value>> {
     while let Some(field) = multipart.next_field().await.map_err(|e| ServerError::BadRequest(e.to_string()))? {
-        let name = field.name().unwrap_or("file").to_string();
+        let _name = field.name().unwrap_or("file").to_string();
         let raw_file_name = field.file_name().unwrap_or("data.csv").to_string();
         let file_name = sanitize_filename(&raw_file_name);
-        let content_type = field.content_type().unwrap_or("text/csv").to_string();
+        let _content_type = field.content_type().unwrap_or("text/csv").to_string();
         let data = field.bytes().await.map_err(|e| ServerError::BadRequest(e.to_string()))?;
 
         // Reject oversized uploads before parsing
@@ -669,6 +669,7 @@ pub async fn load_sample_data(
 pub struct PreprocessRequest {
     scaler: Option<String>,
     imputation: Option<String>,
+    #[allow(dead_code)]
     target_column: Option<String>,
 }
 
@@ -739,8 +740,11 @@ pub struct TrainRequest {
     target_column: String,
     task_type: String,
     model_type: String,
+    #[allow(dead_code)]
     cv_folds: Option<usize>,
+    #[allow(dead_code)]
     test_size: Option<f64>,
+    #[allow(dead_code)]
     hyperparameters: Option<serde_json::Value>,
 }
 
@@ -936,6 +940,7 @@ pub struct CompareRequest {
     target_column: String,
     task_type: String,
     models: Vec<String>,
+    #[allow(dead_code)]
     cv_folds: Option<usize>,
 }
 
@@ -3145,6 +3150,7 @@ pub struct CleanRequest {
     /// Fill string nulls with mode (default: true)
     fill_string_nulls: Option<bool>,
     /// Trim whitespace from string columns (default: true)
+    #[allow(dead_code)]
     trim_whitespace: Option<bool>,
 }
 
@@ -3746,6 +3752,7 @@ pub struct HyperOptRequest {
     sampler: Option<String>,
     timeout_secs: Option<f64>,
     direction: Option<String>,
+    #[allow(dead_code)]
     metric: Option<String>,
 }
 
@@ -3801,7 +3808,7 @@ pub async fn run_hyperopt(
     let timeout_secs = request.timeout_secs;
     let model_type_name = request.model_type.clone();
     let task_type_name = request.task_type.clone();
-    let models_dir = state.config.models_dir.clone();
+    let _models_dir = state.config.models_dir.clone();
     let state_clone = state.clone();
 
     tokio::spawn(async move {
@@ -3975,6 +3982,7 @@ fn build_search_space(model_type: &str) -> crate::optimizer::SearchSpace {
 #[derive(Deserialize)]
 pub struct ExplainRequest {
     model_id: String,
+    #[allow(dead_code)]
     method: Option<String>,
     n_features: Option<usize>,
 }
@@ -4245,6 +4253,7 @@ pub async fn train_ensemble(
 pub struct DriftRequest {
     reference_data: Vec<Vec<f64>>,
     test_data: Vec<Vec<f64>>,
+    #[allow(dead_code)]
     method: Option<String>,
 }
 
@@ -6259,7 +6268,7 @@ pub async fn get_data_datasheet(
 
 /// Evaluate fairness of model predictions (ISO TR 24027)
 pub async fn evaluate_fairness(
-    State(state): State<Arc<AppState>>,
+    State(_state): State<Arc<AppState>>,
     Json(body): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>> {
     use crate::fairness::{FairnessEvaluator, FairnessConfig, FairnessThresholds};
@@ -6297,7 +6306,7 @@ pub async fn evaluate_fairness(
 
 /// Scan dataset for bias before training (ISO TR 24027)
 pub async fn bias_scan(
-    State(state): State<Arc<AppState>>,
+    State(_state): State<Arc<AppState>>,
     Json(body): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>> {
     use crate::fairness::{FairnessEvaluator, FairnessConfig};
@@ -6401,7 +6410,7 @@ pub async fn verify_audit_integrity(
 
 /// Scan dataset for PII (ISO 27701)
 pub async fn scan_pii(
-    State(state): State<Arc<AppState>>,
+    State(_state): State<Arc<AppState>>,
     Json(body): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>> {
     use crate::privacy::PiiScanner;

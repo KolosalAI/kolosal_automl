@@ -1,6 +1,5 @@
 //! Time series cross-validation
 
-use crate::error::{KolosalError, Result};
 use serde::{Deserialize, Serialize};
 
 /// Time series split for cross-validation
@@ -77,7 +76,7 @@ impl TimeSeriesCV {
             return splits;
         }
 
-        let available_for_test = n_samples - self.min_train_size;
+        let _available_for_test = n_samples - self.min_train_size;
         let test_fold_size = self.test_size;
 
         for fold in 0..self.n_splits {
@@ -198,6 +197,7 @@ impl WalkForwardCV {
 }
 
 /// Blocked time series cross-validation
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct BlockedTimeSeriesCV {
     /// Number of blocks
@@ -206,6 +206,7 @@ pub struct BlockedTimeSeriesCV {
     gap: usize,
 }
 
+#[allow(dead_code)]
 impl BlockedTimeSeriesCV {
     /// Create new blocked CV
     pub fn new(n_blocks: usize) -> Self {
@@ -263,6 +264,7 @@ impl BlockedTimeSeriesCV {
 
 /// Purged time series cross-validation
 /// Ensures no data leakage by purging samples close to the test set
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct PurgedTimeSeriesCV {
     /// Number of splits
@@ -273,6 +275,7 @@ pub struct PurgedTimeSeriesCV {
     embargo_after: usize,
 }
 
+#[allow(dead_code)]
 impl PurgedTimeSeriesCV {
     /// Create new purged CV
     pub fn new(n_splits: usize) -> Self {
