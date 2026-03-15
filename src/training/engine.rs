@@ -92,6 +92,16 @@ pub struct ModelComparison {
     pub model_size_bytes: usize,
 }
 
+/// A single epoch's training metrics, recorded during iterative training
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EpochRecord {
+    pub epoch: usize,
+    pub train_loss: f64,
+    pub val_loss: Option<f64>,
+    pub train_acc: Option<f64>,
+    pub val_acc: Option<f64>,
+}
+
 /// Main training engine
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TrainEngine {
@@ -102,6 +112,9 @@ pub struct TrainEngine {
     metrics: Option<ModelMetrics>,
     is_fitted: bool,
     training_history: Vec<ModelComparison>,
+    /// Per-epoch training metrics (only populated by iterative models: SGD)
+    #[serde(default)]
+    pub epoch_history: Vec<EpochRecord>,
 }
 
 impl TrainEngine {
@@ -115,6 +128,7 @@ impl TrainEngine {
             metrics: None,
             is_fitted: false,
             training_history: Vec::new(),
+            epoch_history: Vec::new(),
         }
     }
 
@@ -172,6 +186,11 @@ impl TrainEngine {
     /// Get feature names
     pub fn feature_names(&self) -> &[String] {
         &self.feature_names
+    }
+
+    /// Returns per-epoch training history. Empty for non-iterative models.
+    pub fn epoch_history(&self) -> &[EpochRecord] {
+        &self.epoch_history
     }
 
     /// Save the engine to a file

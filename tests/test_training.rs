@@ -1,7 +1,7 @@
 //! Integration test: Training pipeline end-to-end
 
 use kolosal_automl::training::{
-    TrainEngine, TrainingConfig, TaskType, ModelType, EnsembleStrategy,
+    TrainEngine, TrainingConfig, TaskType, ModelType, EnsembleStrategy, EpochRecord,
 };
 use polars::prelude::*;
 
@@ -181,4 +181,14 @@ fn test_train_ensemble() {
     assert!(result.is_ok(), "ensemble training should succeed: {:?}", result.err());
     let ensemble = result.unwrap();
     assert_eq!(ensemble.models.len(), 3, "should have 3 models in ensemble");
+}
+
+#[test]
+fn test_epoch_history_empty_for_non_sgd() {
+    let df = classification_df();
+    let config = TrainingConfig::new(TaskType::BinaryClassification, "target")
+        .with_model(ModelType::DecisionTree);
+    let mut engine = TrainEngine::new(config);
+    engine.fit(&df).unwrap();
+    assert!(engine.epoch_history().is_empty(), "decision tree should have no epoch history");
 }
