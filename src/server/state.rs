@@ -324,27 +324,16 @@ impl AppState {
             }
         }
 
-        // Evict train_engines: DashMap — no lock needed
+        // Evict train_engines and insights_cache in lockstep: same keys removed from both
         if self.train_engines.len() > Self::MAX_TRAIN_ENGINES {
             let to_remove = self.train_engines.len() - Self::MAX_TRAIN_ENGINES;
             let keys: Vec<String> = self.train_engines.iter()
                 .take(to_remove)
                 .map(|entry| entry.key().clone())
                 .collect();
-            for key in keys {
-                self.train_engines.remove(&key);
-            }
-        }
-
-        // Evict insights_cache: DashMap — no lock needed
-        if self.insights_cache.len() > Self::MAX_TRAIN_ENGINES {
-            let to_remove = self.insights_cache.len() - Self::MAX_TRAIN_ENGINES;
-            let keys: Vec<String> = self.insights_cache.iter()
-                .take(to_remove)
-                .map(|e| e.key().clone())
-                .collect();
-            for key in keys {
-                self.insights_cache.remove(&key);
+            for key in &keys {
+                self.train_engines.remove(key);
+                self.insights_cache.remove(key);
             }
         }
 
