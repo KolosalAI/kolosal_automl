@@ -275,21 +275,20 @@ impl FeatureSelector {
 
     // Discretize continuous variable into bins
     fn discretize(x: &Array1<f64>, n_bins: usize) -> Vec<usize> {
-        let min_val = x.iter().cloned().fold(f64::INFINITY, f64::min);
-        let max_val = x.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-        
+        // Single pass: compute min, max, and bins together
+        let mut min_val = f64::INFINITY;
+        let mut max_val = f64::NEG_INFINITY;
+        for &v in x.iter() {
+            if v < min_val { min_val = v; }
+            if v > max_val { max_val = v; }
+        }
         let range = max_val - min_val;
         if range <= 0.0 {
             return vec![0; x.len()];
         }
-
         let bin_width = range / n_bins as f64;
-        
         x.iter()
-            .map(|&v| {
-                let bin = ((v - min_val) / bin_width) as usize;
-                bin.min(n_bins - 1)
-            })
+            .map(|&v| (((v - min_val) / bin_width) as usize).min(n_bins - 1))
             .collect()
     }
 
@@ -353,8 +352,9 @@ impl FeatureSelector {
         // Iteratively remove features
         while remaining.len() > n_select {
             // Compute importance scores for remaining features
+            use rayon::prelude::*;
             let mut scores: Vec<(usize, f64)> = remaining
-                .iter()
+                .par_iter()
                 .map(|&idx| {
                     let col = x.column(idx);
                     let importance = Self::compute_correlation(&col.to_owned(), y).abs();
@@ -498,27 +498,32 @@ impl CorrelationFilter {
         let mut to_remove: HashSet<usize> = HashSet::new();
         let mut removed_pairs = Vec::new();
 
-        // Compute correlation matrix and remove correlated features
+        // Precompute full correlation matrix once — O(n²) instead of O(n³)
+        let corr_matrix = Self::compute_correlation_matrix(x);
+
         for i in 0..n_features {
             if to_remove.contains(&i) {
                 continue;
             }
-
             for j in (i + 1)..n_features {
                 if to_remove.contains(&j) {
                     continue;
                 }
-
-                let col_i = x.column(i);
-                let col_j = x.column(j);
-                let corr = Self::pearson_correlation(&col_i.to_owned(), &col_j.to_owned());
-
+                let corr = corr_matrix[[i, j]];
                 if corr.abs() > self.threshold {
-                    // Remove the feature with higher mean correlation to other features
-                    let mean_corr_i = self.mean_correlation(x, i, &to_remove);
-                    let mean_corr_j = self.mean_correlation(x, j, &to_remove);
+                    // Row-mean from precomputed matrix (O(n) read, no recomputation)
+                    let n_active = n_features - to_remove.len();
+                    let denom = (n_active.saturating_sub(1)).max(1) as f64;
+                    let mean_i: f64 = (0..n_features)
+                        .filter(|&k| k != i && !to_remove.contains(&k))
+                        .map(|k| corr_matrix[[i, k]].abs())
+                        .sum::<f64>() / denom;
+                    let mean_j: f64 = (0..n_features)
+                        .filter(|&k| k != j && !to_remove.contains(&k))
+                        .map(|k| corr_matrix[[j, k]].abs())
+                        .sum::<f64>() / denom;
 
-                    let remove_idx = if mean_corr_i > mean_corr_j { i } else { j };
+                    let remove_idx = if mean_i > mean_j { i } else { j };
                     to_remove.insert(remove_idx);
                     removed_pairs.push((i, j, corr));
                 }
@@ -587,40 +592,26 @@ impl CorrelationFilter {
 
     /// Compute the full NxN Pearson correlation matrix for the given data
     pub fn compute_correlation_matrix(x: &Array2<f64>) -> Array2<f64> {
+        use ndarray::Axis;
+        use rayon::prelude::*;
+
         let n = x.ncols();
-        let mut corr = Array2::eye(n);
-        for i in 0..n {
-            let col_i = x.column(i).to_owned();
-            for j in (i + 1)..n {
-                let col_j = x.column(j).to_owned();
-                let r = Self::pearson_correlation(&col_i, &col_j);
-                corr[[i, j]] = r;
-                corr[[j, i]] = r;
-            }
-        }
+        // Precompute owned columns to avoid repeated borrows in parallel closure
+        let cols: Vec<ndarray::Array1<f64>> = (0..n).map(|i| x.column(i).to_owned()).collect();
+
+        let mut corr = Array2::<f64>::eye(n);
+        // Split by rows — each row slice is an independent mutable region
+        corr.axis_iter_mut(Axis(0))
+            .into_par_iter()
+            .enumerate()
+            .for_each(|(i, mut row)| {
+                for j in 0..n {
+                    if i != j {
+                        row[j] = Self::pearson_correlation(&cols[i], &cols[j]);
+                    }
+                }
+            });
         corr
-    }
-
-    fn mean_correlation(&self, x: &Array2<f64>, idx: usize, exclude: &HashSet<usize>) -> f64 {
-        let n_features = x.ncols();
-        let col = x.column(idx);
-        
-        let mut total = 0.0;
-        let mut count = 0;
-
-        for j in 0..n_features {
-            if j != idx && !exclude.contains(&j) {
-                let other = x.column(j);
-                total += Self::pearson_correlation(&col.to_owned(), &other.to_owned()).abs();
-                count += 1;
-            }
-        }
-
-        if count > 0 {
-            total / count as f64
-        } else {
-            0.0
-        }
     }
 }
 
