@@ -3318,6 +3318,241 @@ const EMBEDDED_INDEX_HTML: &str = r#"<!DOCTYPE html>
         caption.textContent = 'Your model trained on ' + trainN + ' rows and was evaluated on ' + evalN + ' rows it had never seen.';
       }
     }
+
+    function eInsPgLoad() {
+      if (!eLastModelId) return;
+      // Guard: if already loaded for this model, skip
+      if (eInsPgLastModel === eLastModelId && Object.keys(eInsPgFeatures).length > 0) return;
+
+      fetch('/api/data/analyze')
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          // column_stats is an array; convert to dict keyed by column name
+          var arr = d.column_stats || [];
+          eInsPgColStats = {};
+          arr.forEach(function(s) { if (s && s.column) eInsPgColStats[s.column] = s; });
+          eInsPgLastModel = eLastModelId;
+          eInsPgBuildSliders();
+        })
+        .catch(function(e) { console.error('PG load failed', e); });
+    }
+
+    function eInsPgBuildSliders() {
+      var container = document.getElementById('e-ins-pg-sliders');
+      if (!container) return;
+      // Remove all existing children safely
+      while (container.firstChild) container.removeChild(container.firstChild);
+      eInsPgFeatures = {};
+
+      // Get column names from eData; get target from the target dropdown
+      var cols = (typeof eData !== 'undefined' && eData && eData.column_names) ? eData.column_names : [];
+      var target = ($('e-target') && $('e-target').value) ? $('e-target').value : '';
+      // If cols is empty, try to use eInsPgColStats keys
+      if (!cols.length) cols = Object.keys(eInsPgColStats);
+
+      cols.forEach(function(col) {
+        if (col === target) return;
+        var stats = eInsPgColStats[col] || {};
+        var dtype = (stats.dtype || '').toLowerCase();
+        var isNumeric = dtype.indexOf('float') >= 0 || dtype.indexOf('int') >= 0 || dtype.indexOf('uint') >= 0;
+
+        var row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px';
+
+        var lbl = document.createElement('label');
+        lbl.style.cssText = 'font-size:12px;color:#374151;min-width:100px;flex-shrink:0';
+        lbl.textContent = col;
+        row.appendChild(lbl);
+
+        if (isNumeric) {
+          var minV = parseFloat(stats.min != null ? stats.min : 0);
+          var maxV = parseFloat(stats.max != null ? stats.max : 1);
+          if (minV === maxV) maxV = minV + 1;
+          var mid = (minV + maxV) / 2;
+          eInsPgFeatures[col] = mid;
+
+          var inp = document.createElement('input');
+          inp.type = 'range'; inp.min = minV; inp.max = maxV;
+          inp.step = (maxV - minV) / 100 || 0.01;
+          inp.value = mid;
+          inp.style.cssText = 'flex:1;min-width:80px';
+
+          var valSpan = document.createElement('span');
+          valSpan.style.cssText = 'font-size:11px;color:#6b7280;min-width:40px';
+          valSpan.textContent = mid.toFixed(2);
+
+          inp.oninput = (function(c, vs) {
+            return function() {
+              eInsPgFeatures[c] = parseFloat(inp.value);
+              vs.textContent = parseFloat(inp.value).toFixed(2);
+              eInsPgDebouncePredict();
+            };
+          })(col, valSpan);
+
+          row.appendChild(inp);
+          row.appendChild(valSpan);
+        } else {
+          var cats = [];
+          if (Array.isArray(stats.top_categories)) {
+            cats = stats.top_categories.map(function(c) {
+              if (c && typeof c === 'object') return String(c.value != null ? c.value : c);
+              return String(c);
+            });
+          }
+          eInsPgFeatures[col] = cats[0] || '';
+
+          var sel = document.createElement('select');
+          sel.style.cssText = 'flex:1;font-size:12px;padding:2px 4px;border:1px solid #d1d5db;border-radius:4px';
+          cats.forEach(function(cat) {
+            var opt = document.createElement('option');
+            opt.value = cat;
+            opt.textContent = cat;
+            sel.appendChild(opt);
+          });
+          sel.onchange = (function(c) {
+            return function() {
+              eInsPgFeatures[c] = sel.value;
+              eInsPgDebouncePredict();
+            };
+          })(col);
+          row.appendChild(sel);
+        }
+        container.appendChild(row);
+      });
+
+      eInsPgPredict();
+    }
+
+    function eInsPgDebouncePredict() {
+      if (eInsPgDebounce) clearTimeout(eInsPgDebounce);
+      eInsPgDebounce = setTimeout(eInsPgPredict, 150);
+    }
+
+    function eInsPgPredict() {
+      if (!eLastModelId) return;
+
+      // Build ordered numeric feature array from eInsPgFeatures
+      // POST /api/predict expects {model_id, data: [[f64, ...]]}
+      var featureArr = Object.values(eInsPgFeatures).map(function(v) {
+        return typeof v === 'string' ? 0 : parseFloat(v) || 0;
+      });
+
+      fetch('/api/predict', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({model_id: eLastModelId, data: [featureArr]})
+      })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        eInsPgShowPrediction(d);
+        // Sequential: local explanation after predict resolves
+        return fetch('/api/explain/local', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({model_id: eLastModelId, instance: featureArr})
+        });
+      })
+      .then(function(r) { return r.json(); })
+      .then(function(d) { eInsPgDrawAttribution(d); })
+      .catch(function(e) { console.error('Predict failed', e); });
+    }
+
+    function eInsPgShowPrediction(d) {
+      var predLabel = document.getElementById('e-ins-pg-pred-label');
+      var predConf = document.getElementById('e-ins-pg-pred-conf');
+      // /api/predict returns {predictions: [f64, ...]}
+      var preds = d.predictions || [];
+      if (predLabel) predLabel.textContent = preds.length > 0 ? String(preds[0]) : '';
+      if (predConf) predConf.textContent = '';
+
+      // Draw confidence bars canvas
+      var canvas = document.getElementById('e-ins-pg-conf-canvas');
+      if (!canvas) return;
+      var ctx = canvas.getContext('2d');
+      var W = canvas.width, H = canvas.height;
+      ctx.clearRect(0, 0, W, H);
+
+      var probs = d.probabilities || d.class_probabilities || null;
+      if (!probs || !Array.isArray(probs)) return;
+
+      var n = probs.length;
+      var rowH = Math.floor(H / n);
+      var pad = {left: 80, right: 20};
+      probs.forEach(function(item, i) {
+        var label = item.class || item.label || ('Class ' + i);
+        var prob = item.probability || item.value || 0;
+        var y = i * rowH;
+        // Bar
+        ctx.fillStyle = i === 0 ? '#3b82f6' : '#93c5fd';
+        ctx.fillRect(pad.left, y + 4, prob * (W - pad.left - pad.right), rowH - 8);
+        // Label
+        ctx.fillStyle = '#374151'; ctx.font = '11px sans-serif'; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+        ctx.fillText(label.length > 10 ? label.slice(0, 9) + '\u2026' : label, pad.left - 4, y + rowH/2);
+        // Percentage
+        ctx.textAlign = 'left';
+        ctx.fillText((prob * 100).toFixed(1) + '%', pad.left + prob * (W - pad.left - pad.right) + 4, y + rowH/2);
+      });
+    }
+
+    function eInsPgDrawAttribution(d) {
+      var canvas = document.getElementById('e-ins-pg-attr-canvas');
+      if (!canvas) return;
+      var ctx = canvas.getContext('2d');
+      var W = canvas.width, H = canvas.height;
+      ctx.clearRect(0, 0, W, H);
+
+      // /api/explain/local returns {contributions: [{feature, contribution, importance, feature_value}]}
+      var attrs = d.attributions || d.contributions || d.local_importance || [];
+      if (!Array.isArray(attrs) || !attrs.length) {
+        ctx.fillStyle = '#9ca3af'; ctx.font = '12px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('Local explanation not available for this model type', W/2, H/2);
+        return;
+      }
+
+      // Sort by absolute magnitude, take top 3
+      var sorted = attrs.slice().sort(function(a, b) {
+        return Math.abs(b.value || b.contribution || 0) - Math.abs(a.value || a.contribution || 0);
+      }).slice(0, 3);
+
+      var maxAbs = sorted.reduce(function(m, a) { return Math.max(m, Math.abs(a.value || a.contribution || 0)); }, 0) || 1;
+      var rowH = Math.floor(H / sorted.length);
+      var cx = W / 2;
+
+      sorted.forEach(function(attr, i) {
+        var val = attr.value || attr.contribution || 0;
+        var featName = attr.feature || attr.name || ('feature_' + i);
+        var y = i * rowH + rowH / 2;
+        var arrowLen = Math.abs(val) / maxAbs * (W / 2 - 100);
+
+        // Arrow line
+        ctx.strokeStyle = val >= 0 ? '#10b981' : '#ef4444';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(cx, y);
+        var endX = val >= 0 ? cx + arrowLen : cx - arrowLen;
+        ctx.lineTo(endX, y);
+        ctx.stroke();
+
+        // Arrowhead
+        var dir = val >= 0 ? 1 : -1;
+        ctx.fillStyle = val >= 0 ? '#10b981' : '#ef4444';
+        ctx.beginPath();
+        ctx.moveTo(endX, y);
+        ctx.lineTo(endX - dir * 8, y - 5);
+        ctx.lineTo(endX - dir * 8, y + 5);
+        ctx.closePath();
+        ctx.fill();
+
+        // Feature label
+        ctx.fillStyle = '#374151'; ctx.font = '11px sans-serif'; ctx.textBaseline = 'middle';
+        ctx.textAlign = val >= 0 ? 'right' : 'left';
+        ctx.fillText(featName.length > 12 ? featName.slice(0, 11) + '\u2026' : featName, val >= 0 ? cx - 4 : cx + 4, y);
+
+        // Value label
+        ctx.textAlign = val >= 0 ? 'left' : 'right';
+        ctx.fillText((val >= 0 ? '+' : '') + val.toFixed(3), val >= 0 ? endX + 4 : endX - 4, y);
+      });
+    }
     </script>
 </body>
 </html>"#;
