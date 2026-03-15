@@ -1714,6 +1714,7 @@ const EMBEDDED_INDEX_HTML: &str = r#"<!DOCTYPE html>
                 <button class="sidebar-item" data-tab="train" onclick="eTab('train')"><i class="ri-play-circle-line"></i><span>Train</span></button>
                 <div class="sidebar-section">Analysis</div>
                 <button class="sidebar-item" data-tab="analysis" onclick="eTab('analysis')"><i class="ri-bar-chart-line"></i><span>Analysis</span></button>
+                <button class="sidebar-item" data-tab="insights" onclick="eTab('insights')"><i class="ri-lightbulb-line"></i><span>Insights</span></button>
                 <button class="sidebar-item" data-tab="reports" onclick="eTab('reports');eLoadReport()"><i class="ri-file-chart-line"></i><span>Reports</span></button>
                 <button class="sidebar-item" data-tab="monitor" onclick="eTab('monitor')"><i class="ri-pulse-line"></i><span>Monitor</span></button>
             </nav>
@@ -2057,6 +2058,80 @@ const EMBEDDED_INDEX_HTML: &str = r#"<!DOCTYPE html>
                             </div>
                         </div>
                     </div>
+                    <!-- Insights -->
+                    <div id="et-insights" class="tab-panel">
+                        <div class="sub-tabs">
+                            <button class="sub-tab active" onclick="eSubTab('insights','stepthrough');eInsLoad()">&#9654; How It Learned</button>
+                            <button class="sub-tab" onclick="eSubTab('insights','concepts')">&#128208; Understand the Model</button>
+                            <button class="sub-tab" onclick="eSubTab('insights','playground');eInsPgLoad()">&#127897; What If?</button>
+                            <button class="sub-tab" onclick="eSubTab('insights','metrics');eInsMetricsLoad()">&#128202; How Well Did It Do?</button>
+                        </div>
+                        <!-- Sub-tab: Step-Through -->
+                        <div id="esp-insights-stepthrough" class="sub-panel active">
+                            <div id="e-ins-st-nomodel" class="alert alert-warn" style="display:none"><i class="ri-error-warning-line"></i><span>Train a model first to unlock this visualization</span></div>
+                            <div id="e-ins-st-content">
+                                <div style="display:flex;gap:16px;height:480px">
+                                    <canvas id="e-ins-st-canvas" width="700" height="460" style="flex:0 0 70%;border:1px solid #e5e7eb;border-radius:6px"></canvas>
+                                    <div style="flex:1;display:flex;flex-direction:column;gap:8px;overflow:auto">
+                                        <div style="font-size:12px;color:#6b7280">Step <span id="e-ins-st-step">0</span> of <span id="e-ins-st-total">0</span></div>
+                                        <div id="e-ins-st-annotation-text" style="font-size:12px;color:#374151;white-space:pre-line;line-height:1.6"></div>
+                                    </div>
+                                </div>
+                                <div style="display:flex;gap:8px;align-items:center;margin-top:12px">
+                                    <button class="btn btn-secondary" onclick="eInsStepPrev()">&#9664; Back</button>
+                                    <button id="e-ins-st-play-btn" class="btn btn-primary" onclick="eInsStepTogglePlay()">Play</button>
+                                    <button class="btn btn-secondary" onclick="eInsStepNext()">Next &#9654;</button>
+                                    <button class="btn btn-secondary" onclick="eInsStepReset()">Reset</button>
+                                    <label style="font-size:12px;color:#6b7280">Speed:</label>
+                                    <input id="e-ins-st-speed" type="range" min="200" max="2000" value="800" step="100" style="width:100px">
+                                </div>
+                            </div>
+                            <div id="e-ins-st-unsupported" style="display:none;font-size:13px;color:#6b7280;padding:32px;text-align:center"></div>
+                        </div>
+                        <!-- Sub-tab: Concepts -->
+                        <div id="esp-insights-concepts" class="sub-panel">
+                            <div id="e-ins-c-nomodel" class="alert alert-warn" style="display:none"><i class="ri-error-warning-line"></i><span>Train a model first to unlock this visualization</span></div>
+                            <div style="display:flex;flex-direction:column;gap:24px;padding:16px 0">
+                                <div>
+                                    <h4 style="margin:0 0 8px;font-size:14px;font-weight:600;color:#111827">Bias-Variance (Training Curve)</h4>
+                                    <canvas id="e-ins-c-bv-canvas" width="700" height="200" style="border:1px solid #e5e7eb;border-radius:6px;width:100%"></canvas>
+                                    <div id="e-ins-c-bv-caption" style="font-size:12px;color:#6b7280;margin-top:6px"></div>
+                                </div>
+                                <div>
+                                    <h4 style="margin:0 0 8px;font-size:14px;font-weight:600;color:#111827">Feature Importance</h4>
+                                    <canvas id="e-ins-c-fi-canvas" width="700" height="220" style="border:1px solid #e5e7eb;border-radius:6px;width:100%"></canvas>
+                                    <div id="e-ins-c-fi-caption" style="font-size:12px;color:#6b7280;margin-top:6px"></div>
+                                </div>
+                                <div>
+                                    <h4 style="margin:0 0 8px;font-size:14px;font-weight:600;color:#111827">Data Split Breakdown</h4>
+                                    <canvas id="e-ins-c-split-canvas" width="700" height="80" style="border:1px solid #e5e7eb;border-radius:6px;width:100%"></canvas>
+                                    <div id="e-ins-c-split-caption" style="font-size:12px;color:#6b7280;margin-top:6px"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Sub-tab: Playground -->
+                        <div id="esp-insights-playground" class="sub-panel">
+                            <div id="e-ins-pg-nomodel" class="alert alert-warn" style="display:none"><i class="ri-error-warning-line"></i><span>Train a model first to unlock this visualization</span></div>
+                            <div style="display:flex;gap:16px;padding:16px 0">
+                                <div id="e-ins-pg-sliders" style="flex:0 0 280px;display:flex;flex-direction:column;gap:12px;overflow-y:auto;max-height:520px"></div>
+                                <div style="flex:1;display:flex;flex-direction:column;gap:12px">
+                                    <div style="display:flex;gap:12px;align-items:center">
+                                        <div id="e-ins-pg-pred-label" style="font-size:20px;font-weight:700;color:#111827"></div>
+                                        <div id="e-ins-pg-pred-conf" style="font-size:13px;color:#6b7280"></div>
+                                    </div>
+                                    <canvas id="e-ins-pg-conf-canvas" width="520" height="120" style="border:1px solid #e5e7eb;border-radius:6px"></canvas>
+                                    <h4 style="margin:0;font-size:13px;font-weight:600;color:#374151">Local explanation &#8212; shows how this specific input affected the prediction.</h4>
+                                    <canvas id="e-ins-pg-attr-canvas" width="520" height="160" style="border:1px solid #e5e7eb;border-radius:6px"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Sub-tab: Metrics -->
+                        <div id="esp-insights-metrics" class="sub-panel">
+                            <div id="e-ins-m-nomodel" class="alert alert-warn" style="display:none"><i class="ri-error-warning-line"></i><span>Train a model first to unlock this visualization</span></div>
+                            <div id="e-ins-m-nodata" class="alert alert-warn" style="display:none"><i class="ri-error-warning-line"></i><span>Retrain your model to unlock this view.</span></div>
+                            <div id="e-ins-m-content"></div>
+                        </div>
+                    </div>
                     <!-- Reports -->
                     <div id="et-reports" class="tab-panel">
                         <div id="e-rpt-empty" class="card" style="max-width:700px">
@@ -2148,9 +2223,13 @@ const EMBEDDED_INDEX_HTML: &str = r#"<!DOCTYPE html>
     <div id="e-toasts" class="toast-box"></div>
     <script>
     var eData=null,eTraining=false,eLastModelId=null,eLoadedDataset=null;
+    var eInsStNodes=[], eInsStEpochs=[], eInsStCurrent=0;
+    var eInsStPlaying=false, eInsStTimer=null, eInsModelType='';
+    var eInsPgDebounce=null, eInsPgFeatures={}, eInsPgColStats={}, eInsPgLastModel='';
+    var eInsMetricsData=null, eInsMetricsThreshold=0.5;
     function $(i){return document.getElementById(i)}
     function eNotify(m,t){var d=document.createElement('div');d.className='toast'+(t==='ok'?' toast-ok':t==='err'?' toast-err':'');d.textContent=m;$('e-toasts').appendChild(d);setTimeout(function(){d.remove()},3500)}
-    var eTabNames={dashboard:'Dashboard',data:'Data',train:'Train',analysis:'Analysis',reports:'Reports',monitor:'Monitor'};
+    var eTabNames={dashboard:'Dashboard',data:'Data',train:'Train',analysis:'Analysis',insights:'Insights',reports:'Reports',monitor:'Monitor'};
     function eTab(n){
         document.querySelectorAll('.tab-panel').forEach(function(p){p.classList.remove('active')});
         document.querySelectorAll('.sidebar-item').forEach(function(t){t.classList.remove('active')});
@@ -2159,6 +2238,7 @@ const EMBEDDED_INDEX_HTML: &str = r#"<!DOCTYPE html>
         $('e-page-title').textContent=eTabNames[n]||n;
         eUpdateNoDataAlerts();
         if(n==='reports')eLoadReport();
+        if(n==='insights')eInsLoad();
     }
     function eSubTab(parent,name){
         var panel=$('et-'+parent);if(!panel)return;
