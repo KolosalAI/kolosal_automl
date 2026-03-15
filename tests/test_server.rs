@@ -855,6 +855,17 @@ async fn test_compare_models_no_data() {
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
 
+#[tokio::test]
+async fn test_model_structure_missing_model() {
+    let app = test_app();
+    let resp = app.oneshot(
+        axum::http::Request::builder()
+            .uri("/api/insights/model-structure?model_id=nonexistent")
+            .body(axum::body::Body::empty()).unwrap()
+    ).await.unwrap();
+    assert_eq!(resp.status(), 404);
+}
+
 #[test]
 fn test_insights_evaluation_struct_exists() {
     use kolosal_automl::server::state::InsightsEvaluation;

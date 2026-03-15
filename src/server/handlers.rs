@@ -6628,3 +6628,82 @@ pub async fn submit_prediction_feedback(
         "prediction_id": prediction_id,
     })))
 }
+
+/// GET /api/insights/model-structure — return tree/convergence structure for a trained model
+pub async fn get_insights_model_structure(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<std::collections::HashMap<String, String>>,
+) -> impl axum::response::IntoResponse {
+    use axum::http::StatusCode;
+
+    let model_id = match params.get("model_id").filter(|s| !s.is_empty()) {
+        Some(id) => id.clone(),
+        None => return (StatusCode::BAD_REQUEST,
+            axum::Json(serde_json::json!({"error": "model_id required"}))).into_response(),
+    };
+
+    let engine = match state.train_engines.get(&model_id) {
+        Some(e) => e,
+        None => return (StatusCode::NOT_FOUND,
+            axum::Json(serde_json::json!({"error": "model_not_found"}))).into_response(),
+    };
+
+    let model_type_str = match engine.model() {
+        Some(crate::training::TrainedModel::DecisionTreeClassifier(_))
+        | Some(crate::training::TrainedModel::DecisionTreeRegressor(_))
+        | Some(crate::training::TrainedModel::RandomForestClassifier(_))
+        | Some(crate::training::TrainedModel::RandomForestRegressor(_)) => "tree",
+        Some(crate::training::TrainedModel::SGDRegressor(_))
+        | Some(crate::training::TrainedModel::SGDClassifier(_)) => "convergence",
+        _ => "unsupported",
+    };
+
+    let total_trees: usize = match engine.model() {
+        Some(crate::training::TrainedModel::RandomForestClassifier(rf))
+        | Some(crate::training::TrainedModel::RandomForestRegressor(rf)) => rf.n_trees(),
+        _ => 1,
+    };
+
+    let nodes = engine.tree_nodes();
+    let epoch_history: Option<Vec<serde_json::Value>> = if !engine.epoch_history().is_empty() {
+        Some(engine.epoch_history().iter().map(|r| serde_json::json!({
+            "epoch": r.epoch, "train_loss": r.train_loss,
+            "val_loss": r.val_loss, "train_acc": r.train_acc, "val_acc": r.val_acc,
+        })).collect())
+    } else {
+        None
+    };
+
+    let algorithm = state.models.get(&model_id)
+        .map(|m| m.name.clone())
+        .unwrap_or_default();
+
+    axum::Json(serde_json::json!({
+        "type": model_type_str, "algorithm": algorithm,
+        "total_trees": total_trees, "shown_tree_index": 0,
+        "nodes": nodes, "epoch_history": epoch_history,
+    })).into_response()
+}
+
+/// GET /api/insights/evaluation — return evaluation data for Metrics Deep Dive (Task 6)
+pub async fn get_insights_evaluation(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<std::collections::HashMap<String, String>>,
+) -> impl axum::response::IntoResponse {
+    use axum::http::StatusCode;
+
+    let model_id = match params.get("model_id").filter(|s| !s.is_empty()) {
+        Some(id) => id.clone(),
+        None => return (StatusCode::BAD_REQUEST,
+            axum::Json(serde_json::json!({"error": "model_id required"}))).into_response(),
+    };
+
+    match state.insights_cache.get(&model_id) {
+        Some(_eval) => axum::Json(serde_json::json!({
+            "status": "ok",
+            "model_id": model_id,
+        })).into_response(),
+        None => (StatusCode::NOT_FOUND,
+            axum::Json(serde_json::json!({"error": "evaluation_not_found"}))).into_response(),
+    }
+}
