@@ -103,6 +103,23 @@ impl Umap {
 
     /// Run UMAP on dense data. Returns n_samples x 2 embedding.
     pub fn fit_transform(&self, data: &[Vec<f64>]) -> crate::error::Result<Vec<[f64; 2]>> {
+        self.fit_transform_with_cb(data, |_, _| {})
+    }
+
+    /// How many SGD epochs between callback emissions during streaming.
+    const UMAP_STREAM_EMIT_EVERY: usize = 20;
+
+    /// Run UMAP and emit partial embeddings to `on_epoch` every
+    /// `UMAP_STREAM_EMIT_EVERY` epochs and once after the final epoch.
+    /// The final return value is the fully-converged embedding.
+    pub fn fit_transform_with_cb<F>(
+        &self,
+        data: &[Vec<f64>],
+        mut on_epoch: F,
+    ) -> crate::error::Result<Vec<[f64; 2]>>
+    where
+        F: FnMut(usize, &[[f64; 2]]),
+    {
         let n = data.len();
         if n < 3 {
             return Err(crate::error::KolosalError::DataError(
@@ -112,11 +129,9 @@ impl Umap {
 
         let k = self.config.n_neighbors.min(n - 1);
 
-        // Subsample if dataset is too large
         let (work_data, sample_indices) = if n > self.config.max_samples {
             let mut rng = ChaCha8Rng::seed_from_u64(self.config.random_state);
             let mut indices: Vec<usize> = (0..n).collect();
-            // Fisher-Yates partial shuffle
             for i in 0..self.config.max_samples {
                 let j = rng.gen_range(i..n);
                 indices.swap(i, j);
@@ -130,24 +145,18 @@ impl Umap {
         };
 
         let n_work = work_data.len();
-
-        // Phase 1: KNN graph
         let (knn_indices, knn_distances) = self.compute_knn(&work_data, k);
-
-        // Phase 2: Fuzzy simplicial set
         let edges = self.compute_fuzzy_set(&knn_indices, &knn_distances, k);
 
-        // Phase 3: SGD layout optimization
-        let mut embedding = self.optimize_layout(n_work, &edges);
+        let mut embedding = self.optimize_layout_with_cb(n_work, &edges, |epoch, emb| {
+            on_epoch(epoch, emb);
+        });
 
-        // If subsampled, map back to original indices (fill with NaN for missing)
         if let Some(indices) = sample_indices {
             let mut full_embedding = vec![[0.0f64; 2]; n];
-            // Place subsampled points
             for (sub_idx, &orig_idx) in indices.iter().enumerate() {
                 full_embedding[orig_idx] = embedding[sub_idx];
             }
-            // Interpolate missing points using nearest sampled neighbor
             for i in 0..n {
                 if !indices.contains(&i) {
                     let mut best_dist = f64::INFINITY;
@@ -159,7 +168,6 @@ impl Umap {
                             best_idx = si;
                         }
                     }
-                    // Place near the nearest sampled point with small jitter
                     let emb = full_embedding[best_idx];
                     full_embedding[i] = [
                         emb[0] + (i as f64 * 0.001).sin() * 0.1,
@@ -169,6 +177,9 @@ impl Umap {
             }
             embedding = full_embedding;
         }
+
+        // Final callback: always fires with the fully-converged embedding
+        on_epoch(self.config.n_epochs, &embedding);
 
         Ok(embedding)
     }
@@ -309,96 +320,79 @@ impl Umap {
             .collect()
     }
 
-    /// Phase 3: SGD layout optimization with negative sampling.
-    fn optimize_layout(&self, n_samples: usize, edges: &[Edge]) -> Vec<[f64; 2]> {
-        // Compute curve parameters a, b from min_dist and spread
+    /// SGD layout with epoch callbacks — fires on_epoch every UMAP_STREAM_EMIT_EVERY epochs.
+    fn optimize_layout_with_cb<F>(
+        &self,
+        n_samples: usize,
+        edges: &[Edge],
+        mut on_epoch: F,
+    ) -> Vec<[f64; 2]>
+    where
+        F: FnMut(usize, &[[f64; 2]]),
+    {
         let (a, b) = self.find_ab_params(self.config.spread, self.config.min_dist);
-
-        // Initialize embedding with small random values
         let mut rng = ChaCha8Rng::seed_from_u64(self.config.random_state);
         let mut embedding: Vec<[f64; 2]> = (0..n_samples)
-            .map(|_| {
-                [
-                    rng.gen_range(-10.0..10.0) * 0.01,
-                    rng.gen_range(-10.0..10.0) * 0.01,
-                ]
-            })
+            .map(|_| [rng.gen_range(-10.0..10.0) * 0.01, rng.gen_range(-10.0..10.0) * 0.01])
             .collect();
 
         let n_epochs = self.config.n_epochs;
         let neg_rate = self.config.negative_sample_rate;
-
-        // Build epoch-per-edge schedule based on weights
         let max_weight = edges.iter().map(|e| e.weight).fold(0.0_f64, f64::max);
 
         for epoch in 0..n_epochs {
             let alpha = self.config.learning_rate * (1.0 - epoch as f64 / n_epochs as f64);
-            if alpha < 1e-8 {
-                break;
-            }
+            if alpha < 1e-8 { break; }
 
             for edge in edges {
-                // Sample this edge based on weight (higher weight = more frequent)
                 let epochs_per_sample = if edge.weight > 0.0 {
                     max_weight / edge.weight
                 } else {
                     f64::INFINITY
                 };
-
-                if epoch as f64 % epochs_per_sample.max(1.0) >= 1.0 {
-                    continue;
-                }
+                if epoch as f64 % epochs_per_sample.max(1.0) >= 1.0 { continue; }
 
                 let i = edge.i;
                 let j = edge.j;
-
-                // Attractive force
-                let dy = [
-                    embedding[i][0] - embedding[j][0],
-                    embedding[i][1] - embedding[j][1],
-                ];
+                let dy = [embedding[i][0] - embedding[j][0], embedding[i][1] - embedding[j][1]];
                 let dist_sq = dy[0] * dy[0] + dy[1] * dy[1] + 1e-8;
+                let grad_coeff = -2.0 * a * b * dist_sq.powf(b - 1.0) / (1.0 + a * dist_sq.powf(b));
+                let gd0 = grad_coeff * dy[0];
+                let gd1 = grad_coeff * dy[1];
+                embedding[i][0] += alpha * gd0;
+                embedding[i][1] += alpha * gd1;
+                embedding[j][0] -= alpha * gd0;
+                embedding[j][1] -= alpha * gd1;
 
-                let grad_coeff = -2.0 * a * b * dist_sq.powf(b - 1.0)
-                    / (1.0 + a * dist_sq.powf(b));
-
-                let grad_d0 = grad_coeff * dy[0];
-                let grad_d1 = grad_coeff * dy[1];
-
-                embedding[i][0] += alpha * grad_d0;
-                embedding[i][1] += alpha * grad_d1;
-                embedding[j][0] -= alpha * grad_d0;
-                embedding[j][1] -= alpha * grad_d1;
-
-                // Negative sampling (repulsive forces)
                 for _ in 0..neg_rate {
                     let k = rng.gen_range(0..n_samples);
-                    if k == i {
-                        continue;
-                    }
-
-                    let dy_neg = [
-                        embedding[i][0] - embedding[k][0],
-                        embedding[i][1] - embedding[k][1],
-                    ];
-                    let dist_sq_neg = dy_neg[0] * dy_neg[0] + dy_neg[1] * dy_neg[1] + 1e-8;
-
-                    let grad_coeff_neg =
-                        2.0 * b / ((0.001 + dist_sq_neg) * (1.0 + a * dist_sq_neg.powf(b)));
-
-                    embedding[i][0] += alpha * grad_coeff_neg * dy_neg[0];
-                    embedding[i][1] += alpha * grad_coeff_neg * dy_neg[1];
+                    if k == i { continue; }
+                    let dy_neg = [embedding[i][0] - embedding[k][0], embedding[i][1] - embedding[k][1]];
+                    let dsq_neg = dy_neg[0] * dy_neg[0] + dy_neg[1] * dy_neg[1] + 1e-8;
+                    let gc_neg = 2.0 * b / ((0.001 + dsq_neg) * (1.0 + a * dsq_neg.powf(b)));
+                    embedding[i][0] += alpha * gc_neg * dy_neg[0];
+                    embedding[i][1] += alpha * gc_neg * dy_neg[1];
                 }
 
-                // Clip to prevent divergence
                 embedding[i][0] = embedding[i][0].clamp(-10.0, 10.0);
                 embedding[i][1] = embedding[i][1].clamp(-10.0, 10.0);
                 embedding[j][0] = embedding[j][0].clamp(-10.0, 10.0);
                 embedding[j][1] = embedding[j][1].clamp(-10.0, 10.0);
             }
+
+            // Emit intermediate snapshot every UMAP_STREAM_EMIT_EVERY epochs
+            if (epoch + 1) % Self::UMAP_STREAM_EMIT_EVERY == 0 {
+                on_epoch(epoch + 1, &embedding);
+            }
         }
 
         embedding
+    }
+
+    /// Phase 3: SGD layout optimization (no callbacks — delegates to optimize_layout_with_cb).
+    #[allow(dead_code)]
+    fn optimize_layout(&self, n_samples: usize, edges: &[Edge]) -> Vec<[f64; 2]> {
+        self.optimize_layout_with_cb(n_samples, edges, |_, _| {})
     }
 
     /// Find a, b parameters for the UMAP curve: 1 / (1 + a * d^(2b))
@@ -533,5 +527,38 @@ mod tests {
         let data = vec![vec![1.0, 2.0], vec![3.0, 4.0]];
         let umap = Umap::new(UmapConfig::default());
         assert!(umap.fit_transform(&data).is_err());
+    }
+
+    #[test]
+    fn test_fit_transform_with_cb_fires_callbacks() {
+        let data: Vec<Vec<f64>> = (0..20)
+            .map(|i| vec![i as f64, (i % 2) as f64 * 10.0])
+            .collect();
+        let config = UmapConfig { n_neighbors: 3, n_epochs: 40, ..Default::default() };
+        let umap = Umap::new(config);
+
+        let mut callback_count = 0usize;
+        let mut last_points_len = 0usize;
+        let result = umap.fit_transform_with_cb(&data, |_epoch, pts| {
+            callback_count += 1;
+            last_points_len = pts.len();
+        }).unwrap();
+
+        // 40 epochs / 20 per emit = 2 mid-run callbacks + 1 final = at least 3
+        assert!(callback_count >= 3, "expected >= 3 callbacks, got {}", callback_count);
+        assert_eq!(last_points_len, data.len());
+        assert_eq!(result.len(), data.len());
+    }
+
+    #[test]
+    fn test_fit_transform_delegates_to_with_cb() {
+        let data: Vec<Vec<f64>> = (0..10)
+            .map(|i| vec![i as f64, 0.0, 1.0])
+            .collect();
+        let config = UmapConfig { n_neighbors: 3, n_epochs: 20, ..Default::default() };
+        let umap = Umap::new(config);
+        // fit_transform must still work (delegates to with_cb with no-op)
+        let result = umap.fit_transform(&data).unwrap();
+        assert_eq!(result.len(), data.len());
     }
 }

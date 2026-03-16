@@ -616,6 +616,7 @@ impl Default for DataPreprocessor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::preprocessing::EncoderType;
 
     fn create_test_dataframe() -> DataFrame {
         DataFrame::new(vec![
