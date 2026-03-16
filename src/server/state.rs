@@ -375,3 +375,138 @@ impl AppState {
         })
     }
 }
+
+/// Scan `models_dir` for `model_*.json` files and populate `models` with
+/// restored `ModelInfo` entries. Called once at server startup (synchronously,
+/// before axum::serve). Skips autotune_ and optimized_ files. Logs and skips
+/// malformed files without panicking.
+pub fn restore_models_from_disk(models_dir: &str, models: &dashmap::DashMap<String, ModelInfo>) {
+    use crate::training::TrainEngine;
+    use tracing::{info, warn};
+
+    let dir = match std::fs::read_dir(models_dir) {
+        Ok(d) => d,
+        Err(e) => {
+            warn!(models_dir = %models_dir, error = %e, "Cannot read models directory during restore");
+            return;
+        }
+    };
+
+    for entry in dir.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("json") { continue; }
+
+        let stem = match path.file_stem().and_then(|s| s.to_str()) {
+            Some(s) => s.to_string(),
+            None => continue,
+        };
+
+        if stem.starts_with("autotune_") || stem.starts_with("optimized_") { continue; }
+        if !stem.starts_with("model_") { continue; }
+
+        let path_str = match path.to_str() {
+            Some(s) => s.to_string(),
+            None => continue,
+        };
+
+        let engine = match TrainEngine::load(&path_str) {
+            Ok(e) => e,
+            Err(err) => {
+                warn!(path = %path_str, error = %err, "Skipping model file — failed to load");
+                continue;
+            }
+        };
+
+        let display_type = {
+            let parts: Vec<&str> = stem.splitn(3, '_').collect();
+            if parts.len() >= 2 { parts[1].to_string() } else { stem.clone() }
+        };
+
+        let metrics = engine.metrics()
+            .cloned()
+            .and_then(|m| serde_json::to_value(m).ok())
+            .unwrap_or(serde_json::Value::Null);
+
+        let created_at = std::fs::metadata(&path)
+            .ok()
+            .and_then(|m| m.modified().ok())
+            .map(|t| chrono::DateTime::<chrono::Utc>::from(t).to_rfc3339())
+            .unwrap_or_else(|| chrono::Utc::now().to_rfc3339());
+
+        let task_type = format!("{:?}", engine.config().task_type);
+
+        let model_info = ModelInfo {
+            id: stem.clone(),
+            name: format!("{} (restored)", display_type),
+            task_type,
+            metrics,
+            created_at,
+            path: path.clone(),
+        };
+
+        models.insert(stem.clone(), model_info);
+        info!(model_id = %stem, path = %path_str, "Restored model from disk");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::training::{TrainEngine, TrainingConfig, TaskType, ModelType};
+    use polars::prelude::*;
+
+    fn make_test_engine() -> TrainEngine {
+        let df = df! {
+            "x" => [1.0f64, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0],
+            "y" => [0.0f64, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0],
+        }.unwrap();
+        let config = TrainingConfig::new(TaskType::BinaryClassification, "y")
+            .with_model(ModelType::LogisticRegression);
+        let mut engine = TrainEngine::new(config);
+        engine.fit(&df).unwrap();
+        engine
+    }
+
+    #[test]
+    fn test_restore_models_from_disk_loads_valid_model() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("model_LogisticRegression_abc123.json");
+        let engine = make_test_engine();
+        engine.save(path.to_str().unwrap()).unwrap();
+
+        let models: DashMap<String, ModelInfo> = DashMap::new();
+        restore_models_from_disk(dir.path().to_str().unwrap(), &models);
+
+        assert_eq!(models.len(), 1);
+        let entry = models.iter().next().unwrap();
+        assert_eq!(entry.key(), "model_LogisticRegression_abc123");
+        assert!(entry.value().name.contains("restored"));
+        assert_eq!(entry.value().path, path);
+    }
+
+    #[test]
+    fn test_restore_models_from_disk_skips_autotune() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("autotune_RandomForest_xyz.json");
+        let engine = make_test_engine();
+        engine.save(path.to_str().unwrap()).unwrap();
+
+        let models: DashMap<String, ModelInfo> = DashMap::new();
+        restore_models_from_disk(dir.path().to_str().unwrap(), &models);
+        assert_eq!(models.len(), 0);
+    }
+
+    #[test]
+    fn test_restore_models_from_disk_skips_malformed_json() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("model_Bad_zzz.json"),
+            b"not valid json {{{"
+        ).unwrap();
+
+        let models: DashMap<String, ModelInfo> = DashMap::new();
+        // Must not panic
+        restore_models_from_disk(dir.path().to_str().unwrap(), &models);
+        assert_eq!(models.len(), 0);
+    }
+}

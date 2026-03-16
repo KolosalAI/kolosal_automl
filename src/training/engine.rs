@@ -200,6 +200,11 @@ impl TrainEngine {
         self.metrics.as_ref()
     }
 
+    /// Return the training configuration.
+    pub fn config(&self) -> &TrainingConfig {
+        &self.config
+    }
+
     /// Get feature names
     pub fn feature_names(&self) -> &[String] {
         &self.feature_names

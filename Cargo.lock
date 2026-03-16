@@ -1981,6 +1981,7 @@ version = "1.0.0"
 dependencies = [
  "anyhow",
  "arrow",
+ "async-stream",
  "axum",
  "base64",
  "bincode",

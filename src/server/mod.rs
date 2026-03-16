@@ -93,6 +93,10 @@ pub async fn run_server(config: ServerConfig) -> anyhow::Result<()> {
     }
 
     let state = Arc::new(AppState::new(config.clone()));
+
+    // Restore previously-trained models from disk so they survive server restarts
+    crate::server::state::restore_models_from_disk(&config.models_dir, &state.models);
+
     let app = create_router(state, &config);
 
     let addr: SocketAddr = format!("{}:{}", config.host, config.port).parse()?;
