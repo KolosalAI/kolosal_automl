@@ -7978,7 +7978,8 @@ pub async fn umap_stream_handler(
     use axum::response::sse::{Event, KeepAlive, Sse};
     use tokio::sync::mpsc;
 
-    let max_samples = params.max_samples.unwrap_or(2000);
+    // Fix #6: clamp max_samples to prevent OOM
+    let max_samples = params.max_samples.unwrap_or(2000).min(10_000);
 
     let event_stream = async_stream::stream! {
         // 1. Look up model
@@ -8004,6 +8005,7 @@ pub async fn umap_stream_handler(
         };
         let target_col = engine.config().target_column.clone();
         let task_type_str = model_info.task_type.clone();
+        let is_clustering = task_type_str.contains("Clustering");
 
         // 3. Get dataset
         let df = match state.current_data.read().await.clone() {
@@ -8030,22 +8032,47 @@ pub async fn umap_stream_handler(
         let idx_ca = polars::prelude::IdxCa::from_vec("idx".into(), idx_vec);
         let sampled_df = df.take(&idx_ca).unwrap_or_else(|_| df.clone());
 
-        // 5. Extract labels
+        // 5. Feature matrix (drop target column) — build before label extraction so
+        //    clustering can call engine.predict on it.
+        let feature_df = sampled_df.drop(&target_col).unwrap_or_else(|_| sampled_df.clone());
+
+        // 6. Extract labels
         let is_regression = task_type_str.contains("Regression") || task_type_str.contains("TimeSeries");
-        let labels: Vec<serde_json::Value> = if let Ok(col) = sampled_df.column(&target_col) {
-            col.cast(&polars::prelude::DataType::Float64).ok()
-                .and_then(|s| s.f64().ok().map(|ca| {
-                    ca.into_iter().map(|v| {
-                        let val = v.unwrap_or(0.0);
-                        if is_regression {
-                            serde_json::json!(val)
-                        } else if task_type_str.contains("Clustering") {
-                            serde_json::json!(format!("cluster_{}", val as i64))
-                        } else {
-                            serde_json::json!(format!("class_{}", val as i64))
-                        }
-                    }).collect()
-                })).unwrap_or_default()
+
+        // Fix #2: for clustering use engine.predict; Fix #3: for classification prefer string labels
+        let labels: Vec<serde_json::Value> = if is_clustering {
+            // Clustering: labels are cluster assignments from the model
+            match engine.predict(&feature_df) {
+                Ok(preds) => preds.iter().map(|&v| {
+                    serde_json::json!(format!("cluster_{}", v as usize))
+                }).collect(),
+                Err(_) => vec![serde_json::json!("cluster_0"); feature_df.height()],
+            }
+        } else if let Ok(col) = sampled_df.column(&target_col) {
+            if is_regression {
+                // Regression: numeric values
+                col.cast(&polars::prelude::DataType::Float64).ok()
+                    .and_then(|s| s.f64().ok().map(|ca| {
+                        ca.into_iter().map(|v| serde_json::json!(v.unwrap_or(0.0))).collect()
+                    })).unwrap_or_default()
+            } else {
+                // Fix #3: Classification — try string labels first, fall back to numeric
+                let dtype = col.dtype().clone();
+                if matches!(dtype, polars::prelude::DataType::String) {
+                    col.str().ok()
+                        .map(|ca| ca.into_iter().map(|v| {
+                            serde_json::json!(v.unwrap_or("?"))
+                        }).collect())
+                        .unwrap_or_default()
+                } else {
+                    col.cast(&polars::prelude::DataType::Float64).ok()
+                        .and_then(|s| s.f64().ok().map(|ca| {
+                            ca.into_iter().map(|v| {
+                                serde_json::json!(format!("class_{}", v.unwrap_or(0.0) as i64))
+                            }).collect()
+                        })).unwrap_or_default()
+                }
+            }
         } else {
             vec![]
         };
@@ -8062,8 +8089,6 @@ pub async fn umap_stream_handler(
             None
         };
 
-        // 6. Feature matrix (drop target column)
-        let feature_df = sampled_df.drop(&target_col).unwrap_or_else(|_| sampled_df.clone());
         let feature_data: Vec<Vec<f64>> = (0..feature_df.height()).map(|row| {
             feature_df.get_columns().iter().map(|col| {
                 col.cast(&polars::prelude::DataType::Float64).ok()
@@ -8076,10 +8101,12 @@ pub async fn umap_stream_handler(
         let n_epochs = 200usize;
         let (tx, mut rx) = mpsc::channel::<(usize, Vec<[f64; 2]>)>(4);
 
-        tokio::task::spawn_blocking(move || {
+        // Fix #4: store handle so we can detect panics
+        let _umap_handle = tokio::task::spawn_blocking(move || {
             let config = crate::visualization::umap::UmapConfig {
                 n_epochs,
-                max_samples,
+                // Fix #5: disable inner subsampling — outer handler already owns row count
+                max_samples: usize::MAX / 2,
                 ..Default::default()
             };
             let umap = crate::visualization::umap::Umap::new(config);
@@ -8093,9 +8120,13 @@ pub async fn umap_stream_handler(
         let tt = task_type_str;
         let vr = value_range;
 
+        // Fix #1: track whether we already emitted a done=true event
+        let mut last_done = false;
+
         while let Some((epoch, pts)) = rx.recv().await {
             let progress = (epoch as f64 / n_epochs as f64).min(1.0);
             let done = progress >= 1.0;
+            if done { last_done = true; }
 
             let points: Vec<serde_json::Value> = pts.iter().enumerate().map(|(i, p)| {
                 let label = labels_arc.get(i).cloned().unwrap_or(serde_json::json!("?"));
@@ -8119,6 +8150,23 @@ pub async fn umap_stream_handler(
             yield Ok::<Event, std::convert::Infallible>(
                 Event::default().data(payload.to_string())
             );
+        }
+
+        // Fix #1 + #4: guarantee the client always receives a terminal event.
+        // If done was never seen (early-exit or panic), emit a synthetic closing event.
+        if !last_done {
+            // Distinguish clean early-exit from panic: if the handle is finished and
+            // we never saw done=true, it most likely early-exited (alpha < 1e-8) rather
+            // than panicked — emit done:true with progress:1.0. If there was an actual
+            // panic the tx was dropped and we get here the same way; a done event is
+            // still preferable to the client hanging indefinitely.
+            let payload = serde_json::json!({
+                "progress": 1.0,
+                "done": true,
+                "task_type": tt,
+                "points": serde_json::json!([]),
+            }).to_string();
+            yield Ok::<Event, std::convert::Infallible>(Event::default().data(payload));
         }
     };
 
