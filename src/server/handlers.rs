@@ -7964,3 +7964,163 @@ pub async fn get_insights_evaluation(
         _ => axum::Json(serde_json::json!({"error": "unsupported_task_type"})).into_response(),
     }
 }
+
+#[derive(serde::Deserialize)]
+pub struct UmapStreamParams {
+    pub model_id: String,
+    pub max_samples: Option<usize>,
+}
+
+pub async fn umap_stream_handler(
+    axum::extract::State(state): axum::extract::State<std::sync::Arc<crate::server::state::AppState>>,
+    axum::extract::Query(params): axum::extract::Query<UmapStreamParams>,
+) -> axum::response::sse::Sse<impl futures_util::Stream<Item = std::result::Result<axum::response::sse::Event, std::convert::Infallible>>> {
+    use axum::response::sse::{Event, KeepAlive, Sse};
+    use tokio::sync::mpsc;
+
+    let max_samples = params.max_samples.unwrap_or(2000);
+
+    let event_stream = async_stream::stream! {
+        // 1. Look up model
+        let model_info = match state.models.get(&params.model_id) {
+            Some(m) => m.clone(),
+            None => {
+                let payload = serde_json::json!({"error": "model not found"}).to_string();
+                yield Ok::<Event, std::convert::Infallible>(Event::default().data(payload));
+                return;
+            }
+        };
+
+        // 2. Load engine to recover target_column
+        let engine = match crate::training::TrainEngine::load(
+            model_info.path.to_str().unwrap_or("")
+        ) {
+            Ok(e) => e,
+            Err(e) => {
+                let payload = serde_json::json!({"error": format!("failed to load model: {}", e)}).to_string();
+                yield Ok::<Event, std::convert::Infallible>(Event::default().data(payload));
+                return;
+            }
+        };
+        let target_col = engine.config().target_column.clone();
+        let task_type_str = model_info.task_type.clone();
+
+        // 3. Get dataset
+        let df = match state.current_data.read().await.clone() {
+            Some(d) => d,
+            None => {
+                let payload = serde_json::json!({"error": "no dataset loaded"}).to_string();
+                yield Ok::<Event, std::convert::Infallible>(Event::default().data(payload));
+                return;
+            }
+        };
+
+        // 4. Sample rows
+        let n = df.height();
+        let sample_size = max_samples.min(n);
+        let idx_vec: Vec<polars::prelude::IdxSize> = {
+            use rand::seq::SliceRandom;
+            let mut rng = rand::thread_rng();
+            let mut idx: Vec<polars::prelude::IdxSize> = (0..n as polars::prelude::IdxSize).collect();
+            idx.shuffle(&mut rng);
+            idx.truncate(sample_size);
+            idx.sort_unstable();
+            idx
+        };
+        let idx_ca = polars::prelude::IdxCa::from_vec("idx".into(), idx_vec);
+        let sampled_df = df.take(&idx_ca).unwrap_or_else(|_| df.clone());
+
+        // 5. Extract labels
+        let is_regression = task_type_str.contains("Regression") || task_type_str.contains("TimeSeries");
+        let labels: Vec<serde_json::Value> = if let Ok(col) = sampled_df.column(&target_col) {
+            col.cast(&polars::prelude::DataType::Float64).ok()
+                .and_then(|s| s.f64().ok().map(|ca| {
+                    ca.into_iter().map(|v| {
+                        let val = v.unwrap_or(0.0);
+                        if is_regression {
+                            serde_json::json!(val)
+                        } else if task_type_str.contains("Clustering") {
+                            serde_json::json!(format!("cluster_{}", val as i64))
+                        } else {
+                            serde_json::json!(format!("class_{}", val as i64))
+                        }
+                    }).collect()
+                })).unwrap_or_default()
+        } else {
+            vec![]
+        };
+
+        let value_range: Option<(f64, f64)> = if is_regression {
+            let vals: Vec<f64> = labels.iter().filter_map(|v| v.as_f64()).collect();
+            if vals.is_empty() { None } else {
+                Some((
+                    vals.iter().cloned().fold(f64::INFINITY, f64::min),
+                    vals.iter().cloned().fold(f64::NEG_INFINITY, f64::max),
+                ))
+            }
+        } else {
+            None
+        };
+
+        // 6. Feature matrix (drop target column)
+        let feature_df = sampled_df.drop(&target_col).unwrap_or_else(|_| sampled_df.clone());
+        let feature_data: Vec<Vec<f64>> = (0..feature_df.height()).map(|row| {
+            feature_df.get_columns().iter().map(|col| {
+                col.cast(&polars::prelude::DataType::Float64).ok()
+                    .and_then(|s| s.f64().ok().map(|ca| ca.get(row).unwrap_or(0.0)))
+                    .unwrap_or(0.0)
+            }).collect()
+        }).collect();
+
+        // 7. mpsc channel + spawn_blocking
+        let n_epochs = 200usize;
+        let (tx, mut rx) = mpsc::channel::<(usize, Vec<[f64; 2]>)>(4);
+
+        tokio::task::spawn_blocking(move || {
+            let config = crate::visualization::umap::UmapConfig {
+                n_epochs,
+                max_samples,
+                ..Default::default()
+            };
+            let umap = crate::visualization::umap::Umap::new(config);
+            let _ = umap.fit_transform_with_cb(&feature_data, |epoch, pts| {
+                let _ = tx.blocking_send((epoch, pts.to_vec()));
+            });
+        });
+
+        // 8. Yield SSE events as epochs arrive
+        let labels_arc = std::sync::Arc::new(labels);
+        let tt = task_type_str;
+        let vr = value_range;
+
+        while let Some((epoch, pts)) = rx.recv().await {
+            let progress = (epoch as f64 / n_epochs as f64).min(1.0);
+            let done = progress >= 1.0;
+
+            let points: Vec<serde_json::Value> = pts.iter().enumerate().map(|(i, p)| {
+                let label = labels_arc.get(i).cloned().unwrap_or(serde_json::json!("?"));
+                if is_regression {
+                    serde_json::json!({"x": p[0], "y": p[1], "value": label})
+                } else {
+                    serde_json::json!({"x": p[0], "y": p[1], "label": label})
+                }
+            }).collect();
+
+            let mut payload = serde_json::json!({
+                "progress": progress,
+                "done": done,
+                "task_type": tt,
+                "points": points,
+            });
+            if let Some((mn, mx)) = vr {
+                payload["value_range"] = serde_json::json!([mn, mx]);
+            }
+
+            yield Ok::<Event, std::convert::Infallible>(
+                Event::default().data(payload.to_string())
+            );
+        }
+    };
+
+    Sse::new(event_stream).keep_alive(KeepAlive::default())
+}

@@ -120,6 +120,7 @@ pub fn create_router(state: Arc<AppState>, config: &ServerConfig) -> Router {
         // Visualization
         .route("/visualization/umap", post(handlers::generate_umap))
         .route("/visualization/pca", post(handlers::generate_pca))
+        .route("/visualization/umap/stream", get(handlers::umap_stream_handler))
         // AutoML pipeline
         .route("/automl/run", post(handlers::run_automl_pipeline))
         .route("/automl/status/:job_id", get(handlers::get_automl_status))
