@@ -90,6 +90,9 @@ struct Edge {
     weight: f64,
 }
 
+/// How many SGD epochs between callback emissions during streaming.
+const UMAP_STREAM_EMIT_EVERY: usize = 20;
+
 /// UMAP dimensionality reduction
 pub struct Umap {
     config: UmapConfig,
@@ -105,9 +108,6 @@ impl Umap {
     pub fn fit_transform(&self, data: &[Vec<f64>]) -> crate::error::Result<Vec<[f64; 2]>> {
         self.fit_transform_with_cb(data, |_, _| {})
     }
-
-    /// How many SGD epochs between callback emissions during streaming.
-    const UMAP_STREAM_EMIT_EVERY: usize = 20;
 
     /// Run UMAP and emit partial embeddings to `on_epoch` every
     /// `UMAP_STREAM_EMIT_EVERY` epochs and once after the final epoch.
@@ -178,8 +178,10 @@ impl Umap {
             embedding = full_embedding;
         }
 
-        // Final callback: always fires with the fully-converged embedding
-        on_epoch(self.config.n_epochs, &embedding);
+        // Final callback: fires only if not already emitted by the loop
+        if self.config.n_epochs % UMAP_STREAM_EMIT_EVERY != 0 {
+            on_epoch(self.config.n_epochs, &embedding);
+        }
 
         Ok(embedding)
     }
@@ -381,18 +383,12 @@ impl Umap {
             }
 
             // Emit intermediate snapshot every UMAP_STREAM_EMIT_EVERY epochs
-            if (epoch + 1) % Self::UMAP_STREAM_EMIT_EVERY == 0 {
+            if (epoch + 1) % UMAP_STREAM_EMIT_EVERY == 0 {
                 on_epoch(epoch + 1, &embedding);
             }
         }
 
         embedding
-    }
-
-    /// Phase 3: SGD layout optimization (no callbacks — delegates to optimize_layout_with_cb).
-    #[allow(dead_code)]
-    fn optimize_layout(&self, n_samples: usize, edges: &[Edge]) -> Vec<[f64; 2]> {
-        self.optimize_layout_with_cb(n_samples, edges, |_, _| {})
     }
 
     /// Find a, b parameters for the UMAP curve: 1 / (1 + a * d^(2b))
@@ -534,7 +530,7 @@ mod tests {
         let data: Vec<Vec<f64>> = (0..20)
             .map(|i| vec![i as f64, (i % 2) as f64 * 10.0])
             .collect();
-        let config = UmapConfig { n_neighbors: 3, n_epochs: 40, ..Default::default() };
+        let config = UmapConfig { n_neighbors: 3, n_epochs: 41, ..Default::default() };
         let umap = Umap::new(config);
 
         let mut callback_count = 0usize;
@@ -544,7 +540,7 @@ mod tests {
             last_points_len = pts.len();
         }).unwrap();
 
-        // 40 epochs / 20 per emit = 2 mid-run callbacks + 1 final = at least 3
+        // 41 epochs / 20 per emit = 2 mid-run callbacks + 1 final (41 % 20 != 0) = at least 3
         assert!(callback_count >= 3, "expected >= 3 callbacks, got {}", callback_count);
         assert_eq!(last_points_len, data.len());
         assert_eq!(result.len(), data.len());
