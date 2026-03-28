@@ -153,6 +153,7 @@ pub fn create_router(state: Arc<AppState>, config: &ServerConfig) -> Router {
         // Insights
         .route("/insights/model-structure", get(handlers::get_insights_model_structure))
         .route("/insights/evaluation", get(handlers::get_insights_evaluation))
+        .route("/quality/report/:model_id", get(handlers::get_quality_report))
         .fallback(handle_404)
         .method_not_allowed_fallback(handle_405);
 

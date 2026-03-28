@@ -1267,11 +1267,21 @@ pub async fn predict(
     let (cache_hits, cache_misses, cache_hit_rate) = engine.cache_stats();
     let avg_latency = engine.stats().avg_latency_ms;
 
+    // OOD check using stored detector (if available)
+    let ood_warning = state.ood_detectors.get(model_id.as_str())
+        .map(|detector| {
+            if let Some(row) = x.row(0).as_slice() {
+                detector.is_ood(row)
+            } else { false }
+        })
+        .unwrap_or(false);
+
     Ok(Json(serde_json::json!({
         "success": true,
         "predictions": predictions.to_vec(),
         "cache_hit": cache_hit,
         "latency_ms": avg_latency,
+        "ood_warning": ood_warning,
         "cache_stats": {
             "hits": cache_hits,
             "misses": cache_misses,
@@ -1345,6 +1355,7 @@ pub async fn predict_batch(
         "count": predictions.len(),
         "cache_hit": cache_hit,
         "avg_latency_ms": stats.avg_latency_ms,
+        "ood_warning": false,
     })))
 }
 
@@ -7980,6 +7991,24 @@ pub async fn get_insights_evaluation(
         }
 
         _ => axum::Json(serde_json::json!({"error": "unsupported_task_type"})).into_response(),
+    }
+}
+
+/// GET /api/quality/report/:model_id
+/// Returns the QualityReport stored after training.
+pub async fn get_quality_report(
+    axum::extract::Path(model_id): axum::extract::Path<String>,
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<serde_json::Value>> {
+    match state.quality_reports.get(&model_id) {
+        Some(report) => Ok(Json(serde_json::json!({
+            "success": true,
+            "model_id": model_id,
+            "quality_report": *report,
+        }))),
+        None => Err(ServerError::NotFound(format!(
+            "No quality report found for model '{}'", model_id
+        ))),
     }
 }
 
