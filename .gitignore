@@ -185,5 +185,8 @@ playwright-report/
 /target/
 **/*.rs.bk
 
+# Git worktrees
+.worktrees/
+
 # PyO3/Maturin
 *.pyd.DS_Store
