@@ -190,6 +190,12 @@ pub struct AppState {
     pub train_engines: DashMap<String, TrainEngine>,
     /// Cache of evaluation data (y_true/y_pred) for Metrics Deep Dive
     pub insights_cache: DashMap<String, InsightsEvaluation>,
+    /// Quality reports produced by QualityPipeline, keyed by model_id.
+    pub quality_reports: dashmap::DashMap<String, crate::quality::QualityReport>,
+    /// Fitted OOD detectors, keyed by model_id.
+    pub ood_detectors: dashmap::DashMap<String, crate::quality::post_training::OodDetector>,
+    /// Fitted conformal predictors for regression, keyed by model_id.
+    pub conformal_predictors: dashmap::DashMap<String, crate::quality::post_training::ConformalPredictor>,
     /// Store completed hyperopt studies for history
     pub completed_studies: RwLock<Vec<serde_json::Value>>,
     /// Security manager for auth, input validation, audit logging
@@ -250,6 +256,9 @@ impl AppState {
             prediction_cache,
             train_engines: DashMap::new(),
             insights_cache: DashMap::new(),
+            quality_reports: dashmap::DashMap::new(),
+            ood_detectors: dashmap::DashMap::new(),
+            conformal_predictors: dashmap::DashMap::new(),
             completed_studies: RwLock::new(Vec::new()),
             security_manager: Arc::new(SecurityManager::new(security_config)),
             rate_limiter: Arc::new(RateLimiter::new(rate_limit_config)),
@@ -508,5 +517,21 @@ mod tests {
         // Must not panic
         restore_models_from_disk(dir.path().to_str().unwrap(), &models);
         assert_eq!(models.len(), 0);
+    }
+}
+
+#[cfg(test)]
+mod quality_tests {
+    use super::*;
+    use crate::quality::QualityReport;
+
+    #[test]
+    fn test_app_state_stores_and_retrieves_quality_report() {
+        let reports: dashmap::DashMap<String, QualityReport> = dashmap::DashMap::new();
+        let report = QualityReport { model_id: "m1".into(), overall_quality_score: 0.85, ..Default::default() };
+        reports.insert("m1".to_string(), report);
+        let retrieved = reports.get("m1").unwrap();
+        assert_eq!(retrieved.model_id, "m1");
+        assert!((retrieved.overall_quality_score - 0.85).abs() < 1e-10);
     }
 }
