@@ -188,5 +188,8 @@ playwright-report/
 # Git worktrees
 .worktrees/
 
+# Superpowers brainstorm sessions
+.superpowers/
+
 # PyO3/Maturin
 *.pyd.DS_Store
