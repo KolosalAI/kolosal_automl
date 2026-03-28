@@ -139,11 +139,20 @@ pub struct PostTrainingReport {
     pub calibration_in_set_fraction: Option<f64>,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct GateScores {
+    pub pre: f64,
+    pub training: f64,
+    pub hyperopt: f64,
+    pub post_training: f64,
+}
+
 /// Full quality report returned alongside ModelMetrics.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct QualityReport {
     pub model_id: String,
     pub overall_quality_score: f64,
+    pub gate_scores: GateScores,
     pub pre_training: PreTrainingReport,
     pub training: TrainingReport,
     pub hyperopt: HyperoptReport,
@@ -180,6 +189,12 @@ impl QualityReport {
         QualityReport {
             model_id,
             overall_quality_score: overall,
+            gate_scores: GateScores {
+                pre: pre_score,
+                training: training_score,
+                hyperopt: hyperopt_score,
+                post_training: post_score,
+            },
             pre_training: PreTrainingReport {
                 findings: ctx.pre_training_findings.clone(),
                 dropped_features: ctx.dropped_features.clone(),
@@ -393,5 +408,25 @@ mod tests {
         // overall = (1.0 + 0.7 + 0.6 + 1.0) / 4.0 = 0.825
         assert!((report.overall_quality_score - 0.825).abs() < 1e-9,
             "expected 0.825, got {}", report.overall_quality_score);
+    }
+
+    #[test]
+    fn test_report_gate_scores_populated() {
+        let ctx = QualityContext {
+            hyperopt_converged: true,
+            ensemble_beat_single: true,
+            ece_before: Some(0.20),
+            ece_after: Some(0.05),
+            ..Default::default()
+        };
+        let report = QualityReport::from_context("m1".into(), &ctx);
+        // pre_score=1.0 (no critical findings)
+        assert!((report.gate_scores.pre - 1.0).abs() < 1e-9);
+        // training_score=1.0 (ensemble beat single)
+        assert!((report.gate_scores.training - 1.0).abs() < 1e-9);
+        // hyperopt_score=1.0 (converged)
+        assert!((report.gate_scores.hyperopt - 1.0).abs() < 1e-9);
+        // post_score=(0.20-0.05)/0.20=0.75
+        assert!((report.gate_scores.post_training - 0.75).abs() < 1e-9);
     }
 }
