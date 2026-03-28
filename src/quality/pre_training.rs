@@ -3,6 +3,7 @@
 use ndarray::{Array1, Array2};
 use std::collections::HashMap;
 use crate::quality::{FindingSeverity, QualityContext, QualityFinding};
+use crate::quality::FeatureStats;
 
 // ── Pearson correlation ───────────────────────────────────────────────────────
 
@@ -164,6 +165,96 @@ impl HighCardinalityHandler {
     }
 }
 
+// ── DistributionFingerprint ───────────────────────────────────────────────────
+
+impl FeatureStats {
+    /// Returns true if `value` is more than `sigma_threshold` standard deviations
+    /// from the training mean. Used at inference time for shift detection.
+    pub fn is_shifted(&self, value: &f64, sigma_threshold: f64) -> bool {
+        let std = self.variance.sqrt();
+        if std < 1e-10 { return false; } // constant column — can't detect shift
+        ((value - self.mean) / std).abs() > sigma_threshold
+    }
+}
+
+pub struct DistributionFingerprint;
+
+impl DistributionFingerprint {
+    /// Compute per-column statistics from a feature matrix.
+    pub fn compute(features: &Array2<f64>, names: &[String]) -> Vec<FeatureStats> {
+        let n = features.nrows() as f64;
+        names.iter().enumerate().map(|(j, name)| {
+            let col: Vec<f64> = features.column(j).iter().copied().collect();
+            let mean = col.iter().sum::<f64>() / n;
+            let variance = col.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / n;
+            let std = variance.sqrt().max(1e-10);
+            let skew = col.iter().map(|x| ((x - mean) / std).powi(3)).sum::<f64>() / n;
+            let kurtosis = col.iter().map(|x| ((x - mean) / std).powi(4)).sum::<f64>() / n - 3.0;
+            FeatureStats { name: name.clone(), mean, variance, skew, kurtosis }
+        }).collect()
+    }
+}
+
+// ── PreTrainingGate ───────────────────────────────────────────────────────────
+
+/// Runs all pre-training quality checks and writes results into `QualityContext`.
+pub struct PreTrainingGate {
+    pub leakage_threshold: f64,
+    pub cardinality_threshold: usize,
+    pub shift_sigma: f64,
+}
+
+impl Default for PreTrainingGate {
+    fn default() -> Self {
+        Self { leakage_threshold: 0.95, cardinality_threshold: 50, shift_sigma: 3.0 }
+    }
+}
+
+impl PreTrainingGate {
+    /// Run all pre-training checks. Populates `ctx` with findings, dropped_features,
+    /// and training_distribution. Returns the indices of features to keep.
+    pub fn run(
+        &self,
+        features: &Array2<f64>,
+        target: &Array1<f64>,
+        feature_names: &[String],
+        ctx: &mut QualityContext,
+    ) -> Vec<usize> {
+        ctx.n_samples = features.nrows();
+        ctx.n_features = features.ncols();
+
+        // 1. Leakage detection
+        let detector = LeakageDetector { threshold: self.leakage_threshold };
+        let leakage_findings = detector.detect(features, target, feature_names);
+        let leaked: std::collections::HashSet<String> = leakage_findings.iter()
+            .filter(|f| f.severity == FindingSeverity::Critical)
+            .filter_map(|f| f.column.clone())
+            .collect();
+        ctx.dropped_features.extend(leaked.iter().cloned());
+        ctx.pre_training_findings.extend(leakage_findings);
+
+        // 2. High-cardinality findings (numeric matrix — flag by name heuristic only;
+        //    full categorical detection happens in preprocessing pipeline)
+        let hc = HighCardinalityHandler { threshold: self.cardinality_threshold };
+        for name in feature_names.iter() {
+            // Flag column names that suggest ID columns (likely high cardinality)
+            if name.to_lowercase().contains("_id") || name.to_lowercase() == "id" {
+                ctx.pre_training_findings.push(hc.finding(name, self.cardinality_threshold + 1));
+            }
+        }
+
+        // 3. Distribution fingerprint
+        let fingerprint = DistributionFingerprint::compute(features, feature_names);
+        ctx.training_distribution = fingerprint;
+
+        // Return indices of features to keep (not in dropped_features)
+        feature_names.iter().enumerate()
+            .filter(|(_, name)| !leaked.contains(*name))
+            .map(|(i, _)| i)
+            .collect()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -228,5 +319,43 @@ mod tests {
         assert!(handler.is_high_cardinality(&col_values));
         let small: Vec<String> = (0..10).map(|i| format!("v{}", i)).collect();
         assert!(!handler.is_high_cardinality(&small));
+    }
+
+    #[test]
+    fn test_distribution_fingerprint_stats() {
+        let features = array![[1.0, 10.0], [2.0, 20.0], [3.0, 30.0], [4.0, 40.0]];
+        let names = vec!["a".to_string(), "b".to_string()];
+        let fp = DistributionFingerprint::compute(&features, &names);
+        assert_eq!(fp.len(), 2);
+        assert!((fp[0].mean - 2.5).abs() < 1e-10, "mean of [1,2,3,4] = 2.5, got {}", fp[0].mean);
+        assert!(fp[0].variance > 0.0);
+    }
+
+    #[test]
+    fn test_distribution_fingerprint_shift_detection() {
+        // Training: mean=0, std≈1; Inference: column shifted to mean=100
+        let features = array![[-1.0], [0.0], [1.0], [0.0]];
+        let names = vec!["x".to_string()];
+        let fp = DistributionFingerprint::compute(&features, &names);
+        let ok_sample = 0.5_f64;
+        let shifted_sample = 100.0_f64;
+        assert!(!fp[0].is_shifted(&ok_sample, 3.0));
+        assert!(fp[0].is_shifted(&shifted_sample, 3.0));
+    }
+
+    #[test]
+    fn test_pre_training_gate_drops_leaked_features() {
+        // Feature 0 is perfectly correlated with target → should be dropped
+        let features = array![[1.0, 5.0], [2.0, 3.0], [3.0, 1.0], [4.0, 2.0]];
+        let target = array![1.0, 2.0, 3.0, 4.0];
+        let names = vec!["perfect".to_string(), "noise".to_string()];
+        let mut ctx = QualityContext::default();
+        let gate = PreTrainingGate::default();
+        let kept = gate.run(&features, &target, &names, &mut ctx);
+        assert!(!kept.contains(&0), "leaked feature should be dropped");
+        assert!(kept.contains(&1), "non-leaked feature should be kept");
+        assert_eq!(ctx.n_samples, 4);
+        assert_eq!(ctx.n_features, 2);
+        assert!(!ctx.dropped_features.is_empty());
     }
 }
