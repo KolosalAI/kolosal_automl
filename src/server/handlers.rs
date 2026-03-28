@@ -4012,7 +4012,7 @@ const EMBEDDED_INDEX_HTML: &str = r#"<!DOCTYPE html>
         .catch(function(){panel.innerHTML='<div class="qp-wrap"><div class="qp-pending">Could not load quality report.</div></div>'})
     }
     function eQualityToggle(btn){
-      var body=btn.parentElement.parentElement.querySelector('.qp-body');
+      var body=btn.parentElement.querySelector('.qp-body');
       var chev=btn.querySelector('.qp-chevron');
       if(!body)return;
       var hidden=body.style.display==='none';
@@ -4021,7 +4021,7 @@ const EMBEDDED_INDEX_HTML: &str = r#"<!DOCTYPE html>
     }
     function eQualityRender(r,panel){
       var gs=r.gate_scores||{pre:0,training:0,hyperopt:0,post_training:0};
-      var safeId=escHtml(r.model_id).replace(/[^a-z0-9]/gi,'_');
+      var safeId=String(r.model_id||'').replace(/[^a-z0-9]/gi,'_');
       var h='<div class="qp-wrap">';
       h+='<div class="qp-header"><div class="qp-title">&#128202; Pipeline Quality Report <span style="font-size:12px;font-weight:400;color:#6b7280">'+escHtml(r.model_id)+'</span></div>'+eQualityBadgeHtml(r.overall_quality_score*100)+'</div>';
       h+='<div class="qp-grid">';
@@ -4082,7 +4082,8 @@ const EMBEDDED_INDEX_HTML: &str = r#"<!DOCTYPE html>
       if(po&&po.ece_before!=null&&po.ece_after!=null){h+='<div class="qp-row"><span class="qp-label" style="margin:0;margin-right:6px">ECE</span><span>'+po.ece_before.toFixed(3)+' &#8594; <span style="color:#22c55e">'+po.ece_after.toFixed(3)+'</span></span></div>'}
       if(po&&po.ood_threshold!=null){h+='<div class="qp-row" title="Inputs with normalised distance above this threshold are flagged as out-of-distribution"><span class="qp-label" style="margin:0;margin-right:6px">OOD</span><span>threshold '+po.ood_threshold.toFixed(3)+'</span></div>'}
       if(po&&po.calibration_in_set_fraction!=null){h+='<div class="qp-row"><span class="qp-label" style="margin:0;margin-right:6px">Cal set</span><span>'+(po.calibration_in_set_fraction*100).toFixed(1)+'%</span></div>'}
-      if(!po||(!po.calibration_method&&po.ece_before==null)){h+='<span style="color:#4b5563;font-style:italic">Calibration not run</span>'}
+      var anyPostRow=!!(po&&(po.calibration_method||po.ece_before!=null||po.ood_threshold!=null||po.calibration_in_set_fraction!=null));
+      if(!anyPostRow){h+='<span style="color:#4b5563;font-style:italic">Calibration not run</span>'}
       h+='</div></div>';return h;
     }
     function eQualityPareto(canvasId,pf){
