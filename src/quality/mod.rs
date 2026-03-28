@@ -272,89 +272,89 @@ impl Default for QualityPipeline {
     }
 }
 
-// TODO: uncomment when gate files are implemented
-// impl QualityPipeline {
-//     /// Phase 1: Run pre-training gate. Returns indices of features to keep.
-//     /// Call before fitting any model.
-//     pub fn run_pre_training(
-//         &self,
-//         features: &ndarray::Array2<f64>,
-//         target: &ndarray::Array1<f64>,
-//         feature_names: &[String],
-//         ctx: &mut QualityContext,
-//     ) -> Vec<usize> {
-//         use crate::quality::pre_training::PreTrainingGate;
-//         let gate = PreTrainingGate {
-//             leakage_threshold: self.pre_training_leakage_threshold,
-//             cardinality_threshold: 50,
-//             shift_sigma: 3.0,
-//         };
-//         gate.run(features, target, feature_names, ctx)
-//     }
-//
-//     /// Phase 2: Record training gate decisions into ctx.
-//     /// Call after all CV scores are known, before hyperopt.
-//     pub fn record_training_decisions(
-//         &self,
-//         ctx: &mut QualityContext,
-//         cv_scores: Vec<(String, f64, f64)>,
-//         ensemble_score: Option<f64>,
-//         group_column: Option<String>,
-//     ) {
-//         use crate::quality::training::{TrainingGate, AlgorithmSelector, CvStrategyChooser};
-//         let gate = TrainingGate {
-//             algorithm_selector: AlgorithmSelector::default(),
-//             cv_chooser: CvStrategyChooser { repeated_threshold: self.cv_small_dataset_threshold },
-//             top_k: self.ensemble_top_k,
-//             ensemble_margin: self.ensemble_margin,
-//         };
-//         gate.prepare(ctx, group_column);
-//         gate.finalize(ctx, cv_scores, ensemble_score);
-//     }
-//
-//     /// Phase 3: Record hyperopt decisions into ctx.
-//     /// Call after hyperopt completes.
-//     pub fn record_hyperopt_decisions(
-//         &self,
-//         ctx: &mut QualityContext,
-//         pareto_points: Vec<ParetoPoint>,
-//         converged: bool,
-//         trials_run: usize,
-//     ) {
-//         ctx.pareto_front = pareto_points;
-//         ctx.hyperopt_converged = converged;
-//         ctx.trials_run = trials_run;
-//     }
-//
-//     /// Phase 4: Run post-training gate on calibration set.
-//     /// `raw_scores`: model's raw output on calibration set (probabilities or regression preds).
-//     /// `cal_targets`: true labels/values on calibration set.
-//     /// `features`: calibration feature matrix (for OOD detector).
-//     /// Returns the finalised QualityReport.
-//     pub fn run_post_training(
-//         &self,
-//         model_id: String,
-//         raw_scores: &[f64],
-//         cal_targets: &[f64],
-//         features: &ndarray::Array2<f64>,
-//         ctx: &mut QualityContext,
-//     ) -> QualityReport {
-//         use crate::quality::post_training::{PostTrainingGate, OodDetector};
-//         let gate = PostTrainingGate {
-//             ece_improvement_threshold: 0.005,
-//             conformal_coverage: self.conformal_coverage,
-//             ood_percentile: self.ood_percentile,
-//             n_ece_bins: 10,
-//         };
-//         let cal_labels: Vec<f64> = cal_targets.to_vec();
-//         gate.select_calibration(raw_scores, &cal_labels, ctx);
-//
-//         let detector = OodDetector::fit(features, self.ood_percentile);
-//         ctx.ood_threshold = Some(detector.threshold);
-//
-//         QualityReport::from_context(model_id, ctx)
-//     }
-// }
+impl QualityPipeline {
+    /// Phase 1: Run pre-training gate. Returns indices of features to keep.
+    /// Call before fitting any model.
+    pub fn run_pre_training(
+        &self,
+        features: &ndarray::Array2<f64>,
+        target: &ndarray::Array1<f64>,
+        feature_names: &[String],
+        ctx: &mut QualityContext,
+    ) -> Vec<usize> {
+        use crate::quality::pre_training::PreTrainingGate;
+        let gate = PreTrainingGate {
+            leakage_threshold: self.pre_training_leakage_threshold,
+            cardinality_threshold: 50,
+            shift_sigma: 3.0,
+        };
+        gate.run(features, target, feature_names, ctx)
+    }
+
+    /// Phase 2: Record training gate decisions into ctx.
+    /// Call after all CV scores are known, before hyperopt.
+    pub fn record_training_decisions(
+        &self,
+        ctx: &mut QualityContext,
+        cv_scores: Vec<(String, f64, f64)>,
+        ensemble_score: Option<f64>,
+        group_column: Option<String>,
+    ) {
+        use crate::quality::training::{TrainingGate, AlgorithmSelector, CvStrategyChooser};
+        let gate = TrainingGate {
+            algorithm_selector: AlgorithmSelector::default(),
+            cv_chooser: CvStrategyChooser { repeated_threshold: self.cv_small_dataset_threshold },
+            top_k: self.ensemble_top_k,
+            ensemble_margin: self.ensemble_margin,
+        };
+        gate.prepare(ctx, group_column);
+        gate.finalize(ctx, cv_scores, ensemble_score);
+    }
+
+    /// Phase 3: Record hyperopt decisions into ctx.
+    /// Call after hyperopt completes (or pass empty/false for non-hyperopt training).
+    pub fn record_hyperopt_decisions(
+        &self,
+        ctx: &mut QualityContext,
+        pareto_points: Vec<ParetoPoint>,
+        converged: bool,
+        trials_run: usize,
+    ) {
+        ctx.pareto_front = pareto_points;
+        ctx.hyperopt_converged = converged;
+        ctx.trials_run = trials_run;
+    }
+
+    /// Phase 4: Run post-training gate on calibration set.
+    /// `raw_scores`: model's raw output on calibration set (probabilities for classification).
+    /// `cal_targets`: true labels/values on calibration set.
+    /// `features`: calibration feature matrix (for OOD detector).
+    /// Returns the finalised `QualityReport` and the fitted `OodDetector`.
+    pub fn run_post_training(
+        &self,
+        model_id: String,
+        raw_scores: &[f64],
+        cal_targets: &[f64],
+        features: &ndarray::Array2<f64>,
+        ctx: &mut QualityContext,
+    ) -> (QualityReport, crate::quality::post_training::OodDetector) {
+        use crate::quality::post_training::{PostTrainingGate, OodDetector};
+        let gate = PostTrainingGate {
+            ece_improvement_threshold: 0.005,
+            conformal_coverage: self.conformal_coverage,
+            ood_percentile: self.ood_percentile,
+            n_ece_bins: 10,
+        };
+        let cal_labels: Vec<f64> = cal_targets.to_vec();
+        gate.select_calibration(raw_scores, &cal_labels, ctx);
+
+        let detector = OodDetector::fit(features, self.ood_percentile);
+        ctx.ood_threshold = Some(detector.threshold);
+
+        let report = QualityReport::from_context(model_id, ctx);
+        (report, detector)
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -428,5 +428,37 @@ mod tests {
         assert!((report.gate_scores.hyperopt - 1.0).abs() < 1e-9);
         // post_score=(0.20-0.05)/0.20=0.75
         assert!((report.gate_scores.post_training - 0.75).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_quality_pipeline_run_pre_training() {
+        use ndarray::array;
+        let features = array![[1.0f64, 2.0], [3.0, 4.0], [5.0, 6.0], [7.0, 8.0], [9.0, 10.0]];
+        let target = array![0.0f64, 1.0, 0.0, 1.0, 0.0];
+        let names = vec!["a".to_string(), "b".to_string()];
+        let pipeline = QualityPipeline::default();
+        let mut ctx = QualityContext::default();
+        let kept = pipeline.run_pre_training(&features, &target, &names, &mut ctx);
+        assert!(kept.len() <= names.len());
+        assert_eq!(ctx.n_samples, 5);
+        assert_eq!(ctx.n_features, 2);
+    }
+
+    #[test]
+    fn test_quality_pipeline_run_post_training_returns_ood_detector() {
+        use ndarray::array;
+        let features = array![[0.1f64, 0.2], [0.3, 0.4], [0.5, 0.6], [0.7, 0.8], [0.9, 1.0]];
+        let raw_scores = vec![0.2f64, 0.4, 0.6, 0.8, 0.9];
+        let labels = vec![0.0f64, 0.0, 1.0, 1.0, 1.0];
+        let pipeline = QualityPipeline::default();
+        let mut ctx = QualityContext::default();
+        ctx.n_samples = 5;
+        ctx.n_features = 2;
+        let (report, detector) = pipeline.run_post_training(
+            "test_model".to_string(), &raw_scores, &labels, &features, &mut ctx
+        );
+        assert_eq!(report.model_id, "test_model");
+        assert!(detector.threshold >= 0.0);
+        assert_eq!(detector.means.len(), 2);
     }
 }
