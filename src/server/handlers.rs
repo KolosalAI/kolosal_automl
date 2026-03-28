@@ -894,6 +894,16 @@ pub async fn start_training(
                     }
                 }
 
+                // Quality pipeline
+                run_quality_for_model(
+                    &engine_for_insights,
+                    &df,
+                    &task_type_for_insights,
+                    &model_id,
+                    &target_col,
+                    &state_clone,
+                );
+
                 // Register model in state
                 let model_info = ModelInfo {
                     id: model_id.clone(),
@@ -927,6 +937,99 @@ pub async fn start_training(
         "job_id": job_id_for_response,
         "message": "Training started",
     })))
+}
+
+/// Run quality gates for a trained model and store results in AppState.
+/// Errors are logged and silently discarded so they never block training completion.
+fn run_quality_for_model(
+    engine: &TrainEngine,
+    df: &polars::prelude::DataFrame,
+    task_type: &TaskType,
+    model_id: &str,
+    target_col: &str,
+    state: &AppState,
+) {
+    use crate::quality::{QualityContext, QualityPipeline};
+    use crate::quality::post_training::OodDetector;
+    use polars::prelude::DataType;
+
+    let pipeline = QualityPipeline::default();
+    let mut ctx = QualityContext::default();
+
+    // Extract feature matrix
+    let x = match engine.extract_features(df) {
+        Ok(x) => x,
+        Err(e) => {
+            warn!(model_id = %model_id, error = %e, "Quality pipeline: feature extraction failed");
+            return;
+        }
+    };
+
+    // Extract target as Array1<f64>
+    let y: ndarray::Array1<f64> = match df.column(target_col) {
+        Ok(series) => {
+            match series.cast(&DataType::Float64) {
+                Ok(s_f64) => s_f64
+                    .f64()
+                    .map(|ca| ca.into_iter().map(|v| v.unwrap_or(0.0)).collect())
+                    .unwrap_or_default(),
+                Err(e) => {
+                    warn!(model_id = %model_id, error = %e, "Quality pipeline: target cast failed");
+                    return;
+                }
+            }
+        }
+        Err(e) => {
+            warn!(model_id = %model_id, error = %e, "Quality pipeline: target column not found");
+            return;
+        }
+    };
+
+    let feature_names = engine.feature_names().to_vec();
+
+    // Gate 1: Pre-training (leakage, cardinality, distribution fingerprint)
+    pipeline.run_pre_training(&x, &y, &feature_names, &mut ctx);
+
+    // Gate 2: Training (algorithm selection + CV strategy; no CV scores for single-model training)
+    pipeline.record_training_decisions(&mut ctx, vec![], None, None);
+
+    // Gate 3: Hyperopt (not run for direct training; record as 0 trials, not converged)
+    pipeline.record_hyperopt_decisions(&mut ctx, vec![], false, 0);
+
+    // Gate 4: Post-training (calibration + OOD detector)
+    // Calibration requires binary class probabilities; skip for regression/multi-class/clustering.
+    let (report, detector) = match task_type {
+        TaskType::BinaryClassification => {
+            match engine.predict_proba(df) {
+                Ok(proba) => {
+                    // P(positive class) = column index 1 for binary; fall back to col 0 if only one column
+                    let raw_scores: Vec<f64> = proba.outer_iter()
+                        .map(|row| if row.len() > 1 { row[1] } else { row[0] })
+                        .collect();
+                    let labels = y.to_vec();
+                    pipeline.run_post_training(model_id.to_string(), &raw_scores, &labels, &x, &mut ctx)
+                }
+                Err(_) => {
+                    // Model does not expose probabilities — skip calibration, still fit OOD detector
+                    let detector = OodDetector::fit(&x, pipeline.ood_percentile);
+                    ctx.ood_threshold = Some(detector.threshold);
+                    let report = crate::quality::QualityReport::from_context(model_id.to_string(), &ctx);
+                    (report, detector)
+                }
+            }
+        }
+        _ => {
+            // Regression, multi-class, time-series, clustering: skip calibration gate
+            let detector = OodDetector::fit(&x, pipeline.ood_percentile);
+            ctx.ood_threshold = Some(detector.threshold);
+            let report = crate::quality::QualityReport::from_context(model_id.to_string(), &ctx);
+            (report, detector)
+        }
+    };
+
+    state.quality_reports.insert(model_id.to_string(), report);
+    state.ood_detectors.insert(model_id.to_string(), detector);
+    info!(model_id = %model_id, "Quality report stored");
 }
 
 /// Train a single model — CPU-bound work is offloaded via spawn_blocking.
@@ -6557,6 +6660,14 @@ pub async fn auto_tune(
                     }));
 
                     let model_id = format!("autotune_{}_{}", name, job_id);
+                    run_quality_for_model(
+                        &engine,
+                        &df,
+                        &task_type,
+                        &model_id,
+                        &target_column,
+                        &state_clone,
+                    );
                     state_clone.train_engines.insert(model_id, engine);
                 }
                 Ok((name, _time, Err(e))) => {
@@ -6970,6 +7081,14 @@ pub async fn run_automl_pipeline(
 
                     // Store engine
                     let key = format!("automl_{}_{}", name, job_id_clone);
+                    run_quality_for_model(
+                        &engine,
+                        &df_clone,
+                        &task_type,
+                        &key,
+                        &target_clone,
+                        &state_clone,
+                    );
                     state_clone.train_engines.insert(key, engine.clone());
 
                     if score > best_score {
