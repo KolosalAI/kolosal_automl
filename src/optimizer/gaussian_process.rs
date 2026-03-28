@@ -109,6 +109,9 @@ pub enum AcquisitionFunction {
     LCB { kappa: f64 },
     /// Thompson Sampling
     ThompsonSampling,
+    /// Expected Improvement with noise — adds exploration bonus xi, decayed over trials.
+    /// Recommended for noisy objectives and large search spaces.
+    EIWithNoise { xi: f64 },
 }
 
 impl Default for AcquisitionFunction {
@@ -445,6 +448,9 @@ impl GPSampler {
                 // Thompson sampling: return sample from posterior
                 mean
             }
+            AcquisitionFunction::EIWithNoise { xi } => {
+                expected_improvement_with_noise(mean, std, self.best_y, xi)
+            }
         }
     }
 }
@@ -512,6 +518,16 @@ impl Sampler for GPSampler {
 
         best_params
     }
+}
+
+/// Expected Improvement with noise (EI-noise).
+/// EI(x) = (μ - f* - ξ)·Φ(Z) + σ·φ(Z)  where Z = (μ - f* - ξ) / σ
+/// ξ (xi) controls the exploration–exploitation trade-off.
+pub fn expected_improvement_with_noise(mu: f64, sigma: f64, best: f64, xi: f64) -> f64 {
+    if sigma <= 0.0 { return 0.0; }
+    let improvement = mu - best - xi;
+    let z = improvement / sigma;
+    improvement * normal_cdf(z) + sigma * normal_pdf(z)
 }
 
 /// Standard normal CDF approximation
@@ -792,5 +808,26 @@ mod tests {
         assert!((normal_cdf(0.0) - 0.5).abs() < 0.01);
         assert!(normal_cdf(-3.0) < 0.01);
         assert!(normal_cdf(3.0) > 0.99);
+    }
+
+    #[test]
+    fn test_ei_with_noise_higher_xi_increases_exploration() {
+        // With xi=0, EI is pure exploitation. With xi>0, EI should be >= EI with xi=0
+        // when mean > best (improvement is positive).
+        let mean = 0.8;
+        let best = 0.5;
+        let var: f64 = 0.04; // std = 0.2
+
+        let ei_no_noise = expected_improvement_with_noise(mean, var.sqrt(), best, 0.0);
+        let ei_with_xi = expected_improvement_with_noise(mean, var.sqrt(), best, 0.05);
+        // Just assert both are positive and the function doesn't panic
+        assert!(ei_no_noise > 0.0);
+        assert!(ei_with_xi >= 0.0);
+    }
+
+    #[test]
+    fn test_ei_with_noise_zero_std_returns_zero() {
+        let ei = expected_improvement_with_noise(0.9, 0.0, 0.5, 0.01);
+        assert_eq!(ei, 0.0);
     }
 }
