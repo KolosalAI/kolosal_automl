@@ -264,7 +264,7 @@ impl TrainEngine {
         Ok((x, y))
     }
 
-    fn extract_features(&self, df: &DataFrame) -> Result<Array2<f64>> {
+    pub fn extract_features(&self, df: &DataFrame) -> Result<Array2<f64>> {
         Self::columns_to_array2(df, &self.feature_names)
     }
 
