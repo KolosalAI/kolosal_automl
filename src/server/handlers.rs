@@ -4007,7 +4007,7 @@ const EMBEDDED_INDEX_HTML: &str = r#"<!DOCTYPE html>
         .then(function(r){return r.json()})
         .then(function(d){
           if(d.error){panel.innerHTML='<div class="qp-wrap"><div class="qp-pending">Quality analysis not available for this model.</div></div>';return}
-          eQualityRender(d,panel);
+          eQualityRender(d.quality_report,panel);
         })
         .catch(function(){panel.innerHTML='<div class="qp-wrap"><div class="qp-pending">Could not load quality report.</div></div>'})
     }
