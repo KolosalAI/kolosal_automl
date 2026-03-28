@@ -1838,6 +1838,7 @@ const EMBEDDED_INDEX_HTML: &str = r#"<!DOCTYPE html>
         .ood-banner-text{font-size:13px;color:#fbbf24;line-height:1.5}
         .ood-banner-close{background:none;border:none;color:#6b7280;cursor:pointer;font-size:16px;padding:0;line-height:1}
     </style>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js" defer></script>
 </head>
 <body>
     <div class="app">
@@ -2129,6 +2130,12 @@ const EMBEDDED_INDEX_HTML: &str = r#"<!DOCTYPE html>
                                     <div class="card">
                                         <p style="font-size:14px;font-weight:500;margin-bottom:12px;color:#6a6f73">Best Score Progress</p>
                                         <canvas id="e-ho-best" width="520" height="260" style="width:100%;border-radius:8px"></canvas>
+                                    </div>
+                                </div>
+                                <div id="e-ho-3d-wrap" style="margin-top:16px">
+                                    <div class="card">
+                                        <p style="font-size:14px;font-weight:500;margin-bottom:4px;color:#6a6f73">Search Space <span id="e-ho-3d-label" style="font-weight:400;font-size:12px">(3D)</span></p>
+                                        <div id="e-ho-3d" style="width:100%;height:380px"></div>
                                     </div>
                                 </div>
                             </div>
