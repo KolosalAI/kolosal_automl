@@ -5239,7 +5239,7 @@ pub async fn run_hyperopt(
     State(state): State<Arc<AppState>>,
     Json(request): Json<HyperOptRequest>,
 ) -> Result<Json<serde_json::Value>> {
-    use crate::optimizer::{HyperOptX, OptimizationConfig, SamplerType, OptimizeDirection};
+    use crate::optimizer::{HyperOptX, OptimizationConfig, SamplerType, OptimizeDirection, ParameterValue};
 
     let data = state.current_data.read().await;
     let df = data.as_ref()
@@ -5353,9 +5353,19 @@ pub async fn run_hyperopt(
                     // Train final model with best params
                     let best_trial = study.best_trial().cloned();
                     let trials: Vec<serde_json::Value> = study.trials.iter().map(|t| {
+                        let params_json: serde_json::Map<String, serde_json::Value> = t.params.iter()
+                            .filter_map(|(k, v)| {
+                                let jv = match v {
+                                    ParameterValue::Float(f) => Some(serde_json::Value::from(*f)),
+                                    ParameterValue::Int(i)   => Some(serde_json::Value::from(*i)),
+                                    _                        => None,
+                                };
+                                jv.map(|j| (k.clone(), j))
+                            })
+                            .collect();
                         serde_json::json!({
                             "trial_id": t.trial_id,
-                            "params": format!("{:?}", t.params),
+                            "params": params_json,
                             "value": t.value,
                             "duration_secs": t.duration_secs,
                             "pruned": t.pruned,
@@ -5370,12 +5380,24 @@ pub async fn run_hyperopt(
 
         match result {
             Ok(Ok((best_trial, trials, total_duration))) => {
-                let best_info = best_trial.map(|t| serde_json::json!({
-                    "trial_id": t.trial_id,
-                    "params": format!("{:?}", t.params),
-                    "value": t.value,
-                    "duration_secs": t.duration_secs,
-                }));
+                let best_info = best_trial.map(|t| {
+                    let params_json: serde_json::Map<String, serde_json::Value> = t.params.iter()
+                        .filter_map(|(k, v)| {
+                            let jv = match v {
+                                ParameterValue::Float(f) => Some(serde_json::Value::from(*f)),
+                                ParameterValue::Int(i)   => Some(serde_json::Value::from(*i)),
+                                _                        => None,
+                            };
+                            jv.map(|j| (k.clone(), j))
+                        })
+                        .collect();
+                    serde_json::json!({
+                        "trial_id": t.trial_id,
+                        "params": params_json,
+                        "value": t.value,
+                        "duration_secs": t.duration_secs,
+                    })
+                });
 
                 let metrics = serde_json::json!({
                     "optimization": true,
@@ -8482,4 +8504,43 @@ pub async fn umap_stream_handler(
     };
 
     Sse::new(event_stream).keep_alive(KeepAlive::default())
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::optimizer::{ParameterValue, TrialParams};
+    use std::collections::HashMap;
+
+    fn params_to_json(params: &TrialParams) -> serde_json::Map<String, serde_json::Value> {
+        params.iter()
+            .filter_map(|(k, v)| {
+                let json_val = match v {
+                    ParameterValue::Float(f) => Some(serde_json::Value::from(*f)),
+                    ParameterValue::Int(i)   => Some(serde_json::Value::from(*i)),
+                    _                        => None,
+                };
+                json_val.map(|j| (k.clone(), j))
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_params_to_json_numeric() {
+        let mut p: TrialParams = HashMap::new();
+        p.insert("learning_rate".to_string(), ParameterValue::Float(0.05));
+        p.insert("max_depth".to_string(), ParameterValue::Int(6));
+        let j = params_to_json(&p);
+        assert_eq!(j["learning_rate"], serde_json::json!(0.05));
+        assert_eq!(j["max_depth"], serde_json::json!(6i64));
+    }
+
+    #[test]
+    fn test_params_to_json_skips_non_numeric() {
+        let mut p: TrialParams = HashMap::new();
+        p.insert("mode".to_string(), ParameterValue::String("auto".to_string()));
+        p.insert("n_estimators".to_string(), ParameterValue::Int(100));
+        let j = params_to_json(&p);
+        assert!(!j.contains_key("mode"));
+        assert_eq!(j["n_estimators"], serde_json::json!(100i64));
+    }
 }
