@@ -98,6 +98,9 @@ pub mod cli;
 // Device optimization
 pub mod device;
 
+// Pipeline quality gates
+pub mod quality;
+
 // Adaptive optimization
 pub mod adaptive;
 
