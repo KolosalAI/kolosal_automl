@@ -116,6 +116,162 @@ impl IsotonicCalibrator {
     }
 }
 
+use ndarray::Array2;
+
+// ── ConformalPredictor ────────────────────────────────────────────────────────
+
+/// Split conformal prediction for regression.
+/// Fits on calibration set residuals; provides coverage-guaranteed intervals.
+pub struct ConformalPredictor {
+    /// The quantile of absolute residuals at the requested coverage level.
+    pub quantile: f64,
+}
+
+impl ConformalPredictor {
+    /// Fit from calibration set predictions and true targets.
+    /// `coverage` ∈ (0, 1). Default: 0.90.
+    pub fn fit(predictions: &[f64], targets: &[f64], coverage: f64) -> Self {
+        assert_eq!(predictions.len(), targets.len());
+        let mut residuals: Vec<f64> = predictions.iter().zip(targets.iter())
+            .map(|(p, t)| (p - t).abs())
+            .collect();
+        residuals.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let n = residuals.len();
+        let idx = (((coverage * (n + 1) as f64).ceil() as usize)).min(n).max(1) - 1;
+        ConformalPredictor { quantile: residuals[idx] }
+    }
+
+    pub fn predict_interval(&self, prediction: f64) -> (f64, f64) {
+        (prediction - self.quantile, prediction + self.quantile)
+    }
+}
+
+// ── Entropy confidence ────────────────────────────────────────────────────────
+
+/// Returns normalised entropy confidence: 1 - H(p) / log(n_classes).
+/// = 1.0 when the model is certain, 0.0 when maximally uncertain.
+pub fn entropy_confidence(probs: &[f64]) -> f64 {
+    let n = probs.len();
+    if n <= 1 { return 1.0; }
+    let entropy: f64 = probs.iter()
+        .filter(|&&p| p > 0.0)
+        .map(|&p| -p * p.ln())
+        .sum();
+    let max_entropy = (n as f64).ln();
+    if max_entropy < 1e-10 { return 1.0; }
+    1.0 - entropy / max_entropy
+}
+
+// ── OodDetector ───────────────────────────────────────────────────────────────
+
+/// Out-of-distribution detector using normalised Euclidean distance
+/// (equivalent to Mahalanobis with diagonal covariance).
+pub struct OodDetector {
+    pub means: Vec<f64>,
+    pub stds: Vec<f64>,
+    /// Distance threshold at the `percentile`-th percentile of training distances.
+    pub threshold: f64,
+}
+
+impl OodDetector {
+    /// Fit from training feature matrix. `percentile` ∈ (0, 1); use 0.99 for the
+    /// 99th percentile of training distances as the OOD threshold.
+    pub fn fit(features: &Array2<f64>, percentile: f64) -> Self {
+        let n = features.nrows();
+        let d = features.ncols();
+
+        let means: Vec<f64> = (0..d).map(|j| {
+            features.column(j).iter().sum::<f64>() / n as f64
+        }).collect();
+
+        let stds: Vec<f64> = (0..d).map(|j| {
+            let mean = means[j];
+            let var = features.column(j).iter()
+                .map(|x| (x - mean).powi(2))
+                .sum::<f64>() / n as f64;
+            var.sqrt().max(1e-8)
+        }).collect();
+
+        let mut distances: Vec<f64> = (0..n).map(|i| {
+            (0..d).map(|j| ((features[[i, j]] - means[j]) / stds[j]).powi(2))
+                .sum::<f64>()
+                .sqrt()
+        }).collect();
+        distances.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+
+        let threshold_idx = ((percentile * n as f64).ceil() as usize).min(n).max(1) - 1;
+        OodDetector { means, stds, threshold: distances[threshold_idx] }
+    }
+
+    pub fn distance(&self, sample: &[f64]) -> f64 {
+        sample.iter().zip(self.means.iter()).zip(self.stds.iter())
+            .map(|((x, m), s)| ((x - m) / s).powi(2))
+            .sum::<f64>()
+            .sqrt()
+    }
+
+    pub fn is_ood(&self, sample: &[f64]) -> bool {
+        self.distance(sample) > self.threshold
+    }
+}
+
+// ── PostTrainingGate ──────────────────────────────────────────────────────────
+
+pub struct PostTrainingGate {
+    pub ece_improvement_threshold: f64, // default 0.005
+    pub conformal_coverage: f64,        // default 0.90
+    pub ood_percentile: f64,            // default 0.99
+    pub n_ece_bins: usize,              // default 10
+}
+
+impl Default for PostTrainingGate {
+    fn default() -> Self {
+        Self {
+            ece_improvement_threshold: 0.005,
+            conformal_coverage: 0.90,
+            ood_percentile: 0.99,
+            n_ece_bins: 10,
+        }
+    }
+}
+
+impl PostTrainingGate {
+    /// Select the better calibration method by ECE. Writes result into ctx.
+    pub fn select_calibration(
+        &self,
+        raw_scores: &[f64],
+        labels: &[f64],
+        ctx: &mut QualityContext,
+    ) -> Option<CalibrationMethod> {
+        let bool_labels: Vec<bool> = labels.iter().map(|&l| l > 0.5).collect();
+        let ece_before = expected_calibration_error(raw_scores, &bool_labels, self.n_ece_bins);
+        ctx.ece_before = Some(ece_before);
+
+        let platt = PlattCalibrator::fit(raw_scores, labels);
+        let platt_probs: Vec<f64> = raw_scores.iter().map(|&s| platt.predict(s)).collect();
+        let ece_platt = expected_calibration_error(&platt_probs, &bool_labels, self.n_ece_bins);
+
+        let isotonic = IsotonicCalibrator::fit(raw_scores, labels);
+        let iso_probs: Vec<f64> = raw_scores.iter().map(|&s| isotonic.predict(s)).collect();
+        let ece_iso = expected_calibration_error(&iso_probs, &bool_labels, self.n_ece_bins);
+
+        let best_ece = ece_platt.min(ece_iso);
+        if best_ece < ece_before - self.ece_improvement_threshold {
+            ctx.ece_after = Some(best_ece);
+            if ece_platt <= ece_iso {
+                ctx.calibration_method = Some(CalibrationMethod::Platt);
+                Some(CalibrationMethod::Platt)
+            } else {
+                ctx.calibration_method = Some(CalibrationMethod::Isotonic);
+                Some(CalibrationMethod::Isotonic)
+            }
+        } else {
+            ctx.ece_after = Some(ece_before); // no improvement
+            None
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -157,5 +313,44 @@ mod tests {
         let labels: Vec<bool> = (0..100).map(|i| i % 2 == 0).collect();
         let ece = expected_calibration_error(&probs, &labels, 10);
         assert!(ece > 0.4, "Overconfident model should have high ECE, got {}", ece);
+    }
+
+    #[test]
+    fn test_conformal_predictor_coverage() {
+        let preds: Vec<f64> = (0..100).map(|i| i as f64).collect();
+        let targets: Vec<f64> = (0..100).map(|i| i as f64 + 0.5).collect(); // residuals = 0.5
+        let cp = ConformalPredictor::fit(&preds, &targets, 0.90);
+        // All residuals are 0.5, so quantile should be 0.5
+        assert!((cp.quantile - 0.5).abs() < 0.1, "quantile should ≈ 0.5, got {}", cp.quantile);
+        let (lo, hi) = cp.predict_interval(10.0);
+        assert!(lo < 10.0 && hi > 10.0, "interval should straddle prediction");
+    }
+
+    #[test]
+    fn test_entropy_confidence_certain() {
+        // P = [1.0, 0.0] → H = 0 → confidence = 1.0
+        let probs = vec![1.0_f64, 0.0];
+        let conf = entropy_confidence(&probs);
+        assert!((conf - 1.0).abs() < 1e-10, "got {}", conf);
+    }
+
+    #[test]
+    fn test_entropy_confidence_uniform() {
+        // P = [0.5, 0.5] → H = log(2) → confidence = 0.0
+        let probs = vec![0.5_f64, 0.5];
+        let conf = entropy_confidence(&probs);
+        assert!(conf < 0.01, "uniform distribution should give near-zero confidence, got {}", conf);
+    }
+
+    #[test]
+    fn test_ood_detector_flags_out_of_distribution() {
+        use ndarray::array;
+        // Training: all samples near (0, 0)
+        let features = array![[0.1, 0.1], [-0.1, 0.1], [0.0, -0.1], [0.1, 0.0]];
+        let detector = OodDetector::fit(&features, 0.99);
+        // In-distribution sample
+        assert!(!detector.is_ood(&[0.05, 0.05]));
+        // Far out-of-distribution sample
+        assert!(detector.is_ood(&[1000.0, 1000.0]));
     }
 }
