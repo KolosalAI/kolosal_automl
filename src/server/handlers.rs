@@ -1708,6 +1708,32 @@ const EMBEDDED_INDEX_HTML: &str = r#"<!DOCTYPE html>
         .config-summary{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px}
         .config-chip{display:inline-flex;align-items:center;gap:4px;height:28px;padding:0 10px;font-size:12px;border-radius:8px;background:#f1f3f4;color:#6a6f73}
         .config-chip strong{color:#0d0e0f;font-weight:600}
+        /* ── Quality panel ────────────────────────────────────────────────────── */
+        .qp-wrap{margin-top:16px;background:#0d0e0f;border:1px solid #1e2a3a;border-radius:12px;padding:20px}
+        .qp-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+        .qp-title{font-size:15px;font-weight:700;color:#e5e7eb}
+        .qp-overall{font-size:22px;font-weight:800;padding:4px 14px;border-radius:20px;color:#fff}
+        .qp-overall.green{background:#16a34a}.qp-overall.yellow{background:#ca8a04}.qp-overall.red{background:#dc2626}
+        .qp-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+        .qp-card{background:#111827;border:1px solid #1e2a3a;border-radius:10px;padding:14px}
+        .qp-card-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;cursor:pointer;user-select:none}
+        .qp-card-title{font-size:13px;font-weight:600;color:#d1d5db}
+        .qp-sub{font-size:12px;font-weight:700;padding:2px 9px;border-radius:10px;color:#fff}
+        .qp-sub.green{background:#16a34a}.qp-sub.yellow{background:#ca8a04}.qp-sub.red{background:#dc2626}
+        .qp-chevron{font-size:12px;color:#6b7280;transition:transform .2s}
+        .qp-chevron.open{transform:rotate(180deg)}
+        .qp-body{font-size:12px;color:#9ca3af;display:flex;flex-direction:column;gap:6px}
+        .qp-row{display:flex;gap:6px;align-items:flex-start}
+        .qp-sev-c{color:#ef4444}.qp-sev-w{color:#f59e0b}.qp-sev-i{color:#60a5fa}
+        .qp-tag{display:inline-flex;align-items:center;padding:1px 7px;border-radius:8px;font-size:11px;background:#1e2a3a;color:#93c5fd;margin:1px}
+        .qp-label{font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;margin-top:4px}
+        .qp-skeleton{background:linear-gradient(90deg,#1a1b1c 25%,#232425 50%,#1a1b1c 75%);background-size:400% 100%;animation:qp-shimmer 1.4s infinite;border-radius:8px;height:120px}
+        @keyframes qp-shimmer{0%{background-position:100% 0}100%{background-position:-100% 0}}
+        .qp-pending{text-align:center;padding:24px;color:#6b7280;font-size:13px}
+        /* OOD banner */
+        .ood-banner{background:#78350f20;border:1px solid #d97706;border-radius:8px;padding:10px 14px;display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:10px}
+        .ood-banner-text{font-size:13px;color:#fbbf24;line-height:1.5}
+        .ood-banner-close{background:none;border:none;color:#6b7280;cursor:pointer;font-size:16px;padding:0;line-height:1}
     </style>
 </head>
 <body>
@@ -1911,6 +1937,7 @@ const EMBEDDED_INDEX_HTML: &str = r#"<!DOCTYPE html>
                                 </div>
                                 <div id="e-at-progress" style="display:none"></div>
                                 <div id="e-at-result" class="empty">Load data and click Start Auto-Tune to begin</div>
+                                <div id="e-quality-panel-at" style="display:none"></div>
                             </div>
                             <div id="e-at-charts" style="display:none;margin-top:16px">
                                 <div class="card">
@@ -1943,6 +1970,7 @@ const EMBEDDED_INDEX_HTML: &str = r#"<!DOCTYPE html>
                                         <div style="font-size:14px;opacity:.85" id="e-aml-score">&mdash;</div>
                                     </div>
                                     <div id="e-aml-leaderboard"></div>
+                                    <div id="e-quality-panel-aml" style="display:none"></div>
                                     <div id="e-aml-chart-wrap" style="display:none;margin-top:16px">
                                         <p style="font-size:14px;font-weight:500;margin-bottom:12px;color:#6a6f73">Model Comparison</p>
                                         <canvas id="e-aml-chart" width="700" height="300" style="width:100%;border-radius:8px"></canvas>
@@ -1963,6 +1991,7 @@ const EMBEDDED_INDEX_HTML: &str = r#"<!DOCTYPE html>
                                     <div><label class="form">Model</label><select id="e-model"><option value="random_forest">Random Forest</option><option value="xgboost">XGBoost</option><option value="lightgbm">LightGBM</option><option value="catboost">CatBoost</option><option value="gradient_boosting">Gradient Boosting</option><option value="extra_trees">Extra Trees</option><option value="decision_tree">Decision Tree</option><option value="logistic_regression">Logistic Regression</option><option value="ridge">Ridge</option><option value="lasso">Lasso</option><option value="elastic_net">Elastic Net</option><option value="polynomial">Polynomial</option><option value="adaboost">AdaBoost</option><option value="sgd">SGD</option><option value="knn">KNN</option><option value="naive_bayes">Naive Bayes</option><option value="svm">SVM</option><option value="gaussian_process">Gaussian Process</option><option value="kmeans">KMeans</option><option value="dbscan">DBSCAN</option></select></div>
                                 </div>
                                 <div id="e-result"></div>
+                                <div id="e-quality-panel" style="display:none"></div>
                                 <div id="e-train-viz" style="display:none;margin-top:16px">
                                     <div class="grid-2">
                                         <div class="chart-wrap"><canvas id="e-train-radar" width="400" height="400" style="border-radius:10px"></canvas></div>
@@ -2161,6 +2190,7 @@ const EMBEDDED_INDEX_HTML: &str = r#"<!DOCTYPE html>
                         <!-- Sub-tab: Playground -->
                         <div id="esp-insights-playground" class="sub-panel">
                             <div id="e-ins-pg-nomodel" class="alert alert-warn" style="display:none"><i class="ri-error-warning-line"></i><span>Train a model first to unlock this visualization</span></div>
+                            <div id="e-ins-pg-ood-warn" class="ood-banner" style="display:none"><span class="ood-banner-text">&#9888; This input may be out of distribution. The model was trained on different data patterns &mdash; prediction confidence may be lower than expected.</span><button class="ood-banner-close" onclick="this.parentElement.style.display='none'">&#215;</button></div>
                             <div style="display:flex;gap:16px;padding:16px 0">
                                 <div id="e-ins-pg-sliders" style="flex:0 0 280px;display:flex;flex-direction:column;gap:12px;overflow-y:auto;max-height:520px"></div>
                                 <div style="flex:1;display:flex;flex-direction:column;gap:12px">
