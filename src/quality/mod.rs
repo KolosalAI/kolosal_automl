@@ -20,7 +20,7 @@ pub enum FeatureType {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ColumnStats {
+pub struct FeatureStats {
     pub name: String,
     pub mean: f64,
     pub variance: f64,
@@ -75,11 +75,14 @@ pub struct QualityContext {
     pub sparsity: f64,
     pub class_balance: Option<f64>,
     pub feature_types: Vec<FeatureType>,
-    pub training_distribution: Vec<ColumnStats>,
+    pub training_distribution: Vec<FeatureStats>,
 
     // Pre-training decisions
     pub pre_training_findings: Vec<QualityFinding>,
     pub dropped_features: Vec<String>,
+    /// Log entries for algorithm selection decisions.
+    /// Exclusion entries MUST start with "EXCLUDED " (e.g., "EXCLUDED XGBoost — reason").
+    /// This prefix is used by `QualityReport::from_context` to extract `algorithms_excluded`.
     pub algorithm_selection_log: Vec<String>,
 
     // Training decisions
@@ -168,7 +171,8 @@ impl QualityReport {
             (Some(before), Some(after)) if before > 0.0 => {
                 ((before - after) / before).clamp(0.0, 1.0)
             }
-            _ => 0.5,
+            (Some(_), Some(_)) => 1.0, // already perfectly calibrated (ece_before == 0.0)
+            _ => 0.5, // calibration was skipped
         };
 
         let overall = (pre_score + training_score + hyperopt_score + post_score) / 4.0;
@@ -209,7 +213,10 @@ impl QualityReport {
                 pareto_front: ctx.pareto_front.clone(),
             },
             post_training: PostTrainingReport {
-                calibration_method: ctx.calibration_method.as_ref().map(|m| format!("{:?}", m)),
+                calibration_method: ctx.calibration_method.as_ref().map(|m| match m {
+                    CalibrationMethod::Platt => "Platt".to_string(),
+                    CalibrationMethod::Isotonic => "Isotonic".to_string(),
+                }),
                 ece_before: ctx.ece_before,
                 ece_after: ctx.ece_after,
                 ood_threshold: ctx.ood_threshold,
@@ -227,6 +234,7 @@ impl QualityReport {
 ///
 /// The caller (training handler in handlers.rs) is responsible for fitting
 /// models via TrainEngine; this struct handles the quality wrapping.
+#[derive(Debug, Clone)]
 pub struct QualityPipeline {
     pub pre_training_leakage_threshold: f64,
     pub cv_small_dataset_threshold: usize,
@@ -356,7 +364,7 @@ mod tests {
     }
 
     #[test]
-    fn test_report_from_context_overall_score_range() {
+    fn test_report_from_context_overall_score() {
         let ctx = QualityContext {
             hyperopt_converged: true,
             ensemble_beat_single: true,
@@ -365,7 +373,25 @@ mod tests {
             ..Default::default()
         };
         let report = QualityReport::from_context("m1".into(), &ctx);
-        assert!(report.overall_quality_score >= 0.0);
-        assert!(report.overall_quality_score <= 1.0);
+        // pre_score=1.0 (no critical findings), training_score=1.0 (ensemble beats single),
+        // hyperopt_score=1.0 (converged), post_score=(0.20-0.05)/0.20=0.75 → overall=0.9375
+        assert!((report.overall_quality_score - 0.9375).abs() < 1e-9,
+            "expected 0.9375, got {}", report.overall_quality_score);
+        assert!(report.overall_quality_score >= 0.0 && report.overall_quality_score <= 1.0);
+    }
+
+    #[test]
+    fn test_report_from_context_perfect_calibration_scores_full() {
+        // When ece_before=0.0 (already perfect), post_score should be 1.0, not 0.5
+        let ctx = QualityContext {
+            ece_before: Some(0.0),
+            ece_after: Some(0.0),
+            ..Default::default()
+        };
+        let report = QualityReport::from_context("m2".into(), &ctx);
+        // post_score=1.0 (perfect calibration), training_score=0.7, hyperopt_score=0.6, pre_score=1.0
+        // overall = (1.0 + 0.7 + 0.6 + 1.0) / 4.0 = 0.825
+        assert!((report.overall_quality_score - 0.825).abs() < 1e-9,
+            "expected 0.825, got {}", report.overall_quality_score);
     }
 }
