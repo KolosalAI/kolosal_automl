@@ -98,6 +98,74 @@ impl CvStrategyChooser {
     }
 }
 
+// ── TopKSelector ──────────────────────────────────────────────────────────────
+
+pub struct TopKSelector;
+
+impl TopKSelector {
+    /// Sort `scores` by mean score descending and return the top k.
+    /// `scores` is a slice of (model_name, mean_score, std_score).
+    pub fn select(scores: &[(String, f64, f64)], k: usize) -> Vec<(String, f64, f64)> {
+        let mut sorted = scores.to_vec();
+        sorted.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        sorted.into_iter().take(k).collect()
+    }
+}
+
+/// Returns true if the ensemble score beats the best single model score by at
+/// least `margin`. This is the gating condition for using the ensemble.
+pub fn ensemble_beats_single(ensemble_score: f64, single_best: f64, margin: f64) -> bool {
+    ensemble_score > single_best + margin
+}
+
+// ── TrainingGate ──────────────────────────────────────────────────────────────
+
+/// Orchestrates all training-gate decisions. In the full pipeline this is called
+/// after PreTrainingGate and before HyperoptGate.
+pub struct TrainingGate {
+    pub algorithm_selector: AlgorithmSelector,
+    pub cv_chooser: CvStrategyChooser,
+    pub top_k: usize,
+    pub ensemble_margin: f64,
+}
+
+impl Default for TrainingGate {
+    fn default() -> Self {
+        Self {
+            algorithm_selector: AlgorithmSelector::default(),
+            cv_chooser: CvStrategyChooser::default(),
+            top_k: 3,
+            ensemble_margin: 0.001,
+        }
+    }
+}
+
+impl TrainingGate {
+    /// Apply algorithm selection and CV strategy to ctx.
+    /// Returns the list of excluded algorithm names.
+    pub fn prepare(&self, ctx: &mut QualityContext, group_column: Option<String>) -> Vec<String> {
+        self.cv_chooser.apply(ctx, group_column);
+        self.algorithm_selector.apply(ctx)
+    }
+
+    /// Call after all models are trained. `cv_scores` is (model_name, mean, std).
+    /// Sets ensemble flags on ctx.
+    pub fn finalize(
+        &self,
+        ctx: &mut QualityContext,
+        cv_scores: Vec<(String, f64, f64)>,
+        ensemble_score: Option<f64>,
+    ) {
+        let single_best = cv_scores.iter().map(|(_, m, _)| *m)
+            .fold(f64::NEG_INFINITY, f64::max);
+        ctx.cv_scores = cv_scores;
+        ctx.ensemble_attempted = ensemble_score.is_some();
+        ctx.ensemble_beat_single = ensemble_score
+            .map(|s| ensemble_beats_single(s, single_best, self.ensemble_margin))
+            .unwrap_or(false);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -147,5 +215,29 @@ mod tests {
         let chooser = CvStrategyChooser::default();
         let strategy = chooser.choose(&ctx, Some("patient_id".to_string()));
         assert!(matches!(strategy, CvStrategy::GroupKFold { .. }));
+    }
+
+    #[test]
+    fn test_top_k_selector_returns_top_3() {
+        let scores = vec![
+            ("ModelA".to_string(), 0.80_f64, 0.02),
+            ("ModelB".to_string(), 0.95, 0.01),
+            ("ModelC".to_string(), 0.70, 0.03),
+            ("ModelD".to_string(), 0.88, 0.01),
+        ];
+        let top = TopKSelector::select(&scores, 3);
+        assert_eq!(top.len(), 3);
+        assert_eq!(top[0].0, "ModelB"); // highest first
+        assert_eq!(top[1].0, "ModelD");
+        assert_eq!(top[2].0, "ModelA");
+    }
+
+    #[test]
+    fn test_ensemble_beats_single_detection() {
+        let single_best = 0.90_f64;
+        let ensemble_score = 0.92_f64;
+        let margin = 0.001;
+        assert!(ensemble_beats_single(ensemble_score, single_best, margin));
+        assert!(!ensemble_beats_single(0.90, single_best, margin));
     }
 }
