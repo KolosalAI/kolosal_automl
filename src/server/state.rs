@@ -198,6 +198,8 @@ pub struct AppState {
     pub conformal_predictors: dashmap::DashMap<String, crate::quality::post_training::ConformalPredictor>,
     /// Store completed hyperopt studies for history
     pub completed_studies: RwLock<Vec<serde_json::Value>>,
+    /// Ring buffer of recent prediction latencies in microseconds (capped at 1000).
+    pub prediction_latencies: std::sync::Mutex<std::collections::VecDeque<u64>>,
     /// Security manager for auth, input validation, audit logging
     pub security_manager: Arc<SecurityManager>,
     /// Rate limiter for API throttling
@@ -260,6 +262,7 @@ impl AppState {
             ood_detectors: dashmap::DashMap::new(),
             conformal_predictors: dashmap::DashMap::new(),
             completed_studies: RwLock::new(Vec::new()),
+            prediction_latencies: std::sync::Mutex::new(std::collections::VecDeque::new()),
             security_manager: Arc::new(SecurityManager::new(security_config)),
             rate_limiter: Arc::new(RateLimiter::new(rate_limit_config)),
             provenance_tracker: ProvenanceTracker::default(),
@@ -382,6 +385,16 @@ impl AppState {
                 "hit_rate": cache_hit_rate,
             },
         })
+    }
+
+    /// Push a prediction latency (microseconds) into the ring buffer.
+    /// Evicts the oldest entry once the buffer reaches 1000 entries.
+    pub fn record_prediction_latency(&self, micros: u64) {
+        let mut q = self.prediction_latencies.lock().unwrap();
+        if q.len() >= 1000 {
+            q.pop_front();
+        }
+        q.push_back(micros);
     }
 }
 
@@ -533,5 +546,50 @@ mod quality_tests {
         let retrieved = reports.get("m1").unwrap();
         assert_eq!(retrieved.model_id, "m1");
         assert!((retrieved.overall_quality_score - 0.85).abs() < 1e-10);
+    }
+}
+
+#[cfg(test)]
+mod tests_latency {
+    use std::collections::VecDeque;
+
+    fn percentile_us(sorted: &[u64], p: f64) -> f64 {
+        if sorted.is_empty() { return 0.0; }
+        let idx = ((sorted.len() as f64 - 1.0) * p / 100.0).round() as usize;
+        sorted[idx] as f64 / 1000.0
+    }
+
+    #[test]
+    fn test_percentile_empty() {
+        assert_eq!(percentile_us(&[], 50.0), 0.0);
+    }
+
+    #[test]
+    fn test_percentile_single() {
+        // 5000 µs = 5.0 ms
+        assert!((percentile_us(&[5000], 50.0) - 5.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_percentile_multiple() {
+        let mut vals = vec![1000u64, 5000, 3000, 2000, 4000];
+        vals.sort_unstable();
+        // sorted: [1000, 2000, 3000, 4000, 5000]
+        // P50 → index 2 → 3000 µs = 3.0 ms
+        assert!((percentile_us(&vals, 50.0) - 3.0).abs() < 1e-9);
+        // P99 → index 4 → 5000 µs = 5.0 ms
+        assert!((percentile_us(&vals, 99.0) - 5.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_ring_buffer_cap() {
+        let mut q: VecDeque<u64> = VecDeque::new();
+        for i in 0..1100u64 {
+            if q.len() >= 1000 { q.pop_front(); }
+            q.push_back(i);
+        }
+        assert_eq!(q.len(), 1000);
+        // First 100 were evicted; front should be 100
+        assert_eq!(*q.front().unwrap(), 100u64);
     }
 }
