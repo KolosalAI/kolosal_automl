@@ -8618,6 +8618,7 @@ pub async fn umap_stream_handler(
 mod tests {
     use crate::optimizer::{ParameterValue, TrialParams};
     use std::collections::HashMap;
+    use super::percentile;
 
     fn params_to_json(params: &TrialParams) -> serde_json::Map<String, serde_json::Value> {
         params.iter()
@@ -8650,5 +8651,30 @@ mod tests {
         let j = params_to_json(&p);
         assert!(!j.contains_key("mode"));
         assert_eq!(j["n_estimators"], serde_json::json!(100i64));
+    }
+
+    #[test]
+    fn test_percentile_empty() {
+        assert_eq!(percentile(&[], 50.0), 0.0);
+    }
+
+    #[test]
+    fn test_percentile_converts_us_to_ms() {
+        // 5000 µs = 5.0 ms
+        assert!((percentile(&[5000], 50.0) - 5.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_percentile_p50() {
+        // sorted: [1000, 2000, 3000, 4000, 5000]
+        // P50 → index 2 → 3000 µs = 3.0 ms
+        let vals = vec![1000u64, 2000, 3000, 4000, 5000];
+        assert!((percentile(&vals, 50.0) - 3.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_percentile_p99() {
+        let vals = vec![1000u64, 2000, 3000, 4000, 5000];
+        assert!((percentile(&vals, 99.0) - 5.0).abs() < 1e-9);
     }
 }
