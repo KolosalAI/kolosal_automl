@@ -1362,13 +1362,19 @@ pub async fn predict(
     let x = ndarray::Array2::from_shape_vec((n_rows, n_cols), flat)
         .map_err(|e| ServerError::BadRequest(format!("Invalid feature dimensions: {}", e)))?;
 
-    // Run prediction
+    // Run prediction — measure pure inference latency for SLO tracking
+    let t0 = std::time::Instant::now();
     let predictions = engine.predict_array(&x)
         .map_err(|e| ServerError::Internal(format!("Prediction failed: {}", e)))?;
+    let inference_us = t0.elapsed().as_micros() as u64;
 
     let cache_hit = engine.last_prediction_was_cached();
     let (cache_hits, cache_misses, cache_hit_rate) = engine.cache_stats();
     let avg_latency = engine.stats().avg_latency_ms;
+    drop(engine); // release registry guard before async work
+
+    // Record inference latency for SLO percentile tracking
+    state.record_prediction_latency(inference_us);
 
     // OOD check using stored detector (if available)
     let ood_warning = state.ood_detectors.get(model_id.as_str())
@@ -4294,6 +4300,20 @@ const EMBEDDED_INDEX_HTML: &str = r#"<!DOCTYPE html>
     </script>
 </body>
 </html>"#;
+
+// ============================================================================
+// SLO Metrics Computation
+// ============================================================================
+
+/// Compute the p-th percentile (0-100) of a **sorted** slice of microsecond values.
+/// Returns the result in milliseconds. Returns 0.0 for empty slices.
+fn percentile(sorted: &[u64], p: f64) -> f64 {
+    if sorted.is_empty() {
+        return 0.0;
+    }
+    let idx = ((sorted.len() as f64 - 1.0) * p / 100.0).round() as usize;
+    sorted[idx] as f64 / 1000.0
+}
 
 // ============================================================================
 // Sample Data Generators
@@ -8108,10 +8128,17 @@ pub async fn get_slo_status(
         100.0
     };
 
+    let latency_sorted = {
+        let q = state.prediction_latencies.lock().unwrap();
+        let mut v: Vec<u64> = q.iter().copied().collect();
+        v.sort_unstable();
+        v
+    };
+
     let metrics = SloMetrics {
-        latency_p50_ms: 5.0,   // TODO: instrument actual latency tracking
-        latency_p95_ms: 25.0,
-        latency_p99_ms: 100.0,
+        latency_p50_ms: percentile(&latency_sorted, 50.0),
+        latency_p95_ms: percentile(&latency_sorted, 95.0),
+        latency_p99_ms: percentile(&latency_sorted, 99.0),
         availability_percent: availability,
         error_rate,
         total_requests,
