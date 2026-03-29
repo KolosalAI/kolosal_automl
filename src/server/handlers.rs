@@ -8292,7 +8292,7 @@ pub async fn get_insights_evaluation(
                 for i in 0..=100 {
                     let t = i as f64 / 100.0;
                     let (mut tp, mut fp, mut tn, mut fn_) = (0f64, 0f64, 0f64, 0f64);
-                    for ((&yt, &prob)) in eval.y_true.iter().zip(probs.iter()) {
+                    for (&yt, &prob) in eval.y_true.iter().zip(probs.iter()) {
                         let pred_pos = prob >= t;
                         let actual_pos = yt > 0.5;
                         match (actual_pos, pred_pos) {
